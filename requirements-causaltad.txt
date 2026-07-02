@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Linux/CUDA-only dependencies for CausalProj.
+causal-conv1d
+mamba-ssm
+flash-attn
