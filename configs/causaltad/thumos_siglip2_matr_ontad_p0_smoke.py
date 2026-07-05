@@ -10,6 +10,21 @@ raw_frame_stream_id = "thumos_siglip2_p0_smoke"
 
 window_size = 64
 
+model = dict(
+    # Remote smoke validates raw MP4 -> frozen SigLIP2 -> adapter/projection ->
+    # MATR wiring without depending on the cluster's mamba/causal-conv1d ABI.
+    # The full P0/P1 configs still use CausalProj.
+    projection=dict(
+        type="TemporalMaxerProj",
+        in_channels=768,
+        out_channels=512,
+        arch=(2, 0, 5),
+        conv_cfg=dict(kernel_size=1),
+        norm_cfg=dict(type="LN"),
+        drop_out=0.0,
+    ),
+)
+
 dataset = dict(
     train=dict(
         allow_list=["video_validation_0000051"],

@@ -134,6 +134,7 @@ def test_p0_smoke_config_limits_remote_validation_run():
     cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p0_smoke.py"))
 
     assert cfg.route_stage == "P0-smoke"
+    assert cfg.model.projection.type == "TemporalMaxerProj"
     assert cfg.workflow.end_epoch == 1
     assert cfg.workflow.disable_checkpoint is True
     assert cfg.solver.train.num_workers == 0
