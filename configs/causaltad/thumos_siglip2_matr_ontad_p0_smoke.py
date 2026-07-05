@@ -15,6 +15,7 @@ model = dict(
     # MATR wiring without depending on the cluster's mamba/causal-conv1d ABI.
     # The full P0/P1 configs still use CausalProj.
     projection=dict(
+        _delete_=True,
         type="TemporalMaxerProj",
         in_channels=768,
         out_channels=512,

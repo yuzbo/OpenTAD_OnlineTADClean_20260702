@@ -135,6 +135,8 @@ def test_p0_smoke_config_limits_remote_validation_run():
 
     assert cfg.route_stage == "P0-smoke"
     assert cfg.model.projection.type == "TemporalMaxerProj"
+    assert "use_abs_pe" not in cfg.model.projection
+    assert "mamba_kernel_size" not in cfg.model.projection
     assert cfg.workflow.end_epoch == 1
     assert cfg.workflow.disable_checkpoint is True
     assert cfg.solver.train.num_workers == 0
