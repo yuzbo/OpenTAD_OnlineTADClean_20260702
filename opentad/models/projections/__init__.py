@@ -2,6 +2,7 @@ from .base import ConvSingleProj, ConvPyramidProj
 from .actionformer_proj import Conv1DTransformerProj, GridAwareConv1DTransformerProj, DensePassthroughConv1DTransformerProj
 from .tridet_proj import TriDetProj
 from .temporalmaxer_proj import TemporalMaxerProj
+from .causal_temporalmaxer_proj import CausalTemporalMaxerProj
 from .vsgn_proj import VSGNPyramidProj
 from .mlp_proj import MLPPyramidProj
 from .mamba_proj import MambaProj
@@ -18,6 +19,7 @@ __all__ = [
     "DensePassthroughConv1DTransformerProj",
     "TriDetProj",
     "TemporalMaxerProj",
+    "CausalTemporalMaxerProj",
     "VSGNPyramidProj",
     "MLPPyramidProj",
     "MambaProj",

@@ -75,6 +75,8 @@ def test_p0_siglip2_config_is_frozen_recent_frame_no_memory_baseline():
     assert cfg.model.backbone.backbone.local_files_only is True
     assert cfg.model.backbone.backbone.freeze_vision_encoder is True
     assert cfg.model.backbone.backbone.strict_online is True
+    assert cfg.model.projection.type == "CausalTemporalMaxerProj"
+    assert cfg.model.projection.strict_causal is True
     assert cfg.model.rpn_head.memory_size == 0
     assert cfg.model.rpn_head.use_boundary_scores is False
     assert cfg.model.rpn_head.use_emit_scores is True
@@ -109,6 +111,8 @@ def test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol():
     assert cfg.model.backbone.use_stub_backbone is False
     assert cfg.model.backbone.backbone.type == "OnlineSigLIPFrameEncoder"
     assert cfg.model.backbone.backbone.freeze_vision_encoder is True
+    assert cfg.model.projection.type == "CausalTemporalMaxerProj"
+    assert cfg.model.projection.strict_causal is True
     assert cfg.model.rpn_head.memory_size == 0
     assert cfg.model.rpn_head.use_boundary_scores is False
     assert cfg.dataset.train.input_format == "raw_frames"
@@ -134,7 +138,8 @@ def test_p0_smoke_config_limits_remote_validation_run():
     cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p0_smoke.py"))
 
     assert cfg.route_stage == "P0-smoke"
-    assert cfg.model.projection.type == "TemporalMaxerProj"
+    assert cfg.model.projection.type == "CausalTemporalMaxerProj"
+    assert cfg.model.projection.strict_causal is True
     assert "use_abs_pe" not in cfg.model.projection
     assert "mamba_kernel_size" not in cfg.model.projection
     assert cfg.workflow.end_epoch == 1
@@ -151,7 +156,8 @@ def test_p0_smoke_overfit_config_uses_effective_lr_for_learning_check():
 
     assert cfg.route_stage == "P0-smoke-overfit"
     assert cfg.formal_training_ready is False
-    assert cfg.model.projection.type == "TemporalMaxerProj"
+    assert cfg.model.projection.type == "CausalTemporalMaxerProj"
+    assert cfg.model.projection.strict_causal is True
     assert cfg.scheduler.warmup_epoch == 1
     assert cfg.scheduler.max_epoch == cfg.workflow.end_epoch
     assert cfg.optimizer.lr > 1e-4
