@@ -138,9 +138,9 @@ def apply_visibility_rescore(scores, segments, meta, cfg=None):
     return scores * factor
 
 
-def convert_to_seconds(segments, meta):
+def grid_to_seconds(segments, meta):
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
-        segments = segments / meta["resize_length"] * meta["duration"]
+        return segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d
         snippet_stride = meta["snippet_stride"]
         offset_frames = meta["offset_frames"]
@@ -149,7 +149,21 @@ def convert_to_seconds(segments, meta):
         irregular_valid_len = meta.get("irregular_selected_valid_len", None)
         if irregular_positions is not None and irregular_valid_len is not None and not meta.get("irregular_native_axis", False):
             segments = selected_axis_to_dense_axis(segments, meta)
-        segments = (segments * snippet_stride + window_start_frame + offset_frames) / meta["fps"]
+        return (segments * snippet_stride + window_start_frame + offset_frames) / meta["fps"]
+
+
+def seconds_to_grid(segments, meta):
+    if meta["fps"] == -1:
+        return segments / meta["duration"] * meta["resize_length"]
+
+    snippet_stride = meta["snippet_stride"]
+    offset_frames = meta["offset_frames"]
+    window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0
+    return (segments * meta["fps"] - window_start_frame - offset_frames) / snippet_stride
+
+
+def convert_to_seconds(segments, meta):
+    segments = grid_to_seconds(segments, meta)
 
     # truncate all boundaries within [0, duration]
     if segments.shape[0] > 0:

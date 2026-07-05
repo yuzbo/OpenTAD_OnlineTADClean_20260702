@@ -1,3 +1,5 @@
+import inspect
+
 import torch
 from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck
 from .base import BaseDetector
@@ -45,10 +47,40 @@ class SingleStageDetector(BaseDetector):
         """bool: whether the detector has localization head"""
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
+    @staticmethod
+    def _unpack_backbone_output(output, masks):
+        if isinstance(output, dict):
+            x = output.get("features", output.get("feats", output.get("last_hidden_state")))
+            if x is None:
+                raise ValueError("Backbone output dict did not contain features")
+            return x, output.get("masks", masks)
+        if isinstance(output, (tuple, list)):
+            if len(output) >= 2 and torch.is_tensor(output[1]) and output[1].dim() <= 2:
+                return output[0], output[1]
+            return output[-1], masks
+        return output, masks
+
+    def _forward_backbone(self, inputs, masks, metas=None):
+        try:
+            signature = inspect.signature(self.backbone.forward)
+        except (TypeError, ValueError):
+            output = self.backbone(inputs)
+            return self._unpack_backbone_output(output, masks)
+
+        params = signature.parameters
+        accepts_kwargs = any(param.kind == param.VAR_KEYWORD for param in params.values())
+        if accepts_kwargs or ("masks" in params and "metas" in params):
+            output = self.backbone(inputs, masks=masks, metas=metas)
+        elif "masks" in params:
+            output = self.backbone(inputs, masks=masks)
+        else:
+            output = self.backbone(inputs)
+        return self._unpack_backbone_output(output, masks)
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x, masks = self._forward_backbone(inputs, masks, metas)
         else:
             x = inputs
 
@@ -74,7 +106,7 @@ class SingleStageDetector(BaseDetector):
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x, masks = self._forward_backbone(inputs, masks, metas)
         else:
             x = inputs
 
@@ -85,7 +117,7 @@ class SingleStageDetector(BaseDetector):
             x, masks = self.neck(x, masks)
 
         if self.with_rpn_head:
-            rpn_proposals, rpn_scores = self.rpn_head.forward_test(x, masks)
+            rpn_proposals, rpn_scores = self.rpn_head.forward_test(x, masks, metas=metas)
         else:
             rpn_proposals = rpn_scores = None
 

@@ -42,6 +42,10 @@ Inspired by this insight, we propose leveraging the temporal causality of action
 
 For our solution to Ego4D Challenge 2024 and EPIC-Kitchens Challenge 2024, please refer to [here](egovis_challenge_2024/README.md), including detailed challenge config and ensemble strategy.
 
+## Experimental Raw-Frame Online TAD
+
+- [thumos_videomae_adapter_matr_ontad.py](thumos_videomae_adapter_matr_ontad.py): raw-frame VideoMAE adapter + MATR-style online head route. It explicitly declares `input_format="raw_frames"`, enables strict causal projection, uses a causal adapter optimizer group while the base backbone is frozen, and keeps raw-prediction shortcuts disabled. The config marks its stub backbone as contract-only until a causal/streaming VideoMAE with masked attention and cache state is wired in; formal training requires disabling the stub and running on remote Slurm.
+
 
 ## Train
 

@@ -23,6 +23,23 @@ except ImportError:
     FLASHATTN_AVAILABLE = False
 
 
+class CausalConvModule(ConvModule):
+    """ConvModule variant that uses left padding instead of centered padding."""
+
+    def __init__(self, *args, kernel_size=1, padding=0, **kwargs):
+        if padding not in (0, None):
+            raise ValueError("CausalConvModule expects padding=0; it pads only on the left.")
+        if not isinstance(kernel_size, int):
+            raise TypeError("CausalConvModule currently expects an integer temporal kernel_size.")
+        self.left_pad = kernel_size - 1
+        super().__init__(*args, kernel_size=kernel_size, padding=0, **kwargs)
+
+    def forward(self, x, mask=None):
+        if self.left_pad > 0:
+            x = F.pad(x, (self.left_pad, 0))
+        return super().forward(x, mask)
+
+
 @PROJECTIONS.register_module()
 class CausalProj(nn.Module):
     def __init__(
@@ -39,6 +56,7 @@ class CausalProj(nn.Module):
         channel_expand=2,  # expand ratio for mamba
         num_head=4,  # number of heads in transformer
         drop_path_rate=0.3,
+        strict_causal=False,
     ):
         super().__init__()
         assert (
@@ -58,6 +76,9 @@ class CausalProj(nn.Module):
         self.with_norm = norm_cfg is not None
         self.use_abs_pe = use_abs_pe
         self.max_seq_len = max_seq_len
+        # Set strict_causal=True for online evaluation: no reverse-time path,
+        # no centered temporal convolution, and no centered downsampling.
+        self.strict_causal = bool(strict_causal)
 
         self.input_pdrop = nn.Dropout1d(p=input_pdrop) if input_pdrop > 0 else None
 
@@ -85,14 +106,15 @@ class CausalProj(nn.Module):
 
         # embedding network using convs
         self.embed = nn.ModuleList()
+        embed_conv = CausalConvModule if self.strict_causal else ConvModule
         for i in range(arch[0]):
             self.embed.append(
-                ConvModule(
+                embed_conv(
                     in_channels if i == 0 else out_channels,
                     out_channels,
                     kernel_size=self.kernel_size,
                     stride=1,
-                    padding=self.kernel_size // 2,
+                    padding=0 if self.strict_causal else self.kernel_size // 2,
                     norm_cfg=norm_cfg,
                     act_cfg=dict(type="relu"),
                 )
@@ -109,6 +131,7 @@ class CausalProj(nn.Module):
                     expand=channel_expand,
                     num_head=num_head,
                     drop_path_rate=drop_path_rate,
+                    strict_causal=self.strict_causal,
                 )
             )
 
@@ -123,6 +146,7 @@ class CausalProj(nn.Module):
                     expand=channel_expand,
                     num_head=num_head,
                     drop_path_rate=drop_path_rate,
+                    strict_causal=self.strict_causal,
                 )
             )
 
@@ -194,14 +218,22 @@ class HybridCausalBlock(nn.Module):
         expand=2,  # expand ratio for mamba
         num_head=4,  # number of heads in transformer
         drop_path_rate=0.3,  # drop path rate
+        strict_causal=False,
     ):
         super().__init__()
+        self.strict_causal = bool(strict_causal)
 
         # normalization
         self.norm = nn.LayerNorm(n_embd, eps=1e-6)
 
         # hybrid block with mamba and self-attn
-        self.block = MixtureCausalBlock(n_embd, d_conv=kernel_size, expand=expand, num_head=num_head)
+        self.block = MixtureCausalBlock(
+            n_embd,
+            d_conv=kernel_size,
+            expand=expand,
+            num_head=num_head,
+            strict_causal=self.strict_causal,
+        )
 
         # downsampling
         if stride > 1:
@@ -216,6 +248,14 @@ class HybridCausalBlock(nn.Module):
         else:
             self.drop_path = nn.Identity()
 
+    def _causal_downsample(self, x, mask):
+        x = F.pad(x, (2, 0))
+        mask = F.pad(mask.float().unsqueeze(1), (2, 0))
+        mask = F.max_pool1d(mask, kernel_size=3, stride=2, padding=0).squeeze(1).bool()
+        x = F.max_pool1d(x, kernel_size=3, stride=2, padding=0)
+        x = x * mask.unsqueeze(1).to(x.dtype)
+        return x, mask
+
     def forward(self, x, mask):
         x = x.permute(0, 2, 1)
         x = x + self.drop_path(self.block(self.norm(x)))
@@ -223,8 +263,11 @@ class HybridCausalBlock(nn.Module):
         x = x * mask.unsqueeze(1).to(x.dtype)
 
         if self.downsample is not None:
-            mask = self.downsample(mask.float()).bool()
-            x = self.downsample(x) * mask.unsqueeze(1).to(x.dtype)
+            if self.strict_causal:
+                x, mask = self._causal_downsample(x, mask)
+            else:
+                mask = self.downsample(mask.float()).bool()
+                x = self.downsample(x) * mask.unsqueeze(1).to(x.dtype)
         return x, mask
 
 
@@ -244,6 +287,7 @@ class MixtureCausalBlock(nn.Module):
         conv_bias=True,
         bias=False,
         num_head=4,
+        strict_causal=False,
     ):
         super().__init__()
         self.d_model = d_model
@@ -252,8 +296,11 @@ class MixtureCausalBlock(nn.Module):
         self.expand = expand
         self.d_inner = int(self.expand * self.d_model)
         self.dt_rank = math.ceil(self.d_model / 16) if dt_rank == "auto" else dt_rank
+        self.strict_causal = bool(strict_causal)
 
-        self.in_proj = nn.Linear(self.d_model, self.d_inner * 2 * 4, bias=bias)
+        in_proj_channels = self.d_inner * 4 if self.strict_causal else self.d_inner * 2 * 4
+        out_proj_channels = self.d_inner * 2 if self.strict_causal else self.d_inner * 4
+        self.in_proj = nn.Linear(self.d_model, in_proj_channels, bias=bias)
 
         self.conv1d = nn.Conv1d(
             in_channels=self.d_inner,
@@ -305,10 +352,17 @@ class MixtureCausalBlock(nn.Module):
         self.D._no_weight_decay = True
 
         # transformer
-        self.qkv = nn.Conv1d(self.d_inner, self.d_inner * 3, kernel_size=3, padding=1, groups=self.d_inner)
+        self.qkv_left_pad = 2 if self.strict_causal else 0
+        self.qkv = nn.Conv1d(
+            self.d_inner,
+            self.d_inner * 3,
+            kernel_size=3,
+            padding=0 if self.strict_causal else 1,
+            groups=self.d_inner,
+        )
         self.num_heads = num_head
 
-        self.out_proj = nn.Linear(self.d_inner * 4, self.d_model, bias=bias)
+        self.out_proj = nn.Linear(out_proj_channels, self.d_model, bias=bias)
 
     def forward(self, hidden_states):
         """
@@ -326,8 +380,9 @@ class MixtureCausalBlock(nn.Module):
         if self.in_proj.bias is not None:
             xz = xz + rearrange(self.in_proj.bias.to(dtype=xz.dtype), "d -> d 1")
 
-        xz_f, xz_b = torch.chunk(xz, 2, dim=1)  # (B, D, L)
-        xz = torch.cat([xz_f, xz_b.flip([-1])], dim=0)
+        if not self.strict_causal:
+            xz_f, xz_b = torch.chunk(xz, 2, dim=1)  # (B, D, L)
+            xz = torch.cat([xz_f, xz_b.flip([-1])], dim=0)
         xz, xz_t = torch.chunk(xz, 2, dim=1)
 
         # causal conv1d -> ssm
@@ -350,6 +405,8 @@ class MixtureCausalBlock(nn.Module):
         # causal conv1d -> transformer
         x_t, z_t = torch.chunk(xz_t, 2, dim=1)
         B, _, L = x_t.shape
+        if self.qkv_left_pad > 0:
+            x_t = F.pad(x_t, (self.qkv_left_pad, 0))
         qkv = self.qkv(x_t).transpose(1, 2).reshape(B, L, 3, self.num_heads, -1)
         x_t = flash_attn_qkvpacked_func(qkv, deterministic=True, causal=True)
         x_t = x_t.reshape(B, L, -1).transpose(1, 2)  # (B, D, L)
@@ -357,7 +414,8 @@ class MixtureCausalBlock(nn.Module):
         out_t = x_t * F.silu(z_t)
 
         out = torch.cat([out, out_t], dim=1)
-        out = out.chunk(2)
-        out = torch.cat([out[0], out[1].flip([-1])], dim=1)
+        if not self.strict_causal:
+            out = out.chunk(2)
+            out = torch.cat([out[0], out[1].flip([-1])], dim=1)
         out = F.linear(rearrange(out, "b d l -> b l d"), self.out_proj.weight, self.out_proj.bias)
         return out

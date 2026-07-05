@@ -1,16 +1,24 @@
-from .misc import set_seed, update_workdir, create_folder, save_config, AverageMeter
-from .logger import setup_logger
-from .ema import ModelEma
-from .checkpoint import save_checkpoint, save_best_checkpoint
+_EXPORTS = {
+    "set_seed": ("misc", "set_seed"),
+    "update_workdir": ("misc", "update_workdir"),
+    "create_folder": ("misc", "create_folder"),
+    "save_config": ("misc", "save_config"),
+    "AverageMeter": ("misc", "AverageMeter"),
+    "setup_logger": ("logger", "setup_logger"),
+    "ModelEma": ("ema", "ModelEma"),
+    "save_checkpoint": ("checkpoint", "save_checkpoint"),
+    "save_best_checkpoint": ("checkpoint", "save_best_checkpoint"),
+}
 
-__all__ = [
-    "set_seed",
-    "update_workdir",
-    "create_folder",
-    "save_config",
-    "setup_logger",
-    "AverageMeter",
-    "ModelEma",
-    "save_checkpoint",
-    "save_best_checkpoint",
-]
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_name, attr_name = _EXPORTS[name]
+    module = __import__(f"{__name__}.{module_name}", fromlist=[attr_name])
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value

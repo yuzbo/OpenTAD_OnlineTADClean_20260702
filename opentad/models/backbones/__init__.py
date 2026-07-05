@@ -5,6 +5,8 @@ from .re2tal_slowfast import ResNet3dSlowFast_inv
 from .vit import VisionTransformerCP
 from .vit_adapter import VisionTransformerAdapter
 from .vit_ladder import VisionTransformerLadder
+from .online_videomae_adapter import OnlineVideoMAEAdapter
+from .online_siglip_adapter import CausalMotionBranch, OnlineSigLIPFrameEncoder
 
 __all__ = [
     "BackboneWrapper",
@@ -14,4 +16,7 @@ __all__ = [
     "VisionTransformerCP",
     "VisionTransformerAdapter",
     "VisionTransformerLadder",
+    "OnlineVideoMAEAdapter",
+    "CausalMotionBranch",
+    "OnlineSigLIPFrameEncoder",
 ]

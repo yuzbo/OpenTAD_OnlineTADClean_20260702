@@ -21,9 +21,12 @@
 - `configs/causaltad/`: 在线/因果 TAD 配置。
 - `configs/_base_/datasets/`: CausalTAD 配置依赖的数据集基配置。
 - `configs/_base_/models/causaltad.py`: CausalTAD 模型基配置。
+- `configs/causaltad/thumos_videomae_adapter_matr_ontad.py`: raw-frame VideoMAE adapter + MATR head 在线 TAD 实验配置骨架。
 - `tools/train.py`, `tools/test.py`: 训练与评测入口。
 - `tests/test_causaltad_config_contracts.py`: 最小配置和代码合约测试。
 - `RTK.md`: 本仓库项目规则和远端边界。
+- `end-to-end-ontad-research.md`: raw-frame 端到端在线 TAD/On-TAL 调研备忘。
+- `online-action-models-2026-research.md`: 2026 在线动作检测、分割和流式理解模型调研备忘。
 
 ## 本地使用
 
@@ -42,6 +45,7 @@ python -m pytest tests/test_causaltad_config_contracts.py -q
 - `configs/causaltad/thumos_internvideo2.py`: 官方 THUMOS14 InternVideo2 特征配置。
 - `configs/causaltad/thumos_i3d_n16r4.py`: N16R4 THUMOS14 I3D 特征路径配置。
 - `configs/causaltad/thumos_internvideo2_n16r4.py`: N16R4 THUMOS14 InternVideo2 特征路径配置。
+- `configs/causaltad/thumos_videomae_adapter_matr_ontad.py`: 实验性 raw-frame On-TAD 模型入口，当前 raw-frame dataset/pipeline 已落地，但 backbone 仍是 contract-only stub；正式训练前必须接入真实 causal/streaming VideoMAE 并关闭 stub。
 
 两个 `*_n16r4.py` 配置默认使用 `/data/run01/sczc063/yuzibo/thumos14`。如果远端数据根不同，直接改配置顶部的路径常量，不要在配置里引入 `import os`。
 
@@ -71,7 +75,7 @@ export HF_HOME="$BASE/hf_cache"
 需要外网下载时，在登录节点设置代理：
 
 ```bash
-export http_proxy='http://u-MtfrT7:vH5orjDV@10.244.6.36:3128'
+export http_proxy='http://USER:PASSWORD@HOST:PORT'
 export https_proxy="$http_proxy"
 export HTTP_PROXY="$http_proxy"
 export HTTPS_PROXY="$https_proxy"

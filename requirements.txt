@@ -8,6 +8,10 @@ tqdm
 ninja
 imgaug
 pytorchvideo
+Pillow
+opencv-python-headless
+transformers>=4.44.0,<4.45
+tokenizers>=0.19,<0.20
 
 ###### Requirements with Version Specifiers ######
 numpy==1.23.5

@@ -19,6 +19,7 @@ from .native_physical_point_head import NativePhysicalPointHead
 from .native_physical_multiscale_head import NativePhysicalMultiScaleHead
 from .query_decoder_head import QueryDecoderHead
 from .physical_segment_head import PhysicalSegmentHead
+from .matr_head import MATRHead
 
 __all__ = [
     "AnchorGenerator",
@@ -40,6 +41,7 @@ __all__ = [
     "NativePhysicalMultiScaleHead",
     "QueryDecoderHead",
     "PhysicalSegmentHead",
+    "MATRHead",
     "TriDetHead",
     "TemporalMaxerHead",
     "TemporalEvaluationHead",

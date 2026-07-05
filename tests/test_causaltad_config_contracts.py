@@ -37,3 +37,12 @@ def test_causal_projection_is_online_causal_route():
     assert "FLASHATTN_AVAILABLE" in source
     assert "causal=True" in source
     assert "mamba_inner_fn_no_out_proj" in source
+
+
+def test_vit_adapter_imported_rasterizer_is_present():
+    adapter_source = read("opentad/models/backbones/vit_adapter.py")
+    rasterizer_source = read("opentad/models/backbones/time_aligned_rasterizer.py")
+
+    assert "from .time_aligned_rasterizer import TimeAlignedRasterizer" in adapter_source
+    assert "class TimeAlignedRasterizer" in rasterizer_source
+    assert "branch_scale" in rasterizer_source
