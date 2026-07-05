@@ -7,6 +7,12 @@ from ..builder import HEADS, build_prior_generator, build_loss
 from ..bricks import ConvModule, Scale
 
 
+def _cfg_get(cfg, key):
+    if isinstance(cfg, dict):
+        return cfg[key]
+    return getattr(cfg, key)
+
+
 @HEADS.register_module()
 class AnchorFreeHead(nn.Module):
     def __init__(
@@ -77,8 +83,8 @@ class AnchorFreeHead(nn.Module):
 
         self._init_layers()
 
-        self.cls_loss = build_loss(loss.cls_loss)
-        self.reg_loss = build_loss(loss.reg_loss)
+        self.cls_loss = build_loss(_cfg_get(loss, "cls_loss"))
+        self.reg_loss = build_loss(_cfg_get(loss, "reg_loss"))
         self.assigner = build_loss(assigner) if assigner is not None else None
         self._train_epoch = None
         self._last_assigner_stats = []
