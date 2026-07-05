@@ -9,11 +9,26 @@ from .builder import DATASETS
 class FrameWindowDataset(SlidingWindowDataset):
     """Sliding-window dataset for raw-frame online TAD experiments."""
 
-    def __init__(self, input_format="raw_frames", online=True, **kwargs):
+    def __init__(
+        self,
+        input_format="raw_frames",
+        online=True,
+        stream_id="default",
+        processor_id=None,
+        encoder_id=None,
+        image_size=None,
+        frame_policy=None,
+        **kwargs,
+    ):
         if input_format != "raw_frames":
             raise ValueError("FrameWindowDataset only supports input_format='raw_frames'")
         self.input_format = input_format
         self.online = bool(online)
+        self.stream_id = stream_id
+        self.processor_id = processor_id
+        self.encoder_id = encoder_id
+        self.image_size = image_size
+        self.frame_policy = frame_policy
         super().__init__(**kwargs)
 
     def get_gt(self, video_info, thresh=0.0):
@@ -59,6 +74,11 @@ class FrameWindowDataset(SlidingWindowDataset):
                 video_name=video_name,
                 data_path=self.data_path,
                 input_format=self.input_format,
+                stream_id=self.stream_id,
+                processor_id=self.processor_id,
+                encoder_id=self.encoder_id,
+                image_size=self.image_size,
+                frame_policy=self.frame_policy,
                 total_frames=total_frames,
                 avg_fps=avg_fps,
                 window_size=self.window_size,

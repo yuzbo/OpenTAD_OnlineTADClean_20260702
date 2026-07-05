@@ -30,6 +30,24 @@ trainable_scope = dict(modules=["backbone.adapter", "backbone.out_proj", "backbo
 window_size = 192
 snippet_stride_frames = fixed_raw_frame_protocol["snippet_stride_frames"]
 image_size = fixed_raw_frame_protocol["image_size"]
+raw_frame_stream_id = "thumos_siglip2_p0"
+online_meta_keys = [
+    "video_name",
+    "data_path",
+    "input_format",
+    "stream_id",
+    "processor_id",
+    "encoder_id",
+    "image_size",
+    "frame_policy",
+    "fps",
+    "duration",
+    "snippet_stride",
+    "window_start_frame",
+    "window_end_frame",
+    "window_size",
+    "offset_frames",
+]
 
 data_shape = dict(
     input_format="raw_frames",
@@ -50,7 +68,7 @@ _train_pipeline = [
         layout="[N,3,T,H,W]",
     ),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", inputs="frames", keys=["masks", "gt_segments", "gt_labels"]),
+    dict(type="Collect", inputs="frames", keys=["masks", "gt_segments", "gt_labels"], meta_keys=online_meta_keys),
 ]
 
 _test_pipeline = [
@@ -63,7 +81,7 @@ _test_pipeline = [
         frame_size=(image_size, image_size),
         layout="[N,3,T,H,W]",
     ),
-    dict(type="Collect", inputs="frames", keys=["masks"]),
+    dict(type="Collect", inputs="frames", keys=["masks"], meta_keys=online_meta_keys),
 ]
 
 dataset = dict(
@@ -71,6 +89,11 @@ dataset = dict(
         type="FrameWindowDataset",
         input_format="raw_frames",
         online=True,
+        stream_id=raw_frame_stream_id,
+        processor_id=fixed_raw_frame_protocol["processor"],
+        encoder_id=fixed_raw_frame_protocol["encoder_hub_id"],
+        image_size=image_size,
+        frame_policy=fixed_raw_frame_protocol["frame_policy"],
         ann_file=annotation_path,
         subset_name="training",
         class_map=class_map,
@@ -89,6 +112,11 @@ dataset = dict(
         type="FrameWindowDataset",
         input_format="raw_frames",
         online=True,
+        stream_id=raw_frame_stream_id,
+        processor_id=fixed_raw_frame_protocol["processor"],
+        encoder_id=fixed_raw_frame_protocol["encoder_hub_id"],
+        image_size=image_size,
+        frame_policy=fixed_raw_frame_protocol["frame_policy"],
         ann_file=annotation_path,
         subset_name="validation",
         class_map=class_map,
@@ -107,6 +135,11 @@ dataset = dict(
         type="FrameWindowDataset",
         input_format="raw_frames",
         online=True,
+        stream_id=raw_frame_stream_id,
+        processor_id=fixed_raw_frame_protocol["processor"],
+        encoder_id=fixed_raw_frame_protocol["encoder_hub_id"],
+        image_size=image_size,
+        frame_policy=fixed_raw_frame_protocol["frame_policy"],
         ann_file=annotation_path,
         subset_name="validation",
         class_map=class_map,

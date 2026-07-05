@@ -1,13 +1,21 @@
 _base_ = "./thumos_siglip2_matr_ontad_p0.py"
 
-# P1: formal raw-frame online TAD training route.
+# P1: raw-frame online TAD validation candidate under validation.
 #
 # This keeps the visual tower frozen and trains the causal adapter,
 # projection, FPN normalization, and MATR head from raw frames under one fixed
-# processor/FPS/stride protocol.
+# processor/FPS/stride protocol. It is not formal-training-ready until the
+# streaming-safe evaluator and emission-ledger checks pass on real runs.
 
 route_stage = "P1"
 formal_training_ready = False
+raw_frame_stream_id = "thumos_siglip2_p1"
+
+dataset = dict(
+    train=dict(stream_id=raw_frame_stream_id),
+    val=dict(stream_id=raw_frame_stream_id),
+    test=dict(stream_id=raw_frame_stream_id),
+)
 
 trainable_scope = dict(
     modules=[

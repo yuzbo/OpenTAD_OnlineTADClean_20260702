@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from ..bricks import Scale
 from ..builder import HEADS
 from .anchor_free_head import AnchorFreeHead
+from opentad.utils.online_protocol import make_stream_key
 
 
 class CausalConvBlock(nn.Module):
@@ -166,7 +167,7 @@ class MATRHead(AnchorFreeHead):
         stream_keys = []
         reuse_flags = []
         for idx, (video_name, current_start, current_end) in enumerate(zip(video_names, window_starts, window_ends)):
-            stream_key = str(video_name) if video_name is not None else f"batch:{idx}"
+            stream_key = make_stream_key(metas[idx], batch_index=idx)
             previous_end = self._stream_window_end_by_key.get(stream_key)
             can_reuse = previous_end is not None and current_start is not None and current_start == previous_end
             if (

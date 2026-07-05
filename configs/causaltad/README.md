@@ -42,9 +42,11 @@ Inspired by this insight, we propose leveraging the temporal causality of action
 
 For our solution to Ego4D Challenge 2024 and EPIC-Kitchens Challenge 2024, please refer to [here](egovis_challenge_2024/README.md), including detailed challenge config and ensemble strategy.
 
-## Experimental Raw-Frame Online TAD
+## Experimental Raw-Frame Online TAD Validation Candidates
 
-- [thumos_videomae_adapter_matr_ontad.py](thumos_videomae_adapter_matr_ontad.py): raw-frame VideoMAE adapter + MATR-style online head route. It explicitly declares `input_format="raw_frames"`, enables strict causal projection, uses a causal adapter optimizer group while the base backbone is frozen, and keeps raw-prediction shortcuts disabled. The config marks its stub backbone as contract-only until a causal/streaming VideoMAE with masked attention and cache state is wired in; formal training requires disabling the stub and running on remote Slurm.
+- [thumos_videomae_adapter_matr_ontad.py](thumos_videomae_adapter_matr_ontad.py): raw-frame VideoMAE adapter + MATR-style head validation candidate. It explicitly declares `input_format="raw_frames"`, enables strict causal projection, uses a causal adapter optimizer group while the base backbone is frozen, and keeps raw-prediction shortcuts disabled. The config marks its stub backbone as contract-only until a causal/streaming VideoMAE with masked attention and cache state is wired in; formal training claims require disabling the stub, passing single-rank emission-ledger evaluation, and running on remote Slurm.
+
+- `thumos_siglip2_matr_ontad_p0.py`, `thumos_siglip2_matr_ontad_p1.py`, and `thumos_siglip2_motion_matr_ontad_p2.py` are raw-frame SigLIP/SigLIP2 validation candidates. Their streaming-safe ledger evaluator is single-rank only for now; DDP evaluation must wait for a video-contiguous sampler or centralized online state machine.
 
 
 ## Train

@@ -6,6 +6,14 @@ import torch
 import torch.distributed as dist
 
 from opentad.utils import create_folder
+from opentad.utils.online_protocol import (
+    is_streaming_safe_emission,
+    resolve_sliding_window_for_post_processing,
+    should_run_video_level_nms,
+    sort_emission_ledger,
+    validate_streaming_safe_ext_cls,
+    validate_streaming_safe_world_size,
+)
 from opentad.models.utils.post_processing import build_classifier, batched_nms
 from opentad.evaluations import build_evaluator
 from opentad.datasets.base import SlidingWindowDataset
@@ -39,14 +47,29 @@ def eval_one_epoch(
             external_cls = build_classifier(cfg.post_processing.external_cls)
     else:
         external_cls = test_loader.dataset.class_map
+    validate_streaming_safe_ext_cls(external_cls, cfg.post_processing)
 
-    # whether the testing dataset is sliding window
-    cfg.post_processing.sliding_window = isinstance(test_loader.dataset, SlidingWindowDataset)
+    # whether video-level sliding-window merging is allowed. Streaming-safe
+    # emission keeps each prefix/window as an auditable online output.
+    cfg.post_processing.sliding_window = resolve_sliding_window_for_post_processing(
+        cfg.post_processing,
+        isinstance(test_loader.dataset, SlidingWindowDataset),
+    )
+    validate_streaming_safe_world_size(cfg.post_processing, world_size)
 
     # model forward
     model.eval()
+    target_model = model.module if hasattr(model, "module") else model
+    if hasattr(target_model, "reset_online_states"):
+        target_model.reset_online_states()
+
     result_dict = {}
     for data_dict in tqdm.tqdm(test_loader, disable=(rank != 0)):
+        if is_streaming_safe_emission(cfg.post_processing):
+            for meta in data_dict.get("metas", []):
+                if isinstance(meta, dict):
+                    meta["eval_rank"] = int(rank)
+
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             with torch.no_grad():
                 results = model(
@@ -97,8 +120,11 @@ def gather_ddp_results(world_size, result_dict, post_cfg):
             else:
                 result_dict[k] = v
 
+    if is_streaming_safe_emission(post_cfg):
+        return sort_emission_ledger(result_dict)
+
     # do nms for sliding window, if needed
-    if post_cfg.sliding_window == True and post_cfg.nms is not None:
+    if should_run_video_level_nms(post_cfg, getattr(post_cfg, "sliding_window", False)):
         # assert sliding_window=True
         tmp_result_dict = {}
         for k, v in result_dict.items():

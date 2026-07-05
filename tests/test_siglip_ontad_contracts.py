@@ -88,6 +88,16 @@ def test_p0_siglip2_config_is_frozen_recent_frame_no_memory_baseline():
     assert cfg.data_path.endswith("/raw_data/video")
     assert cfg.dataset.train.pipeline[1].frame_format == "video"
     assert cfg.dataset.train.pipeline[1].video_filename_tmpl == "{}.mp4"
+    assert cfg.dataset.train.stream_id == "thumos_siglip2_p0"
+    assert cfg.dataset.train.processor_id == cfg.fixed_raw_frame_protocol.processor
+    assert cfg.dataset.train.encoder_id == cfg.fixed_raw_frame_protocol.encoder_hub_id
+    assert cfg.dataset.train.image_size == cfg.fixed_raw_frame_protocol.image_size
+    assert cfg.dataset.train.frame_policy == cfg.fixed_raw_frame_protocol.frame_policy
+    assert "processor_id" in cfg.dataset.train.pipeline[-1].meta_keys
+    assert "encoder_id" in cfg.dataset.train.pipeline[-1].meta_keys
+    assert "image_size" in cfg.dataset.train.pipeline[-1].meta_keys
+    assert "frame_policy" in cfg.dataset.train.pipeline[-1].meta_keys
+    assert "input_format" in cfg.dataset.train.pipeline[-1].meta_keys
 
 
 def test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol():
@@ -111,6 +121,11 @@ def test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol():
     assert "backbone.adapter" in cfg.trainable_scope.modules
     assert "projection" in cfg.trainable_scope.modules
     assert "rpn_head" in cfg.trainable_scope.modules
+    assert cfg.dataset.train.stream_id == "thumos_siglip2_p1"
+    assert cfg.dataset.train.processor_id == cfg.fixed_raw_frame_protocol.processor
+    assert cfg.dataset.train.encoder_id == cfg.fixed_raw_frame_protocol.encoder_hub_id
+    assert cfg.dataset.train.image_size == cfg.fixed_raw_frame_protocol.image_size
+    assert cfg.dataset.train.frame_policy == cfg.fixed_raw_frame_protocol.frame_policy
 
 
 def test_p0_smoke_config_limits_remote_validation_run():
@@ -189,3 +204,4 @@ def test_remote_siglip_submit_uses_slurm_not_login_node_training():
     assert "PREFLIGHT" in script
     assert "transformers" in script
     assert "opencv" in script
+    assert "streaming-safe SigLIP/SigLIP2 online TAD routes require GPUS_PER_NODE=1" in script

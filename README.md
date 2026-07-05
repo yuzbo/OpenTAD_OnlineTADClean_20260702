@@ -1,5 +1,7 @@
 # OpenTAD Online/Causal TAD Clean Route
 
+Status: the raw-frame SigLIP/SigLIP2 and VideoMAE-adapter routes in this repo are validation candidate implementations under causal-audit validation. Streaming-safe emission-ledger evaluation is currently single-rank only, because DDP splits per-video online state across ranks. Do not claim paper-ready Online TAD results, DDP-auditable streaming evaluation, or visual-tower finetuning until emission-ledger evaluation, no-future tests, overfit checks, and real remote training results are attached.
+
 这是从 `E:\DeskTop\TAD\temrefuse-tad\OpenTAD_Back` 的受 Git 跟踪 `HEAD` 抽出的在线 TAD 干净代码库。当前代码中“在线 TAD”对应的是 `CausalTAD` 路线：用 causal attention 和 causal Mamba 限制时序信息流，面向流式或在线场景下的 temporal action detection。
 
 本库只保留 OpenTAD 相关库、`configs/causaltad/`、CausalTAD 基配置、训练评测入口和轻量测试；历史 wiki、日志、图表、checkpoint、数据、特征、压缩包和同步缓存都不进入版本库。

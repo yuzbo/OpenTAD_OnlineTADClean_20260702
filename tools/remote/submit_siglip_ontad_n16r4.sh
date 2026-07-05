@@ -29,6 +29,11 @@ if [ ! -f tools/env/activate_n16r4_causaltad.sh ]; then
     exit 1
 fi
 
+if [ "$GPUS_PER_NODE" != "1" ]; then
+    echo "streaming-safe SigLIP/SigLIP2 online TAD routes require GPUS_PER_NODE=1 for now" >&2
+    exit 1
+fi
+
 if [ "$PREFLIGHT" != "0" ]; then
     source tools/env/activate_n16r4_causaltad.sh
     python - <<'PY'

@@ -37,6 +37,12 @@ class Collect:
         meta_keys=[
             "video_name",
             "data_path",
+            "input_format",
+            "stream_id",
+            "processor_id",
+            "encoder_id",
+            "image_size",
+            "frame_policy",
             "fps",
             "duration",
             "snippet_stride",

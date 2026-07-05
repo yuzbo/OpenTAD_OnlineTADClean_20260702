@@ -4,6 +4,16 @@ import torch
 from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck
 from .base import BaseDetector
 from ..utils.post_processing import batched_nms, convert_to_seconds
+from opentad.utils.online_protocol import (
+    GridSpec,
+    OnlineCandidate,
+    OnlineEmitter,
+    OnlineState,
+    candidate_source_grid,
+    is_streaming_safe_emission,
+    make_stream_key,
+    validate_streaming_safe_ext_cls,
+)
 
 
 @DETECTORS.register_module()
@@ -14,6 +24,7 @@ class SingleStageDetector(BaseDetector):
 
     def __init__(self, backbone=None, projection=None, neck=None, rpn_head=None):
         super(SingleStageDetector, self).__init__()
+        self._online_states = {}
 
         if backbone is not None:
             self.backbone = build_backbone(backbone)
@@ -26,6 +37,9 @@ class SingleStageDetector(BaseDetector):
 
         if rpn_head is not None:
             self.rpn_head = build_head(rpn_head)
+
+    def reset_online_states(self):
+        self._online_states.clear()
 
     @property
     def with_backbone(self):
@@ -132,12 +146,15 @@ class SingleStageDetector(BaseDetector):
 
         pre_nms_thresh = getattr(post_cfg, "pre_nms_thresh", 0.001)
         pre_nms_topk = getattr(post_cfg, "pre_nms_topk", 2000)
+        streaming_safe = is_streaming_safe_emission(post_cfg)
+        validate_streaming_safe_ext_cls(ext_cls, post_cfg)
         num_classes = rpn_scores[0].shape[-1]
 
         results = {}
         for i in range(len(metas)):  # processing each video
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
+            source_grids = torch.arange(segments.shape[0])
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
@@ -164,12 +181,32 @@ class SingleStageDetector(BaseDetector):
                 segments = segments[pt_idxs]
                 scores = pred_prob
                 labels = cls_idxs
+                source_grids = pt_idxs.detach().cpu()
+
+            video_id = metas[i]["video_name"]
+
+            if streaming_safe:
+                results_per_video = self._format_streaming_safe_results(
+                    segments=segments,
+                    scores=scores,
+                    labels=labels,
+                    source_grids=source_grids,
+                    meta=metas[i],
+                    video_id=video_id,
+                    post_cfg=post_cfg,
+                    ext_cls=ext_cls,
+                    score_threshold=pre_nms_thresh,
+                    batch_index=i,
+                )
+                if video_id in results.keys():
+                    results[video_id].extend(results_per_video)
+                else:
+                    results[video_id] = results_per_video
+                continue
 
             # if not sliding window, do nms
             if post_cfg.sliding_window == False and post_cfg.nms is not None:
                 segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
-
-            video_id = metas[i]["video_name"]
 
             # convert segments to seconds
             segments = convert_to_seconds(segments, metas[i])
@@ -197,3 +234,129 @@ class SingleStageDetector(BaseDetector):
                 results[video_id] = results_per_video
 
         return results
+
+    def _format_streaming_safe_results(
+        self,
+        segments,
+        scores,
+        labels,
+        source_grids,
+        meta,
+        video_id,
+        post_cfg,
+        ext_cls,
+        score_threshold,
+        batch_index=0,
+    ):
+        fps = float(meta["fps"])
+        snippet_stride = int(meta.get("snippet_stride", 1))
+        window_start_frame = int(meta.get("window_start_frame", 0))
+        offset_frames = int(meta.get("offset_frames", 0))
+        emit_frame = meta.get("window_end_frame")
+        if emit_frame is None:
+            valid_len = int(meta.get("window_size", segments.shape[0]))
+            emit_frame = window_start_frame + valid_len * snippet_stride
+        emit_frame = int(emit_frame)
+
+        max_latency = float(getattr(post_cfg, "max_latency", 0.0))
+        latency_frames = int(getattr(post_cfg, "max_latency_frames", round(max_latency * fps)))
+        nms_iou = float(getattr(post_cfg, "streaming_nms_iou", 0.6))
+        grid_spec = GridSpec(
+            fps=fps,
+            snippet_stride=snippet_stride,
+            window_start_frame=window_start_frame,
+            offset_frames=offset_frames,
+        )
+        emitter = OnlineEmitter(
+            grid_spec=grid_spec,
+            score_threshold=score_threshold,
+            nms_iou_threshold=nms_iou,
+            latency_frames=latency_frames,
+        )
+        stream_key = make_stream_key(meta, batch_index=batch_index)
+        state = self._online_states.get(stream_key)
+        if state is None:
+            state = OnlineState(video_name=video_id)
+            self._online_states[stream_key] = state
+
+        grid_offset = int(round((window_start_frame + offset_frames) / max(snippet_stride, 1)))
+        candidates = []
+        for segment, score, label, source_grid in zip(segments, scores, labels, source_grids):
+            flattened_index = int(source_grid.item() if torch.is_tensor(source_grid) else source_grid)
+            candidates.append(
+                OnlineCandidate(
+                    source_grid=candidate_source_grid(
+                        end_grid=float(segment[1].item()),
+                        grid_offset=grid_offset,
+                        flattened_index=flattened_index,
+                    ),
+                    label=int(label.item() if torch.is_tensor(label) else label),
+                    score=float(score.item() if torch.is_tensor(score) else score),
+                    start_grid=float(segment[0].item()),
+                    end_grid=float(segment[1].item()),
+                )
+            )
+        emitted = emitter.step(video_name=video_id, now_frame=emit_frame, state=state, candidates=candidates)
+
+        if len(emitted) == 0:
+            return []
+
+        def build_row(det, segment, label, score):
+            if torch.is_tensor(segment):
+                start_sec = float(segment[0].item())
+                end_sec = float(segment[1].item())
+            else:
+                start_sec = float(segment[0])
+                end_sec = float(segment[1])
+            if torch.is_tensor(label):
+                label = int(label.item())
+            if torch.is_tensor(score):
+                score = float(score.item())
+            else:
+                score = float(score)
+            start_sec = max(0.0, start_sec)
+            end_sec = min(duration, end_sec)
+            return dict(
+                segment=[round(start_sec, 2), round(end_sec, 2)],
+                label=label,
+                score=round(float(score), 4),
+                emit_frame=int(det.emit_frame),
+                source_grid=int(det.source_grid),
+                source_grid_contract="absolute_proposal_end_grid",
+                stream_key=stream_key,
+                stream_id=meta.get("stream_id", "default"),
+                input_format=meta.get("input_format", "unknown"),
+                processor_id=meta.get("processor_id", meta.get("processor", "unknown")),
+                encoder_id=meta.get("encoder_id", meta.get("encoder", "unknown")),
+                image_size=meta.get("image_size", "unknown"),
+                frame_policy=meta.get("frame_policy", "unknown"),
+                window_start_frame=int(window_start_frame),
+                window_end_frame=int(emit_frame),
+                eval_rank=int(meta.get("eval_rank", 0)),
+                batch_index=int(batch_index),
+                start_frame=int(det.start_frame),
+                end_frame=int(det.end_frame),
+                latency_sec=round(float(det.latency_sec), 4),
+            )
+
+        duration = float(meta.get("duration", max(det.end_frame for det in emitted) / fps))
+        emitted_segments = torch.tensor(
+            [
+                [
+                    max(0.0, det.start_frame / fps),
+                    min(duration, det.end_frame / fps),
+                ]
+                for det in emitted
+            ],
+            dtype=torch.float32,
+        )
+        emitted_scores = torch.tensor([float(det.score) for det in emitted], dtype=torch.float32)
+
+        results_per_video = []
+        if isinstance(ext_cls, list):
+            for det, segment in zip(emitted, emitted_segments):
+                results_per_video.append(build_row(det, segment, ext_cls[det.label], det.score))
+        else:
+            for det, segment in zip(emitted, emitted_segments):
+                results_per_video.append(build_row(det, segment, det.label, det.score))
+        return results_per_video
