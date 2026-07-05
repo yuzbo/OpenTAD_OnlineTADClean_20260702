@@ -144,6 +144,23 @@ def test_p0_smoke_config_limits_remote_validation_run():
     assert cfg.dataset.test.allow_list == ["video_test_0000004"]
 
 
+def test_p0_smoke_overfit_config_uses_effective_lr_for_learning_check():
+    Config = __import__("mmengine.config", fromlist=["Config"]).Config
+
+    cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p0_smoke_overfit.py"))
+
+    assert cfg.route_stage == "P0-smoke-overfit"
+    assert cfg.formal_training_ready is False
+    assert cfg.model.projection.type == "TemporalMaxerProj"
+    assert cfg.scheduler.warmup_epoch == 1
+    assert cfg.scheduler.max_epoch == cfg.workflow.end_epoch
+    assert cfg.optimizer.lr > 1e-4
+    assert cfg.workflow.end_epoch >= 6
+    assert cfg.workflow.disable_checkpoint is True
+    assert cfg.dataset.train.allow_list == ["video_validation_0000051"]
+    assert cfg.dataset.train.stream_id == "thumos_siglip2_p0_smoke_overfit"
+
+
 def test_p2_config_adds_causal_motion_or_streaming_safe_emission_contribution():
     Config = __import__("mmengine.config", fromlist=["Config"]).Config
 
