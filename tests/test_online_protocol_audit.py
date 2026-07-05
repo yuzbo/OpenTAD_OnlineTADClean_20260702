@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 
 from opentad.utils.online_protocol import (
@@ -8,9 +11,20 @@ from opentad.utils.online_protocol import (
 
 
 def test_online_protocol_import_does_not_load_torch():
-    import sys
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import opentad.utils.online_protocol; raise SystemExit(1 if 'torch' in sys.modules else 0)",
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=20,
+    )
 
-    assert "torch" not in sys.modules
+    assert probe.returncode == 0, probe.stderr
 
 
 def test_audit_accepts_selected_packet_inside_bounded_buffer():
