@@ -130,6 +130,32 @@ def test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol():
     assert cfg.dataset.train.encoder_id == cfg.fixed_raw_frame_protocol.encoder_hub_id
     assert cfg.dataset.train.image_size == cfg.fixed_raw_frame_protocol.image_size
     assert cfg.dataset.train.frame_policy == cfg.fixed_raw_frame_protocol.frame_policy
+    assert cfg.post_processing.save_emission_ledger is True
+    assert cfg.post_processing.save_latency_summary is True
+
+
+def test_p1_pilot_config_runs_real_eval_with_emission_reports():
+    Config = __import__("mmengine.config", fromlist=["Config"]).Config
+
+    cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p1_pilot.py"))
+
+    assert cfg.route_stage == "P1-pilot"
+    assert cfg.formal_training_ready is False
+    assert cfg.model.backbone.use_stub_backbone is False
+    assert cfg.model.projection.type == "CausalTemporalMaxerProj"
+    assert cfg.model.rpn_head.memory_size == 0
+    assert cfg.dataset.train.input_format == "raw_frames"
+    assert len(cfg.dataset.train.allow_list) >= 4
+    assert len(cfg.dataset.test.allow_list) >= 4
+    assert cfg.workflow.val_start_epoch == 0
+    assert cfg.workflow.val_eval_interval == 1
+    assert cfg.workflow.end_epoch == cfg.scheduler.max_epoch
+    assert cfg.post_processing.streaming_safe_emission is True
+    assert cfg.post_processing.save_emission_ledger is True
+    assert cfg.post_processing.save_latency_summary is True
+    assert cfg.post_processing.emission_ledger_filename.endswith(".json")
+    assert cfg.post_processing.latency_summary_filename.endswith(".json")
+    assert cfg.evaluation.thread == 4
 
 
 def test_p0_smoke_config_limits_remote_validation_run():

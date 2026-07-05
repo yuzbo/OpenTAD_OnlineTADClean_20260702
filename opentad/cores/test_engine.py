@@ -11,6 +11,8 @@ from opentad.utils.online_protocol import (
     resolve_sliding_window_for_post_processing,
     should_run_video_level_nms,
     sort_emission_ledger,
+    summarize_emission_ledger,
+    validate_emission_ledger_summary,
     validate_streaming_safe_ext_cls,
     validate_streaming_safe_world_size,
 )
@@ -88,6 +90,10 @@ def eval_one_epoch(
                 result_dict[k] = v
 
     result_dict = gather_ddp_results(world_size, result_dict, cfg.post_processing)
+    emission_summary = None
+    if is_streaming_safe_emission(cfg.post_processing):
+        emission_summary = summarize_emission_ledger(result_dict)
+        validate_emission_ledger_summary(emission_summary)
 
     # load back the normal model dict
     if model_ema != None:
@@ -95,6 +101,33 @@ def eval_one_epoch(
 
     if rank == 0:
         result_eval = dict(results=result_dict)
+        if emission_summary is not None:
+            latency = emission_summary["latency_sec"]
+            logger.info(
+                "[OnlineEval]: emissions=%d videos=%d streams=%d latency_mean=%s latency_p95=%s "
+                "latency_max=%s no_future=%s",
+                emission_summary["num_emissions"],
+                emission_summary["num_videos"],
+                emission_summary["num_streams"],
+                latency["mean"],
+                latency["p95"],
+                latency["max"],
+                emission_summary["no_future"],
+            )
+            if getattr(cfg.post_processing, "save_emission_ledger", True):
+                ledger_path = os.path.join(
+                    cfg.work_dir,
+                    getattr(cfg.post_processing, "emission_ledger_filename", "emission_ledger.json"),
+                )
+                with open(ledger_path, "w") as out:
+                    json.dump(dict(results=result_dict, summary=emission_summary), out, indent=2)
+            if getattr(cfg.post_processing, "save_latency_summary", True):
+                summary_path = os.path.join(
+                    cfg.work_dir,
+                    getattr(cfg.post_processing, "latency_summary_filename", "emission_latency_summary.json"),
+                )
+                with open(summary_path, "w") as out:
+                    json.dump(emission_summary, out, indent=2)
         if cfg.post_processing.save_dict:
             result_path = os.path.join(cfg.work_dir, "result_detection.json")
             with open(result_path, "w") as out:

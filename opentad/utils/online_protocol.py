@@ -157,6 +157,113 @@ def sort_emission_ledger(result_dict):
     return sorted_results
 
 
+def _to_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _percentile(values, percent):
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(float(ordered[0]), 6)
+    rank = (len(ordered) - 1) * float(percent) / 100.0
+    lower = int(math.floor(rank))
+    upper = int(math.ceil(rank))
+    if lower == upper:
+        return round(float(ordered[lower]), 6)
+    weight = rank - lower
+    return round(float(ordered[lower] * (1.0 - weight) + ordered[upper] * weight), 6)
+
+
+def _summarize_values(values):
+    if not values:
+        return dict(count=0, min=None, mean=None, p50=None, p90=None, p95=None, max=None)
+    return dict(
+        count=len(values),
+        min=round(float(min(values)), 6),
+        mean=round(float(sum(values) / len(values)), 6),
+        p50=_percentile(values, 50),
+        p90=_percentile(values, 90),
+        p95=_percentile(values, 95),
+        max=round(float(max(values)), 6),
+    )
+
+
+def summarize_emission_ledger(result_dict):
+    """Return streaming emission and latency statistics for auditable online eval."""
+    per_video = {}
+    per_stream = {}
+    latencies = []
+    emit_frames = []
+    source_grids = []
+    future_end_violations = 0
+    negative_latency_rows = 0
+    non_monotonic_emit_rows = 0
+
+    for video_name, rows in result_dict.items():
+        per_video[video_name] = len(rows)
+        last_emit_by_stream = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            stream_key = row.get("stream_key", f"video={video_name}")
+            per_stream[stream_key] = per_stream.get(stream_key, 0) + 1
+
+            latency = _to_float(row.get("latency_sec"))
+            if latency is not None:
+                latencies.append(latency)
+                if latency < -1e-6:
+                    negative_latency_rows += 1
+
+            emit_frame = _to_float(row.get("emit_frame"))
+            end_frame = _to_float(row.get("end_frame"))
+            source_grid = _to_float(row.get("source_grid"))
+            if emit_frame is not None:
+                emit_frames.append(emit_frame)
+                previous_emit = last_emit_by_stream.get(stream_key)
+                if previous_emit is not None and emit_frame < previous_emit:
+                    non_monotonic_emit_rows += 1
+                last_emit_by_stream[stream_key] = emit_frame
+            if source_grid is not None:
+                source_grids.append(source_grid)
+            if emit_frame is not None and end_frame is not None and end_frame > emit_frame:
+                future_end_violations += 1
+
+    num_emissions = sum(per_video.values())
+    return dict(
+        num_videos=len(result_dict),
+        num_streams=len(per_stream),
+        num_emissions=num_emissions,
+        per_video_emissions=per_video,
+        per_stream_emissions=per_stream,
+        latency_sec=_summarize_values(latencies),
+        emit_frame=_summarize_values(emit_frames),
+        source_grid=_summarize_values(source_grids),
+        no_future=dict(
+            future_end_violations=future_end_violations,
+            negative_latency_rows=negative_latency_rows,
+            non_monotonic_emit_rows=non_monotonic_emit_rows,
+        ),
+    )
+
+
+def validate_emission_ledger_summary(summary):
+    no_future = summary.get("no_future", {})
+    violations = {
+        key: int(value)
+        for key, value in no_future.items()
+        if key.endswith("_violations") or key.endswith("_rows")
+        if int(value) > 0
+    }
+    if violations:
+        raise ProtocolViolation(f"streaming emission ledger failed no-future audit: {violations}")
+
+
 def _segment_iou(a: OnlineDetection, b: OnlineDetection) -> float:
     inter = max(0, min(a.end_frame, b.end_frame) - max(a.start_frame, b.start_frame))
     union = max(a.end_frame, b.end_frame) - min(a.start_frame, b.start_frame)

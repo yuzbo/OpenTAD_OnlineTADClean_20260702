@@ -149,6 +149,69 @@ def test_streaming_emission_ledger_sort_is_rank_order_independent():
     assert sorted_dict["v2"][0]["emit_frame"] == 8
 
 
+def test_streaming_emission_ledger_summary_reports_latency_and_no_future():
+    from opentad.utils.online_protocol import summarize_emission_ledger, validate_emission_ledger_summary
+
+    result_dict = {
+        "v1": [
+            {
+                "emit_frame": 32,
+                "source_grid": 4,
+                "end_frame": 24,
+                "latency_sec": 0.4,
+                "stream_key": "s1",
+            },
+            {
+                "emit_frame": 40,
+                "source_grid": 5,
+                "end_frame": 32,
+                "latency_sec": 0.2,
+                "stream_key": "s1",
+            },
+        ],
+        "v2": [
+            {
+                "emit_frame": 16,
+                "source_grid": 1,
+                "end_frame": 16,
+                "latency_sec": 0.0,
+                "stream_key": "s2",
+            },
+        ],
+    }
+
+    summary = summarize_emission_ledger(result_dict)
+
+    assert summary["num_videos"] == 2
+    assert summary["num_streams"] == 2
+    assert summary["num_emissions"] == 3
+    assert summary["latency_sec"]["mean"] == pytest.approx(0.2)
+    assert summary["latency_sec"]["p95"] == pytest.approx(0.38)
+    assert summary["no_future"]["future_end_violations"] == 0
+    validate_emission_ledger_summary(summary)
+
+
+def test_streaming_emission_ledger_summary_rejects_future_rows():
+    from opentad.utils.online_protocol import ProtocolViolation, summarize_emission_ledger, validate_emission_ledger_summary
+
+    summary = summarize_emission_ledger(
+        {
+            "v1": [
+                {
+                    "emit_frame": 32,
+                    "source_grid": 4,
+                    "end_frame": 40,
+                    "latency_sec": -0.1,
+                    "stream_key": "s1",
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(ProtocolViolation, match="no-future audit"):
+        validate_emission_ledger_summary(summary)
+
+
 def test_streaming_safe_online_eval_rejects_multi_rank_state_splitting():
     from opentad.utils.online_protocol import ProtocolViolation, validate_streaming_safe_world_size
 
@@ -175,6 +238,9 @@ def test_eval_engine_uses_streaming_safe_sliding_window_resolution():
     assert "sort_emission_ledger" in source
     assert "validate_streaming_safe_world_size" in source
     assert "validate_streaming_safe_ext_cls" in source
+    assert "summarize_emission_ledger" in source
+    assert "validate_emission_ledger_summary" in source
+    assert "emission_latency_summary.json" in source
     assert "reset_online_states" in source
 
 
