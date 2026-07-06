@@ -177,6 +177,28 @@ def test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval():
     assert cfg.evaluation.thread == 4
 
 
+def test_p1_full_60_config_uses_full_dataset_and_full_validation_eval():
+    Config = __import__("mmengine.config", fromlist=["Config"]).Config
+
+    cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p1_full_60.py"))
+
+    assert cfg.route_stage == "P1-full-60"
+    assert cfg.formal_training_ready is False
+    assert cfg.dataset.train.get("allow_list", None) is None
+    assert cfg.dataset.val.get("allow_list", None) is None
+    assert cfg.dataset.test.get("allow_list", None) is None
+    assert cfg.evaluation.get("allowed_videos", None) is None
+    assert cfg.scheduler.max_epoch == 60
+    assert cfg.workflow.end_epoch == 60
+    assert cfg.workflow.val_eval_interval == 10
+    assert cfg.workflow.checkpoint_interval == 5
+    assert cfg.optimizer.lr <= 1e-4
+    assert cfg.post_processing.pre_nms_thresh >= 0.05
+    assert cfg.post_processing.pre_nms_topk <= 300
+    assert cfg.post_processing.emission_ledger_filename == "p1_full_60_emission_ledger.json"
+    assert cfg.post_processing.latency_summary_filename == "p1_full_60_latency_summary.json"
+
+
 def test_p0_smoke_config_limits_remote_validation_run():
     Config = __import__("mmengine.config", fromlist=["Config"]).Config
 
