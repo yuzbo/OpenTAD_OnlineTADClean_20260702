@@ -43,6 +43,10 @@ workflow = dict(
 )
 
 post_processing = dict(
+    streaming=True,
+    sliding_window=False,
+    streaming_safe_emission=True,
+    max_latency=0.0,
     pre_nms_thresh=0.05,
     pre_nms_topk=300,
     streaming_nms_iou=0.5,

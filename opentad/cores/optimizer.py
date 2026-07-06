@@ -2,6 +2,10 @@ import torch
 from .layer_decay_optimizer import build_vit_optimizer
 
 
+def _unwrap_model(model):
+    return getattr(model, "module", model)
+
+
 def build_optimizer(cfg, model, logger):
     optimizer_type = cfg["type"]
     cfg.pop("type")
@@ -10,22 +14,23 @@ def build_optimizer(cfg, model, logger):
         return build_vit_optimizer(cfg, model, logger)
 
     backbone_cfg = cfg.pop("backbone", None) if "backbone" in cfg.keys() else None
+    target_model = _unwrap_model(model)
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
-    if hasattr(model.module, "backbone"):  # if backbone exists
-        if model.module.backbone.freeze_backbone == False:  # not frozen
+    if hasattr(target_model, "backbone"):  # if backbone exists
+        if target_model.backbone.freeze_backbone == False:  # not frozen
             assert (
                 backbone_cfg is not None
             ), "Freeze_backbone is set to False, but backbone parameters is not provided in the optimizer config."
             backbone_optim_groups = get_backbone_optim_groups(backbone_cfg, model, logger)
 
         else:  # frozen backbone
-            if hasattr(model.module.backbone, "get_optim_groups"):
+            if hasattr(target_model.backbone, "get_optim_groups"):
                 adapter_cfg = backbone_cfg or dict(
                     lr=cfg.get("lr", 1e-4),
                     weight_decay=cfg.get("weight_decay", 0.0),
                 )
-                backbone_optim_groups = model.module.backbone.get_optim_groups(adapter_cfg)
+                backbone_optim_groups = target_model.backbone.get_optim_groups(adapter_cfg)
                 if len(backbone_optim_groups) > 0:
                     logger.info("Train frozen-backbone adapters...")
                 else:
@@ -41,11 +46,11 @@ def build_optimizer(cfg, model, logger):
     # weight decay for a certain layer, the model should have a function called get_optim_groups
     if "paramwise" in cfg.keys() and cfg["paramwise"]:
         cfg.pop("paramwise")
-        det_optim_groups = model.module.get_optim_groups(cfg)
+        det_optim_groups = target_model.get_optim_groups(cfg)
     else:
         # optim_groups that does not contain backbone params
         detector_params = []
-        for name, param in model.module.named_parameters():
+        for name, param in target_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
                 continue
@@ -92,10 +97,11 @@ def get_backbone_optim_groups(cfg, model, logger):
 
     # rest_params_list
     rest_params_list = []
+    target_model = _unwrap_model(model)
 
     name_list = []
     # split the backbone parameters into different groups
-    for name, param in model.module.backbone.named_parameters():
+    for name, param in target_model.backbone.named_parameters():
         if not param.requires_grad:
             continue
 

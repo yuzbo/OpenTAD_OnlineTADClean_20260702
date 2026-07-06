@@ -44,14 +44,24 @@ The following review items are valid or high-priority risks in the current branc
 - Training supervision may still expose future action endpoints to prefix tokens. This needs a real online-censored target/loss audit and likely implementation.
 - The current emission protocol is windowed streaming-safe emission, not per-frame or per-token continuous low-latency streaming. Latency claims must be ledger-based.
 
+## Current-Commit Recheck And Fix Pass
+
+Rechecked against commit `3757188` and the working tree immediately after it:
+
+- Stale finding: the P1 config chain is not broken in the current branch. Resolved configs show:
+  `p1_full_60.py -> p1_fix.py -> p1_pilot.py -> p1.py -> p0.py`, with `FrameWindowDataset`, `OnlineSigLIPFrameEncoder`, `CausalTemporalMaxerProj`, `MATRHead`, raw-prediction cache disabled, and streaming-safe post-processing enabled.
+- Fixed engineering bug: `train_engine.py`, `optimizer.py`, and `layer_decay_optimizer.py` no longer assume a DDP `.module` wrapper for single-process/smoke paths.
+- Fixed config robustness issue: P1-fix and P1-full now explicitly preserve `streaming=True`, `sliding_window=False`, `streaming_safe_emission=True`, and `max_latency=0.0` instead of relying only on inherited merge state.
+- Confirmed remaining research blocker: `AnchorFreeHead.prepare_targets` and assigner targets still derive regression offsets from complete GT segments. This can supervise future endpoints for prefix tokens. It requires a dedicated online-censored target/loss design and is not silently paper-ready.
+- Confirmed remaining claim guard: the VideoMAE route remains contract-only stub and must not be described as a real VideoMAE online TAD route.
+
 ## Priority Backlog
 
 ### P0: Correctness And Claim Hygiene
 
-1. Make `train_engine.py` robust to non-DDP models everywhere:
+1. Done in the current recheck pass: make `train_engine.py`, `optimizer.py`, and `layer_decay_optimizer.py` robust to non-DDP models:
    `target_model = model.module if hasattr(model, "module") else model`.
-2. Add resolved-config tests for P0, P1, P1-pilot, P1-fix, and P1-full-60:
-   assert raw-frame dataset, SigLIP encoder, causal projection, streaming-safe emission, no raw prediction cache, and full-60 no allow-list.
+2. Partially done in the current recheck pass: add resolved-config and source-contract tests for P1-fix/P1-full streaming-safe post-processing. Existing tests also cover P0/P1/pilot/full raw-frame route inheritance.
 3. Add a full-chain no-future perturb test for the actual P1 config path, not only isolated encoder/projection units.
 4. Make the latency contract explicit:
    report and validate emission latency from ledger, and do not call the current route zero-latency.

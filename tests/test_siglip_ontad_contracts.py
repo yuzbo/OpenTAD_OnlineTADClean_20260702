@@ -199,6 +199,26 @@ def test_p1_full_60_config_uses_full_dataset_and_full_validation_eval():
     assert cfg.post_processing.latency_summary_filename == "p1_full_60_latency_summary.json"
 
 
+def test_p1_fix_and_full_configs_explicitly_preserve_streaming_safe_post_processing():
+    Config = __import__("mmengine.config", fromlist=["Config"]).Config
+
+    for config_name in (
+        "thumos_siglip2_matr_ontad_p1_fix.py",
+        "thumos_siglip2_matr_ontad_p1_full_60.py",
+    ):
+        source = read(f"configs/causaltad/{config_name}")
+        cfg = Config.fromfile(str(ROOT / f"configs/causaltad/{config_name}"))
+
+        assert "streaming=True" in source
+        assert "sliding_window=False" in source
+        assert "streaming_safe_emission=True" in source
+        assert "max_latency=0.0" in source
+        assert cfg.post_processing.streaming is True
+        assert cfg.post_processing.sliding_window is False
+        assert cfg.post_processing.streaming_safe_emission is True
+        assert cfg.post_processing.max_latency == 0.0
+
+
 def test_p0_smoke_config_limits_remote_validation_run():
     Config = __import__("mmengine.config", fromlist=["Config"]).Config
 

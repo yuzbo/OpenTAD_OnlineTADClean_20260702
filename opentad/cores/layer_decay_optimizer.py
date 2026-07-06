@@ -1,6 +1,10 @@
 import torch
 
 
+def _unwrap_model(model):
+    return getattr(model, "module", model)
+
+
 def get_layer_id_for_vit(var_name, max_layer_id):
     """Get the layer id to set the different learning rates in ``layer_wise``
     decay_type.
@@ -25,7 +29,8 @@ def get_layer_id_for_vit(var_name, max_layer_id):
 
 
 def build_vit_optimizer(cfg, model, logger):
-    assert model.module.backbone.freeze_backbone == False, "The backbone should not be frozen."
+    target_model = _unwrap_model(model)
+    assert target_model.backbone.freeze_backbone == False, "The backbone should not be frozen."
 
     num_layers = cfg["num_layers"] + 2
     decay_rate = cfg["layer_decay_rate"]
@@ -36,7 +41,7 @@ def build_vit_optimizer(cfg, model, logger):
     parameter_groups = {}
 
     # loop the backbone's parameters
-    for name, param in model.module.backbone.named_parameters():
+    for name, param in target_model.backbone.named_parameters():
         if not param.requires_grad:
             continue  # frozen weights
         if name.startswith("model.backbone.blocks") and "norm" in name:
@@ -74,11 +79,11 @@ def build_vit_optimizer(cfg, model, logger):
     # weight decay for a certain layer, the model should have a function called get_optim_groups
     if "paramwise" in cfg.keys() and cfg["paramwise"]:
         cfg.pop("paramwise")
-        det_optim_groups = model.module.get_optim_groups(cfg)
+        det_optim_groups = target_model.get_optim_groups(cfg)
     else:
         # optim_groups that does not contain backbone params
         detector_params = []
-        for name, param in model.module.named_parameters():
+        for name, param in target_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
                 continue

@@ -4,6 +4,10 @@ import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
 
 
+def _unwrap_model(model):
+    return getattr(model, "module", model)
+
+
 def _find_first_nonfinite_grad(model):
     for name, param in model.named_parameters():
         if param.grad is not None and not torch.isfinite(param.grad).all():
@@ -50,7 +54,7 @@ def _format_debug_report(report):
 
 
 def _collect_runtime_debug(model, data_dict, bad_param_name):
-    target = model.module if hasattr(model, "module") else model
+    target = _unwrap_model(model)
     if hasattr(target, "collect_runtime_debug"):
         try:
             return target.collect_runtime_debug(data_dict, bad_param_name)
@@ -60,7 +64,7 @@ def _collect_runtime_debug(model, data_dict, bad_param_name):
 
 
 def _grad_clip_parameters(model):
-    target = model.module if hasattr(model, "module") else model
+    target = _unwrap_model(model)
     if hasattr(target, "grad_clip_parameters"):
         return target.grad_clip_parameters()
     return model.parameters()
@@ -86,7 +90,7 @@ def train_one_epoch(
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
 
-    target = model.module if hasattr(model, "module") else model
+    target = _unwrap_model(model)
     if hasattr(target, "set_train_epoch"):
         target.set_train_epoch(curr_epoch)
 
@@ -96,8 +100,8 @@ def train_one_epoch(
 
         # current learning rate
         curr_backbone_lr = None
-        if hasattr(model.module, "backbone"):  # if backbone exists
-            if model.module.backbone.freeze_backbone == False:  # not frozen
+        if hasattr(target, "backbone"):  # if backbone exists
+            if getattr(target.backbone, "freeze_backbone", True) == False:  # not frozen
                 curr_backbone_lr = scheduler.get_last_lr()[0]
         curr_det_lr = scheduler.get_last_lr()[-1]
 
