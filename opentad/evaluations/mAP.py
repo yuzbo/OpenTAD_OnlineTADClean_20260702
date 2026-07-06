@@ -16,6 +16,7 @@ class mAP:
         tiou_thresholds,
         top_k=None,
         blocked_videos=None,
+        allowed_videos=None,
         thread=16,
     ):
         super().__init__()
@@ -38,6 +39,13 @@ class mAP:
         else:
             with open(blocked_videos) as json_file:
                 self.blocked_videos = json.load(json_file)
+        if allowed_videos is None:
+            self.allowed_videos = None
+        elif isinstance(allowed_videos, list):
+            self.allowed_videos = set(allowed_videos)
+        else:
+            with open(allowed_videos) as f:
+                self.allowed_videos = {line.rstrip("\n") for line in f if line.rstrip("\n")}
 
         # Import ground truth and predictions.
         self.ground_truth, self.activity_index = self._import_ground_truth(ground_truth_filename)
@@ -72,6 +80,8 @@ class mAP:
             if self.subset != v["subset"]:
                 continue
             if videoid in self.blocked_videos:
+                continue
+            if self.allowed_videos is not None and videoid not in self.allowed_videos:
                 continue
 
             # remove duplicated instances following ActionFormer
@@ -128,6 +138,8 @@ class mAP:
         label_lst, score_lst = [], []
         for video_id, v in data["results"].items():
             if video_id in self.blocked_videos:
+                continue
+            if self.allowed_videos is not None and video_id not in self.allowed_videos:
                 continue
             for result in v:
                 try:

@@ -158,6 +158,25 @@ def test_p1_pilot_config_runs_real_eval_with_emission_reports():
     assert cfg.evaluation.thread == 4
 
 
+def test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval():
+    Config = __import__("mmengine.config", fromlist=["Config"]).Config
+
+    cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_matr_ontad_p1_fix.py"))
+
+    assert cfg.route_stage == "P1-fix"
+    assert cfg.formal_training_ready is False
+    assert cfg.optimizer.lr <= 2e-4
+    assert cfg.optimizer.backbone.lr <= 1e-4
+    assert cfg.scheduler.warmup_epoch == 1
+    assert cfg.workflow.val_eval_interval == 1
+    assert cfg.post_processing.pre_nms_thresh >= 0.05
+    assert cfg.post_processing.pre_nms_topk <= 500
+    assert cfg.post_processing.save_emission_ledger is True
+    assert cfg.post_processing.save_latency_summary is True
+    assert cfg.evaluation.allowed_videos == cfg.dataset.test.allow_list
+    assert cfg.evaluation.thread == 4
+
+
 def test_p0_smoke_config_limits_remote_validation_run():
     Config = __import__("mmengine.config", fromlist=["Config"]).Config
 
