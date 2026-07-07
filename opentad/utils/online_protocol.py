@@ -44,6 +44,7 @@ class OnlineCandidate:
     score: float
     start_grid: float
     end_grid: float
+    source_frame: int = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class OnlineDetection:
     end_frame: int
     emit_frame: int
     source_grid: int
+    source_frame: int
     latency_sec: float
 
 
@@ -201,6 +203,7 @@ def summarize_emission_ledger(result_dict):
     emit_frames = []
     source_grids = []
     future_end_violations = 0
+    future_source_violations = 0
     negative_latency_rows = 0
     non_monotonic_emit_rows = 0
 
@@ -222,6 +225,7 @@ def summarize_emission_ledger(result_dict):
 
             emit_frame = _to_float(row.get("emit_frame"))
             end_frame = _to_float(row.get("end_frame"))
+            source_frame = _to_float(row.get("source_frame"))
             source_grid = _to_float(row.get("source_grid"))
             if emit_frame is not None:
                 emit_frames.append(emit_frame)
@@ -233,6 +237,8 @@ def summarize_emission_ledger(result_dict):
                 source_grids.append(source_grid)
             if emit_frame is not None and end_frame is not None and end_frame > emit_frame:
                 future_end_violations += 1
+            if emit_frame is not None and source_frame is not None and source_frame > emit_frame:
+                future_source_violations += 1
 
     num_emissions = sum(per_video.values())
     return dict(
@@ -246,6 +252,7 @@ def summarize_emission_ledger(result_dict):
         source_grid=_summarize_values(source_grids),
         no_future=dict(
             future_end_violations=future_end_violations,
+            future_source_violations=future_source_violations,
             negative_latency_rows=negative_latency_rows,
             non_monotonic_emit_rows=non_monotonic_emit_rows,
         ),
@@ -302,10 +309,17 @@ class OnlineEmitter:
                 continue
             if float(cand.score) < self.score_threshold:
                 continue
+            if cand.source_frame is not None and int(cand.source_frame) > int(now_frame):
+                continue
             start_frame = self.grid_spec.grid_to_frame(cand.start_grid)
             end_frame = self.grid_spec.grid_to_frame(cand.end_grid)
             if end_frame > eligible_end_frame:
                 continue
+            source_frame = (
+                int(cand.source_frame)
+                if cand.source_frame is not None
+                else self.grid_spec.grid_to_frame(cand.source_grid)
+            )
 
             detections.append(
                 OnlineDetection(
@@ -316,6 +330,7 @@ class OnlineEmitter:
                     end_frame=end_frame,
                     emit_frame=int(now_frame),
                     source_grid=int(cand.source_grid),
+                    source_frame=source_frame,
                     latency_sec=max(0.0, (float(now_frame) - float(end_frame)) / float(self.grid_spec.fps)),
                 )
             )

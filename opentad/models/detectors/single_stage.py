@@ -1,4 +1,5 @@
 import inspect
+import math
 
 import torch
 from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck
@@ -40,6 +41,8 @@ class SingleStageDetector(BaseDetector):
 
     def reset_online_states(self):
         self._online_states.clear()
+        if hasattr(self, "rpn_head") and hasattr(self.rpn_head, "reset_stream_state"):
+            self.rpn_head.reset_stream_state()
 
     @property
     def with_backbone(self):
@@ -105,13 +108,17 @@ class SingleStageDetector(BaseDetector):
             x, masks = self.neck(x, masks)
 
         if self.with_rpn_head:
-            rpn_losses = self.rpn_head.forward_train(
-                x,
-                masks,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-                **kwargs,
-            )
+            rpn_train_kwargs = dict(gt_segments=gt_segments, gt_labels=gt_labels, **kwargs)
+            try:
+                signature = inspect.signature(self.rpn_head.forward_train)
+                params = signature.parameters
+                accepts_kwargs = any(param.kind == param.VAR_KEYWORD for param in params.values())
+            except (TypeError, ValueError):
+                accepts_kwargs = False
+                params = {}
+            if accepts_kwargs or "metas" in params:
+                rpn_train_kwargs["metas"] = metas
+            rpn_losses = self.rpn_head.forward_train(x, masks, **rpn_train_kwargs)
             losses.update(rpn_losses)
 
         # only key has loss will be record
@@ -131,16 +138,26 @@ class SingleStageDetector(BaseDetector):
             x, masks = self.neck(x, masks)
 
         if self.with_rpn_head:
-            rpn_proposals, rpn_scores = self.rpn_head.forward_test(x, masks, metas=metas)
+            rpn_output = self.rpn_head.forward_test(x, masks, metas=metas)
+            if isinstance(rpn_output, tuple) and len(rpn_output) == 3:
+                rpn_proposals, rpn_scores, rpn_meta = rpn_output
+            else:
+                rpn_proposals, rpn_scores = rpn_output
+                rpn_meta = None
         else:
             rpn_proposals = rpn_scores = None
+            rpn_meta = None
 
-        predictions = rpn_proposals, rpn_scores
+        predictions = (rpn_proposals, rpn_scores, rpn_meta) if rpn_meta is not None else (rpn_proposals, rpn_scores)
         return predictions
 
     @torch.no_grad()
     def post_processing(self, predictions, metas, post_cfg, ext_cls, **kwargs):
-        rpn_proposals, rpn_scores = predictions
+        if isinstance(predictions, tuple) and len(predictions) == 3:
+            rpn_proposals, rpn_scores, rpn_meta = predictions
+        else:
+            rpn_proposals, rpn_scores = predictions
+            rpn_meta = None
         # rpn_proposals,  # [B,K,2]
         # rpn_scores,  # [B,K,num_classes] after sigmoid
 
@@ -155,6 +172,13 @@ class SingleStageDetector(BaseDetector):
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
             source_grids = torch.arange(segments.shape[0])
+            source_frames = None
+            if rpn_meta is not None:
+                if isinstance(rpn_meta, dict):
+                    if "source_grids" in rpn_meta:
+                        source_grids = rpn_meta["source_grids"][i].detach().cpu()
+                    if "source_frames" in rpn_meta:
+                        source_frames = rpn_meta["source_frames"][i].detach().cpu()
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
@@ -182,6 +206,10 @@ class SingleStageDetector(BaseDetector):
                 scores = pred_prob
                 labels = cls_idxs
                 source_grids = pt_idxs.detach().cpu()
+                if rpn_meta is not None and isinstance(rpn_meta, dict) and "source_grids" in rpn_meta:
+                    source_grids = rpn_meta["source_grids"][i].detach().cpu()[pt_idxs]
+                if source_frames is not None:
+                    source_frames = source_frames[pt_idxs]
 
             video_id = metas[i]["video_name"]
 
@@ -191,6 +219,7 @@ class SingleStageDetector(BaseDetector):
                     scores=scores,
                     labels=labels,
                     source_grids=source_grids,
+                    source_frames=source_frames,
                     meta=metas[i],
                     video_id=video_id,
                     post_cfg=post_cfg,
@@ -209,7 +238,11 @@ class SingleStageDetector(BaseDetector):
                 segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
 
             # convert segments to seconds
-            segments = convert_to_seconds(segments, metas[i])
+            seconds_meta = metas[i]
+            if rpn_meta is not None and isinstance(rpn_meta, dict) and rpn_meta.get("proposal_axis") == "dense_grid":
+                seconds_meta = dict(metas[i])
+                seconds_meta["irregular_native_axis"] = True
+            segments = convert_to_seconds(segments, seconds_meta)
 
             # merge with external classifier
             if isinstance(ext_cls, list):  # own classification results
@@ -241,6 +274,7 @@ class SingleStageDetector(BaseDetector):
         scores,
         labels,
         source_grids,
+        source_frames,
         meta,
         video_id,
         post_cfg,
@@ -281,19 +315,24 @@ class SingleStageDetector(BaseDetector):
 
         grid_offset = int(round((window_start_frame + offset_frames) / max(snippet_stride, 1)))
         candidates = []
-        for segment, score, label, source_grid in zip(segments, scores, labels, source_grids):
-            flattened_index = int(source_grid.item() if torch.is_tensor(source_grid) else source_grid)
+        if source_frames is None:
+            source_frames = [None for _ in range(len(source_grids))]
+        for segment, score, label, source_grid, source_frame in zip(segments, scores, labels, source_grids, source_frames):
+            local_source_grid = float(source_grid.item() if torch.is_tensor(source_grid) else source_grid)
+            absolute_source_grid = grid_offset + int(math.ceil(max(0.0, local_source_grid)))
+            explicit_source_frame = None
+            if source_frame is not None:
+                explicit_source_frame = int(source_frame.item() if torch.is_tensor(source_frame) else source_frame)
+            else:
+                explicit_source_frame = grid_spec.grid_to_frame(local_source_grid)
             candidates.append(
                 OnlineCandidate(
-                    source_grid=candidate_source_grid(
-                        end_grid=float(segment[1].item()),
-                        grid_offset=grid_offset,
-                        flattened_index=flattened_index,
-                    ),
+                    source_grid=absolute_source_grid,
                     label=int(label.item() if torch.is_tensor(label) else label),
                     score=float(score.item() if torch.is_tensor(score) else score),
                     start_grid=float(segment[0].item()),
                     end_grid=float(segment[1].item()),
+                    source_frame=explicit_source_frame,
                 )
             )
         emitted = emitter.step(video_name=video_id, now_frame=emit_frame, state=state, candidates=candidates)
@@ -322,7 +361,8 @@ class SingleStageDetector(BaseDetector):
                 score=round(float(score), 4),
                 emit_frame=int(det.emit_frame),
                 source_grid=int(det.source_grid),
-                source_grid_contract="absolute_proposal_end_grid",
+                source_frame=int(det.source_frame),
+                source_grid_contract="absolute_source_grid",
                 stream_key=stream_key,
                 stream_id=meta.get("stream_id", "default"),
                 input_format=meta.get("input_format", "unknown"),

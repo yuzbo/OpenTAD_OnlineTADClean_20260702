@@ -31,6 +31,7 @@ def test_all_raw_frame_routes_keep_formal_training_ready_false_until_online_eval
         "configs/causaltad/thumos_siglip2_matr_ontad_p1_fix.py",
         "configs/causaltad/thumos_siglip2_matr_ontad_p1_full_60.py",
         "configs/causaltad/thumos_siglip2_motion_matr_ontad_p2.py",
+        "configs/causaltad/thumos_siglip2_adaptive_matr_ontad_final.py",
         "configs/causaltad/thumos_videomae_adapter_matr_ontad.py",
     ]:
         cfg = Config.fromfile(str(ROOT / path))

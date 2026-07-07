@@ -93,6 +93,10 @@ class OnlineSigLIPFrameEncoder(nn.Module):
         revision=None,
         use_motion_branch=False,
         motion_branch=None,
+        frame_selector=None,
+        encode_policy="dense",
+        assert_selected_only=False,
+        return_token_times=False,
         output_layout="bct",
     ):
         super().__init__()
@@ -107,6 +111,11 @@ class OnlineSigLIPFrameEncoder(nn.Module):
         self.trust_remote_code = bool(trust_remote_code)
         self.revision = revision
         self.use_motion_branch = bool(use_motion_branch)
+        self.encode_policy = str(encode_policy)
+        if self.encode_policy not in {"dense", "selected_only"}:
+            raise ValueError("encode_policy must be 'dense' or 'selected_only'")
+        self.assert_selected_only = bool(assert_selected_only)
+        self.return_token_times = bool(return_token_times)
         self.output_layout = output_layout.lower()
         if self.output_layout not in {"bct", "btc"}:
             raise ValueError("output_layout must be either 'bct' or 'btc'")
@@ -164,6 +173,10 @@ class OnlineSigLIPFrameEncoder(nn.Module):
             )
         else:
             self.motion_branch = None
+        self.frame_selector = MODELS.build(frame_selector) if frame_selector is not None else None
+        if self.encode_policy == "selected_only" and self.frame_selector is None:
+            raise ValueError("encode_policy='selected_only' requires frame_selector")
+        self.last_selector_stats = {}
 
         self._configure_trainability()
 
@@ -367,29 +380,82 @@ class OnlineSigLIPFrameEncoder(nn.Module):
                 outputs.append(self._extract_features(chunk))
         return torch.cat(outputs, dim=0)
 
+    def _write_selection_meta(self, metas, selected):
+        if metas is None:
+            return
+        for batch_idx, meta in enumerate(metas):
+            if not isinstance(meta, dict):
+                continue
+            mask = selected.selected_masks[batch_idx]
+            positions = selected.selected_positions[batch_idx][mask].detach().cpu().tolist()
+            meta["irregular_selected_positions"] = [int(pos) for pos in positions]
+            meta["irregular_selected_valid_len"] = int(selected.dense_lengths[batch_idx].item())
+            meta["irregular_native_axis"] = False
+            meta["frame_policy"] = "adaptive_selected_frames"
+            if self.return_token_times:
+                fps = float(meta.get("fps", -1))
+                snippet_stride = int(meta.get("snippet_stride", 1))
+                window_start_frame = int(meta.get("window_start_frame", 0))
+                offset_frames = int(meta.get("offset_frames", 0))
+                if fps > 0:
+                    meta["token_times_sec"] = [
+                        (int(pos) * snippet_stride + window_start_frame + offset_frames) / fps
+                        for pos in positions
+                    ]
+
+    def _select_frames_before_vision(self, frames, masks=None, metas=None):
+        if self.frame_selector is None:
+            return None
+        selected = self.frame_selector.select(frames, masks=masks)
+        self._write_selection_meta(metas, selected)
+        total_dense = frames.shape[0] * frames.shape[1]
+        self.last_selector_stats = dict(
+            dense_frames=int(total_dense),
+            encoded_frames=int(selected.frames.shape[0]),
+            selected_slots=int(selected.selected_masks.sum().item()),
+            selected_only=bool(selected.frames.shape[0] < total_dense or self.encode_policy == "selected_only"),
+        )
+        if self.assert_selected_only and selected.frames.shape[0] > total_dense:
+            raise RuntimeError("selected-only encoder received more frames than dense input")
+        return selected
+
     def forward(self, frames, masks=None, metas=None):
-        del metas
         frames, masks = self._prepare_frames(frames, masks=masks)
         batch_size, seq_len, channels, height, width = frames.shape
-        pixels = frames.reshape(batch_size * seq_len, channels, height, width)
+        selected = self._select_frames_before_vision(frames, masks=masks, metas=metas)
+        if selected is None:
+            pixels = frames.reshape(batch_size * seq_len, channels, height, width)
+            output_len = seq_len
+            output_masks = masks
+            features = None
+        else:
+            pixels = selected.frames.reshape(selected.frames.shape[0], channels, height, width)
+            output_len = selected.selected_masks.shape[1]
+            output_masks = selected.selected_masks
+            features = frames.new_zeros((batch_size, output_len, self.embed_dims), dtype=torch.float32)
+
         if self.backend != "transformers":
             pixels = self._preprocess_pixels(pixels)
-        features = self._encode_pixels_chunked(pixels)
-        features = features.reshape(batch_size, seq_len, self.embed_dims)
+        encoded_features = self._encode_pixels_chunked(pixels)
+        if features is None:
+            features = encoded_features.reshape(batch_size, output_len, self.embed_dims)
+        else:
+            features = features.to(device=encoded_features.device, dtype=encoded_features.dtype)
+            features[selected.batch_indices, selected.slot_indices] = encoded_features
         if self.output_layout == "bct":
             features = features.transpose(1, 2).contiguous()
 
         if self.motion_branch is not None:
             if self.output_layout != "bct":
                 motion_input = features.transpose(1, 2).contiguous()
-                motion_output = self.motion_branch(motion_input, masks=masks)
+                motion_output = self.motion_branch(motion_input, masks=output_masks)
                 features = motion_output.transpose(1, 2).contiguous()
             else:
-                features = self.motion_branch(features, masks=masks)
-        elif masks is not None:
+                features = self.motion_branch(features, masks=output_masks)
+        elif output_masks is not None:
             if self.output_layout == "bct":
-                features = features * masks.unsqueeze(1).to(dtype=features.dtype)
+                features = features * output_masks.unsqueeze(1).to(dtype=features.dtype)
             else:
-                features = features * masks.unsqueeze(-1).to(dtype=features.dtype)
+                features = features * output_masks.unsqueeze(-1).to(dtype=features.dtype)
 
-        return features.to(torch.float32), masks
+        return features.to(torch.float32), output_masks

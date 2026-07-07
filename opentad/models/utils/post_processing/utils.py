@@ -3,6 +3,8 @@ import pickle
 import torch
 import torch.nn.functional as F
 
+from ..irregular_time_decode import decode_irregular_segments_to_seconds, encode_seconds_to_irregular_grid
+
 
 def boundary_choose(score):
     mask_high = score > score.max(dim=1, keepdim=True)[0] * 0.5
@@ -142,6 +144,13 @@ def grid_to_seconds(segments, meta):
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
         return segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d
+        token_times_sec = meta.get("token_times_sec", None)
+        if token_times_sec is not None and not meta.get("irregular_native_axis", False):
+            return decode_irregular_segments_to_seconds(
+                segments,
+                token_times_sec=token_times_sec,
+                duration=meta.get("duration", None),
+            )
         snippet_stride = meta["snippet_stride"]
         offset_frames = meta["offset_frames"]
         window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0
@@ -155,6 +164,14 @@ def grid_to_seconds(segments, meta):
 def seconds_to_grid(segments, meta):
     if meta["fps"] == -1:
         return segments / meta["duration"] * meta["resize_length"]
+
+    token_times_sec = meta.get("token_times_sec", None)
+    if token_times_sec is not None and not meta.get("irregular_native_axis", False):
+        return encode_seconds_to_irregular_grid(
+            segments,
+            token_times_sec=token_times_sec,
+            duration=meta.get("duration", None),
+        )
 
     snippet_stride = meta["snippet_stride"]
     offset_frames = meta["offset_frames"]

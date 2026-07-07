@@ -367,9 +367,92 @@ class MATRHead(AnchorFreeHead):
             losses["emit_loss"] = self._masked_bce_with_logits(emit_logits, emit_target, valid_mask) * self.emit_loss_weight
         return losses
 
-    def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, **kwargs):
+    @staticmethod
+    def _selected_axis_to_dense_axis(coords, positions, valid_len):
+        xp = torch.arange(positions.numel(), dtype=coords.dtype, device=coords.device)
+        xp = torch.cat([xp, xp.new_tensor([float(positions.numel())])], dim=0)
+        fp = torch.cat([positions, positions.new_tensor([float(valid_len)])], dim=0)
+        coord_shape = coords.shape
+        coord_flat = coords.reshape(-1).clamp(min=0.0, max=float(positions.numel()))
+        right_idx = torch.searchsorted(xp, coord_flat, right=True).clamp(min=1, max=xp.numel() - 1)
+        left_idx = right_idx - 1
+        x0 = xp[left_idx]
+        x1 = xp[right_idx]
+        y0 = fp[left_idx]
+        y1 = fp[right_idx]
+        weight = (coord_flat - x0) / (x1 - x0).clamp(min=1e-6)
+        return (y0 + weight * (y1 - y0)).reshape(coord_shape)
+
+    def _extract_shared_irregular_axis(self, metas):
+        if metas is None or len(metas) == 0 or not isinstance(metas[0], dict):
+            return None
+        if metas[0].get("irregular_native_axis", False):
+            return None
+
+        positions = metas[0].get("irregular_selected_positions", None)
+        valid_len = metas[0].get("irregular_selected_valid_len", None)
+        if positions is None or valid_len is None:
+            return None
+
+        positions = [int(pos) for pos in positions]
+        valid_len = int(valid_len)
+        for meta in metas[1:]:
+            if not isinstance(meta, dict) or meta.get("irregular_native_axis", False):
+                raise ValueError("MATRHead irregular selected-axis metadata must be shared by every batch item")
+            other_positions = meta.get("irregular_selected_positions", None)
+            other_valid_len = meta.get("irregular_selected_valid_len", None)
+            if other_positions is None or other_valid_len is None:
+                raise ValueError("MATRHead got partial irregular selected-axis metadata in a batch")
+            if [int(pos) for pos in other_positions] != positions or int(other_valid_len) != valid_len:
+                raise ValueError(
+                    "MATRHead irregular selected-axis currently requires identical selected positions per batch; "
+                    "use batch_size=1 for adaptive online routes"
+                )
+        return positions, valid_len
+
+    def _build_irregular_points(self, feat_list, metas):
+        axis = self._extract_shared_irregular_axis(metas)
+        if axis is None:
+            return None
+
+        positions, valid_len = axis
+        if len(positions) == 0:
+            return None
+
+        pts_list = []
+        for level, feat in enumerate(feat_list):
+            length = feat.shape[-1]
+            stride = float(self.prior_generator.strides[level])
+            coords = torch.arange(length, dtype=torch.float32, device=feat.device) * stride
+            if getattr(self.prior_generator, "use_offset", False):
+                coords = coords + 0.5 * stride
+
+            pos_tensor = torch.as_tensor(positions, dtype=torch.float32, device=feat.device)
+            centers = self._selected_axis_to_dense_axis(coords, pos_tensor, valid_len)
+            next_centers = self._selected_axis_to_dense_axis(coords + stride, pos_tensor, valid_len)
+            prev_centers = self._selected_axis_to_dense_axis((coords - stride).clamp(min=0.0), pos_tensor, valid_len)
+            right_scale = (next_centers - centers).clamp(min=1e-6)
+            left_scale = torch.where(coords > 0, centers - prev_centers, right_scale).clamp(min=1e-6)
+            point_scale = (0.5 * (left_scale + right_scale)).clamp(min=1e-6)
+
+            reg_range = torch.as_tensor(
+                self.prior_generator.regression_range[level],
+                dtype=torch.float32,
+                device=feat.device,
+            )
+            reg_range = reg_range[None].repeat(length, 1)
+            pts_list.append(torch.cat((centers[:, None], reg_range, point_scale[:, None]), dim=1))
+        return pts_list
+
+    def _build_points(self, feat_list, metas=None):
+        irregular_points = self._build_irregular_points(feat_list, metas)
+        if irregular_points is not None:
+            return irregular_points, "dense_grid"
+        return self.prior_generator(feat_list), "selected_axis"
+
+    def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
         cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred = self._predict_levels(feat_list, mask_list)
-        points = self.prior_generator(feat_list)
+        points, _ = self._build_points(feat_list, metas=metas)
         losses = self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
         losses.update(
             self._online_branch_losses(
@@ -388,7 +471,7 @@ class MATRHead(AnchorFreeHead):
     def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
         self._maybe_reset_stream_state(metas, mask_list)
         cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred = self._predict_levels(feat_list, mask_list)
-        points = self.prior_generator(feat_list)
+        points, proposal_axis = self._build_points(feat_list, metas=metas)
         return self.get_valid_proposals_scores(
             points,
             reg_pred,
@@ -398,6 +481,7 @@ class MATRHead(AnchorFreeHead):
             emit_pred=emit_pred,
             start_pred=start_pred,
             end_pred=end_pred,
+            proposal_axis=proposal_axis,
         )
 
     def get_valid_proposals_scores(
@@ -410,10 +494,11 @@ class MATRHead(AnchorFreeHead):
         emit_pred=None,
         start_pred=None,
         end_pred=None,
+        proposal_axis="selected_axis",
     ):
         proposals = self.get_refined_proposals(points, reg_pred)
+        point_centers = torch.cat(points, dim=0)[:, 0][None].to(device=proposals.device, dtype=proposals.dtype)
         if self.clamp_end_to_current:
-            point_centers = torch.cat(points, dim=0)[:, 0][None].to(device=proposals.device, dtype=proposals.dtype)
             max_end = point_centers + self.max_future_offset
             proposals = proposals.clone()
             proposals[..., 1] = torch.minimum(proposals[..., 1], max_end)
@@ -445,7 +530,11 @@ class MATRHead(AnchorFreeHead):
 
         masks = torch.cat(mask_list, dim=1)
         new_proposals, new_scores = [], []
+        new_source_grids = []
+        source_grids = point_centers.expand(proposals.shape[0], -1)
         for proposal, score, mask in zip(proposals, scores, masks):
             new_proposals.append(proposal[mask])
             new_scores.append(score[mask])
-        return new_proposals, new_scores
+        for source_grid, mask in zip(source_grids, masks):
+            new_source_grids.append(source_grid[mask])
+        return new_proposals, new_scores, {"source_grids": new_source_grids, "proposal_axis": proposal_axis}

@@ -7,5 +7,6 @@ from .dense_heads import *
 from .roi_heads import *
 from .losses import *
 from .transformer import *
+from .selectors import *
 
 __all__ = ["build_detector"]
