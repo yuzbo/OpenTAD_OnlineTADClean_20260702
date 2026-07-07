@@ -257,6 +257,8 @@ def test_single_stage_streaming_results_include_emission_ledger_fields():
     assert "grid_offset" in source
     assert "callable(ext_cls)" not in source
     assert "candidate_source_grid" in source
+    assert "source_grids = segments[:, 1].detach().clone()" in source
+    assert "has_explicit_source_grids" in source
     assert "window_start_frame" in source
     assert "window_end_frame" in source
     assert "processor_id" in source

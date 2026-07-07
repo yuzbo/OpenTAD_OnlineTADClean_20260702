@@ -1,5 +1,4 @@
 import inspect
-import math
 
 import torch
 from ..builder import DETECTORS, build_backbone, build_projection, build_head, build_neck
@@ -171,12 +170,14 @@ class SingleStageDetector(BaseDetector):
         for i in range(len(metas)):  # processing each video
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
-            source_grids = torch.arange(segments.shape[0])
+            source_grids = segments[:, 1].detach().clone()
             source_frames = None
+            has_explicit_source_grids = False
             if rpn_meta is not None:
                 if isinstance(rpn_meta, dict):
                     if "source_grids" in rpn_meta:
                         source_grids = rpn_meta["source_grids"][i].detach().cpu()
+                        has_explicit_source_grids = True
                     if "source_frames" in rpn_meta:
                         source_frames = rpn_meta["source_frames"][i].detach().cpu()
 
@@ -205,8 +206,8 @@ class SingleStageDetector(BaseDetector):
                 segments = segments[pt_idxs]
                 scores = pred_prob
                 labels = cls_idxs
-                source_grids = pt_idxs.detach().cpu()
-                if rpn_meta is not None and isinstance(rpn_meta, dict) and "source_grids" in rpn_meta:
+                source_grids = segments[:, 1].detach().cpu()
+                if has_explicit_source_grids:
                     source_grids = rpn_meta["source_grids"][i].detach().cpu()[pt_idxs]
                 if source_frames is not None:
                     source_frames = source_frames[pt_idxs]
@@ -319,7 +320,7 @@ class SingleStageDetector(BaseDetector):
             source_frames = [None for _ in range(len(source_grids))]
         for segment, score, label, source_grid, source_frame in zip(segments, scores, labels, source_grids, source_frames):
             local_source_grid = float(source_grid.item() if torch.is_tensor(source_grid) else source_grid)
-            absolute_source_grid = grid_offset + int(math.ceil(max(0.0, local_source_grid)))
+            absolute_source_grid = candidate_source_grid(local_source_grid, grid_offset=grid_offset)
             explicit_source_frame = None
             if source_frame is not None:
                 explicit_source_frame = int(source_frame.item() if torch.is_tensor(source_frame) else source_frame)
