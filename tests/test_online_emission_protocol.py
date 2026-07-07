@@ -259,6 +259,9 @@ def test_single_stage_streaming_results_include_emission_ledger_fields():
     assert "candidate_source_grid" in source
     assert "source_grids = segments[:, 1].detach().clone()" in source
     assert "has_explicit_source_grids" in source
+    assert "if num_classes == 1:" in source
+    assert "topk_idxs = keep_idxs1.nonzero" in source
+    assert "source_grids = source_grids[pt_idxs]" not in source
     assert "window_start_frame" in source
     assert "window_end_frame" in source
     assert "processor_id" in source

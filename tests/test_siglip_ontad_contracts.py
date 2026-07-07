@@ -174,7 +174,7 @@ def test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval():
     assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.scheduler.warmup_epoch == 1
     assert cfg.workflow.val_eval_interval == 1
-    assert cfg.post_processing.pre_nms_thresh >= 0.05
+    assert cfg.post_processing.pre_nms_thresh <= 0.001
     assert cfg.post_processing.pre_nms_topk <= 500
     assert cfg.post_processing.max_latency_frames == 96 * 8
     assert cfg.post_processing.save_emission_ledger is True
@@ -200,7 +200,7 @@ def test_p1_full_60_config_uses_full_dataset_and_full_validation_eval():
     assert cfg.workflow.checkpoint_interval == 5
     assert cfg.optimizer.lr <= 1e-4
     assert cfg.model.rpn_head.online_censored_training is True
-    assert cfg.post_processing.pre_nms_thresh >= 0.05
+    assert cfg.post_processing.pre_nms_thresh <= 0.001
     assert cfg.post_processing.pre_nms_topk <= 300
     assert cfg.post_processing.max_latency_frames == 96 * 8
     assert cfg.post_processing.emission_ledger_filename == "p1_full_60_emission_ledger.json"

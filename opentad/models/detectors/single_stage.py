@@ -183,7 +183,22 @@ class SingleStageDetector(BaseDetector):
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
+                keep_idxs1 = scores > pre_nms_thresh
+                scores = scores[keep_idxs1]
+                topk_idxs = keep_idxs1.nonzero(as_tuple=True)[0]
+
+                num_topk = min(pre_nms_topk, topk_idxs.size(0))
+                scores, idxs = scores.sort(descending=True)
+                scores = scores[:num_topk].clone()
+                pt_idxs = topk_idxs[idxs[:num_topk]].clone()
+
+                segments = segments[pt_idxs]
                 labels = torch.zeros(scores.shape[0]).contiguous()
+                source_grids = segments[:, 1].detach().cpu()
+                if has_explicit_source_grids:
+                    source_grids = rpn_meta["source_grids"][i].detach().cpu()[pt_idxs]
+                if source_frames is not None:
+                    source_frames = source_frames[pt_idxs]
             else:
                 pred_prob = scores.flatten()  # [N*class]
 

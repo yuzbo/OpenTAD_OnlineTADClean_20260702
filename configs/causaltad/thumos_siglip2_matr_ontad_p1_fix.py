@@ -3,7 +3,8 @@ _base_ = "./thumos_siglip2_matr_ontad_p1_pilot.py"
 # P1-fix: stabilize the raw-frame online TAD pilot after the first P1 run.
 # Changes versus p1_pilot:
 # - lower adapter/head LR to avoid late-epoch loss growth;
-# - raise pre-NMS threshold and lower top-k to reduce online emission volume;
+# - lower top-k to reduce online emission volume while keeping a permissive
+#   score gate so the pilot does not collapse to zero emissions;
 # - evaluate mAP only on the same validation videos used by the pilot route.
 
 route_stage = "P1-fix"
@@ -54,7 +55,7 @@ post_processing = dict(
     streaming_safe_emission=True,
     max_latency=0.0,
     max_latency_frames=96 * 8,
-    pre_nms_thresh=0.05,
+    pre_nms_thresh=0.001,
     pre_nms_topk=300,
     streaming_nms_iou=0.5,
     save_emission_ledger=True,
