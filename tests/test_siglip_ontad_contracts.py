@@ -337,6 +337,9 @@ def test_remote_siglip_submit_uses_slurm_not_login_node_training():
     assert "thumos_siglip2_matr_ontad_p0.py" in script
     assert "python tools/train.py" not in script
     assert "torchrun" in script
+    assert "MASTER_PORT" in script
+    assert "SLURM_JOB_ID" in script
+    assert "--master_port" in script
     assert "PREFLIGHT" in script
     assert "transformers" in script
     assert "opencv" in script

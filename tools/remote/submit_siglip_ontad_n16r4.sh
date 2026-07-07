@@ -88,8 +88,9 @@ source tools/env/activate_n16r4_causaltad.sh
 export OMP_NUM_THREADS=${CPUS_PER_TASK}
 export TOKENIZERS_PARALLELISM=false
 export NCCL_DEBUG=\${NCCL_DEBUG:-WARN}
+export MASTER_PORT=\${MASTER_PORT:-\$((20000 + \${SLURM_JOB_ID:-0} % 40000))}
 
-torchrun --standalone --nnodes=1 --nproc_per_node="${GPUS_PER_NODE}" tools/train.py "${CONFIG}" --id "${RUN_ID}" ${EXTRA_ARGS}
+torchrun --standalone --nnodes=1 --nproc_per_node="${GPUS_PER_NODE}" --master_port "\${MASTER_PORT}" tools/train.py "${CONFIG}" --id "${RUN_ID}" ${EXTRA_ARGS}
 SBATCH
 
 sbatch_args=()
