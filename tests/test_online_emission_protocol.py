@@ -44,7 +44,7 @@ def test_online_emitter_filters_future_segments_and_records_latency():
 
     grid = GridSpec(fps=30.0, snippet_stride=2, window_start_frame=100, offset_frames=0)
     state = OnlineState(video_name="v1")
-    emitter = OnlineEmitter(grid_spec=grid, score_threshold=0.1, nms_iou_threshold=0.5, latency_frames=0)
+    emitter = OnlineEmitter(grid_spec=grid, score_threshold=0.1, nms_iou_threshold=0.5, latency_frames=2)
     candidates = [
         OnlineCandidate(source_grid=0, label="A", score=0.9, start_grid=0.0, end_grid=1.0),
         OnlineCandidate(source_grid=1, label="A", score=0.8, start_grid=1.0, end_grid=3.0),
@@ -76,7 +76,7 @@ def test_online_emitter_suppresses_duplicate_against_prior_prefix():
 
     grid = GridSpec(fps=10.0, snippet_stride=1, window_start_frame=0, offset_frames=0)
     state = OnlineState(video_name="v1")
-    emitter = OnlineEmitter(grid_spec=grid, score_threshold=0.0, nms_iou_threshold=0.5, latency_frames=0)
+    emitter = OnlineEmitter(grid_spec=grid, score_threshold=0.0, nms_iou_threshold=0.5, latency_frames=10)
 
     first = emitter.step(
         video_name="v1",

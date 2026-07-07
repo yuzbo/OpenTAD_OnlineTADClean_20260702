@@ -409,20 +409,28 @@ class OnlineSigLIPFrameEncoder(nn.Module):
         selected = self.frame_selector.select(frames, masks=masks)
         self._write_selection_meta(metas, selected)
         total_dense = frames.shape[0] * frames.shape[1]
+        expected = int(selected.selected_masks.sum().item())
         self.last_selector_stats = dict(
             dense_frames=int(total_dense),
             encoded_frames=int(selected.frames.shape[0]),
-            selected_slots=int(selected.selected_masks.sum().item()),
+            selected_slots=expected,
             selected_only=bool(selected.frames.shape[0] < total_dense or self.encode_policy == "selected_only"),
         )
-        if self.assert_selected_only and selected.frames.shape[0] > total_dense:
-            raise RuntimeError("selected-only encoder received more frames than dense input")
+        if self.assert_selected_only:
+            if expected > total_dense:
+                raise RuntimeError("selected_only selector produced more slots than dense input")
+            if selected.frames.shape[0] != expected:
+                raise RuntimeError("selected_only selector produced frames that do not match selected mask slots")
         return selected
 
     def forward(self, frames, masks=None, metas=None):
         frames, masks = self._prepare_frames(frames, masks=masks)
         batch_size, seq_len, channels, height, width = frames.shape
-        selected = self._select_frames_before_vision(frames, masks=masks, metas=metas)
+        selected = None
+        if self.encode_policy == "selected_only":
+            selected = self._select_frames_before_vision(frames, masks=masks, metas=metas)
+            if selected is None:
+                raise RuntimeError("selected_only requires selected frames at runtime")
         if selected is None:
             pixels = frames.reshape(batch_size * seq_len, channels, height, width)
             output_len = seq_len
@@ -430,6 +438,10 @@ class OnlineSigLIPFrameEncoder(nn.Module):
             features = None
         else:
             pixels = selected.frames.reshape(selected.frames.shape[0], channels, height, width)
+            if self.assert_selected_only:
+                expected = int(selected.selected_masks.sum().item())
+                if pixels.shape[0] != expected:
+                    raise RuntimeError("selected_only invariant failed: pixels.shape[0] != expected")
             output_len = selected.selected_masks.shape[1]
             output_masks = selected.selected_masks
             features = frames.new_zeros((batch_size, output_len, self.embed_dims), dtype=torch.float32)

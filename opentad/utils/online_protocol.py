@@ -302,24 +302,29 @@ class OnlineEmitter:
                 f"last_emit_frame={state.last_emit_frame}"
             )
 
-        eligible_end_frame = int(now_frame) - self.latency_frames
+        now_frame = int(now_frame)
         detections = []
         for cand in candidates:
             if int(cand.source_grid) <= state.last_emitted_grid:
                 continue
             if float(cand.score) < self.score_threshold:
                 continue
-            if cand.source_frame is not None and int(cand.source_frame) > int(now_frame):
+            if cand.source_frame is not None and int(cand.source_frame) > now_frame:
                 continue
             start_frame = self.grid_spec.grid_to_frame(cand.start_grid)
             end_frame = self.grid_spec.grid_to_frame(cand.end_grid)
-            if end_frame > eligible_end_frame:
+            if end_frame > now_frame:
+                continue
+            latency_frames = now_frame - end_frame
+            if self.latency_frames >= 0 and latency_frames > self.latency_frames:
                 continue
             source_frame = (
                 int(cand.source_frame)
                 if cand.source_frame is not None
                 else self.grid_spec.grid_to_frame(cand.source_grid)
             )
+            if source_frame > now_frame:
+                continue
 
             detections.append(
                 OnlineDetection(
@@ -328,10 +333,10 @@ class OnlineEmitter:
                     score=float(cand.score),
                     start_frame=start_frame,
                     end_frame=end_frame,
-                    emit_frame=int(now_frame),
+                    emit_frame=now_frame,
                     source_grid=int(cand.source_grid),
                     source_frame=source_frame,
-                    latency_sec=max(0.0, (float(now_frame) - float(end_frame)) / float(self.grid_spec.fps)),
+                    latency_sec=max(0.0, float(latency_frames) / float(self.grid_spec.fps)),
                 )
             )
 
@@ -346,7 +351,7 @@ class OnlineEmitter:
         if emitted:
             state.last_emitted_grid = max(state.last_emitted_grid, max(det.source_grid for det in emitted))
             state.emitted.extend(emitted)
-        state.last_emit_frame = int(now_frame)
+        state.last_emit_frame = now_frame
         return emitted
 
 

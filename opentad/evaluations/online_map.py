@@ -72,27 +72,36 @@ class OnlineMAP(mAP):
             return False
         return True
 
+    def _filter_prediction_results(self, results):
+        filtered = {}
+        for video_id, rows in results.items():
+            if video_id in self.blocked_videos:
+                continue
+            if self.allowed_videos is not None and video_id not in self.allowed_videos:
+                continue
+            kept_rows = []
+            for row in rows:
+                if self._validate_ledger_row(row):
+                    kept_rows.append(row)
+            filtered[video_id] = kept_rows
+        return filtered
+
     def _import_prediction(self, prediction_filename):
         data = self._load_prediction_data(prediction_filename)
         if not all([field in list(data.keys()) for field in self.pred_fields]):
             raise IOError("Please input a valid prediction file.")
 
+        filtered_results = self._filter_prediction_results(data["results"])
         self.online_metric_dict = compute_online_detection_metrics(
-            data["results"],
+            filtered_results,
             require_no_future=self.require_no_future,
         )
 
         video_lst, t_start_lst, t_end_lst = [], [], []
         label_lst, score_lst = [], []
         latency_lst, emit_frame_lst = [], []
-        for video_id, rows in data["results"].items():
-            if video_id in self.blocked_videos:
-                continue
-            if self.allowed_videos is not None and video_id not in self.allowed_videos:
-                continue
+        for video_id, rows in filtered_results.items():
             for result in rows:
-                if not self._validate_ledger_row(result):
-                    continue
                 try:
                     label = self.activity_index[result["label"]]
                 except Exception:

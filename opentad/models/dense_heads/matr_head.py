@@ -396,6 +396,8 @@ class MATRHead(AnchorFreeHead):
 
         positions = [int(pos) for pos in positions]
         valid_len = int(valid_len)
+        if len(metas) > 1:
+            raise ValueError("adaptive irregular MATRHead currently requires batch_size=1")
         for meta in metas[1:]:
             if not isinstance(meta, dict) or meta.get("irregular_native_axis", False):
                 raise ValueError("MATRHead irregular selected-axis metadata must be shared by every batch item")

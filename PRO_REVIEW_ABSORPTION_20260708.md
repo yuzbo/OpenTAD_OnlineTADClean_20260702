@@ -155,11 +155,31 @@ Not allowed:
 
 This review changes the immediate priority from P3/P4 expansion back to P0 hardening.
 
-Next implementation should start with:
+P0 implementation status after the follow-up hardening patch:
 
 1. `opentad/utils/online_protocol.py::OnlineEmitter.step`
+   now treats `latency_frames` as a maximum allowed delay and updates
+   `last_emit_frame` on every step.
 2. `opentad/models/selectors/causal_frame_selector.py::_valid_indices`
+   now fails fast on all-invalid masks instead of fabricating frame 0.
 3. `opentad/evaluations/online_map.py::OnlineMAP._import_prediction`
-4. `opentad/models/dense_heads/matr_head.py` irregular batch fail-fast
-5. runtime tests for all four fixes
+   now filters predictions before computing both online stats and AP rows.
+4. `opentad/models/dense_heads/matr_head.py`
+   now fail-closes irregular selected-axis metadata to `batch_size=1`.
+5. `opentad/models/backbones/online_siglip_adapter.py`
+   now enforces stricter selected-only runtime invariants.
 
+Regression coverage:
+
+- `tests/test_p0_review_hardening.py`
+- `tests/test_online_emission_protocol.py`
+
+Local verification:
+
+- `python -m pytest tests -q -rs`
+- `python -m py_compile` over changed implementation and test files
+
+Remaining HOLD items are still the P1/P2 research items above: true adaptive
+selection, online-censored supervision, explicit proposal-axis/coordinate-system
+contracts for selected-axis decode, window-bounded irregular timing, and remote
+real training/evaluation evidence.

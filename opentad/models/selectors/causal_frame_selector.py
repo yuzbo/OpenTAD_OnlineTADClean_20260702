@@ -50,7 +50,7 @@ class CausalFrameSelector(nn.Module):
             return torch.arange(seq_len, device=device, dtype=torch.long)
         valid = torch.nonzero(mask.bool(), as_tuple=False).flatten().to(device=device)
         if valid.numel() == 0:
-            return torch.zeros(1, device=device, dtype=torch.long)
+            raise ValueError("CausalFrameSelector got all-invalid mask; refusing to encode a synthetic frame")
         return valid
 
     def _select_stride(self, valid):
