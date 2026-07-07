@@ -176,8 +176,12 @@ class LoadRawFrames:
         frames = []
         cache = {}
         try:
+            video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            max_frame_idx = max(video_frame_count - 1, 0) if video_frame_count > 0 else None
             for frame_idx in frame_inds:
                 frame_idx = int(frame_idx) + self.start_index
+                if max_frame_idx is not None:
+                    frame_idx = min(max(frame_idx, 0), max_frame_idx)
                 if frame_idx in cache:
                     frames.append(cache[frame_idx])
                     continue

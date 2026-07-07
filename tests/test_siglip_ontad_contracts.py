@@ -323,8 +323,9 @@ def test_raw_frame_dataset_aligns_gt_with_fixed_fps_protocol():
     source = read("opentad/datasets/raw_frame.py")
 
     assert "effective_frames" in source
-    assert "self.fps > 0" in source
-    assert "video_info[\"duration\"] * self.fps" in source
+    assert "resolve_raw_video_total_frames" in source
+    assert "def get_num_frames" in source
+    assert "self.get_num_frames(video_info)" in source
 
 
 def test_remote_siglip_submit_uses_slurm_not_login_node_training():

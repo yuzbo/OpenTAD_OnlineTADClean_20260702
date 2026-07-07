@@ -64,6 +64,11 @@ class SlidingWindowDataset:
             f"truncated as {len(self.data_list)} windows."
         )
 
+    def get_num_frames(self, video_info):
+        if self.fps > 0:
+            return int(video_info["duration"] * self.fps)
+        return int(video_info["frame"])
+
     def get_dataset(self):
         with open(self.ann_file, "r") as f:
             anno_database = json.load(f)["database"]
@@ -108,10 +113,7 @@ class SlidingWindowDataset:
 
     def split_video_to_windows(self, video_name, video_info, video_anno):
         # need: video frame, video duration, video fps
-        if self.fps > 0:
-            num_frames = int(video_info["duration"] * self.fps)
-        else:
-            num_frames = video_info["frame"]
+        num_frames = self.get_num_frames(video_info)
 
         video_snippet_centers = np.arange(0, num_frames, self.snippet_stride)
         snippet_num = len(video_snippet_centers)

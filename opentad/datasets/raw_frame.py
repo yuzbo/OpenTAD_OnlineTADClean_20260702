@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from .base import SlidingWindowDataset, filter_same_annotation
 from .builder import DATASETS
+from .frame_bounds import resolve_raw_video_total_frames
 
 
 @DATASETS.register_module()
@@ -31,13 +32,13 @@ class FrameWindowDataset(SlidingWindowDataset):
         self.frame_policy = frame_policy
         super().__init__(**kwargs)
 
+    def get_num_frames(self, video_info):
+        return resolve_raw_video_total_frames(video_info, self.fps)
+
     def get_gt(self, video_info, thresh=0.0):
         gt_segment = []
         gt_label = []
-        if self.fps > 0:
-            effective_frames = int(video_info["duration"] * self.fps)
-        else:
-            effective_frames = int(video_info["frame"])
+        effective_frames = self.get_num_frames(video_info)
         for anno in video_info.get("annotations", []):
             if anno.get("label") == "Ambiguous":
                 continue
@@ -64,7 +65,7 @@ class FrameWindowDataset(SlidingWindowDataset):
             video_anno["gt_segments"] = video_anno["gt_segments"] - window_snippet_centers[0] - self.offset_frames
             video_anno["gt_segments"] = video_anno["gt_segments"] / self.snippet_stride
 
-        total_frames = int(video_info["duration"] * self.fps) if self.fps > 0 else int(video_info["frame"])
+        total_frames = self.get_num_frames(video_info)
         avg_fps = total_frames / max(float(video_info["duration"]), 1e-6)
         window_start_frame = int(window_snippet_centers[0])
         window_end_frame = int(window_start_frame + len(window_snippet_centers) * self.snippet_stride)
