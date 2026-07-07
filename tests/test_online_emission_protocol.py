@@ -295,7 +295,7 @@ def test_single_stage_streaming_post_processing_filters_future_and_writes_ledger
         nms=dict(max_seg_num=1, min_score=0.0),
         pre_nms_thresh=0.001,
         pre_nms_topk=10,
-        max_latency=0.0,
+        max_latency=2.0 / 30.0,
     )
 
     results = detector.post_processing(predictions, metas, post_cfg=post_cfg, ext_cls=["Action"])
