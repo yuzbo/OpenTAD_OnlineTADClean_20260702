@@ -16,11 +16,13 @@ def test_core_training_helpers_do_not_assume_ddp_module_wrapper():
     train_source = read("opentad/cores/train_engine.py")
     optimizer_source = read("opentad/cores/optimizer.py")
     layer_decay_source = read("opentad/cores/layer_decay_optimizer.py")
+    misc_source = read("opentad/utils/misc.py")
 
     assert "hasattr(model.module" not in train_source
     assert "model.module.backbone" not in train_source
     assert "model.module" not in optimizer_source
     assert "model.module" not in layer_decay_source
+    assert "dist.is_initialized()" in misc_source
 
 
 def _torch_or_skip():
