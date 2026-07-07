@@ -63,6 +63,7 @@ class MATRHead(AnchorFreeHead):
         memory_size=0,
         clamp_end_to_current=True,
         max_future_offset=0.0,
+        online_censored_training=False,
         boundary_loss_weight=0.0,
         actionness_loss_weight=0.0,
         emit_loss_weight=0.0,
@@ -80,6 +81,7 @@ class MATRHead(AnchorFreeHead):
         self.memory_size = int(memory_size)
         self.clamp_end_to_current = bool(clamp_end_to_current)
         self.max_future_offset = float(max_future_offset)
+        self.online_censored_training = bool(online_censored_training)
         self.boundary_loss_weight = float(boundary_loss_weight)
         self.actionness_loss_weight = float(actionness_loss_weight)
         self.emit_loss_weight = float(emit_loss_weight)
@@ -108,6 +110,8 @@ class MATRHead(AnchorFreeHead):
             label_smoothing=label_smoothing,
             center_sample=center_sample,
             center_sample_radius=center_sample_radius,
+            online_censored_training=online_censored_training,
+            online_censored_max_future_offset=max_future_offset,
             **kwargs,
         )
 
@@ -310,6 +314,9 @@ class MATRHead(AnchorFreeHead):
                 start_mask = (centers - segment[0]).abs() <= self.boundary_target_radius * strides
                 end_mask = (centers - segment[1]).abs() <= self.boundary_target_radius * strides
                 inside_mask = torch.logical_and(centers >= segment[0], centers <= segment[1])
+                if self.online_censored_training:
+                    endpoint_observed = segment[1] <= centers + self.max_future_offset + 1e-6
+                    end_mask = torch.logical_and(end_mask, endpoint_observed)
 
                 start_target[batch_idx, start_mask, label] = 1.0
                 end_target[batch_idx, end_mask, label] = 1.0

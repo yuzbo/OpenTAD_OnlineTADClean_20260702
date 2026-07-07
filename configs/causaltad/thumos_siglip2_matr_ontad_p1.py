@@ -17,6 +17,15 @@ dataset = dict(
     test=dict(stream_id=raw_frame_stream_id),
 )
 
+model = dict(
+    rpn_head=dict(
+        # P1 trains online emissions from raw frames. Keep classification and
+        # actionness labels, but do not regress or emit a future endpoint before
+        # that endpoint is observable under the streaming latency budget.
+        online_censored_training=True,
+    )
+)
+
 trainable_scope = dict(
     modules=[
         "backbone.adapter",

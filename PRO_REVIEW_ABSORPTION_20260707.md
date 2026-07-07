@@ -54,6 +54,23 @@ Disallowed wording until verified:
 6. Adaptive selection must prove that the heavy visual encoder/detector only processes selected frames/tokens. Dense processing followed by sparse masking is not enough.
 7. Irregular token timestamps must be decoded in seconds. Pretending sparse selected tokens form a uniform dense grid will likely break high-tIoU mAP.
 
+## Current-Commit Recheck: 2026-07-08
+
+Confirmed code-level issue:
+
+- P1 inference clamps predicted end times to the current point, but the training path still supervised full future endpoints through `AnchorFreeHead.losses` and MATR end/emit auxiliary targets.
+
+Implemented guard:
+
+- `AnchorFreeHead` now supports `online_censored_training` and `online_censored_max_future_offset`.
+- When enabled, positive regression losses whose target end is later than `point_center + max_future_offset` are weighted to zero.
+- `MATRHead` passes its `max_future_offset` into the base head and masks end/emit targets until the endpoint is observable.
+- P1/P1-pilot/P1-fix/P1-full-60/P2 configs inherit `online_censored_training=True`.
+
+Remaining limitation:
+
+- This is the first online-censored training guard, not a full Stage-1 paper implementation. Center-sampling, positive assignment policy, action-prefix supervision, target audits, and ablation results still need formal validation.
+
 ## Paper-Level Route
 
 Recommended final method name:

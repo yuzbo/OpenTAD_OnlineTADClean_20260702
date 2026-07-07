@@ -37,6 +37,8 @@ class AnchorFreeHead(nn.Module):
         cls_residual_cfg=None,
         reg_residual_cfg=None,
         quality_head_cfg=None,
+        online_censored_training=False,
+        online_censored_max_future_offset=0.0,
     ):
         super(AnchorFreeHead, self).__init__()
 
@@ -48,6 +50,8 @@ class AnchorFreeHead(nn.Module):
         self.label_smoothing = label_smoothing
         self.filter_similar_gt = filter_similar_gt
         self.use_regress_range = use_regress_range
+        self.online_censored_training = bool(online_censored_training)
+        self.online_censored_max_future_offset = float(online_censored_max_future_offset)
         self.assignment_debug = assignment_debug or {}
         self.assignment_debug_enabled = bool(self.assignment_debug.get("enabled", False))
         self.cls_residual_cfg = None if cls_residual_cfg is None else dict(cls_residual_cfg)
@@ -89,6 +93,17 @@ class AnchorFreeHead(nn.Module):
         self._train_epoch = None
         self._last_assigner_stats = []
         self._reset_assignment_diag()
+
+    def _online_censored_regression_weights(self, points, pos_mask, target_segments):
+        if not self.online_censored_training or target_segments.numel() == 0:
+            return None
+
+        concat_points = torch.cat(points, dim=0).to(device=target_segments.device, dtype=target_segments.dtype)
+        point_centers = concat_points[:, 0][None].expand(pos_mask.shape[0], -1)[pos_mask]
+        endpoint_observed = target_segments[:, 1] <= (
+            point_centers + self.online_censored_max_future_offset + 1e-6
+        )
+        return endpoint_observed.to(dtype=target_segments.dtype)
 
     def set_train_epoch(self, curr_epoch):
         self._train_epoch = int(curr_epoch)
@@ -699,10 +714,16 @@ class AnchorFreeHead(nn.Module):
             # giou loss defined on positive samples
             reg_loss_values = self.reg_loss(pred_segments, target_segments, reduction="none")
             self._update_regression_diag(points, pos_mask, pred_segments, target_segments, reg_loss_values)
+            online_censored_reg_weights = self._online_censored_regression_weights(points, pos_mask, target_segments)
             if target_weights is None:
-                reg_loss = reg_loss_values.sum()
+                if online_censored_reg_weights is None:
+                    reg_loss = reg_loss_values.sum()
+                else:
+                    reg_loss = (reg_loss_values * online_censored_reg_weights).sum()
             else:
-                pos_weights = target_weights[pos_mask]
+                pos_weights = target_weights[pos_mask].to(dtype=reg_loss_values.dtype)
+                if online_censored_reg_weights is not None:
+                    pos_weights = pos_weights * online_censored_reg_weights
                 reg_loss = (reg_loss_values * pos_weights).sum()
             reg_loss /= loss_normalizer
 

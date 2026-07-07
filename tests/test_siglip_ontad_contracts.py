@@ -115,6 +115,8 @@ def test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol():
     assert cfg.model.projection.strict_causal is True
     assert cfg.model.rpn_head.memory_size == 0
     assert cfg.model.rpn_head.use_boundary_scores is False
+    assert cfg.model.rpn_head.online_censored_training is True
+    assert cfg.model.rpn_head.max_future_offset == 0.0
     assert cfg.dataset.train.input_format == "raw_frames"
     assert cfg.dataset.train.window_overlap_ratio == 0.0
     assert cfg.dataset.val.window_overlap_ratio == 0.0
@@ -144,6 +146,7 @@ def test_p1_pilot_config_runs_real_eval_with_emission_reports():
     assert cfg.model.backbone.use_stub_backbone is False
     assert cfg.model.projection.type == "CausalTemporalMaxerProj"
     assert cfg.model.rpn_head.memory_size == 0
+    assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.dataset.train.input_format == "raw_frames"
     assert len(cfg.dataset.train.allow_list) >= 4
     assert len(cfg.dataset.test.allow_list) >= 4
@@ -167,6 +170,7 @@ def test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval():
     assert cfg.formal_training_ready is False
     assert cfg.optimizer.lr <= 2e-4
     assert cfg.optimizer.backbone.lr <= 1e-4
+    assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.scheduler.warmup_epoch == 1
     assert cfg.workflow.val_eval_interval == 1
     assert cfg.post_processing.pre_nms_thresh >= 0.05
@@ -193,6 +197,7 @@ def test_p1_full_60_config_uses_full_dataset_and_full_validation_eval():
     assert cfg.workflow.val_eval_interval == 10
     assert cfg.workflow.checkpoint_interval == 5
     assert cfg.optimizer.lr <= 1e-4
+    assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.post_processing.pre_nms_thresh >= 0.05
     assert cfg.post_processing.pre_nms_topk <= 300
     assert cfg.post_processing.emission_ledger_filename == "p1_full_60_emission_ledger.json"
@@ -267,8 +272,25 @@ def test_p2_config_adds_causal_motion_or_streaming_safe_emission_contribution():
     assert cfg.post_processing.max_latency == 0.0
     assert cfg.model.rpn_head.clamp_end_to_current is True
     assert cfg.model.rpn_head.max_future_offset == 0.0
+    assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.model.rpn_head.use_boundary_scores is False
     assert cfg.model.rpn_head.use_emit_scores is True
+
+
+def test_online_censored_training_masks_future_endpoint_supervision():
+    anchor_source = read("opentad/models/dense_heads/anchor_free_head.py")
+    matr_source = read("opentad/models/dense_heads/matr_head.py")
+
+    assert "online_censored_training" in anchor_source
+    assert "online_censored_max_future_offset" in anchor_source
+    assert "endpoint_observed" in anchor_source
+    assert "target_segments[:, 1]" in anchor_source
+    assert "reg_loss_values *" in anchor_source
+
+    assert "online_censored_training" in matr_source
+    assert "endpoint_observed" in matr_source
+    assert "end_mask = torch.logical_and(end_mask, endpoint_observed)" in matr_source
+    assert "emit_target[batch_idx, end_mask, 0] = 1.0" in matr_source
 
 
 def test_frame_grid_seconds_roundtrip_helpers_are_declared():
