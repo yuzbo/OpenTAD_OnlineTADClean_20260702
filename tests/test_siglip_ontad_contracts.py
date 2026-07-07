@@ -339,7 +339,8 @@ def test_remote_siglip_submit_uses_slurm_not_login_node_training():
     assert "torchrun" in script
     assert "MASTER_PORT" in script
     assert "SLURM_JOB_ID" in script
-    assert "--master_port" in script
+    assert "--rdzv_endpoint" in script
+    assert "127.0.0.1:${MASTER_PORT}" in script or "127.0.0.1:\\${MASTER_PORT}" in script
     assert "PREFLIGHT" in script
     assert "transformers" in script
     assert "opencv" in script

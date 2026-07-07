@@ -90,7 +90,7 @@ export TOKENIZERS_PARALLELISM=false
 export NCCL_DEBUG=\${NCCL_DEBUG:-WARN}
 export MASTER_PORT=\${MASTER_PORT:-\$((20000 + \${SLURM_JOB_ID:-0} % 40000))}
 
-torchrun --standalone --nnodes=1 --nproc_per_node="${GPUS_PER_NODE}" --master_port "\${MASTER_PORT}" tools/train.py "${CONFIG}" --id "${RUN_ID}" ${EXTRA_ARGS}
+torchrun --nnodes=1 --nproc_per_node="${GPUS_PER_NODE}" --rdzv_backend=c10d --rdzv_endpoint "127.0.0.1:\${MASTER_PORT}" tools/train.py "${CONFIG}" --id "${RUN_ID}" ${EXTRA_ARGS}
 SBATCH
 
 sbatch_args=()
