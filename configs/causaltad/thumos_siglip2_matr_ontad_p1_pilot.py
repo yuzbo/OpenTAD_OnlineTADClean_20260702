@@ -74,6 +74,7 @@ workflow = dict(
 )
 
 post_processing = dict(
+    max_latency_frames=window_size * 8,
     save_emission_ledger=True,
     save_latency_summary=True,
     emission_ledger_filename="p1_pilot_emission_ledger.json",

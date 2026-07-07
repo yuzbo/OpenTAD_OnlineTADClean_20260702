@@ -257,6 +257,9 @@ post_processing = dict(
     streaming_safe_emission=True,
     sliding_window=False,
     max_latency=0.0,
+    # The emitter still rejects future end/source frames.  This frame budget
+    # allows any already-observed proposal inside the current online window.
+    max_latency_frames=window_size * snippet_stride_frames,
     save_emission_ledger=True,
     save_latency_summary=True,
     nms=dict(

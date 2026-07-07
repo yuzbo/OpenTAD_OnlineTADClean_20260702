@@ -200,6 +200,7 @@ post_processing = dict(
     streaming=True,
     sliding_window=False,
     max_latency=0.0,
+    max_latency_frames=window_size,
     nms=dict(
         use_soft_nms=True,
         sigma=0.5,

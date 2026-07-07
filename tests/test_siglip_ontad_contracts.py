@@ -154,6 +154,7 @@ def test_p1_pilot_config_runs_real_eval_with_emission_reports():
     assert cfg.workflow.val_eval_interval == 1
     assert cfg.workflow.end_epoch == cfg.scheduler.max_epoch
     assert cfg.post_processing.streaming_safe_emission is True
+    assert cfg.post_processing.max_latency_frames == cfg.window_size * 8
     assert cfg.post_processing.save_emission_ledger is True
     assert cfg.post_processing.save_latency_summary is True
     assert cfg.post_processing.emission_ledger_filename.endswith(".json")
@@ -175,6 +176,7 @@ def test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval():
     assert cfg.workflow.val_eval_interval == 1
     assert cfg.post_processing.pre_nms_thresh >= 0.05
     assert cfg.post_processing.pre_nms_topk <= 500
+    assert cfg.post_processing.max_latency_frames == 96 * 8
     assert cfg.post_processing.save_emission_ledger is True
     assert cfg.post_processing.save_latency_summary is True
     assert cfg.evaluation.allowed_videos == cfg.dataset.test.allow_list
@@ -200,6 +202,7 @@ def test_p1_full_60_config_uses_full_dataset_and_full_validation_eval():
     assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.post_processing.pre_nms_thresh >= 0.05
     assert cfg.post_processing.pre_nms_topk <= 300
+    assert cfg.post_processing.max_latency_frames == 96 * 8
     assert cfg.post_processing.emission_ledger_filename == "p1_full_60_emission_ledger.json"
     assert cfg.post_processing.latency_summary_filename == "p1_full_60_latency_summary.json"
 
@@ -218,10 +221,12 @@ def test_p1_fix_and_full_configs_explicitly_preserve_streaming_safe_post_process
         assert "sliding_window=False" in source
         assert "streaming_safe_emission=True" in source
         assert "max_latency=0.0" in source
+        assert "max_latency_frames" in source
         assert cfg.post_processing.streaming is True
         assert cfg.post_processing.sliding_window is False
         assert cfg.post_processing.streaming_safe_emission is True
         assert cfg.post_processing.max_latency == 0.0
+        assert cfg.post_processing.max_latency_frames == 96 * 8
 
 
 def test_p0_smoke_config_limits_remote_validation_run():
@@ -239,6 +244,7 @@ def test_p0_smoke_config_limits_remote_validation_run():
     assert cfg.solver.train.num_workers == 0
     assert cfg.dataset.train.allow_list == ["video_validation_0000051"]
     assert cfg.dataset.test.allow_list == ["video_test_0000004"]
+    assert cfg.post_processing.max_latency_frames == cfg.window_size * 8
 
 
 def test_p0_smoke_overfit_config_uses_effective_lr_for_learning_check():
@@ -270,6 +276,7 @@ def test_p2_config_adds_causal_motion_or_streaming_safe_emission_contribution():
     assert cfg.model.backbone.backbone.motion_branch.causal is True
     assert cfg.post_processing.streaming_safe_emission is True
     assert cfg.post_processing.max_latency == 0.0
+    assert cfg.post_processing.max_latency_frames == cfg.window_size * cfg.snippet_stride_frames
     assert cfg.model.rpn_head.clamp_end_to_current is True
     assert cfg.model.rpn_head.max_future_offset == 0.0
     assert cfg.model.rpn_head.online_censored_training is True

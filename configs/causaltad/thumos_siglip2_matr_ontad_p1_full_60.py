@@ -47,6 +47,7 @@ post_processing = dict(
     sliding_window=False,
     streaming_safe_emission=True,
     max_latency=0.0,
+    max_latency_frames=96 * 8,
     pre_nms_thresh=0.05,
     pre_nms_topk=300,
     streaming_nms_iou=0.5,

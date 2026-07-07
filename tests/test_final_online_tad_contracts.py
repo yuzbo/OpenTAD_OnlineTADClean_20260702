@@ -21,6 +21,7 @@ def test_final_route_declares_adaptive_selected_only_irregular_online_metric():
     assert cfg.model.backbone.backbone.return_token_times is True
     assert cfg.model.rpn_head.online_censored_training is True
     assert cfg.post_processing.streaming_safe_emission is True
+    assert cfg.post_processing.max_latency_frames == 192 * 8
     assert cfg.post_processing.online_map.enabled is True
     assert cfg.evaluation.online_map.enabled is True
 

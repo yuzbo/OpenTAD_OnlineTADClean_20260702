@@ -63,4 +63,8 @@ workflow = dict(
     disable_checkpoint=True,
 )
 
+post_processing = dict(
+    max_latency_frames=window_size * 8,
+)
+
 work_dir = "exps/thumos/siglip2_matr_ontad_p0_smoke"
