@@ -67,6 +67,13 @@ def test_slurm_submitter_keeps_generated_runs_outside_code_checkout():
     assert 'RUN_DIR="$BASE_DIR/slurm/' not in source
 
 
+def test_slurm_submitter_uses_n16r4_accepted_cpu_default():
+    source = (ROOT / "tools" / "remote" / "submit_pceh_n16r4.sh").read_text(encoding="utf-8")
+
+    assert "CPUS_PER_TASK=${CPUS_PER_TASK:-4}" in source
+    assert "CPUS_PER_TASK=${CPUS_PER_TASK:-8}" not in source
+
+
 def test_remote_check_helper_reads_slurm_and_gate_artifacts():
     source = (ROOT / "tools" / "remote" / "check_pceh_n16r4.sh").read_text(encoding="utf-8")
 
