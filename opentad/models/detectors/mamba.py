@@ -19,16 +19,20 @@ class VideoMambaSuite(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
-        blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
+        whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)
+        blacklist_weight_modules = (
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+        )
 
         # loop over all modules / params
         for mn, m in self.named_modules():
-            for pn, p in m.named_parameters():
+            for pn, p in m.named_parameters(recurse=False):
                 fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
-
-                # exclude the backbone parameters
-                if fpn.startswith("backbone"):
+                if not p.requires_grad:
                     continue
 
                 if pn.endswith("bias"):
@@ -56,15 +60,22 @@ class VideoMambaSuite(SingleStageDetector):
                 ):
                     # corner case for mamba
                     decay.add(fpn)
+                elif p.ndim < 2:
+                    no_decay.add(fpn)
+                else:
+                    decay.add(fpn)
 
-        # validate that we considered every parameter
-        param_dict = {pn: p for pn, p in self.named_parameters() if not pn.startswith("backbone")}
+        # Validate that all trainable parameters, including backbone adapters,
+        # are assigned to exactly one optimizer group.
+        param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
         assert (
             len(param_dict.keys() - union_params) == 0
-        ), "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
+        ), "trainable parameters %s were not separated into either decay/no_decay set!" % (
+            str(param_dict.keys() - union_params),
+        )
 
         # create the pytorch optimizer object
         optim_groups = [

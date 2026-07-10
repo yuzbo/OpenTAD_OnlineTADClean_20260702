@@ -17,6 +17,10 @@ from .mamba import VideoMambaSuite
 from .dyfadet import DyFADet
 from .irregular_actionformer import IrregularActionFormer
 from .sparse_completion_actionformer import SparseCompletionActionFormer
+from .pceh_ontad import PCEHOnlineDetector
+from ..builder import DETECTORS
+
+DETECTORS.register_module()(PCEHOnlineDetector)
 from .query_sparse_detector import QuerySparseDetector
 
 __all__ = [
