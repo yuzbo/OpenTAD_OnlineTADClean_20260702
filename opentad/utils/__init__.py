@@ -8,6 +8,11 @@ _EXPORTS = {
     "ModelEma": ("ema", "ModelEma"),
     "save_checkpoint": ("checkpoint", "save_checkpoint"),
     "save_best_checkpoint": ("checkpoint", "save_best_checkpoint"),
+    "AuditReport": ("causal_audit", "AuditReport"),
+    "audit_future_perturbation": ("causal_audit", "audit_future_perturbation"),
+    "audit_chunk_invariance": ("causal_audit", "audit_chunk_invariance"),
+    "audit_packet_metadata": ("causal_audit", "audit_packet_metadata"),
+    "audit_batch_isolation": ("causal_audit", "audit_batch_isolation"),
 }
 
 __all__ = list(_EXPORTS)
