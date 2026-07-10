@@ -33,11 +33,20 @@ def sanitize_stream_packet_meta(meta, packet):
 class StreamingRawFrameDataset(FrameWindowDataset):
     """Chronological raw-frame packets for strict single-rank On-TAD."""
 
-    def __init__(self, packet_size_frames=8, expose_terminal_duration=True, **kwargs):
+    def __init__(
+        self,
+        packet_size_frames=8,
+        delay_budget_frames=30,
+        expose_terminal_duration=True,
+        **kwargs,
+    ):
         self.packet_size_frames = int(packet_size_frames)
+        self.delay_budget_frames = float(delay_budget_frames)
         self.expose_terminal_duration = bool(expose_terminal_duration)
         if self.packet_size_frames <= 0:
             raise ValueError("packet_size_frames must be positive")
+        if self.delay_budget_frames < 0:
+            raise ValueError("delay_budget_frames must be non-negative")
         super().__init__(**kwargs)
 
         packet_manifests = {}
@@ -106,6 +115,7 @@ class StreamingRawFrameDataset(FrameWindowDataset):
             packet_end_frame=int(packet.packet_end_frame),
             is_video_start=bool(packet.is_video_start),
             is_video_end=bool(packet.is_video_end),
+            delay_budget_frames=self.delay_budget_frames,
             duration=duration,
             offset_frames=self.offset_frames,
             **local_anno,

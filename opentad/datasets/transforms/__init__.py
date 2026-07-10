@@ -13,6 +13,7 @@ from .formatting import (
     FormatShapeByKey,
 )
 from .end_to_end import PrepareVideoInfo, LoadSnippetFrames, LoadFrames
+from .streaming import LoadStreamPacketFrames
 
 __all__ = [
     "LoadFeats",
@@ -33,4 +34,5 @@ __all__ = [
     "PrepareVideoInfo",
     "LoadSnippetFrames",
     "LoadFrames",
+    "LoadStreamPacketFrames",
 ]

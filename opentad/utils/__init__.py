@@ -13,6 +13,8 @@ _EXPORTS = {
     "audit_chunk_invariance": ("causal_audit", "audit_chunk_invariance"),
     "audit_packet_metadata": ("causal_audit", "audit_packet_metadata"),
     "audit_batch_isolation": ("causal_audit", "audit_batch_isolation"),
+    "audit_recorded_trace_equivalence": ("causal_audit", "audit_recorded_trace_equivalence"),
+    "audit_emission_ledger": ("causal_audit", "audit_emission_ledger"),
     "StreamPacketSpec": ("stream_packets", "StreamPacketSpec"),
     "build_packet_manifest": ("stream_packets", "build_packet_manifest"),
     "ChronologicalStreamBatchSampler": ("stream_packets", "ChronologicalStreamBatchSampler"),

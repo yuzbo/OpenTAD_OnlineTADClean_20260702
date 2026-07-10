@@ -3,8 +3,10 @@ import pytest
 from opentad.utils.causal_audit import (
     audit_batch_isolation,
     audit_chunk_invariance,
+    audit_emission_ledger,
     audit_future_perturbation,
     audit_packet_metadata,
+    audit_recorded_trace_equivalence,
 )
 from opentad.utils.online_protocol import ProtocolViolation
 
@@ -177,3 +179,42 @@ def test_batch_isolation_detects_cross_stream_state():
             stream_b=[10, 20, 30],
             runner=leaky_runner,
         )
+
+
+def test_recorded_trace_equivalence_supports_offline_audit_artifacts():
+    reference = [{"time": 0, "score": 0.1}, {"time": 1, "score": 0.2}]
+    candidate = [{"time": 0, "score": 0.1}, {"time": 1, "score": 99.0}]
+
+    report = audit_recorded_trace_equivalence(
+        reference,
+        candidate,
+        through_time=0,
+        name="future_perturbation_recorded",
+    )
+
+    assert report.passed
+    assert report.comparisons == 1
+
+
+def test_emission_ledger_audits_immutable_read_provenance():
+    rows = {
+        "v1": [
+            {
+                "segment": [0.0, 0.2],
+                "start_frame": 0,
+                "end_frame": 6,
+                "emit_frame": 7,
+                "max_raw_frame_read": 7,
+                "max_cache_source_frame": 6,
+                "label": "Action",
+                "score": 0.8,
+                "stream_key": "video=v1|stream=default",
+                "immutable": True,
+            }
+        ]
+    }
+
+    assert audit_emission_ledger(rows).passed
+    rows["v1"][0]["max_cache_source_frame"] = 8
+    with pytest.raises(ProtocolViolation, match="future cache source"):
+        audit_emission_ledger(rows)

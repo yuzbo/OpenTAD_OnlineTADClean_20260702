@@ -1,6 +1,6 @@
 from collections import deque
 from dataclasses import asdict, dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import Iterable, Mapping, Sequence, Union
 
 from .online_protocol import ProtocolViolation
 
@@ -40,12 +40,42 @@ def build_packet_manifest(video_id: str, total_frames: int, packet_size_frames: 
     return tuple(packets)
 
 
+def select_packet_frame_indices(packet_start_frame, packet_end_frame, policy, stride=1):
+    """Select only observable raw frames from one half-open stream packet."""
+
+    start = int(packet_start_frame)
+    end = int(packet_end_frame)
+    stride = int(stride)
+    if end <= start:
+        raise ValueError("packet_end_frame must exceed packet_start_frame")
+    if stride <= 0:
+        raise ValueError("packet frame stride must be positive")
+    policy = str(policy)
+    if policy in {"packet_all_frames", "all"}:
+        indices = tuple(range(start, end))
+    elif policy in {"packet_recent_frame", "recent_frame_only", "recent"}:
+        indices = (end - 1,)
+    elif policy in {"causal_stride", "fixed_causal_stride"}:
+        indices = tuple(range(start, end, stride))
+    elif policy.startswith("fixed_causal_stride"):
+        suffix = policy[len("fixed_causal_stride") :]
+        parsed_stride = int(suffix) if suffix else stride
+        if parsed_stride <= 0:
+            raise ValueError("packet frame stride must be positive")
+        indices = tuple(range(start, end, parsed_stride))
+    else:
+        raise ValueError(f"unsupported packet frame policy: {policy}")
+    if not indices or any(index < start or index >= end for index in indices):
+        raise ValueError(f"packet selection escaped [{start}, {end}): {indices}")
+    return indices
+
+
 class ChronologicalStreamBatchSampler:
     """Yield packet indices while preserving the order of every video lane."""
 
     def __init__(
         self,
-        manifests: Mapping[str, Sequence[int]] | Iterable[Sequence[int]],
+        manifests: Union[Mapping[str, Sequence[int]], Iterable[Sequence[int]]],
         batch_size: int,
         rank: int = 0,
         world_size: int = 1,
@@ -99,3 +129,7 @@ class ChronologicalStreamBatchSampler:
 
     def __len__(self):
         return sum(1 for _ in self._iter_batches())
+
+    def set_epoch(self, epoch):
+        # Chronological order is deliberately invariant across epochs.
+        self.epoch = int(epoch)

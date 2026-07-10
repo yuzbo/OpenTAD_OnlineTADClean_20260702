@@ -240,7 +240,7 @@ class PCEHOnlineDetector(nn.Module):
         logits = self.head(newest)
 
         current_frame = packet_end - 1
-        max_raw_frame_read = current_frame
+        max_raw_frame_read = max(encoded_sources)
         max_cache_source_frame = max(cache_sources)
         decode_meta = {
             "current_frame": current_frame,
@@ -306,6 +306,7 @@ class PCEHOnlineDetector(nn.Module):
         stream_gt_labels=None,
         **kwargs,
     ):
+        ext_cls = kwargs.pop("ext_cls", None)
         del gt_segments, gt_labels, infer_cfg, post_cfg, kwargs
         if inputs.shape[0] != 1 or len(metas) != 1:
             raise ProtocolViolation("PCEH standard forward currently requires batch_size=1")
@@ -351,10 +352,15 @@ class PCEHOnlineDetector(nn.Module):
         video_id = str(packet_meta["video_id"])
         rows = []
         for record in output["emissions"]:
+            label = record.label
+            if isinstance(ext_cls, (list, tuple)) and 0 <= int(label) < len(ext_cls):
+                label = ext_cls[int(label)]
+            elif isinstance(ext_cls, dict):
+                label = ext_cls.get(label, ext_cls.get(str(label), label))
             rows.append(
                 {
                     "segment": [record.start_frame / fps, record.end_frame / fps],
-                    "label": record.label,
+                    "label": label,
                     "score": record.score,
                     "start_frame": record.start_frame,
                     "end_frame": record.end_frame,

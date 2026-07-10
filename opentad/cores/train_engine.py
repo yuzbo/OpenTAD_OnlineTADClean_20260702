@@ -91,6 +91,8 @@ def train_one_epoch(
     use_amp = False if scaler is None else True
 
     target = _unwrap_model(model)
+    if hasattr(target, "reset_online_states"):
+        target.reset_online_states()
     if hasattr(target, "set_train_epoch"):
         target.set_train_epoch(curr_epoch)
 
@@ -247,6 +249,9 @@ def val_one_epoch(
     losses_tracker = {}
 
     model.eval()
+    target = _unwrap_model(model)
+    if hasattr(target, "reset_online_states"):
+        target.reset_online_states()
     for data_dict in tqdm.tqdm(val_loader, disable=(rank != 0)):
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             with torch.no_grad():

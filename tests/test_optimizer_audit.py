@@ -1,4 +1,18 @@
+import subprocess
+import sys
+
 import pytest
+
+
+_TORCH_PROBE = subprocess.run(
+    [sys.executable, "-c", "import torch"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    check=False,
+    timeout=20,
+)
+if _TORCH_PROBE.returncode != 0:
+    pytest.skip("torch is unavailable in this environment", allow_module_level=True)
 import torch
 import torch.nn as nn
 

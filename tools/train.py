@@ -41,6 +41,17 @@ def parse_args():
     return args
 
 
+def _streaming_shuffle(loader_cfg):
+    return not bool(loader_cfg.get("streaming", False))
+
+
+def _set_dataloader_epoch(loader, epoch):
+    for sampler in (getattr(loader, "batch_sampler", None), getattr(loader, "sampler", None)):
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(epoch)
+            return
+
+
 def main():
     args = parse_args()
 
@@ -75,7 +86,7 @@ def main():
         train_dataset,
         rank=args.rank,
         world_size=args.world_size,
-        shuffle=True,
+        shuffle=_streaming_shuffle(cfg.solver.train),
         drop_last=True,
         **cfg.solver.train,
     )
@@ -167,7 +178,7 @@ def main():
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     for epoch in range(resume_epoch + 1, max_epoch):
-        train_loader.sampler.set_epoch(epoch)
+        _set_dataloader_epoch(train_loader, epoch)
 
         # train for one epoch
         train_one_epoch(

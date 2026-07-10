@@ -41,6 +41,7 @@ __all__ = [
     "VideoMambaSuite",
     "DyFADet",
     "SparseCompletionActionFormer",
+    "PCEHOnlineDetector",
     "DETR",
     "DeformableDETR",
     "TadTR",

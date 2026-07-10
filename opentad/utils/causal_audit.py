@@ -1,5 +1,6 @@
 from copy import deepcopy
 from dataclasses import dataclass
+import math
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .online_protocol import ProtocolViolation
@@ -286,4 +287,93 @@ def audit_batch_isolation(
         passed=True,
         comparisons=2,
         details={"streams": ("a", "b"), "chunk_size": int(chunk_size)},
+    )
+
+
+def audit_recorded_trace_equivalence(
+    reference_rows,
+    candidate_rows,
+    through_time=None,
+    name="recorded_trace_equivalence",
+):
+    """Compare traces captured by separate perturbation/chunk audit runs."""
+
+    reference = canonical_prefix_trace(reference_rows, through_time=through_time)
+    candidate = canonical_prefix_trace(candidate_rows, through_time=through_time)
+    _assert_same_trace(str(name).replace("_", " "), reference, candidate)
+    return AuditReport(
+        name=str(name),
+        passed=True,
+        comparisons=1,
+        details={"through_time": through_time, "rows": len(reference)},
+    )
+
+
+def audit_emission_ledger(result_dict):
+    """Fail closed on mutable emissions or future read provenance."""
+
+    if isinstance(result_dict, Mapping) and "results" in result_dict:
+        result_dict = result_dict["results"]
+    if not isinstance(result_dict, Mapping):
+        raise ProtocolViolation("emission ledger must be a video-to-rows mapping")
+    required = {
+        "segment",
+        "start_frame",
+        "end_frame",
+        "emit_frame",
+        "max_raw_frame_read",
+        "max_cache_source_frame",
+        "label",
+        "score",
+        "stream_key",
+        "immutable",
+    }
+    last_emit_by_stream = {}
+    checked = 0
+    streams = set()
+    for video_id, rows in result_dict.items():
+        if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+            raise ProtocolViolation(f"ledger rows for {video_id} must be a sequence")
+        for row in rows:
+            checked += 1
+            if not isinstance(row, Mapping):
+                raise ProtocolViolation(f"ledger row for {video_id} must be a mapping")
+            missing = sorted(required.difference(row))
+            if missing:
+                raise ProtocolViolation(f"ledger row for {video_id} missing fields: {missing}")
+            if not bool(row["immutable"]):
+                raise ProtocolViolation(f"mutable emission for {video_id}")
+            stream_key = str(row["stream_key"])
+            streams.add(stream_key)
+            start = int(row["start_frame"])
+            end = int(row["end_frame"])
+            emit = int(row["emit_frame"])
+            max_raw = int(row["max_raw_frame_read"])
+            max_cache = int(row["max_cache_source_frame"])
+            if start > end:
+                raise ProtocolViolation(f"invalid emitted frame range for {video_id}: {start}>{end}")
+            if end > emit:
+                raise ProtocolViolation(f"future emitted endpoint for {video_id}: end={end} emit={emit}")
+            if max_raw > emit:
+                raise ProtocolViolation(
+                    f"future raw source for {video_id}: source={max_raw} emit={emit}"
+                )
+            if max_cache > emit:
+                raise ProtocolViolation(
+                    f"future cache source for {video_id}: source={max_cache} emit={emit}"
+                )
+            previous_emit = last_emit_by_stream.get(stream_key)
+            if previous_emit is not None and emit < previous_emit:
+                raise ProtocolViolation(
+                    f"non-monotonic emission for {stream_key}: previous={previous_emit} emit={emit}"
+                )
+            last_emit_by_stream[stream_key] = emit
+            score = float(row["score"])
+            if not math.isfinite(score):
+                raise ProtocolViolation(f"non-finite emission score for {video_id}: {score}")
+    return AuditReport(
+        name="emission_ledger",
+        passed=True,
+        comparisons=checked,
+        details={"videos": len(result_dict), "streams": len(streams), "rows": checked},
     )

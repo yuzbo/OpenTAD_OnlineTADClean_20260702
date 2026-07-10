@@ -50,6 +50,17 @@ For our solution to Ego4D Challenge 2024 and EPIC-Kitchens Challenge 2024, pleas
 
 - `thumos_siglip2_adaptive_matr_ontad_final.py` is retained under its legacy filename as a controlled fixed-stride chunk-end baseline. Its runtime selector policy is `fixed_causal_stride2`, its decision cadence is one check per non-overlapping window, and `MATRHead(memory_size=0)` is recorded as a baseline head rather than a MATR reproduction. It must not be used to support adaptive-selection or strict rolling On-TAD claims.
 
+- [thumos_pceh_ontad.py](thumos_pceh_ontad.py) is the strict packet-based PCEH-OnTAD candidate. It uses 8-frame chronological packets, an incremental bounded feature cache, independent class/start/ongoing/end/completion/emission hazards, immutable read-provenance ledgers, and `OnlineAPBudgeted` at 0.5/1/2/4 seconds. [thumos_pceh_chunk_end_baseline.py](thumos_pceh_chunk_end_baseline.py) and [thumos_pceh_rolling_fixed_stride2.py](thumos_pceh_rolling_fixed_stride2.py) are controlled schedule/acquisition baselines. All three remain `formal_training_ready=False` until remote path validation, optimizer coverage, causal compliance, and a single-rank smoke run pass.
+
+Captured packet, ledger, future-perturbation, and chunk-invariance artifacts can be checked without loading a model:
+
+```shell
+python tools/check_causal_compliance.py packets packets.json
+python tools/check_causal_compliance.py ledger pceh_emission_ledger.json
+python tools/check_causal_compliance.py future-perturbation reference.json perturbed.json --cut 120
+python tools/check_causal_compliance.py chunk-invariance chunk1.json chunk8.json
+```
+
 
 ## Train
 

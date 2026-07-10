@@ -6,6 +6,7 @@ from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.stream_packets import (
     ChronologicalStreamBatchSampler,
     build_packet_manifest,
+    select_packet_frame_indices,
 )
 
 
@@ -90,6 +91,25 @@ def test_chronological_sampler_rejects_multi_rank_state_splitting():
         )
 
 
+@pytest.mark.parametrize(
+    ("policy", "stride", "expected"),
+    [
+        ("packet_all_frames", 1, (8, 9, 10, 11, 12, 13, 14, 15)),
+        ("packet_recent_frame", 1, (15,)),
+        ("fixed_causal_stride2", 2, (8, 10, 12, 14)),
+    ],
+)
+def test_packet_frame_selection_is_prefix_only(policy, stride, expected):
+    assert select_packet_frame_indices(8, 16, policy=policy, stride=stride) == expected
+
+
+def test_packet_frame_selection_rejects_unknown_or_invalid_policy():
+    with pytest.raises(ValueError, match="unsupported packet frame policy"):
+        select_packet_frame_indices(0, 8, policy="oracle_future", stride=1)
+    with pytest.raises(ValueError, match="packet_end_frame"):
+        select_packet_frame_indices(8, 8, policy="packet_recent_frame", stride=1)
+
+
 def test_registered_dataset_sanitizes_non_terminal_metadata():
     source = (ROOT / "opentad" / "datasets" / "streaming_raw_frame.py").read_text(encoding="utf-8")
     init_source = (ROOT / "opentad" / "datasets" / "__init__.py").read_text(encoding="utf-8")
@@ -101,3 +121,8 @@ def test_registered_dataset_sanitizes_non_terminal_metadata():
     assert "StreamingRawFrameDataset" in init_source
     assert "ChronologicalStreamBatchSampler" in builder_source
     assert "streaming=False" in builder_source
+    transform_source = (
+        ROOT / "opentad" / "datasets" / "transforms" / "streaming.py"
+    ).read_text(encoding="utf-8")
+    assert "class LoadStreamPacketFrames" in transform_source
+    assert "encoded_source_frames" in transform_source

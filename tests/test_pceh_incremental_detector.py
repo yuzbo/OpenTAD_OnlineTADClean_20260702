@@ -1,8 +1,21 @@
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
+
+
+_TORCH_PROBE = subprocess.run(
+    [sys.executable, "-c", "import torch"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    check=False,
+    timeout=20,
+)
+if _TORCH_PROBE.returncode != 0:
+    pytest.skip("torch is unavailable in this environment", allow_module_level=True)
 import torch
 import torch.nn as nn
 
@@ -131,6 +144,22 @@ def test_explicit_encoded_source_frames_are_preserved():
     assert state.cache_source_frames == (21, 27)
 
 
+def test_read_trace_reports_actual_encoded_read_not_packet_clock():
+    detector = _detector(cache_size=4)
+    meta = _meta(20, 28, is_start=True)
+    meta["encoded_source_frames"] = [21]
+
+    _, state, trace = detector.forward_step(
+        new_frames=torch.randn(1, 4, 1),
+        state=None,
+        packet_meta=meta,
+    )
+
+    assert trace.max_raw_frame_read == 21
+    assert state.head_state["last_meta"]["current_frame"] == 27
+    assert state.head_state["last_meta"]["max_raw_frame_read"] == 21
+
+
 def test_non_monotonic_or_cross_video_packet_fails_closed():
     detector = _detector()
     _, state, _ = detector.forward_step(
@@ -171,3 +200,40 @@ def test_videomamba_optimizer_grouping_defers_backbone_adapters_to_outer_builder
     assert "outer optimizer builder audits" in source
     assert "if p.requires_grad" in source
     assert "trainable detector parameters" in source
+
+
+def test_standard_inference_maps_class_index_and_writes_time_ledger():
+    class EmittingHead(RecordingHead):
+        num_classes = 1
+
+        def decode_step(self, logits, state, meta):
+            record = SimpleNamespace(
+                start_frame=3,
+                end_frame=7,
+                emit_frame=7,
+                label=0,
+                score=0.75,
+                max_raw_frame_read=7,
+                max_cache_source_frame=7,
+            )
+            return [record], state
+
+    detector = PCEHOnlineDetector(
+        backbone=CountingBackbone(),
+        projection=IdentityProjection(),
+        head=EmittingHead(channels=4),
+        cache_size=4,
+    )
+    results = detector(
+        inputs=torch.randn(1, 4, 1),
+        masks=torch.ones(1, 1, dtype=torch.bool),
+        metas=[dict(_meta(7, 8, is_start=True), fps=4.0)],
+        return_loss=False,
+        ext_cls=["Action"],
+    )
+
+    row = results["v1"][0]
+    assert row["label"] == "Action"
+    assert row["emit_time_sec"] == pytest.approx(1.75)
+    assert row["source_time_sec"] == pytest.approx(1.75)
+    assert row["immutable"] is True
