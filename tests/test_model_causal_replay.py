@@ -84,6 +84,29 @@ def test_future_perturbation_replay_preserves_every_prefix_field():
     json.dumps(report)
 
 
+def test_future_perturbation_preserves_normalized_image_domain():
+    from opentad.utils.model_causal_replay import audit_model_future_perturbation
+
+    class NormalizedImageAccumulator(CausalAccumulator):
+        def forward(self, inputs, metas, return_loss=False, **kwargs):
+            if inputs.min().item() < 0.0 or inputs.max().item() > 1.0:
+                raise ValueError("normalized image inputs must remain in [0, 1]")
+            return super().forward(inputs, metas, return_loss=return_loss, **kwargs)
+
+    batches = _batches()
+    for index, batch in enumerate(batches):
+        batch["inputs"] = torch.tensor([[[[0.1 * index, 0.2], [0.4, 0.8]]]])
+
+    report = audit_model_future_perturbation(
+        NormalizedImageAccumulator(),
+        batches,
+        cut_packet_index=1,
+    )
+
+    assert report["passed"] is True
+    assert report["perturbation_kind"] == "domain_preserving"
+
+
 def test_future_perturbation_requires_a_nonempty_future_suffix():
     from opentad.utils.model_causal_replay import audit_model_future_perturbation
 

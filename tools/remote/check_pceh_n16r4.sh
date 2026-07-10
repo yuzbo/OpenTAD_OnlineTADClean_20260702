@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+BASE_DIR=${BASE_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}
+source "$BASE_DIR/tools/env/activate_n16r4_causaltad.sh"
+
 RUN_DIR=${1:?usage: check_pceh_n16r4.sh RUN_DIR [JOB_ID]}
 JOB_ID=${2:-}
 

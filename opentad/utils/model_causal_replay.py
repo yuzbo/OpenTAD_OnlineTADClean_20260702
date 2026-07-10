@@ -19,6 +19,20 @@ def _clone_data(value):
     return deepcopy(value)
 
 
+def _perturb_future_inputs(inputs, perturbation_scale):
+    if inputs.is_floating_point() and inputs.numel() > 0:
+        finite = bool(torch.isfinite(inputs).all().item())
+        if finite and inputs.min().item() >= 0.0 and inputs.max().item() <= 1.0:
+            # Raw-frame processors expect normalized pixels. A half-range cyclic
+            # shift changes every finite value while keeping the valid domain.
+            return torch.remainder(inputs + 0.5, 1.0), "domain_preserving"
+    if inputs.dtype == torch.bool:
+        return torch.logical_not(inputs), "domain_preserving"
+    if inputs.dtype == torch.uint8:
+        return torch.iinfo(inputs.dtype).max - inputs, "domain_preserving"
+    return inputs + float(perturbation_scale), "additive"
+
+
 def _run_model_trace(model, batches, device, forward_kwargs):
     target_model = getattr(model, "module", model)
     if hasattr(target_model, "reset_online_states"):
@@ -54,11 +68,14 @@ def audit_model_future_perturbation(
     forward_kwargs = dict(forward_kwargs or {})
 
     perturbed_batches = [_clone_data(batch) for batch in batches]
+    perturbation_kinds = set()
     for index in range(cut_packet_index + 1, len(perturbed_batches)):
         inputs = perturbed_batches[index].get("inputs")
         if not torch.is_tensor(inputs):
             raise TypeError("causal replay requires tensor inputs in every future packet")
-        perturbed_batches[index]["inputs"] = inputs + float(perturbation_scale)
+        perturbed, kind = _perturb_future_inputs(inputs, perturbation_scale)
+        perturbed_batches[index]["inputs"] = perturbed
+        perturbation_kinds.add(kind)
 
     reference_trace = _run_model_trace(model, batches, device, forward_kwargs)
     perturbed_trace = _run_model_trace(model, perturbed_batches, device, forward_kwargs)
@@ -83,6 +100,9 @@ def audit_model_future_perturbation(
         "cut_packet_index": cut_packet_index,
         "through_time": through_time,
         "perturbation_scale": float(perturbation_scale),
+        "perturbation_kind": (
+            next(iter(perturbation_kinds)) if len(perturbation_kinds) == 1 else "mixed"
+        ),
         "suffix_changed": suffix_changed,
         "reference_trace": reference_trace,
         "perturbed_trace": perturbed_trace,

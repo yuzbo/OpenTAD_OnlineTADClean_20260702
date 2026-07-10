@@ -77,6 +77,7 @@ def test_slurm_submitter_uses_n16r4_accepted_cpu_default():
 def test_remote_check_helper_reads_slurm_and_gate_artifacts():
     source = (ROOT / "tools" / "remote" / "check_pceh_n16r4.sh").read_text(encoding="utf-8")
 
+    assert "activate_n16r4_causaltad.sh" in source
     assert "squeue" in source
     assert "sacct" in source
     assert "train_step_report.json" in source
