@@ -183,3 +183,44 @@ def test_decode_rejects_future_read_provenance():
         assert "future raw frame" in str(exc)
     else:
         raise AssertionError("future read provenance must fail closed")
+
+
+def test_endpoint_only_policy_emits_without_completion_or_emission_gate():
+    endpoint_head = PrefixEventEmissionHead(
+        in_channels=4,
+        num_classes=1,
+        emission_policy="endpoint_only",
+    )
+    pceh_head = PrefixEventEmissionHead(
+        in_channels=4,
+        num_classes=1,
+        emission_policy="pceh",
+    )
+    meta_start = {
+        "current_frame": 2,
+        "max_raw_frame_read": 2,
+        "max_cache_source_frame": 2,
+    }
+    meta_end = {
+        "current_frame": 5,
+        "max_raw_frame_read": 5,
+        "max_cache_source_frame": 5,
+    }
+    start_logits = _logits(5.0, 5.0, 5.0, -5.0, -5.0, -5.0)
+    end_only_logits = _logits(5.0, -5.0, -5.0, 5.0, -5.0, -5.0)
+
+    endpoint_state = endpoint_head.initial_state("v1")
+    pceh_state = pceh_head.initial_state("v1")
+    _, endpoint_state = endpoint_head.decode_step(start_logits, endpoint_state, meta_start)
+    _, pceh_state = pceh_head.decode_step(start_logits, pceh_state, meta_start)
+
+    endpoint_emitted, _ = endpoint_head.decode_step(end_only_logits, endpoint_state, meta_end)
+    pceh_emitted, _ = pceh_head.decode_step(end_only_logits, pceh_state, meta_end)
+
+    assert len(endpoint_emitted) == 1
+    assert pceh_emitted == []
+
+
+def test_unknown_emission_policy_fails_closed():
+    with pytest.raises(ValueError, match="emission_policy"):
+        PrefixEventEmissionHead(in_channels=4, num_classes=1, emission_policy="future_oracle")

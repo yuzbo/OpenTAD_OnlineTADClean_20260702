@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+RUN_DIR=${1:?usage: check_pceh_n16r4.sh RUN_DIR [JOB_ID]}
+JOB_ID=${2:-}
+
+if [[ -n "$JOB_ID" ]]; then
+    squeue -j "$JOB_ID" || true
+    sacct -j "$JOB_ID" --format=JobID,JobName,State,Elapsed,ExitCode,MaxRSS,AllocTRES || true
+fi
+
+for file in train_step_report.json inference_report.json causal_replay_report.json gate_summary.json; do
+    path="$RUN_DIR/$file"
+    if [[ -f "$path" ]]; then
+        echo "===== $file ====="
+        python - "$path" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+summary = {
+    "passed": data.get("passed", data.get("packet_audit", {}).get("passed")),
+    "packets_processed": data.get("packets_processed"),
+    "mode": data.get("mode"),
+    "cut_packet_index": data.get("cut_packet_index"),
+}
+print(json.dumps(summary, indent=2, sort_keys=True))
+PY
+    else
+        echo "missing: $path"
+    fi
+done
+
+for file in "$RUN_DIR"/slurm.*.out "$RUN_DIR"/slurm.*.err; do
+    if [[ -f "$file" ]]; then
+        echo "===== tail $file ====="
+        tail -n 80 "$file"
+    fi
+done

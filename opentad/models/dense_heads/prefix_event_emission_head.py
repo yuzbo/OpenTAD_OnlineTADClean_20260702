@@ -47,6 +47,7 @@ class PrefixEventEmissionHead(nn.Module):
         self,
         in_channels,
         num_classes,
+        emission_policy="pceh",
         class_threshold=0.5,
         start_threshold=0.5,
         end_threshold=0.5,
@@ -66,6 +67,12 @@ class PrefixEventEmissionHead(nn.Module):
         self.num_classes = int(num_classes)
         if self.in_channels <= 0 or self.num_classes <= 0:
             raise ValueError("in_channels and num_classes must be positive")
+        self.emission_policy = str(emission_policy)
+        if self.emission_policy not in {"pceh", "endpoint_only"}:
+            raise ValueError(
+                "emission_policy must be one of {'pceh', 'endpoint_only'}, "
+                f"got {self.emission_policy!r}"
+            )
 
         self.class_threshold = float(class_threshold)
         self.start_threshold = float(start_threshold)
@@ -227,16 +234,22 @@ class PrefixEventEmissionHead(nn.Module):
             if track is not None:
                 track.last_frame = current_frame
                 track.peak_class_score = max(track.peak_class_score, class_probs[label])
-                should_emit = (
-                    end_probs[label] >= self.end_threshold
-                    and completion_probs[label] >= self.completion_threshold
-                    and emit_probs[label] >= self.emission_threshold
-                )
-                if should_emit:
-                    score = math.pow(
-                        max(track.peak_class_score * end_probs[label] * emit_probs[label], 0.0),
-                        1.0 / 3.0,
+                if self.emission_policy == "endpoint_only":
+                    should_emit = end_probs[label] >= self.end_threshold
+                else:
+                    should_emit = (
+                        end_probs[label] >= self.end_threshold
+                        and completion_probs[label] >= self.completion_threshold
+                        and emit_probs[label] >= self.emission_threshold
                     )
+                if should_emit:
+                    if self.emission_policy == "endpoint_only":
+                        score = math.sqrt(max(track.peak_class_score * end_probs[label], 0.0))
+                    else:
+                        score = math.pow(
+                            max(track.peak_class_score * end_probs[label] * emit_probs[label], 0.0),
+                            1.0 / 3.0,
+                        )
                     record = ImmutableEmissionRecord(
                         stream_key=state.stream_key,
                         label=label,

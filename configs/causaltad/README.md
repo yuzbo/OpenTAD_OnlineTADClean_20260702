@@ -52,6 +52,8 @@ For our solution to Ego4D Challenge 2024 and EPIC-Kitchens Challenge 2024, pleas
 
 - [thumos_pceh_ontad.py](thumos_pceh_ontad.py) is the strict packet-based PCEH-OnTAD candidate. It uses 8-frame chronological packets, an incremental bounded feature cache, independent class/start/ongoing/end/completion/emission hazards, immutable read-provenance ledgers, and `OnlineAPBudgeted` at 0.5/1/2/4 seconds. [thumos_pceh_chunk_end_baseline.py](thumos_pceh_chunk_end_baseline.py) and [thumos_pceh_rolling_fixed_stride2.py](thumos_pceh_rolling_fixed_stride2.py) are controlled schedule/acquisition baselines. All three remain `formal_training_ready=False` until remote path validation, optimizer coverage, causal compliance, and a single-rank smoke run pass.
 
+- [thumos_pceh_endpoint_only.py](thumos_pceh_endpoint_only.py) is the fair rolling endpoint-only control: it preserves PCEH input, cadence, cache, visual compute, optimizer, and evaluator while removing completion/emission decisions and losses. The two `*_pilot.py` configs run a three-epoch single-seed decision pilot with the same scheduler and are not formal-result configs.
+
 Captured packet, ledger, future-perturbation, and chunk-invariance artifacts can be checked without loading a model:
 
 ```shell
@@ -59,6 +61,14 @@ python tools/check_causal_compliance.py packets packets.json
 python tools/check_causal_compliance.py ledger pceh_emission_ledger.json
 python tools/check_causal_compliance.py future-perturbation reference.json perturbed.json --cut 120
 python tools/check_causal_compliance.py chunk-invariance chunk1.json chunk8.json
+```
+
+On N16R4, first submit the gated smoke and inspect its artifacts. Pilot submission requires the passed smoke directory explicitly:
+
+```shell
+bash tools/remote/submit_pceh_n16r4.sh smoke configs/causaltad/thumos_pceh_ontad.py
+bash tools/remote/check_pceh_n16r4.sh /absolute/smoke/run/dir JOB_ID
+ALLOW_PILOT=1 SMOKE_RUN_DIR=/absolute/smoke/run/dir bash tools/remote/submit_pceh_n16r4.sh pilot configs/causaltad/thumos_pceh_pilot.py
 ```
 
 

@@ -155,6 +155,7 @@ model = dict(
         type="PrefixEventEmissionHead",
         in_channels=512,
         num_classes=20,
+        emission_policy="pceh",
         class_threshold=0.5,
         start_threshold=0.5,
         end_threshold=0.5,

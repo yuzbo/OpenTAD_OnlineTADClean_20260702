@@ -6,6 +6,7 @@ import torch
 import torch.distributed as dist
 
 from opentad.utils import create_folder
+from opentad.utils.device import get_model_device, move_data_to_device
 from opentad.utils.online_protocol import (
     is_streaming_safe_emission,
     resolve_sliding_window_for_post_processing,
@@ -64,9 +65,11 @@ def eval_one_epoch(
     target_model = model.module if hasattr(model, "module") else model
     if hasattr(target_model, "reset_online_states"):
         target_model.reset_online_states()
+    model_device = get_model_device(model)
 
     result_dict = {}
     for data_dict in tqdm.tqdm(test_loader, disable=(rank != 0)):
+        data_dict = move_data_to_device(data_dict, model_device)
         if is_streaming_safe_emission(cfg.post_processing):
             for meta in data_dict.get("metas", []):
                 if isinstance(meta, dict):

@@ -158,6 +158,10 @@ def test_read_trace_reports_actual_encoded_read_not_packet_clock():
     assert trace.max_raw_frame_read == 21
     assert state.head_state["last_meta"]["current_frame"] == 27
     assert state.head_state["last_meta"]["max_raw_frame_read"] == 21
+    assert detector.last_read_trace == trace
+    assert detector.last_step_audit["time"] == 27
+    assert detector.last_step_audit["max_raw_frame_read"] == 21
+    assert "logits" in detector.last_step_audit
 
 
 def test_non_monotonic_or_cross_video_packet_fails_closed():

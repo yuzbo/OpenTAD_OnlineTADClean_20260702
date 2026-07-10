@@ -47,6 +47,24 @@ def test_controlled_baselines_change_only_declared_stream_schedule():
     assert rolling.stream_protocol.decision_cadence_frames == 8
 
 
+def test_endpoint_only_baseline_keeps_stream_and_compute_controls_fixed():
+    main = _load("thumos_pceh_ontad.py")
+    endpoint = _load("thumos_pceh_endpoint_only.py")
+
+    assert endpoint.route_stage == "controlled_endpoint_only"
+    assert endpoint.model.head.emission_policy == "endpoint_only"
+    assert endpoint.model.head.completion_loss_weight == 0.0
+    assert endpoint.model.head.emission_loss_weight == 0.0
+    assert endpoint.model.head.delay_loss_weight == 0.0
+    assert endpoint.model.head.calibration_loss_weight == 0.0
+    assert endpoint.dataset == main.dataset
+    assert endpoint.model.backbone == main.model.backbone
+    assert endpoint.model.projection == main.model.projection
+    assert endpoint.model.cache_size == main.model.cache_size
+    assert endpoint.optimizer == main.optimizer
+    assert endpoint.evaluation == main.evaluation
+
+
 def test_streaming_train_entry_disables_shuffle_and_handles_batch_sampler_epoch():
     source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
 

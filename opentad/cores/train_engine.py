@@ -2,6 +2,7 @@ import copy
 import torch
 import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
+from opentad.utils.device import get_model_device, move_data_to_device
 
 
 def _unwrap_model(model):
@@ -97,7 +98,9 @@ def train_one_epoch(
         target.set_train_epoch(curr_epoch)
 
     model.train()
+    model_device = get_model_device(model)
     for iter_idx, data_dict in enumerate(train_loader):
+        data_dict = move_data_to_device(data_dict, model_device)
         optimizer.zero_grad()
 
         # current learning rate
@@ -252,7 +255,9 @@ def val_one_epoch(
     target = _unwrap_model(model)
     if hasattr(target, "reset_online_states"):
         target.reset_online_states()
+    model_device = get_model_device(model)
     for data_dict in tqdm.tqdm(val_loader, disable=(rank != 0)):
+        data_dict = move_data_to_device(data_dict, model_device)
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             with torch.no_grad():
                 losses = model(**data_dict, return_loss=True)

@@ -21,6 +21,18 @@ _EXPORTS = {
     "OptimizerAuditError": ("optimizer_audit", "OptimizerAuditError"),
     "OptimizerAuditReport": ("optimizer_audit", "OptimizerAuditReport"),
     "audit_optimizer_coverage": ("optimizer_audit", "audit_optimizer_coverage"),
+    "get_model_device": ("device", "get_model_device"),
+    "move_data_to_device": ("device", "move_data_to_device"),
+    "TrainingUpdateAuditError": ("training_audit", "TrainingUpdateAuditError"),
+    "TrainingUpdateAuditReport": ("training_audit", "TrainingUpdateAuditReport"),
+    "snapshot_trainable_parameters": ("training_audit", "snapshot_trainable_parameters"),
+    "audit_training_update": ("training_audit", "audit_training_update"),
+    "StreamSmokeError": ("stream_smoke", "StreamSmokeError"),
+    "run_stream_smoke": ("stream_smoke", "run_stream_smoke"),
+    "audit_model_future_perturbation": (
+        "model_causal_replay",
+        "audit_model_future_perturbation",
+    ),
 }
 
 __all__ = list(_EXPORTS)

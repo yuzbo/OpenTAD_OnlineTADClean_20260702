@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import inspect
 from typing import Any
 
@@ -51,6 +51,8 @@ class PCEHOnlineDetector(nn.Module):
         if self.cache_size <= 0:
             raise ValueError("cache_size must be positive")
         self._stream_states = {}
+        self.last_read_trace = None
+        self.last_step_audit = None
 
     @staticmethod
     def _build_component(component, kind):
@@ -76,6 +78,8 @@ class PCEHOnlineDetector(nn.Module):
 
     def reset_online_states(self):
         self._stream_states.clear()
+        self.last_read_trace = None
+        self.last_step_audit = None
 
     def _call_backbone(self, new_frames, masks, packet_meta):
         if self.backbone is None:
@@ -267,6 +271,31 @@ class PCEHOnlineDetector(nn.Module):
             max_cache_source_frame=max_cache_source_frame,
             encoded_source_frames=encoded_sources,
         )
+        self.last_read_trace = trace
+        active_tracks = getattr(head_state, "active_tracks", {})
+        ledger = getattr(head_state, "ledger", ())
+        self.last_step_audit = {
+            "time": current_frame,
+            "packet_start_frame": packet_start,
+            "packet_end_frame": packet_end,
+            "max_raw_frame_read": max_raw_frame_read,
+            "max_cache_source_frame": max_cache_source_frame,
+            "encoded_source_frames": list(encoded_sources),
+            "logits": {
+                key: value.detach().float().cpu().tolist()
+                for key, value in sorted(logits.items())
+                if torch.is_tensor(value)
+            },
+            "active_tracks": {
+                str(key): asdict(value) if hasattr(value, "__dataclass_fields__") else repr(value)
+                for key, value in sorted(active_tracks.items(), key=lambda item: str(item[0]))
+            },
+            "ledger_size": len(ledger),
+            "emissions": [
+                asdict(record) if hasattr(record, "__dataclass_fields__") else dict(vars(record))
+                for record in emissions
+            ],
+        }
         return {"logits": logits, "losses": losses, "emissions": emissions}, new_state, trace
 
     @staticmethod
