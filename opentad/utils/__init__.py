@@ -13,6 +13,9 @@ _EXPORTS = {
     "audit_chunk_invariance": ("causal_audit", "audit_chunk_invariance"),
     "audit_packet_metadata": ("causal_audit", "audit_packet_metadata"),
     "audit_batch_isolation": ("causal_audit", "audit_batch_isolation"),
+    "StreamPacketSpec": ("stream_packets", "StreamPacketSpec"),
+    "build_packet_manifest": ("stream_packets", "build_packet_manifest"),
+    "ChronologicalStreamBatchSampler": ("stream_packets", "ChronologicalStreamBatchSampler"),
 }
 
 __all__ = list(_EXPORTS)

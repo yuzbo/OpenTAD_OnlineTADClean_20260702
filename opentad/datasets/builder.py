@@ -23,7 +23,39 @@ def build_dataset(cfg, default_args=None):
     return dataset
 
 
-def build_dataloader(dataset, batch_size, rank, world_size, shuffle=False, drop_last=False, **kwargs):
+def build_dataloader(
+    dataset,
+    batch_size,
+    rank,
+    world_size,
+    shuffle=False,
+    drop_last=False,
+    streaming=False,
+    stream_batch_size=None,
+    **kwargs,
+):
+    if streaming:
+        from opentad.utils.stream_packets import ChronologicalStreamBatchSampler
+
+        if shuffle:
+            raise ValueError("streaming dataloaders cannot shuffle chronological packets")
+        if not hasattr(dataset, "packet_manifests"):
+            raise TypeError("streaming dataloaders require dataset.packet_manifests")
+        batch_sampler = ChronologicalStreamBatchSampler(
+            dataset.packet_manifests,
+            batch_size=stream_batch_size or batch_size,
+            rank=rank,
+            world_size=world_size,
+            drop_last=drop_last,
+        )
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=collate,
+            pin_memory=True,
+            **kwargs,
+        )
+
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset,
         num_replicas=world_size,
