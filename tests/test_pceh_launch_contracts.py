@@ -65,6 +65,7 @@ def test_slurm_submitter_keeps_generated_runs_outside_code_checkout():
     assert "/data/run01/sczc063/yuzibo/runs/pceh" in source
     assert 'RUN_DIR="$RUNS_ROOT/${JOB_NAME}_${STAMP}"' in source
     assert 'RUN_DIR="$BASE_DIR/slurm/' not in source
+    assert '--cfg-options work_dir="${RUN_DIR}/work"' in source
 
 
 def test_slurm_submitter_uses_n16r4_accepted_cpu_default():
@@ -82,4 +83,5 @@ def test_remote_check_helper_reads_slurm_and_gate_artifacts():
     assert "sacct" in source
     assert "train_step_report.json" in source
     assert "causal_replay_report.json" in source
+    assert "isinstance(packet_audit, dict)" in source
     assert "passed" in source

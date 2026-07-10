@@ -161,7 +161,8 @@ else
     export MASTER_PORT=\${MASTER_PORT:-\$((20000 + \${SLURM_JOB_ID:-0} % 40000))}
     torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
         --rdzv_endpoint "127.0.0.1:\${MASTER_PORT}" \
-        tools/train.py "${CONFIG}" --id "${RUN_ID}"
+        tools/train.py "${CONFIG}" --id "${RUN_ID}" \
+        --cfg-options work_dir="${RUN_DIR}/work"
 fi
 SBATCH
 

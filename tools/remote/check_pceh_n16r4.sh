@@ -23,8 +23,11 @@ import json
 import sys
 
 data = json.load(open(sys.argv[1], encoding="utf-8"))
+packet_audit = data.get("packet_audit")
+if isinstance(packet_audit, dict):
+    packet_audit = packet_audit.get("passed")
 summary = {
-    "passed": data.get("passed", data.get("packet_audit", {}).get("passed")),
+    "passed": data.get("passed") if data.get("passed") is not None else packet_audit,
     "packets_processed": data.get("packets_processed"),
     "mode": data.get("mode"),
     "cut_packet_index": data.get("cut_packet_index"),
