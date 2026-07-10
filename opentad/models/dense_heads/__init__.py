@@ -20,6 +20,10 @@ from .native_physical_multiscale_head import NativePhysicalMultiScaleHead
 from .query_decoder_head import QueryDecoderHead
 from .physical_segment_head import PhysicalSegmentHead
 from .matr_head import MATRHead
+from .prefix_event_emission_head import PrefixEventEmissionHead
+from ..builder import HEADS
+
+HEADS.register_module()(PrefixEventEmissionHead)
 
 __all__ = [
     "AnchorGenerator",
@@ -42,6 +46,7 @@ __all__ = [
     "QueryDecoderHead",
     "PhysicalSegmentHead",
     "MATRHead",
+    "PrefixEventEmissionHead",
     "TriDetHead",
     "TemporalMaxerHead",
     "TemporalEvaluationHead",
