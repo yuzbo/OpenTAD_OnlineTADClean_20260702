@@ -8,6 +8,7 @@ set -euo pipefail
 MODE=${1:-smoke}
 CONFIG=${2:-configs/causaltad/thumos_pceh_ontad.py}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/OpenTAD_OnlineTADClean_20260702}
+RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/pceh}
 RUN_ID=${RUN_ID:-0}
 JOB_NAME=${JOB_NAME:-pceh_${MODE}}
 GPUS_PER_NODE=${GPUS_PER_NODE:-1}
@@ -100,7 +101,7 @@ PY
 fi
 
 STAMP=$(date +"%Y%m%d_%H%M%S")
-RUN_DIR="$BASE_DIR/slurm/${JOB_NAME}_${STAMP}"
+RUN_DIR="$RUNS_ROOT/${JOB_NAME}_${STAMP}"
 mkdir -p "$RUN_DIR"
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
 MEM_DIRECTIVE=""

@@ -58,6 +58,15 @@ def test_slurm_submitter_enforces_smoke_gate_before_pilot():
     assert "load_from_raw_predictions=True" not in source
 
 
+def test_slurm_submitter_keeps_generated_runs_outside_code_checkout():
+    source = (ROOT / "tools" / "remote" / "submit_pceh_n16r4.sh").read_text(encoding="utf-8")
+
+    assert "RUNS_ROOT" in source
+    assert "/data/run01/sczc063/yuzibo/runs/pceh" in source
+    assert 'RUN_DIR="$RUNS_ROOT/${JOB_NAME}_${STAMP}"' in source
+    assert 'RUN_DIR="$BASE_DIR/slurm/' not in source
+
+
 def test_remote_check_helper_reads_slurm_and_gate_artifacts():
     source = (ROOT / "tools" / "remote" / "check_pceh_n16r4.sh").read_text(encoding="utf-8")
 
