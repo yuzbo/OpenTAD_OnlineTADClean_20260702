@@ -1,5 +1,6 @@
 import torch
 from .layer_decay_optimizer import build_vit_optimizer
+from opentad.utils.optimizer_audit import audit_optimizer_coverage
 
 
 def _unwrap_model(model):
@@ -9,9 +10,11 @@ def _unwrap_model(model):
 def build_optimizer(cfg, model, logger):
     optimizer_type = cfg["type"]
     cfg.pop("type")
+    audit_cfg = cfg.pop("audit", True)
 
     if optimizer_type == "LayerDecayAdamW":
-        return build_vit_optimizer(cfg, model, logger)
+        optimizer = build_vit_optimizer(cfg, model, logger)
+        return _audit_optimizer(model, optimizer, audit_cfg, logger)
 
     backbone_cfg = cfg.pop("backbone", None) if "backbone" in cfg.keys() else None
     target_model = _unwrap_model(model)
@@ -69,6 +72,23 @@ def build_optimizer(cfg, model, logger):
     else:
         raise ValueError(f"Optimizer {optimizer_type} is not supported so far.")
 
+    return _audit_optimizer(model, optimizer, audit_cfg, logger)
+
+
+def _audit_optimizer(model, optimizer, audit_cfg, logger):
+    if audit_cfg is False:
+        return optimizer
+    options = {} if audit_cfg is True or audit_cfg is None else dict(audit_cfg)
+    report = audit_optimizer_coverage(model, optimizer, **options)
+    report.raise_for_errors()
+    if logger is not None:
+        logger.info(
+            "Optimizer audit passed: %d trainable parameters across %d groups; "
+            "%d frozen parameters present in groups",
+            len(report.trainable_parameters),
+            len(report.group_summaries),
+            len(report.frozen_in_optimizer),
+        )
     return optimizer
 
 

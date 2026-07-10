@@ -164,9 +164,10 @@ def test_first_packet_requires_explicit_video_start():
         )
 
 
-def test_videomamba_optimizer_grouping_no_longer_drops_trainable_backbone_adapters():
+def test_videomamba_optimizer_grouping_defers_backbone_adapters_to_outer_builder():
     source = (ROOT / "opentad" / "models" / "detectors" / "mamba.py").read_text(encoding="utf-8")
 
-    assert 'if fpn.startswith("backbone"):\n                    continue' not in source
+    assert 'if fpn.startswith("backbone."):' in source
+    assert "outer optimizer builder audits" in source
     assert "if p.requires_grad" in source
-    assert "trainable parameters" in source
+    assert "trainable detector parameters" in source

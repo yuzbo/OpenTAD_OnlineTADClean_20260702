@@ -34,6 +34,11 @@ class VideoMambaSuite(SingleStageDetector):
                 fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
                 if not p.requires_grad:
                     continue
+                # Backbone groups are built separately by build_optimizer,
+                # including trainable adapters inside an otherwise frozen
+                # backbone. Re-adding them here would duplicate parameters.
+                if fpn.startswith("backbone."):
+                    continue
 
                 if pn.endswith("bias"):
                     # all biases will not be decayed
@@ -65,15 +70,19 @@ class VideoMambaSuite(SingleStageDetector):
                 else:
                     decay.add(fpn)
 
-        # Validate that all trainable parameters, including backbone adapters,
-        # are assigned to exactly one optimizer group.
-        param_dict = {pn: p for pn, p in self.named_parameters() if p.requires_grad}
+        # Validate detector-only groups. The outer optimizer builder audits the
+        # merged detector and backbone-adapter groups against the whole model.
+        param_dict = {
+            pn: p
+            for pn, p in self.named_parameters()
+            if p.requires_grad and not pn.startswith("backbone.")
+        }
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
         assert (
             len(param_dict.keys() - union_params) == 0
-        ), "trainable parameters %s were not separated into either decay/no_decay set!" % (
+        ), "trainable detector parameters %s were not separated into either decay/no_decay set!" % (
             str(param_dict.keys() - union_params),
         )
 

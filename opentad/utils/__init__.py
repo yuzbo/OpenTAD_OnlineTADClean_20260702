@@ -16,6 +16,9 @@ _EXPORTS = {
     "StreamPacketSpec": ("stream_packets", "StreamPacketSpec"),
     "build_packet_manifest": ("stream_packets", "build_packet_manifest"),
     "ChronologicalStreamBatchSampler": ("stream_packets", "ChronologicalStreamBatchSampler"),
+    "OptimizerAuditError": ("optimizer_audit", "OptimizerAuditError"),
+    "OptimizerAuditReport": ("optimizer_audit", "OptimizerAuditReport"),
+    "audit_optimizer_coverage": ("optimizer_audit", "audit_optimizer_coverage"),
 }
 
 __all__ = list(_EXPORTS)
