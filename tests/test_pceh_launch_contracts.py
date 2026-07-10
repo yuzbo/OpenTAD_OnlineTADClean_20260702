@@ -23,6 +23,8 @@ def test_pilot_configs_are_short_strict_and_comparable():
     assert endpoint.scheduler.max_epoch == 3
     assert main.scheduler.warmup_epoch == 1
     assert endpoint.scheduler.warmup_epoch == 1
+    assert main.workflow.val_start_epoch == 2
+    assert endpoint.workflow.val_start_epoch == 2
     assert main.formal_training_ready is False
     assert endpoint.formal_training_ready is False
     assert main.inference.load_from_raw_predictions is False
@@ -56,6 +58,7 @@ def test_slurm_submitter_enforces_smoke_gate_before_pilot():
         assert token in source
     assert "screen" not in source
     assert "load_from_raw_predictions=True" not in source
+    assert "PILOT_TIME=${PILOT_TIME:-48:00:00}" in source
 
 
 def test_slurm_submitter_keeps_generated_runs_outside_code_checkout():
