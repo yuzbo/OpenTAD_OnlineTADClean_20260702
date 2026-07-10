@@ -7,6 +7,16 @@ import torch.nn.functional as F
 from mmengine.registry import MODELS
 
 
+def selector_policy_name(selector):
+    """Return a truthful, parameterized name for the runtime selector."""
+    if selector is None:
+        return "dense_all_frames"
+    policy = str(getattr(selector, "policy", "unknown"))
+    if policy == "causal_stride":
+        return f"fixed_causal_stride{int(getattr(selector, 'stride', 1))}"
+    return policy
+
+
 class _TinyFrameVisionEncoder(nn.Module):
     """Small deterministic frame encoder used only by runtime smoke tests."""
 
@@ -391,7 +401,7 @@ class OnlineSigLIPFrameEncoder(nn.Module):
             meta["irregular_selected_positions"] = [int(pos) for pos in positions]
             meta["irregular_selected_valid_len"] = int(selected.dense_lengths[batch_idx].item())
             meta["irregular_native_axis"] = False
-            meta["frame_policy"] = "adaptive_selected_frames"
+            meta["frame_policy"] = selector_policy_name(self.frame_selector)
             if self.return_token_times:
                 fps = float(meta.get("fps", -1))
                 snippet_stride = int(meta.get("snippet_stride", 1))

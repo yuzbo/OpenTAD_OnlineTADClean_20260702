@@ -48,6 +48,8 @@ For our solution to Ego4D Challenge 2024 and EPIC-Kitchens Challenge 2024, pleas
 
 - `thumos_siglip2_matr_ontad_p0.py`, `thumos_siglip2_matr_ontad_p1.py`, and `thumos_siglip2_motion_matr_ontad_p2.py` are raw-frame SigLIP/SigLIP2 validation candidates. Their streaming-safe ledger evaluator is single-rank only for now; DDP evaluation must wait for a video-contiguous sampler or centralized online state machine.
 
+- `thumos_siglip2_adaptive_matr_ontad_final.py` is retained under its legacy filename as a controlled fixed-stride chunk-end baseline. Its runtime selector policy is `fixed_causal_stride2`, its decision cadence is one check per non-overlapping window, and `MATRHead(memory_size=0)` is recorded as a baseline head rather than a MATR reproduction. It must not be used to support adaptive-selection or strict rolling On-TAD claims.
+
 
 ## Train
 

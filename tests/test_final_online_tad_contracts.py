@@ -8,14 +8,19 @@ def read(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_final_route_declares_adaptive_selected_only_irregular_online_metric():
+def test_legacy_final_route_is_truthfully_labeled_chunk_end_baseline():
     Config = __import__("mmengine.config", fromlist=["Config"]).Config
 
     cfg = Config.fromfile(str(ROOT / "configs/causaltad/thumos_siglip2_adaptive_matr_ontad_final.py"))
 
-    assert cfg.route_stage == "P3P4-final-target"
+    assert cfg.route_stage == "chunk_end_baseline"
     assert cfg.formal_training_ready is False
+    assert cfg.fixed_raw_frame_protocol.frame_policy == "fixed_causal_stride2"
+    assert cfg.fixed_raw_frame_protocol.method_stage == "chunk_end_baseline"
+    assert cfg.fixed_raw_frame_protocol.decision_cadence == "window_end"
     assert cfg.model.backbone.backbone.frame_selector.type == "CausalFrameSelector"
+    assert cfg.model.backbone.backbone.frame_selector.policy == "causal_stride"
+    assert cfg.model.backbone.backbone.frame_selector.stride == 2
     assert cfg.model.backbone.backbone.encode_policy == "selected_only"
     assert cfg.model.backbone.backbone.assert_selected_only is True
     assert cfg.model.backbone.backbone.return_token_times is True

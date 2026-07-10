@@ -1,23 +1,25 @@
 _base_ = "./thumos_siglip2_motion_matr_ontad_p2.py"
 
-# Final target-code route: Budgeted Adaptive Online TAD with causal emission
-# protocol pieces under validation. This is an implementation entry point, not
-# a paper-ready result until ablations, full mAP, ledger, and no-future audits
-# pass.
+# Legacy-named fixed-stride chunk-end baseline. The selector encodes every
+# second causal frame and the detector checks emission only at the end of each
+# non-overlapping window. Keep this config as a controlled baseline for PCEH;
+# it is not the final strict-online method.
 
-route_stage = "P3P4-final-target"
+route_stage = "chunk_end_baseline"
 formal_training_ready = False
 raw_frame_stream_id = "thumos_siglip2_adaptive_final"
 
 fixed_raw_frame_protocol = dict(
-    frame_policy="adaptive_selected_frames",
-    selection_budget_ratio=0.5,
+    frame_policy="fixed_causal_stride2",
+    method_stage="chunk_end_baseline",
+    head_name="MATRHead_memory0_chunk_end_baseline",
+    decision_cadence="window_end",
 )
 
 dataset = dict(
-    train=dict(stream_id=raw_frame_stream_id, frame_policy="adaptive_selected_frames"),
-    val=dict(stream_id=raw_frame_stream_id, frame_policy="adaptive_selected_frames"),
-    test=dict(stream_id=raw_frame_stream_id, frame_policy="adaptive_selected_frames"),
+    train=dict(stream_id=raw_frame_stream_id, frame_policy="fixed_causal_stride2"),
+    val=dict(stream_id=raw_frame_stream_id, frame_policy="fixed_causal_stride2"),
+    test=dict(stream_id=raw_frame_stream_id, frame_policy="fixed_causal_stride2"),
 )
 
 model = dict(
