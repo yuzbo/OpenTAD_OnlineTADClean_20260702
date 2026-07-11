@@ -3,7 +3,7 @@
 ## 项目规则
 
 - 本库只保留 OpenTAD 代码库主体、在线/因果 TAD 路线 `CausalTAD`、对应配置、训练评测入口和轻量合约测试。
-- 不放历史 `research-wiki/`、`logs/`、`figures/`、实验压缩包、checkpoint、数据集、特征文件或远端同步缓存。
+- 不放历史 `logs/`、`figures/`、实验压缩包、checkpoint、数据集、特征文件或远端同步缓存。
 - 这里的“在线 TAD”按当前代码实际实现落到 `CausalTAD`：核心是 causal attention / causal Mamba，只使用过去或受限方向的时序上下文，服务于流式或在线部署形态。
 - 验证/测试阶段严禁使用 GT、teacher cache、raw prediction shortcut 或隐藏缓存决策。`inference.load_from_raw_predictions` 必须保持 `False`，除非明确标记为诊断。
 - 新增配置必须说明数据形态：预提取特征、视频帧、音频特征或多模态特征；不能把特征缓存、数据集或 checkpoint 放入仓库。

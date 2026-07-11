@@ -36,8 +36,7 @@ tmp/
 .codex_sync_irregular/
 codex_sync_irregular.zip
 
-# Historical research material intentionally excluded from this clean repo
-research-wiki/
+# Historical generated material intentionally excluded from this clean repo
 figures/
 docs/
 wiki/

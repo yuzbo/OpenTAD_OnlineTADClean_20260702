@@ -1,0 +1,145 @@
+---
+type: source_map
+updated: 2026-07-11
+status: active
+scope: Mapping from source records, reviews, attachments, online notes, and code snapshots to wiki nodes.
+---
+
+# Source Map
+
+This page maps raw source records to the structured wiki. It answers: "Where did this conclusion come from?"
+
+## Primary Review and Absorption Files
+
+| Source | Role | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|---|
+| `PRO_REVIEW_20260705.md` | Early external review | Treat frozen SigLIP/SigLIP2 as baseline, not novelty; add streaming-safe boundary/emission protocol; ledger must record source/emit/latency; no-future tests required; memory should be stream-keyed. | [ideas/frozen-siglip-baseline.md](ideas/frozen-siglip-baseline.md), [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md), [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| `PRO_REVIEW_20260706.md` | External review | Config chain issues; full-60 not formal; future endpoint label shortcut risk; VideoMAE route stub-only; windowed streaming-safe route is not continuous low-latency; adaptive selection/AdaTAD plan is not yet proof. | [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md), [ideas/budgeted-evidence-selection.md](ideas/budgeted-evidence-selection.md), [gap_map.md](gap_map.md) |
+| `PRO_REVIEW_ABSORPTION_20260706.md` | Local absorption | Current route is windowed streaming-safe raw-frame prototype; future endpoint leakage must be handled; optimizer/trainable audit needed; selector collapse prevention required. | [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md), [claims/c3-risk-set-hazard.md](claims/c3-risk-set-hazard.md), [ideas/budgeted-evidence-selection.md](ideas/budgeted-evidence-selection.md) |
+| `PRO_REVIEW_20260707.md` | External review | Proposed online-censored targets, selector packet, irregular-time decode, emission ledger validation, risks for windowed streaming, DDP split, adaptive selector, irregular timestamps. | [ideas/budgeted-evidence-selection.md](ideas/budgeted-evidence-selection.md), [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| `PRO_REVIEW_ABSORPTION_20260707.md` | Local absorption | Preserved 20260707 review into local working rules around online-censored training, selector/ledger/irregular decode, and staged milestones. | [gap_map.md](gap_map.md), [ideas/budgeted-evidence-selection.md](ideas/budgeted-evidence-selection.md) |
+| `PRO_REVIEW_20260708.md` | External review | HOLD; latency gate semantics reversed; OnlineMAP was ordinary mAP plus side stats; adaptive selection name false because policy was fixed stride; all-invalid selector and selected-axis risks; do not run remote long training before P0 tests. | [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md), [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md), [gap_map.md](gap_map.md) |
+| `PRO_REVIEW_ABSORPTION_20260708.md` | Local absorption | Absorbed P0 hardening fixes and claim-boundary corrections for selected-only, latency, OnlineMAP, fixed stride naming. | [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md), [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| `PRO_REVIEW_20260709.md` | External review | Current repo is HOLD; selected-only causal-stride skeleton exists but not paper-ready; open questions, claim map, route scoring; online-censored boundary/emission hazard is best main route. | [ideas/pceh-ontad.md](ideas/pceh-ontad.md), [claims/c3-risk-set-hazard.md](claims/c3-risk-set-hazard.md) |
+| `PRO_REVIEW_ABSORPTION_20260709.md` | Local absorption | Added OZ-TAL threat; safe/blocked claims; route scores; online-censored boundary/emission hazard as main route; adaptive selection future only. | [ideas/open-vocabulary-zero-shot.md](ideas/open-vocabulary-zero-shot.md), [papers/oztal2026-zero-shot.md](papers/oztal2026-zero-shot.md), [ideas/pceh-ontad.md](ideas/pceh-ontad.md) |
+| `PRO_REVIEW_20260710.md` | External review | NO-GO for current repo claims; strict On-TAD contract; 51.2s scheduling latency; prior work boundary; PCEH route as HOLD; required baselines/ablations/gates. | [ideas/pceh-ontad.md](ideas/pceh-ontad.md), [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md), [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| `PRO_REVIEW_ABSORPTION_20260710.md` | Local absorption | Converted 20260710 review into project law: no low-latency/adaptive/end-to-end/MATR-style overclaim; PCEH method contract and gates. | [ideas/pceh-ontad.md](ideas/pceh-ontad.md), [experiments/formal-training-none.md](experiments/formal-training-none.md), [decision_register.md](decision_register.md) |
+| `PRO_REVIEW_20260711.md` | External review | HOLD; current PCEH is not statistically valid; endpoint/emission labels same; late positives invalid; class aggregation issue; training cost unacceptable; CRS-EPS route recommended. | [claims/c3-risk-set-hazard.md](claims/c3-risk-set-hazard.md), [ideas/crs-eps-training.md](ideas/crs-eps-training.md), [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) |
+| `PRO_REVIEW_ABSORPTION_20260711.md` | Local absorption | Formal training blocked until P0 scientific-correctness gates; CRS-EPS Stage 0/1/2/3; evaluation and evidence requirements. | [claims/c3-risk-set-hazard.md](claims/c3-risk-set-hazard.md), [claims/c4-crs-eps-cost.md](claims/c4-crs-eps-cost.md), [ideas/lora-stage2.md](ideas/lora-stage2.md) |
+| `PRO_DIVERGENT_IDEA_REVIEW_20260711.md` | Full Pro divergent review | 14 unknowns; repository audit; 36 ideas across six lenses; kill matrix; Top 5; T01 recommendation; T02 high-risk route; PCEH no-go; 48-hour falsification plan; 35-source bibliography. | [ideas/anytime-semantic-event-alarms.md](ideas/anytime-semantic-event-alarms.md), [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md), [ideas/deadline-censored-omission.md](ideas/deadline-censored-omission.md), [ideas/risk-constrained-duty-cycling.md](ideas/risk-constrained-duty-cycling.md), [ideas/delayed-feedback-continual-events.md](ideas/delayed-feedback-continual-events.md) |
+| `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md` | Independent decision layer | Accepts PCEH no-go and cheap falsification; rejects premature T01 selection; adds direct video e-process prior, statistical-power critique, real-null requirement, revised gates, and T01/T02 co-candidate status. | [decision_register.md#DR-021-accept-the-pro-no-go-but-not-its-final-route-selection](decision_register.md), [decision_register.md#DR-022-novelty-and-statistical-validity-precede-the-48-hour-empirical-pilot](decision_register.md) |
+| `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md` | Full PIVOT design | Formal task, interval clocks, population annotation, ordered multi-state observer, metrics, claims, experiments, cost, and kill criteria. | [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md), [gap_map.md#G10-physical-transition-visual-verifiability-and-model-decision-are-different-measurement-objects](gap_map.md) |
+| `THREE_CLOCK_COMPETITION_REVIEW_20260711.md` | Fresh novelty audit | Finds no exact match but dense compositional overlap; scores task novelty conditional, method novelty low; identifies data-release blockers. | [papers/pasbench2026-proactive-warning.md](papers/pasbench2026-proactive-warning.md), [papers/apt2026-atomic-physical-transitions.md](papers/apt2026-atomic-physical-transitions.md), [papers/touchanything2026-egotouch.md](papers/touchanything2026-egotouch.md) |
+| `PRO_THREE_CLOCK_DEEP_REVIEW_PROMPT_20260711.md` | Pro review prompt | Forces repository audit, ontology, identifiability, fresh search, kill round, route comparison, claim map, data protocol, experiments, cost, and GO/HOLD/NO-GO. | [decision_register.md#DR-023-refine-three-clock-observability-into-pivot-and-gate-it-on-measurement](decision_register.md) |
+
+## Other Research Notes
+
+| Source | Role | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|---|
+| `online-action-models-2026-research.md` | Literature landscape note | 2026 trend map: MOAD/Backtrace Mamba, CAKE, OZ-TAL, OnPoint, OnlineTAS, FluxMem, StreamingTOM, SimpleStream; strongest immediate threats are OZ-TAL and OnPoint; memory/compression ideas are useful but not main novelty. | [papers/oztal2026-zero-shot.md](papers/oztal2026-zero-shot.md), [papers/onpoint2026-distillation.md](papers/onpoint2026-distillation.md), [papers/onlinetas2024-online-segmentation.md](papers/onlinetas2024-online-segmentation.md), [ideas/offline-teacher-distillation.md](ideas/offline-teacher-distillation.md) |
+| `end-to-end-ontad-research.md` | End-to-end On-TAD note | Raw-frame E2E OAD exists, but strict instance-level raw-frame On-TAD remains unresolved; E2E-LOAD is useful for short-train/long-infer cache idea; full visual E2E claim needs evidence. | [papers/e2eload2023-e2e-oad.md](papers/e2eload2023-e2e-oad.md), [ideas/lora-stage2.md](ideas/lora-stage2.md), [ideas/rejected-full-visual-tower-first.md](ideas/rejected-full-visual-tower-first.md) |
+| `pceh-current-implementation-20260710.md` | Implementation snapshot | PCEH skeleton, streaming data route, prefix targets, event/emission head, incremental detector, OnlineAPBudgeted, local tests; explicitly not formal result or SOTA. | [experiments/pceh-smoke-20260710.md](experiments/pceh-smoke-20260710.md), [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md), [experiments/formal-training-none.md](experiments/formal-training-none.md) |
+| `PRO_REVIEW_PROMPT_20260706.md` | Prompt design record | Established the pattern that Pro review should first audit task definition, innovation, claim map, baselines, ablations, and risks, not directly write overconfident plans. | [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md) |
+
+## User-Driven Discussion Sources
+
+| Discussion | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| "当前项目目标是什么？任务是什么？" | Need explicit task goal and method story; avoid vague Online TAD wording. | [query_pack.md](query_pack.md), [gap_map.md](gap_map.md) |
+| "当前的在线是否基于窗口？逐帧？窗口多大？延时是不是太大？" | Window/chunk-end route has large scheduling delay; do not claim low-latency. | [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md), [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| "创新性不够，能否解决预训练模型在在线 TAD 的缺失问题？" | Pretrained model adaptation is important but must be task-aligned and evidence-backed; frozen/LoRA staged route selected. | [ideas/lora-stage2.md](ideas/lora-stage2.md), [ideas/online-tad-pt.md](ideas/online-tad-pt.md) |
+| "OZ-TAL 是否巨大竞争工作？" | Yes. Zero-shot/open-vocabulary online TAL is blocked as main novelty. | [ideas/open-vocabulary-zero-shot.md](ideas/open-vocabulary-zero-shot.md), [papers/oztal2026-zero-shot.md](papers/oztal2026-zero-shot.md) |
+| "训练成本太高，是否还有改进方案？" | Full-packet default rejected; CRS-EPS and feature cache selected. | [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md), [ideas/crs-eps-training.md](ideas/crs-eps-training.md) |
+| "endpoint 附近重点采，那开始阶段怎么办？" | Start-centered sampling is mandatory; start is a state-transition event, not an auxiliary detail. | [ideas/state-transition-sampling.md](ideas/state-transition-sampling.md), [gap_map.md#G2-start-ongoing-end-commit-must-be-modeled-as-a-lifecycle](gap_map.md) |
+| "动作开始、动作结束进行判定，并且随着观测状态优化纠正之前在线输出" | Core pivot from PCEH one-shot emission to CESR mutable-hypothesis/immutable-commit. | [ideas/cesr-ontad.md](ideas/cesr-ontad.md), [claims/c2-mutable-hypothesis-commit.md](claims/c2-mutable-hypothesis-commit.md) |
+| "检查当前是否存在相关竞争工作" | OAT, MATR, ActionSwitch, HAT, OnPoint, OZ-TAL, OnlineTAS, E2E-LOAD are closest competitors. | [papers/oat2022-online-tal.md](papers/oat2022-online-tal.md), [papers/actionswitch2024-state.md](papers/actionswitch2024-state.md), [papers/matr2024-memory.md](papers/matr2024-memory.md) |
+| "建立 research-wiki，避免再走弯路" | Top-level wiki created; failed ideas and decision memory made prominent. | [index.md](index.md), [query_pack.md](query_pack.md), [log.md](log.md) |
+
+## Attachment Source Records
+
+| Attachment / Mention | Local Record | Mapped Content |
+|---|---|---|
+| Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260709.md` | `PRO_REVIEW_20260709.md`, `PRO_REVIEW_ABSORPTION_20260709.md` | HOLD verdict, OZ-TAL threat, route scores, claim map. |
+| Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260710.md` | `PRO_REVIEW_20260710.md`, `PRO_REVIEW_ABSORPTION_20260710.md` | Strict On-TAD definition, 51.2s latency, PCEH route, baselines/gates. |
+| Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260711.md` | `PRO_REVIEW_20260711.md`, `PRO_REVIEW_ABSORPTION_20260711.md` | PCEH target invalidity, CRS-EPS, formal training HOLD. |
+| Private Codex attachment, source archived byte-identically as `PRO_DIVERGENT_IDEA_REVIEW_20260711.md` | `PRO_DIVERGENT_IDEA_REVIEW_20260711.md`, `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md` | Full divergent review, 36 ideas, Top 5, route recommendation, independent partial rejection and revised gates. |
+
+## Current Code State Sources
+
+| Code/Config Area | Imported Understanding | Wiki Nodes |
+|---|---|---|
+| `opentad/models/detectors/pceh_ontad.py` | PCEH incremental detector skeleton exists; endpoint/emit separation not scientifically proven; predicted endpoint/emit issue remains conceptually important. | [ideas/pceh-ontad.md](ideas/pceh-ontad.md), [claims/c3-risk-set-hazard.md](claims/c3-risk-set-hazard.md) |
+| `opentad/utils/online_protocol.py` | Online protocol/evaluator utilities exist; GT-end latency and late FP/FN logic are central. | [claims/c6-budgeted-eval.md](claims/c6-budgeted-eval.md) |
+| `configs/causaltad/` | Contains current PCEH/frozen/finetune candidate configs; formal training remains not proven. | [experiments/formal-training-none.md](experiments/formal-training-none.md), [ideas/lora-stage2.md](ideas/lora-stage2.md) |
+| `tools/smoke_pceh_stream.py` | Smoke/audit entrypoint exists for protocol checks. | [experiments/pceh-smoke-20260710.md](experiments/pceh-smoke-20260710.md) |
+| `tests/` touched by PCEH implementation | Local test suite can validate contracts, but contract tests are not formal results. | [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md) |
+
+## Scope Correction and On-TAD Audit: 2026-07-12
+
+| Source | Imported Understanding | Wiki Nodes |
+|---|---|---|
+| User scope correction plus fresh primary-paper/repository audit | PIVOT rejected as out of task; direct sources confirm the gap between feature-level instance On-TAD and raw-video causal OAD/offline E2E-TAD. | [ideas/petal-ontad.md](ideas/petal-ontad.md), [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md), [decision_register.md#DR-024-reject-pivot-because-it-leaves-the-on-tad-task](decision_register.md), [decision_register.md#DR-025-select-persistent-end-to-end-event-tracking-as-the-new-lead-candidate](decision_register.md) |
+| `PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md` | Pro audit prompt for fixed-task PETAL review: repository reality, canonical On-TAD definition, claim decomposition, fresh search, combination rejection, route comparison, experiments, cost, and kill criteria. | [ideas/petal-ontad.md](ideas/petal-ontad.md), [discussion_timeline.md#T18-PETAL-Pro-Deep-Review-Prompt-Created](discussion_timeline.md) |
+
+## Coverage Gaps Still Remaining
+
+These sources are mapped at high level but not fully decomposed into individual paper/idea pages:
+
+- full line-by-line 20260705 review details;
+- full 20260706/20260707 adaptive selector and irregular-time sketches;
+- remote job logs beyond smoke/cancelled pilot summary;
+- all candidate papers from `online-action-models-2026-research.md` such as MOAD, CAKE, FluxMem, StreamingTOM, SimpleStream;
+- implementation diff-level mapping from each code file to each claim.
+
+If these become active again, create dedicated pages before using them as claims.
+
+## Fresh Literature Audit and Independent Review: 2026-07-11
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| CAG-QIL, ICCV 2021 | Decision history, MDP, and start/end state transitions are prior art. | [papers/cagaqil2021-decision-context.md](papers/cagaqil2021-decision-context.md) |
+| SimOn, 2022 | Lightweight sequential On-TAL and recurrent prediction context are prior art; training can be inexpensive on frozen features. | [papers/simon2022-sequential-ontal.md](papers/simon2022-sequential-ontal.md) |
+| ProTAS, CVPR 2024 | Ongoing action progress used to refine causal online predictions is prior adjacent work. | [papers/protas2024-progress-aware.md](papers/protas2024-progress-aware.md) |
+| OpenHOUSE, ICCV 2025 | Hierarchical streaming action semantics and On-TAL plus free-form descriptions are occupied territory. | [papers/openhouse2025-hierarchical-streaming.md](papers/openhouse2025-hierarchical-streaming.md) |
+| Thinking-QwenVL, ICLR 2026 | Generic causal state update, hypothesis revision, transparency, and evidence-aligned response timing are occupied in streaming VideoLLMs. | [papers/thinkingqwen2026-evidence-timing.md](papers/thinkingqwen2026-evidence-timing.md) |
+| StreamReady, 2026 | Generic readiness / when-enough-evidence-arrives is prior art in streaming video understanding. | [papers/streamready2026-readiness.md](papers/streamready2026-readiness.md) |
+| Hierarchical Event Memory, ICCV 2025 | Event-level online memory and low-latency start/end grounding are prior adjacent work. | [papers/onvtg2025-event-memory.md](papers/onvtg2025-event-memory.md) |
+| ETAD, CVPRW 2023 | Selective visual gradients and proposal sampling can make raw-video TAD practical; label-guided/block sampling may distort the distribution. | [papers/etad2023-efficient-e2e.md](papers/etad2023-efficient-e2e.md) |
+| GPT-5.5 xhigh independent novelty review | Broad CESR is incremental; only identity belief trajectories + utility stop + trajectory metrics remain defensible; CRS-EPS needs state/calibration audits. | .aris/traces/novelty-check/2026-07-11_run01/ |
+
+## Strategic Route Reassessment: 2026-07-11
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| StreamFormer, ICCV 2025 | Causal streaming backbone adaptation plus multitask temporal/spatial/video-language training is occupied territory. | [papers/streamformer2025-streaming-representation.md](papers/streamformer2025-streaming-representation.md) |
+| Active anytime-valid risk control, NeurIPS 2024 | Sequential risk control at adaptive stopping times is technically possible under explicit assumptions; no direct On-TAL application was found. | [papers/xu2024-anytime-risk-control.md](papers/xu2024-anytime-risk-control.md), [ideas/evidence-risk-ontal.md](ideas/evidence-risk-ontal.md) |
+| SAN, CVPR 2023 | Dynamic resolution/depth under fluctuating online compute is established; generic adaptive compute is not new. | [papers/foo2023-system-adaptive.md](papers/foo2023-system-adaptive.md), [ideas/active-sensing-ontal.md](ideas/active-sensing-ontal.md) |
+| Action Completion, 2018 | Goal completion and incomplete actions are established concepts distinct from generic motion boundaries. | [papers/heidarivincheh2018-action-completion.md](papers/heidarivincheh2018-action-completion.md), [ideas/evidence-risk-ontal.md](ideas/evidence-risk-ontal.md) |
+| SelectStream, 2026 | Budgeted selective evidence memory for streaming VLMs is directly occupied. | [papers/selectstream2026-budgeted-memory.md](papers/selectstream2026-budgeted-memory.md) |
+| AViLA, 2025 | Query-evidence asynchrony and time-aware response are already explicit streaming-video tasks. | [decision_register.md#DR-020-reject-generic-streaming-pretraining-memory-or-adaptive-compute-as-standalone-novelty](decision_register.md) |
+| User strategic challenge | Small On-TAL lifecycle modifications are not worth the compute; reopen the problem definition. | [discussion_timeline.md#T13-user-rejects-incremental-on-tal-and-reopens-the-scientific-question](discussion_timeline.md), [decision_register.md#DR-018-reopen-the-main-route-and-demote-cesr-to-a-substrate](decision_register.md) |
+| User request for assumption-free Pro ideation | Previous route choices and current code must not anchor the next idea-generation round; require broad divergence and adversarial selection. | [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md), [discussion_timeline.md#T14-user-rejects-current-idea-taste-and-requests-unanchored-pro-ideation](discussion_timeline.md) |
+
+## Divergent Review Verification: 2026-07-11
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| Munoz et al., WACV Workshops 2026 | Directly uses an e-process for real-time video tracking-failure alarms with provable false-alert control; lowers T01 novelty. | [papers/munoz2026-tracking-eprocess.md](papers/munoz2026-tracking-eprocess.md), [ideas/anytime-semantic-event-alarms.md](ideas/anytime-semantic-event-alarms.md) |
+| WATCH, 2025 | Strong conformal-martingale baseline for online change monitoring; semantic route must beat or differ from this mechanism. | [papers/watch2025-conformal-monitoring.md](papers/watch2025-conformal-monitoring.md) |
+| Online Video Anomaly Detection with FAR Bound, 2021 | Continuous-video false-alarm control is established adjacent territory. | [papers/doshi2021-video-anomaly-far.md](papers/doshi2021-video-anomaly-far.md) |
+| FEEL, 2026 | Force-synchronized egocentric video may support physical-versus-visual timing experiments. | [papers/feel2026-force-egocentric.md](papers/feel2026-force-egocentric.md), [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md) |
+| Independent binomial audit | With 5/100 false alarms, the 95% Wilson interval is about `[0.0215, 0.1118]`; 100 streams cannot establish near-0.05 control. | [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) |
+
+## PIVOT Competition Audit: 2026-07-11
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| APT 2026 | Timed atomic physical transitions, visible evidence, mechanisms, and before/after states are occupied territory. | [papers/apt2026-atomic-physical-transitions.md](papers/apt2026-atomic-physical-transitions.md) |
+| PaSBench-Video 2026 | First visible danger, accident boundary, and model warning already form a close three-time structure. | [papers/pasbench2026-proactive-warning.md](papers/pasbench2026-proactive-warning.md) |
+| Ego4D PNR | PRE/CONTACT/PNR/POST and state-change keyframe localization are established. | [papers/ego4d2022-pnr.md](papers/ego4d2022-pnr.md) |
+| TouchMoment 2026 | Precise contact-moment spotting is occupied; contact-only PIVOT is insufficient. | [papers/touchmoment2026-contact.md](papers/touchmoment2026-contact.md) |
+| TouchAnything / EgoTouch 2026 | Ideal multi-view pressure structure, but actual public data access remains unverified. | [papers/touchanything2026-egotouch.md](papers/touchanything2026-egotouch.md) |
+| VidOSC 2024 | Initial/transition/end open-world state-change localization is established. | [papers/vidosc2024-openworld-state-change.md](papers/vidosc2024-openworld-state-change.md) |
+| STARE 2026 | Latency-aware evaluation and ranking reversal are already strong contributions in streaming perception. | [papers/stare2026-stream-latency.md](papers/stare2026-stream-latency.md) |
+| Multimodal distillation 2023 | Train-time privileged modalities with RGB-only inference are not a PIVOT novelty. | [papers/radevski2023-multimodal-distillation.md](papers/radevski2023-multimodal-distillation.md) |
+| Boundary uncertainty and TAD diagnostics | Distributional boundaries and human annotation disagreement are established; PIVOT needs a different population-measurement object. | [papers/xie2020-boundary-uncertainty.md](papers/xie2020-boundary-uncertainty.md), [papers/alwassel2018-tad-diagnostics.md](papers/alwassel2018-tad-diagnostics.md) |

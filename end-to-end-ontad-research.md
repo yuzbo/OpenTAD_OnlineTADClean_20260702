@@ -2,6 +2,47 @@
 
 更新日期：2026-07-03
 
+最新复核：2026-07-12
+
+## 2026-07-12 任务内复核与新路线
+
+用户明确否决 PIVOT/Three-Clock 路线，因为它把问题改成 physically anchored streaming event verification，超出了标准 On-TAD。当前研究问题重新固定为：
+
+> 能否在不修改 On-TAD 输入、输出和评测定义的前提下，构建从 raw RGB 到动作实例输出联合训练、严格因果、低冗余计算的实例级在线检测器？
+
+### 最新查新结论
+
+截至本次复核，仍未找到同时满足以下条件的代表性公开方法：
+
+1. raw RGB 输入而非预提取特征；
+2. 可训练视觉骨干与实例检测头联合优化；
+3. 严格无未来的 On-TAD 推理；
+4. 输出动作实例 `{start, end, class, score}`，而不是逐帧 OAD 分类；
+5. 训练与增量缓存推理具有可审计的 prefix equivalence；
+6. 不依赖离线 NMS 或事后删除历史预测。
+
+关键证据：
+
+- MATR 论文在 THUMOS14 上冻结 two-stream TSN，在 MUSES 上使用 I3D；其官方代码输入是 `thumos_all_feature_*.pickle`。因此论文中的 “end-to-end architecture” 是检测器内部端到端，不是本文严格定义的 raw-video 端到端。
+- HAT、ActionSwitch、SimOn、OAT 和 OnPoint 同样依赖预提取或冻结特征。ActionSwitch 解决了重叠和同类实例，但仍是 feature-level state machine 加独立分类器。
+- E2E-LOAD 已证明 raw-video end-to-end online action detection 可行，但任务输出是 frame-level OAD。
+- StreamFormer 已训练 raw-video causal streaming backbone，并支持 KV cache；但下游 OAD 冻结该 backbone，且仍是逐帧分类。
+- TIA/AdaTAD、LoSA、Re2TAL、ETAD 等解决 raw-video/offline TAL 的联合训练或成本问题，但其检测任务可访问完整视频或未来上下文。
+
+因此，“使用 causal backbone”“使用 LoRA”“使用 raw frames”任何一项单独都不新。仍值得验证的是它们与**持久动作实例状态、标准 On-TAD emission、prefix-equivalent training**的交集。
+
+### 当前最佳候选：PETAL-OnTAD
+
+PETAL 把窗口级重复检测改为内部动作实例跟踪：一个 persistent event query 从动作开始证据出现后持续表示同一实例，在动作结束时输出标准 On-TAD detection。训练时用 block-causal mask 在一个长 chunk 中计算所有前缀；推理时用同一模型和 KV/SSM cache 逐步更新。Raw RGB encoder、causal temporal layers、persistent queries 和检测头联合优化。
+
+这个路线不引入新任务或新输出。Pre-end query 只是模型隐状态，最终 detection 仍然不可回改。核心风险是它可能被审稿人解释为 E2E-LOAD/StreamFormer、MATR 和 TrackFormer 的直接组合，因此 raw-video 实现前必须先完成：
+
+1. matched feature-level persistent-query versus fresh-window-query pilot；
+2. dedicated Pro novelty review；
+3. batched causal versus incremental cached prefix-equivalence test。
+
+完整节点见 [`research-wiki/ideas/petal-ontad.md`](research-wiki/ideas/petal-ontad.md)。
+
 ## 调研问题
 
 是否已经存在真正端到端的 online temporal action detection/localization（On-TAD/On-TAL）路线：模型直接读取视频帧，而不是依赖离线预提取特征，并在在线/因果约束下输出动作实例的起止边界和类别。
