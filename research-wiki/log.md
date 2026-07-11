@@ -56,3 +56,9 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-12: Added PETAL-OnTAD as the lead candidate: persistent action-instance queries, trajectory-level assignment, raw-video causal joint training, and prefix-parallel/incremental equivalence.
 - 2026-07-12: Added G15 and DR-024/DR-025; raw-video formal training remains on hold until a matched feature-level mechanism pilot and dedicated novelty review pass.
 - 2026-07-12: Created `PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md` with repository audit, task-definition gate, claim-by-claim novelty search, multi-paper reconstruction, Senior-PC kill round, experiment/cost closure, and final GO/REVISE/NO-GO decision.
+- 2026-07-12: Archived the complete PETAL Pro response as `PRO_PETAL_DEEP_REVIEW_20260712.md` and verified SHA-256 `74A5A88D0F0BFE389C974290FC6B118B834B13FE59E5D22231985F7018256D95`.
+- 2026-07-12: Added an independent point-by-point absorption: accepted the central `REVISE`, rejected several overstatements, retired the PETAL acronym, and blocked full raw-video training.
+- 2026-07-12: Added DR-026 and demoted Full PETAL to a three-way cached-feature kill test: FRESH versus Temporal TrackFormer versus Persistent Event-Set.
+- 2026-07-12: Implemented prefix schedules, streaming cache dataset, event-set head/detector, Hungarian assignment, immutable ledger, cache extractor, matched configs, Slurm gates, THUMOS instance audit, and machine-readable result gate.
+- 2026-07-12: THUMOS14 audit found maximum concurrency two on both splits; reduced the registered Stage-1 slot count from 16 to four.
+- 2026-07-12: Recorded 30 passing local CPU-safe tests, 43 passing N16R4 combined tests, and successful synthetic train/inference/ledger-summary integration; full cache and GPU smoke remain pending.

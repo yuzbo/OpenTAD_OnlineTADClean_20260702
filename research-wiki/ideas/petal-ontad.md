@@ -1,18 +1,30 @@
 ---
 type: idea
 node_id: idea:petal-ontad
-title: "PETAL-OnTAD: Persistent Event Tracking for End-to-End Online Temporal Action Detection"
-stage: lead-candidate
-outcome: pending
+title: "Persistent Event-Set On-TAD (former PETAL-OnTAD)"
+stage: revise-feature-kill-gate
+outcome: full-route-demoted
 updated: 2026-07-12
 target_gaps: ["G4", "G5", "G6", "G8", "G15"]
 ---
 
-# PETAL-OnTAD
+# Persistent Event-Set On-TAD
+
+`PETAL` is retained only in this node ID for history. The acronym is retired because it is already used by Prior-enhanced Temporal Action Localization.
+
+## 2026-07-12 Revision
+
+The Pro review returned `REVISE`, and independent verification accepts its central objection: the full package is largely reconstructible from causal video backbones, instance-level On-TAD, and TrackFormer-style persistent queries. Full raw-video implementation and training are therefore blocked.
+
+The only active route is a matched cached-feature kill test:
+
+> Compare fresh queries, a faithful Temporal TrackFormer reconstruction, and a minimal prefix-observable persistent event-set decoder. Test whether the On-TAD-specific mechanism improves identity-linked localization rather than merely adding generic tracking capacity.
+
+See [the Stage-1 evidence record](../experiments/persistent-feature-kill-test-20260712.md) and [`PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`](../../PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md).
 
 ## One-Line Thesis
 
-Train a raw-video causal backbone and persistent event queries jointly so that one query tracks one action instance from start evidence to end evidence, while prefix-parallel training is exactly equivalent to incremental cached inference.
+Determine whether prefix-observable persistent action-instance state has measurable value over matched fresh and Temporal TrackFormer decoders before considering any raw-video integration.
 
 ## Task Boundary
 
@@ -36,7 +48,9 @@ Current On-TAD methods largely combine frozen/pre-extracted TSN, I3D, or SlowFas
 
 MATR calls its detection architecture end-to-end but freezes two-stream TSN/I3D in its experiments and its public code consumes pickle features. StreamFormer and E2E-LOAD provide raw-video causal backbones for frame-level OAD, not instance-level On-TAD. Offline E2E-TAD, TIA/AdaTAD, LoSA, and Re2TAL adapt raw-video backbones but use future context.
 
-## Method
+## Demoted Full Method
+
+The following design is preserved as rejected/conditional history. It is not approved for implementation or training unless the Stage-1 mechanism, five-seed confirmation, and renewed novelty review all pass.
 
 ### 1. Causal Raw-Video Encoder
 
@@ -64,13 +78,13 @@ Arrange frame/tubelet tokens and event-query tokens under a block-causal mask. O
 
 This removes the current pattern of one video seek, one processor call, one backward pass, and one optimizer step for every 8-frame packet.
 
-## Candidate Contributions
+## Former Candidate Contributions
 
 1. A strict raw-video, instance-level, jointly trainable On-TAD model rather than a feature-level detector or frame-level OAD model.
 2. Persistent identity-bearing event queries with trajectory-level assignment, replacing window-by-window rediscovery and post-hoc grouping.
 3. Prefix-parallel causal training with auditable equivalence to cached streaming inference, reducing redundant computation without changing the online task.
 
-All first-work wording remains unproven until a dedicated Pro novelty review checks tracking-query, streaming-DETR, OAD, On-TAD, and end-to-end TAL literature.
+These are hypotheses, not surviving claims. The first novelty review found a strong multi-paper reconstruction and forced the matched mechanism gate.
 
 ## Closest Work and Required Delta
 
@@ -81,12 +95,12 @@ All first-work wording remains unproven until a dedicated Pro novelty review che
 - **E2E-TAD/TIA/LoSA/Re2TAL:** raw-video backbone adaptation for offline TAL; future-aware processing violates On-TAD inference.
 - **TrackFormer/online VIS:** persistent object queries are an architectural precedent; PETAL must prove that trajectory-level temporal interval supervision and prefix-equivalent training create more than a direct tracker transplant.
 
-## Minimal Experiment Ladder
+## Revised Experiment Ladder
 
-1. Feature-level pilot: persistent trajectories versus a matched fresh-query/window detector on identical features.
-2. Raw-video PEFT: causal backbone adapters plus the same tracker, with optimizer/gradient/parameter-delta audits.
-3. Optional top-block unfreezing only if PEFT shows a localization gain.
-4. Full chronological single-rank evaluation with no future access and immutable emissions.
+1. Frozen-feature pilot: FRESH versus Temporal TrackFormer versus Persistent Event-Set under identical inputs and capacity.
+2. If killed, stop this route and preserve the result as negative evidence.
+3. If retained, run five seeds, paired per-video uncertainty, error-mode analysis, and renewed closest-prior review.
+4. Raw-video PEFT remains a separate later decision; a Stage-1 pass does not authorize it automatically.
 
 Primary datasets: THUMOS14 for direct comparison, then FineAction or MultiTHUMOS for dense/overlapping stress tests. MUSES is conditional on data access.
 
@@ -119,6 +133,6 @@ Kill or demote the route if:
 
 ## Status
 
-Lead candidate after the user rejected PIVOT as outside On-TAD. `GO` only for a feature-level mechanism pilot and a dedicated Pro novelty review. Raw-video formal training remains `HOLD` until those two gates pass.
+`REVISE`. Full PETAL is demoted. `GO` only for the registered Stage-1 feature-level falsification experiment. Raw-video formal training remains `HOLD`; no effectiveness or novelty claim is active.
 
 Deep-review prompt: [`../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md`](../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md).

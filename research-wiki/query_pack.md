@@ -11,7 +11,9 @@ scope: Compressed memory to prepend before any new ideation or implementation pl
 
 The task is fixed to standard fully supervised Online Temporal Action Detection/Localization: causal RGB stream in, one immutable `{start, end, class, score}` instance emitted when an action end is detected. Do not introduce sensors, new observability labels, semantic-maintenance outputs, or a replacement task.
 
-PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. The new lead candidate is **PETAL-OnTAD**: jointly train a causal raw-video backbone and persistent event queries, use one identity-bearing query per action trajectory, and make batched causal training prefix-equivalent to incremental cached inference. Read `ideas/petal-ontad.md` and DR-024/DR-025 before new ideation.
+PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
+
+The only active route is a **matched frozen-feature mechanism kill test**, not an accepted paper method: FRESH versus Temporal TrackFormer versus Persistent Event-Set. Raw-video training remains blocked.
 
 ## Top Gaps
 
@@ -26,20 +28,20 @@ PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. The ne
 
 ## Candidate Portfolio
 
-- **PETAL-OnTAD:** lead candidate. Persistent event trajectories plus raw-video causal joint training and prefix-parallel/incremental equivalence.
-- **Feature-level persistent-query pilot:** immediate low-cost gate. It must beat a fresh-query/window detector before raw-video work.
+- **Persistent Event-Set Stage 1:** only approved active experiment. It must beat both FRESH and a faithful Temporal TrackFormer under matched features.
+- **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
 - **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
 - **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
 - **PIVOT/T01/T03/P01/L01:** rejected as current main task or held outside the fixed On-TAD scope.
 - **Cache/LoRA/ETAD-style gradient sampling:** cost-control tools, not standalone novelty.
 
-## PETAL Exact Delta
+## Stage-1 Exact Question
 
 Defensible sentence:
 
-> Track each action instance with one persistent latent event query and jointly adapt a strictly causal raw-video backbone, while training all visible prefixes in batched causal chunks that reproduce incremental cached inference exactly.
+> Under identical causal features and capacity, does prefix-observable persistent instance state improve standard completion-triggered On-TAD beyond both fresh queries and a Temporal TrackFormer reconstruction because it reduces identity-linked localization errors?
 
-All four qualifiers are necessary: action-instance identity, raw-video joint adaptation, strict causality, and train/inference prefix equivalence. Persistent tracks are internal state; standard On-TAD outputs and metrics remain unchanged.
+No raw-video, end-to-end, or novelty claim is currently active. Persistent tracks are internal state; standard immutable On-TAD outputs and metrics remain unchanged.
 
 ## Failed / Blocked Claims
 
@@ -61,18 +63,18 @@ All four qualifiers are necessary: action-instance identity, raw-video joint ada
 - **E2E-TAD/TIA, LoSA, Re2TAL, ETAD:** raw-video adaptation and efficient gradient methods for offline TAL.
 - **TrackFormer/online VIS:** persistent query precedent and the strongest obviousness attack.
 
-## PETAL Mandatory Gates
+## Persistent-State Mandatory Gates
 
-1. **Mechanism:** persistent queries beat a matched fresh-query/window detector on identical cached features.
+1. **Mechanism:** PES beats both FRESH and Temporal TrackFormer on identical cached features.
 2. **Failure mode:** gains include fewer duplicates/fragmentation or better same-class/overlap performance, not only aggregate mAP noise.
-3. **Adaptation:** raw-video PEFT adds an independent gain over the frozen persistent tracker with gradient/update evidence.
+3. **Assignment:** main training uses prefix-observable births, Hungarian assignment, and fixed post-birth identity; full-future assignment is only a privileged upper bound.
 4. **Causality:** future perturbation, prefix cut, and batched-versus-stepwise equivalence tests pass.
 5. **Protocol:** standard immutable On-TAD output, no offline cleanup, fixed class map, late FP and missed GT retained.
 6. **Novelty:** Pro review does not reduce the method to E2E-LOAD/StreamFormer + MATR or TrackFormer applied to time.
 7. **Cost:** chunked training materially reduces optimizer events and wall time versus packet-wise training; profile before formal runs.
-8. **Reproducibility:** THUMOS14 plus one dense/overlap benchmark, matched features/backbone, three seeds for headline comparisons.
+8. **Reproducibility:** three matched seeds are only a kill test; any retained claim needs five seeds, paired uncertainty, and a dense/overlap benchmark.
 
-PETAL kill conditions: no matched head gain, no independent visual-adaptation gain, no prefix equivalence, continued NMS dependence, cost remains unacceptable, or closest prior work collapses the claimed delta.
+Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more than 10 total GPU-hours. Kill/revise if PES fails to improve each baseline by at least 2.0 mOnlineAP points or 20% duplicate/fragmentation error at score parity. These are project resource gates, not universal significance thresholds.
 
 ## Infrastructure Laws
 
@@ -84,4 +86,4 @@ PETAL kill conditions: no matched head gain, no independent visual-adaptation ga
 
 ## Current Final Goal
 
-Do not start raw-video formal training. First submit `PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md` to Pro and archive/absorb the verdict, then implement the smallest feature-level persistent-query versus fresh-query comparison on identical data. Proceed to raw-video PEFT only if the tracking mechanism survives both gates.
+Do not start raw-video formal training. Complete the frozen SigLIP2 cache, pass the GPU smoke, and run only the registered three-variant Stage-1 kill test. Even a pass authorizes only five-seed confirmation, paired error analysis, and renewed novelty review; raw-video PEFT requires a separate explicit decision.

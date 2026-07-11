@@ -13,28 +13,25 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 2. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) before the next Pro-led route selection.
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
-5. [ideas/petal-ontad.md](ideas/petal-ontad.md) for the current lead candidate; [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md) records the rejected out-of-scope route.
+5. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for the only approved current experiment; [ideas/petal-ontad.md](ideas/petal-ontad.md) records why the full route was demoted.
 6. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
 7. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
 8. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
-Main-route selection remains open. The Pro divergent review strongly supports abandoning incremental PCEH/CESR headline claims and recommends an anytime-valid semantic-event alarm task. Independent review does **not** yet accept that recommendation as the final route because direct video e-process and video false-alarm-control precedents materially reduce its novelty.
+The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted after a Pro `REVISE` and independent verification of the TrackFormer/On-TAD/causal-backbone reconstruction attack.
 
-Current conditional P0 candidates:
+The only approved current experiment is **Persistent Event-Set Stage 1**: compare FRESH, Temporal TrackFormer, and PES on identical frozen causal features under a 10 GPU-hour budget. This is a mechanism kill test, not a paper claim. Raw-video adaptation, LoRA, extra lifecycle heads, and formal full-model training remain blocked.
 
-1. **Anytime-Valid Semantic Event Alarms**, pending novelty, statistical-validity, real-null-stream, and decision-value gates.
-2. **PETAL-OnTAD: Persistent Event Tracking for End-to-End Online Temporal Action Detection**, `GO` only for a matched feature-level mechanism pilot and dedicated novelty review.
-
-PCEH/CESR remains causal infrastructure, baseline, score generator, and protocol-audit code. Large formal training stays paused until a candidate survives cheap falsification.
+PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remains rejected because it leaves the task. Anytime-valid alarms remain archived outside the current fixed On-TAD route.
 
 ## Ideas
 
 | Node | Status | Role |
 |---|---|---|
 | [idea:anytime-semantic-event-alarms](ideas/anytime-semantic-event-alarms.md) | conditional-P0 | Pro Rank 1; direct e-process/video-FAR overlap requires a novelty and validity gate. |
-| [idea:petal-ontad](ideas/petal-ontad.md) | lead-candidate | Persistent action-instance queries, raw-video causal joint training, and prefix-parallel/incremental equivalence inside standard On-TAD. |
+| [idea:petal-ontad](ideas/petal-ontad.md) | revise/feature-kill-gate | Full raw-video package demoted; only the FRESH/TTF/PES matched-feature falsification study is active. |
 | [idea:three-clock-event-observability](ideas/three-clock-event-observability.md) | rejected-out-of-scope | PIVOT changes the task to physically anchored streaming event verification and must not be revived in this project. |
 | [idea:deadline-censored-omission](ideas/deadline-censored-omission.md) | hold | Pro Rank 3; earliest legal omission time, close procedure-monitoring threat. |
 | [idea:risk-constrained-duty-cycling](ideas/risk-constrained-duty-cycling.md) | hold | Pro Rank 4; pre-observation energy under risk constraints. |
@@ -92,6 +89,7 @@ PCEH/CESR remains causal infrastructure, baseline, score generator, and protocol
 | [paper:touchmoment2026-contact](papers/touchmoment2026-contact.md) | Blocks contact-only precise event spotting as a sufficient task. |
 | [paper:touchanything2026-egotouch](papers/touchanything2026-egotouch.md) | Potential multi-view pressure data source; release access remains unverified. |
 | [paper:stare2026-stream-latency](papers/stare2026-stream-latency.md) | Blocks latency-aware evaluation and model ranking reversal as standalone novelty. |
+| [paper:trackformer2022-tracking-queries](papers/trackformer2022-tracking-queries.md) | Strongest obviousness attack and mandatory Temporal TrackFormer baseline for persistent event queries. |
 
 ## Claims
 
@@ -111,6 +109,7 @@ PCEH/CESR remains causal infrastructure, baseline, score generator, and protocol
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
+| [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | implementation verified; cache pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates. |
 
 ## Source Records
 
@@ -121,6 +120,8 @@ Local review records that informed this wiki:
 - `PRO_REVIEW_ABSORPTION_20260711.md`
 - `PRO_DIVERGENT_IDEA_REVIEW_20260711.md`
 - `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`
+- `PRO_PETAL_DEEP_REVIEW_20260712.md`
+- `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`
 - `PRO_THREE_CLOCK_DEEP_REVIEW_PROMPT_20260711.md`

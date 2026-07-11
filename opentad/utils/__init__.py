@@ -29,6 +29,12 @@ _EXPORTS = {
     "audit_training_update": ("training_audit", "audit_training_update"),
     "StreamSmokeError": ("stream_smoke", "StreamSmokeError"),
     "run_stream_smoke": ("stream_smoke", "run_stream_smoke"),
+    "PrefixInstanceTarget": ("prefix_instance_schedule", "PrefixInstanceTarget"),
+    "PrefixScheduleStep": ("prefix_instance_schedule", "PrefixScheduleStep"),
+    "build_prefix_instance_schedule": (
+        "prefix_instance_schedule",
+        "build_prefix_instance_schedule",
+    ),
     "audit_model_future_perturbation": (
         "model_causal_replay",
         "audit_model_future_perturbation",

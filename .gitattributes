@@ -8,3 +8,6 @@
 *.yml text eol=lf
 *.cpp text eol=lf
 *.cu text eol=lf
+
+# Preserve the externally supplied review record byte-for-byte for provenance.
+PRO_PETAL_DEEP_REVIEW_20260712.md binary

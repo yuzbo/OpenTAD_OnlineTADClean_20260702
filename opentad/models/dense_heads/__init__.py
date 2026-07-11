@@ -21,6 +21,7 @@ from .query_decoder_head import QueryDecoderHead
 from .physical_segment_head import PhysicalSegmentHead
 from .matr_head import MATRHead
 from .prefix_event_emission_head import PrefixEventEmissionHead
+from .persistent_event_set_head import PersistentEventSetHead
 from ..builder import HEADS
 
 HEADS.register_module()(PrefixEventEmissionHead)
@@ -47,6 +48,7 @@ __all__ = [
     "PhysicalSegmentHead",
     "MATRHead",
     "PrefixEventEmissionHead",
+    "PersistentEventSetHead",
     "TriDetHead",
     "TemporalMaxerHead",
     "TemporalEvaluationHead",

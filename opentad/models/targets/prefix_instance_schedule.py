@@ -1,13 +1,10 @@
-from .prefix_event_targets import PrefixTargets, build_prefix_event_targets
-from .prefix_instance_schedule import (
+from opentad.utils.prefix_instance_schedule import (
     PrefixInstanceTarget,
     PrefixScheduleStep,
     build_prefix_instance_schedule,
 )
 
 __all__ = [
-    "PrefixTargets",
-    "build_prefix_event_targets",
     "PrefixInstanceTarget",
     "PrefixScheduleStep",
     "build_prefix_instance_schedule",

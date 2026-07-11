@@ -18,6 +18,7 @@ from .dyfadet import DyFADet
 from .irregular_actionformer import IrregularActionFormer
 from .sparse_completion_actionformer import SparseCompletionActionFormer
 from .pceh_ontad import PCEHOnlineDetector
+from .persistent_event_set_ontad import PersistentEventSetOnlineDetector
 from ..builder import DETECTORS
 
 DETECTORS.register_module()(PCEHOnlineDetector)
@@ -42,6 +43,7 @@ __all__ = [
     "DyFADet",
     "SparseCompletionActionFormer",
     "PCEHOnlineDetector",
+    "PersistentEventSetOnlineDetector",
     "DETR",
     "DeformableDETR",
     "TadTR",

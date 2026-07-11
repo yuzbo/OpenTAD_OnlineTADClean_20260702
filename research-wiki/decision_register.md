@@ -813,3 +813,47 @@ Sources:
 Reversibility:
 
 - Fully reversible after the feature-level mechanism pilot or novelty review. The fixed On-TAD task boundary is not reversible without explicit user approval.
+
+## DR-026: Demote Full PETAL and Run a Matched Persistent-State Kill Test
+
+Status: active; supersedes DR-025 as the executable route.
+
+Decision:
+
+> Do not implement or train the full raw-video PETAL package. First compare FRESH, Temporal TrackFormer, and a minimal prefix-observable Persistent Event-Set decoder on one frozen causal feature cache under a hard 10 GPU-hour Stage-1 budget.
+
+Accepted review findings:
+
+- Full PETAL is substantially reconstructible from StreamFormer/E2E-LOAD, MATR/ActionSwitch, and TrackFormer/MOTR.
+- Temporal TrackFormer is the novelty-killer baseline, not an optional ablation.
+- Existing PCEH class-keyed state, end/emission coupling, end-equals-emit decode, and mixed GT/runtime interfaces are scientifically unsafe foundations for the new route.
+- Raw-video adaptation would confound the persistence question and remains blocked.
+- The first pilot must omit NMS and duplicate-repair losses so that persistence itself is tested.
+
+Independent disagreements and qualifications:
+
+- Complete trajectory annotations in offline supervised training are not automatically inference leakage; they are a privileged-assignment risk and may appear only as a labeled upper-bound ablation.
+- Class supervision begins after the annotated start becomes prefix-observable; endpoint-only class supervision is an ablation, not the main rule.
+- A start pointer is a candidate mechanism and must beat scalar regression.
+- `+2.0` mOnlineAP points or `20%` error reduction is a project resource gate, not a universal significance theorem.
+- Three seeds are enough only to kill the route; a retained claim needs at least five seeds and paired uncertainty.
+
+Implementation resolution:
+
+- use training-only prefix schedules, first-crossing endpoint targets, Hungarian assignment, fixed identity after birth, and one-time immutable emissions;
+- reject EOF/terminal metadata and unknown potential-GT detector inputs;
+- compare only registered mechanism deltas on identical cached features;
+- use four slots because THUMOS14 training and validation each have observed maximum concurrency two;
+- invalidate runs with protocol violations, slot exhaustion, unmatched seeds, or budget overrun;
+- do not authorize raw-video training merely because Stage 1 passes.
+
+Sources:
+
+- `PRO_PETAL_DEEP_REVIEW_20260712.md`;
+- `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`;
+- [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md);
+- [papers/trackformer2022-tracking-queries.md](papers/trackformer2022-tracking-queries.md).
+
+Reversibility:
+
+- The Stage-1 architecture and thresholds are revisable before formal submission. The raw-video hold is reversible only after the registered mechanism, confirmation, novelty, and cost gates pass.

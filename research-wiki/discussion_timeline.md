@@ -563,3 +563,45 @@ Artifact:
 Current decision:
 
 > Send the prompt and absorb the Pro verdict before PETAL raw-video implementation or formal training.
+
+### T19: Pro Returns REVISE; Full PETAL Is Demoted to a Stage-1 Kill Test
+
+User requested:
+
+> Archive and absorb the complete Pro response, state whether every point is accepted, verify it independently, and begin implementation plus experiment deployment.
+
+Pro verdict:
+
+- `REVISE`, not `GO`;
+- Full PETAL can be reconstructed from causal streaming backbones, direct On-TAD methods, and tracking-query literature;
+- Temporal TrackFormer must be the novelty-killer baseline;
+- raw-video training must not begin before a cheap matched-feature pilot;
+- current PCEH semantics and GT/runtime boundaries are unsafe for the new route.
+
+Independent disposition:
+
+- accepted the central demotion and most protocol findings;
+- rejected the literal claim that full-trajectory training labels are automatically inference leakage;
+- rejected endpoint-only class supervision as the main setting;
+- treated the pointer and `2 mAP / 20%` rules as hypotheses/resource gates rather than established scientific truths;
+- required five-seed confirmation if the three-seed kill test survives.
+
+Implementation started and verified:
+
+- archived the source byte-identically and recorded SHA-256 `74A5A88D0F0BFE389C974290FC6B118B834B13FE59E5D22231985F7018256D95`;
+- implemented prefix-observable schedules, a chronological mmap cache dataset, shared persistent event-set head, online detector, feature extractor, matched configs, smoke launcher, instance audit, and result gate;
+- replaced greedy assignment with Hungarian matching and rejected unexpected forward kwargs as potential GT taint;
+- verified 30 local CPU-safe tests and 43 combined remote tests, plus config-built train/inference and ledger-summary integration;
+- audited THUMOS14 maximum concurrency as two on both splits and reduced all variants from 16 to four slots;
+- kept raw-video training blocked and prepared cache-first Slurm deployment.
+
+Artifacts:
+
+- [`../PRO_PETAL_DEEP_REVIEW_20260712.md`](../PRO_PETAL_DEEP_REVIEW_20260712.md)
+- [`../PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`](../PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md)
+- [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md)
+- [decision_register.md#DR-026-Demote-Full-PETAL-and-Run-a-Matched-Persistent-State-Kill-Test](decision_register.md)
+
+Current decision:
+
+> The only approved experiment is the frozen-feature FRESH/TTF/PES falsification study. A positive result retains a mechanism for further review; it does not establish novelty and does not automatically authorize raw-video training.
