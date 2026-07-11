@@ -62,3 +62,4 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-12: Implemented prefix schedules, streaming cache dataset, event-set head/detector, Hungarian assignment, immutable ledger, cache extractor, matched configs, Slurm gates, THUMOS instance audit, and machine-readable result gate.
 - 2026-07-12: THUMOS14 audit found maximum concurrency two on both splits; reduced the registered Stage-1 slot count from 16 to four.
 - 2026-07-12: Recorded 30 passing local CPU-safe tests, 43 passing N16R4 combined tests, and successful synthetic train/inference/ledger-summary integration; full cache and GPU smoke remain pending.
+- 2026-07-12: Pushed implementation commit `d06d0e992713ace3cf61f7e23c55bfc1a8afbb51`, created a clean N16R4 worktree, and submitted cache job `1159510`; GPU smoke and pilot remain gated.

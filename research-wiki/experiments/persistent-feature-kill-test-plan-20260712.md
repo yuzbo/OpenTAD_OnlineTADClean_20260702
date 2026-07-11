@@ -103,8 +103,9 @@
 - Update: `research-wiki/decision_register.md`
 - Update: `research-wiki/source_map.md`
 
-- [ ] Run focused and full local/remote tests, compile checks, wiki JSONL parsing, private-path scan, and `git diff --check`.
-- [ ] Commit and push the isolated implementation without staging unrelated local PCEH edits.
-- [ ] Create a fresh remote checkout at the pushed SHA.
-- [ ] Submit cache/smoke through Slurm and record job ID, run directory, SHA, config, budget, and current state.
-- [ ] Do not submit the three-seed pilot until cache and smoke artifacts pass.
+- [x] Run focused and full local/remote tests, compile checks, wiki JSONL parsing, private-path scan, and `git diff --check`.
+- [x] Commit and push the isolated implementation without staging unrelated local PCEH edits.
+- [x] Create a fresh remote checkout at the pushed SHA.
+- [x] Submit cache extraction through Slurm and record job ID, run directory, SHA, config, budget, and current state.
+- [ ] After the complete cache manifest passes validation, submit and inspect the GPU smoke.
+- [x] Do not submit the three-seed pilot until cache and smoke artifacts pass.

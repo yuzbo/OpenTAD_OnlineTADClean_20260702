@@ -2,7 +2,7 @@
 type: experiment
 node_id: exp:persistent-feature-kill-test-20260712
 title: "Persistent Event-Set Stage-1 Matched-Feature Kill Test"
-status: implementation-verified-cache-pending
+status: cache-submitted
 updated: 2026-07-12
 ---
 
@@ -92,7 +92,11 @@ A pass still blocks raw-video training until five-seed confirmation, paired unce
 ## Current State
 
 - Implementation: complete for the registered Stage-1 scope.
-- Cache extraction: deployment pending.
+- GitHub commit: `d06d0e992713ace3cf61f7e23c55bfc1a8afbb51` on `codex/online-tad-clean-20260702`.
+- Clean N16R4 worktree: `/data/run01/sczc063/yuzibo/projects/OpenTAD_PES_Stage1_d06d0e9_20260712`.
+- Cache extraction: Slurm job `1159510`, submitted 2026-07-12, currently `PENDING` at the first status check.
+- Cache run directory: `/data/run01/sczc063/yuzibo/runs/pes_stage1/pes_cache_20260712_033905`.
+- Cache target: `/data/run01/sczc063/yuzibo/thumos14/features/pes_siglip2_stride8`.
 - GPU smoke: blocked on a complete cache manifest.
 - Three-seed pilot: not submitted; smoke gate must pass first.
 - Raw-video/PEFT route: blocked.
