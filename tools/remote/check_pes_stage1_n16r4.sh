@@ -4,6 +4,12 @@ set -euo pipefail
 
 RUN_DIR=${1:?usage: check_pes_stage1_n16r4.sh RUN_DIR [JOB_ID]}
 JOB_ID=${2:-}
+PYTHON_BIN=${PYTHON_BIN:-python3}
+
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || {
+    echo "Missing Python 3 interpreter: $PYTHON_BIN" >&2
+    exit 2
+}
 
 if [[ -n "$JOB_ID" ]]; then
     squeue -j "$JOB_ID" || true
@@ -13,7 +19,7 @@ fi
 for path in "$RUN_DIR"/gate_summary.json "$RUN_DIR"/train_smoke_*.json "$RUN_DIR"/inference_smoke_*.json; do
     if [[ -f "$path" ]]; then
         echo "===== $(basename "$path") ====="
-        python - "$path" <<'PY'
+        "$PYTHON_BIN" - "$path" <<'PY'
 import json
 import sys
 

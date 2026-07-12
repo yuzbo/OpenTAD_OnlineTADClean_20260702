@@ -57,6 +57,8 @@ def test_stage1_checker_reports_gate_and_slurm_accounting():
 
     assert "squeue" in source
     assert "sacct" in source
+    assert "PYTHON_BIN=${PYTHON_BIN:-python3}" in source
+    assert '"$PYTHON_BIN" - "$path"' in source
     assert "gate_summary.json" in source
     assert "train_smoke" in source
     assert "tail -n" in source
