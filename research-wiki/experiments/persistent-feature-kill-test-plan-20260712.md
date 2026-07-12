@@ -107,5 +107,7 @@
 - [x] Commit and push the isolated implementation without staging unrelated local PCEH edits.
 - [x] Create a fresh remote checkout at the pushed SHA.
 - [x] Submit cache extraction through Slurm and record job ID, run directory, SHA, config, budget, and current state.
-- [ ] After the complete cache manifest passes validation, submit and inspect the GPU smoke.
-- [x] Do not submit the three-seed pilot until cache and smoke artifacts pass.
+- [x] Validate the complete 411-video cache manifest, arrays, sidecars, source hashes, dimensions, and dtype.
+- [x] Submit and inspect GPU smoke job `1159843`; verify all three train routes, PES inference, update audits, slot-exhaustion audit, and the test bundle.
+- [x] Repair the post-run checker so the login shell cannot silently select Python 2, then re-run it against the completed smoke artifacts.
+- [x] Keep the three-seed pilot unsubmitted pending Pro review of scientific identifiability and the minimum controlled comparison set.

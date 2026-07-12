@@ -605,3 +605,39 @@ Artifacts:
 Current decision:
 
 > The only approved experiment is the frozen-feature FRESH/TTF/PES falsification study. A positive result retains a mechanism for further review; it does not establish novelty and does not automatically authorize raw-video training.
+
+### T20: Cache and Smoke Pass; Pro Must Audit Identifiability Before Pilot
+
+User requested:
+
+> Publish the latest checked code to GitHub and produce one complete repository-addressed Prompt for Pro code review, scientific audit, and discussion.
+
+Completed evidence:
+
+- feature-cache job `1159510` completed in `00:52:07` with exit `0:0`;
+- all 411 feature arrays and sidecars passed shape, dtype, source, annotation, and SHA256 contract checks;
+- the cache contains 320,205 768-dimensional `float16` tokens, with 2,479 training chunks and 2,719 validation chunks at chunk size 64;
+- GPU smoke job `1159843` completed in `00:03:46` with exit `0:0`;
+- FRESH, Temporal TrackFormer, and PES each passed four chronological train chunks with required gradients and parameter updates and zero slot exhaustion;
+- PES passed four chronological inference chunks, and the smoke job test bundle reported `43 passed in 36.73s`.
+
+Engineering correction:
+
+- the original post-run checker used bare `python`, which resolved to Python 2 on the remote login shell;
+- the generated smoke artifacts were valid, but the first inspection command could not parse them;
+- commit `d6b0bca3f146046f9f6cb938f26561b32df105ed` defaults to `python3`, permits `PYTHON_BIN` override, adds a launch-contract regression test, and was revalidated against job `1159843`.
+
+Scientific interpretation:
+
+- smoke proves execution, gradient flow, parameter updates, causal path coverage, and basic ledger generation only;
+- it does not show PES effectiveness, novelty, fair mechanism attribution, or statistical support;
+- the current FRESH-to-TTF and TTF-to-PES changes may confound assignment, persistence, start representation, and endpoint objective;
+- the three-seed pilot remains intentionally unsubmitted until Pro decides whether the registered comparison is identifiable or needs a smaller controlled bridge set.
+
+Artifact:
+
+- [`../PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`](../PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md)
+
+Current decision:
+
+> Use the public review anchor plus the complete Prompt for a two-round Pro audit. Keep raw-video training blocked and do not treat any smoke evidence as a paper result.

@@ -2,7 +2,7 @@
 type: experiment
 node_id: exp:persistent-feature-kill-test-20260712
 title: "Persistent Event-Set Stage-1 Matched-Feature Kill Test"
-status: cache-submitted
+status: smoke-passed-pro-review-pending
 updated: 2026-07-12
 ---
 
@@ -76,6 +76,12 @@ Remote N16R4 combined tests after Hungarian and taint-audit repair:
 
 Synthetic end-to-end integration on N16R4 CPU also passed for one real config-built training step, one chronological inference chunk, and ledger-to-run-summary generation. The training audit observed finite losses, nonzero gradients in 30 head parameters, 30 changed parameters, one first-crossing endpoint positive, and zero slot exhaustion.
 
+The full frozen-feature cache job `1159510` completed in `00:52:07` with exit code `0:0`. An independent contract audit verified all 411 arrays and sidecars, 320,205 total feature tokens, 768-dimensional `float16` features, every per-video SHA256, and the annotation SHA256.
+
+GPU smoke job `1159843` completed in `00:03:46` with exit code `0:0`. `gate_summary.json` passed. FRESH, Temporal TrackFormer, and PES each completed four chronological training chunks with finite losses, required gradients and parameter updates, and zero slot exhaustion; PES also completed four inference chunks. The job's remote test bundle reported `43 passed in 36.73s`.
+
+The first post-run inspection exposed an engineering-only deployment issue: the checker used bare `python`, which resolved to Python 2 on the login shell. Commit `d6b0bca3f146046f9f6cb938f26561b32df105ed` defaults the checker to `python3`, supports an explicit `PYTHON_BIN`, and adds a regression contract. The fixed checker exited zero against the completed smoke artifacts. The Slurm job and generated reports were unaffected.
+
 The local Windows user-site Torch currently fails to load `c10.dll`; Torch tests are therefore executed in the existing N16R4 OpenTAD environment. This is an environment limitation, not counted as a model pass.
 
 ## Registered Gate
@@ -92,13 +98,14 @@ A pass still blocks raw-video training until five-seed confirmation, paired unce
 ## Current State
 
 - Implementation: complete for the registered Stage-1 scope.
-- GitHub commit: `d06d0e992713ace3cf61f7e23c55bfc1a8afbb51` on `codex/online-tad-clean-20260702`.
+- Implementation base commit: `d06d0e992713ace3cf61f7e23c55bfc1a8afbb51`.
+- Latest code-review anchor: `d6b0bca3f146046f9f6cb938f26561b32df105ed` on `codex/online-tad-clean-20260702`.
 - Clean N16R4 worktree: `/data/run01/sczc063/yuzibo/projects/OpenTAD_PES_Stage1_d06d0e9_20260712`.
-- Cache extraction: Slurm job `1159510`, submitted 2026-07-12, currently `PENDING` at the first status check.
+- Cache extraction: Slurm job `1159510`, `COMPLETED`, elapsed `00:52:07`, exit `0:0`; 411/411 cache contracts passed.
 - Cache run directory: `/data/run01/sczc063/yuzibo/runs/pes_stage1/pes_cache_20260712_033905`.
 - Cache target: `/data/run01/sczc063/yuzibo/thumos14/features/pes_siglip2_stride8`.
-- GPU smoke: blocked on a complete cache manifest.
-- Three-seed pilot: not submitted; smoke gate must pass first.
+- GPU smoke: Slurm job `1159843`, `COMPLETED`, elapsed `00:03:46`, exit `0:0`; all registered smoke reports passed.
+- Three-seed pilot: not submitted; held for Pro review of scientific identifiability and the minimum controlled variant set.
 - Raw-video/PEFT route: blocked.
 
 ## Artifacts
@@ -106,6 +113,7 @@ A pass still blocks raw-video training until five-seed confirmation, paired unce
 - Design: [persistent-feature-kill-test-design-20260712.md](persistent-feature-kill-test-design-20260712.md)
 - Plan: [persistent-feature-kill-test-plan-20260712.md](persistent-feature-kill-test-plan-20260712.md)
 - Pro absorption: [`../../PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`](../../PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md)
+- Current Pro code/science discussion Prompt: [`../../PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`](../../PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md)
 - Run summary: `tools/summarize_pes_stage1_run.py`
 - Result gate: `tools/check_pes_stage1_results.py`
 - Instance audit: `tools/analyze_ontad_instances.py`

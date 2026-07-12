@@ -109,7 +109,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
-| [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | implementation verified; cache pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates. |
+| [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 
 ## Source Records
 
@@ -122,6 +122,7 @@ Local review records that informed this wiki:
 - `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`
 - `PRO_PETAL_DEEP_REVIEW_20260712.md`
 - `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`
+- `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`
 - `PRO_THREE_CLOCK_DEEP_REVIEW_PROMPT_20260711.md`

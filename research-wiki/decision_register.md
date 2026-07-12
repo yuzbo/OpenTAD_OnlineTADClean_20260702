@@ -857,3 +857,38 @@ Sources:
 Reversibility:
 
 - The Stage-1 architecture and thresholds are revisable before formal submission. The raw-video hold is reversible only after the registered mechanism, confirmation, novelty, and cost gates pass.
+
+## DR-027: Hold the Scientific Pilot After Smoke Until Identifiability Review
+
+Status: active procedural gate; refines DR-026 without changing the On-TAD task.
+
+Decision:
+
+> Treat the completed cache and GPU smoke as engineering readiness only. Do not submit the three-seed pilot until Pro audits whether FRESH, Temporal TrackFormer, and PES isolate persistent-state value or require a minimal controlled bridge set.
+
+Reason:
+
+- Cache job `1159510` and smoke job `1159843` passed their registered engineering contracts.
+- Smoke cannot establish performance, novelty, fair attribution, or statistical support.
+- FRESH to TTF changes assignment and persistence together.
+- TTF to PES changes start representation and endpoint objective together.
+- Running nine full pilot jobs before resolving this attribution problem could consume the budget yet leave the central claim uninterpretable.
+- A small pre-registered bridge set may be cheaper than repeating an underidentified experiment after results arrive.
+
+Resolution:
+
+- publish the latest review anchor and complete Pro audit/discussion Prompt;
+- require a task-definition verdict, code/protocol findings, test-to-claim map, strongest rejection, claim map, novelty search, and experiment-identifiability verdict;
+- allow Pro to retain the three registered variants, replace them with a smaller controlled set, or kill the route;
+- keep raw-video gradients and PEFT blocked in every outcome of this review;
+- do not reinterpret the completed smoke artifacts as scientific results.
+
+Sources:
+
+- `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`;
+- [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md);
+- [discussion_timeline.md#T20-cache-and-smoke-pass-pro-must-audit-identifiability-before-pilot](discussion_timeline.md).
+
+Reversibility:
+
+- Reversible after the Pro identifiability verdict and author discussion. Any revised pilot must remain within the 10 GPU-hour Stage-1 ceiling and preserve the fixed fully supervised On-TAD boundary.

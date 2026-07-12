@@ -86,4 +86,4 @@ Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more 
 
 ## Current Final Goal
 
-Do not start raw-video formal training. Complete the frozen SigLIP2 cache, pass the GPU smoke, and run only the registered three-variant Stage-1 kill test. Even a pass authorizes only five-seed confirmation, paired error analysis, and renewed novelty review; raw-video PEFT requires a separate explicit decision.
+Do not start raw-video formal training. The frozen SigLIP2 cache and bounded GPU smoke have passed, but no scientific pilot has been submitted. First obtain a Pro verdict on whether the registered FRESH/TTF/PES comparison identifies persistent-state value or needs a minimal controlled bridge set; then run only the approved Stage-1 falsification design. Even a pass authorizes only five-seed confirmation, paired error analysis, and renewed novelty review; raw-video PEFT requires a separate explicit decision.
