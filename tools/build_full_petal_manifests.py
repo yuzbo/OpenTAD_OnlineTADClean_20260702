@@ -154,6 +154,7 @@ def parse_args(argv=None):
     )
     reporting_compare.add_argument("--locked-manifest", type=Path, required=True)
     reporting_compare.add_argument("--observed-ids", type=Path, required=True)
+    reporting_compare.add_argument("--difference-reasons", type=Path, required=True)
     _add_common_output_arguments(reporting_compare, include_strict=True)
 
     hardware = commands.add_parser(
@@ -243,10 +244,12 @@ def _build_reporting_lock(args):
 def _build_reporting_comparison(args):
     locked_manifest = load_json(args.locked_manifest)
     observed_ids = load_id_file(args.observed_ids)
+    difference_reasons = load_json(args.difference_reasons)
     return compare_reporting_universe(
         locked_manifest,
         observed_ids,
         observed_provenance=_id_file_provenance(args.observed_ids, observed_ids),
+        difference_reasons=difference_reasons,
         seed=args.seed,
         created_at=args.created_at,
         strict=args.strict,

@@ -2,7 +2,6 @@
 """Create one machine-readable Stage-1 run row from an immutable ledger."""
 
 import argparse
-from collections import defaultdict
 import json
 import math
 from pathlib import Path
@@ -15,156 +14,49 @@ def _load_json(value):
         return json.load(handle)
 
 
-def _segment_iou(left, right):
-    intersection = max(0.0, min(left[1], right[1]) - max(left[0], right[0]))
-    union = max(left[1], right[1]) - min(left[0], right[0])
-    return intersection / union if union > 0 else 0.0
-
-
-def _union_coverage(segments, target):
-    clipped = sorted(
-        (max(segment[0], target[0]), min(segment[1], target[1]))
-        for segment in segments
-        if min(segment[1], target[1]) > max(segment[0], target[0])
-    )
-    if not clipped:
-        return 0.0
-    merged = []
-    for start, end in clipped:
-        if not merged or start > merged[-1][1]:
-            merged.append([start, end])
-        else:
-            merged[-1][1] = max(merged[-1][1], end)
-    covered = sum(end - start for start, end in merged)
-    return covered / max(target[1] - target[0], 1e-12)
-
-
-def _row_time(row, prefix):
-    for key in (f"{prefix}_time_sec", f"{prefix}_sec"):
-        if key in row:
-            return float(row[key])
-    frame_key = f"{prefix}_frame"
-    if frame_key in row and float(row.get("fps", 0.0)) > 0:
-        return float(row[frame_key]) / float(row["fps"])
-    return None
-
-
 def analyze_emission_errors(
     ground_truth,
     predictions,
     subset,
     tiou_threshold=0.5,
     latency_budget_sec=2.0,
+    fps=30.0,
 ):
-    ground_truth = _load_json(ground_truth)
-    predictions = _load_json(predictions)
-    targets = []
-    seen_targets = set()
-    for video_id, video in ground_truth.get("database", {}).items():
-        if video.get("subset") != subset:
-            continue
-        for annotation in video.get("annotations", ()):
-            segment = tuple(float(value) for value in annotation["segment"])
-            if len(segment) != 2 or segment[1] <= segment[0]:
-                raise ValueError(f"invalid ground-truth segment for {video_id}: {segment}")
-            key = (str(video_id), str(annotation["label"]), segment)
-            if key in seen_targets:
-                continue
-            seen_targets.add(key)
-            targets.append(
-                {
-                    "id": len(targets),
-                    "video_id": str(video_id),
-                    "label": str(annotation["label"]),
-                    "segment": segment,
-                }
-            )
+    from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
 
-    rows = []
-    for video_id, video_rows in predictions.get("results", {}).items():
-        for raw in video_rows:
-            if not bool(raw.get("immutable", False)):
+    prediction_data = _load_json(predictions)
+    for video_rows in prediction_data.get("results", {}).values():
+        for row in video_rows:
+            if row.get("immutable") is not True:
                 raise ValueError("Stage-1 diagnostics require immutable emission rows")
-            segment = tuple(float(value) for value in raw["segment"])
-            if len(segment) != 2 or segment[1] <= segment[0]:
-                raise ValueError(f"invalid prediction segment for {video_id}: {segment}")
-            emit_time = _row_time(raw, "emit")
-            source_time = _row_time(raw, "source")
-            if emit_time is None or source_time is None:
-                raise ValueError("emission rows require emit and source provenance")
-            if segment[1] > emit_time + 1e-9:
-                raise ValueError("prediction endpoint uses future time")
-            if source_time > emit_time + 1e-9:
-                raise ValueError("prediction source provenance uses future time")
-            rows.append(
-                {
-                    "id": len(rows),
-                    "video_id": str(video_id),
-                    "label": str(raw["label"]),
-                    "score": float(raw["score"]),
-                    "segment": segment,
-                    "emit_time": emit_time,
-                }
-            )
-
-    targets_by_group = defaultdict(list)
-    rows_by_group = defaultdict(list)
-    for target in targets:
-        targets_by_group[(target["video_id"], target["label"])].append(target)
-    for row in rows:
-        rows_by_group[(row["video_id"], row["label"])].append(row)
-
-    locked = set()
-    duplicate_false_positives = 0
-    for group, group_rows in rows_by_group.items():
-        group_targets = targets_by_group.get(group, ())
-        for row in sorted(group_rows, key=lambda item: (-item["score"], item["id"])):
-            eligible = []
-            for target in group_targets:
-                latency = row["emit_time"] - target["segment"][1]
-                iou = _segment_iou(row["segment"], target["segment"])
-                if iou >= tiou_threshold and -1e-9 <= latency <= latency_budget_sec + 1e-9:
-                    eligible.append((iou, -abs(latency), target))
-            available = [item for item in eligible if item[2]["id"] not in locked]
-            if available:
-                target = max(available, key=lambda item: (item[0], item[1]))[2]
-                locked.add(target["id"])
-            elif eligible:
-                duplicate_false_positives += 1
-
-    fragmented = 0
-    for target in targets:
-        if target["id"] in locked:
-            continue
-        candidates = []
-        for row in rows_by_group.get((target["video_id"], target["label"]), ()):
-            latency = row["emit_time"] - target["segment"][1]
-            iou = _segment_iou(row["segment"], target["segment"])
-            if -1e-9 <= latency <= latency_budget_sec + 1e-9 and 0.0 < iou < tiou_threshold:
-                candidates.append(row["segment"])
-        if len(candidates) >= 2 and _union_coverage(candidates, target["segment"]) >= tiou_threshold:
-            fragmented += 1
-
-    num_predictions = len(rows)
-    num_targets = len(targets)
+    evaluator = OnlineAPBudgeted(
+        ground_truth_filename=_load_json(ground_truth),
+        prediction_filename=prediction_data,
+        subset=subset,
+        tiou_thresholds=(tiou_threshold,),
+        latency_budgets_sec=(latency_budget_sec,),
+        fps=fps,
+        require_ledger=False,
+        require_no_future=True,
+        include_identity_diagnostics=True,
+        identity_tiou_threshold=tiou_threshold,
+        identity_latency_budget_sec=latency_budget_sec,
+    )
+    identity = evaluator.evaluate()["identity_diagnostics"]
     return {
-        "definition": {
-            "tiou_threshold": float(tiou_threshold),
-            "latency_budget_sec": float(latency_budget_sec),
-            "duplicate": "extra ranked emission eligible for an already matched GT",
-            "fragmentation": (
-                "unmatched GT covered above threshold by at least two timely same-class pieces, "
-                "with no piece individually reaching the tIoU threshold"
-            ),
-        },
-        "num_ground_truth": num_targets,
-        "num_predictions": num_predictions,
-        "true_positives": len(locked),
-        "false_negatives": num_targets - len(locked),
-        "duplicate_false_positives": duplicate_false_positives,
-        "fragmented_ground_truth": fragmented,
-        "duplicate_rate": duplicate_false_positives / num_predictions if num_predictions else 0.0,
-        "fragmentation_rate": fragmented / num_targets if num_targets else 0.0,
+        "definition": identity["matching"],
+        "num_ground_truth": identity["counts"]["ground_truth"],
+        "num_predictions": identity["counts"]["emissions"],
+        "true_positives": identity["counts"]["matched_ground_truth"],
+        "false_negatives": identity["counts"]["unmatched_ground_truth"],
+        "duplicate_false_positives": identity["counts"]["duplicate_emissions"],
+        "fragmented_ground_truth": identity["fragmentation"][
+            "fragmented_ground_truth_count"
+        ],
+        "duplicate_per_gt": identity["duplicate_per_gt"],
+        "duplicate_fraction": identity["duplicate_fraction"],
+        "fragmentation_rate": identity["fragmentation_rate"],
+        "canonical_identity_diagnostics": identity,
     }
 
 
@@ -207,22 +99,19 @@ def build_run_summary(
         latency_budgets_sec=latency_budgets_sec,
         require_ledger=True,
         require_no_future=True,
+        identity_tiou_threshold=diagnostic_tiou,
+        identity_latency_budget_sec=diagnostic_budget_sec,
     )
     metrics = evaluator.evaluate()
-    errors = analyze_emission_errors(
-        annotation,
-        prediction_data,
-        subset=subset,
-        tiou_threshold=diagnostic_tiou,
-        latency_budget_sec=diagnostic_budget_sec,
-    )
+    errors = metrics["identity_diagnostics"]
     if not math.isfinite(float(gpu_hours)) or float(gpu_hours) < 0:
         raise ValueError("gpu_hours must be finite and non-negative")
     return {
         "variant": str(variant),
         "seed": int(seed),
         "average_mOnlineAP": metrics["average_mOnlineAP"],
-        "duplicate_rate": errors["duplicate_rate"],
+        "duplicate_per_gt": errors["duplicate_per_gt"],
+        "duplicate_fraction": errors["duplicate_fraction"],
         "fragmentation_rate": errors["fragmentation_rate"],
         "gpu_hours": float(gpu_hours),
         "protocol_violations": 0,

@@ -1,9 +1,17 @@
 import hashlib
 import json
+import numbers
 from pathlib import Path
 
 import numpy as np
 
+from opentad.utils.full_petal_data_contract import (
+    THUMOS_DEVELOPMENT_SPLIT_SCHEMA_VERSION,
+    canonical_json_sha256,
+    load_id_file,
+    load_json,
+    verify_content_hash,
+)
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
 
 
@@ -54,6 +62,9 @@ class StreamingFeatureDataset:
         test_mode=False,
         allow_list=None,
         block_list=None,
+        split_manifest=None,
+        split_role=None,
+        split_seed=None,
         logger=None,
     ):
         self.ann_file = Path(ann_file)
@@ -72,13 +83,30 @@ class StreamingFeatureDataset:
 
         self.class_map = self._load_class_map(class_map)
         self._class_to_index = {name: index for index, name in enumerate(self.class_map)}
+        self.allow_list_path = (
+            Path(allow_list)
+            if allow_list is not None and not isinstance(allow_list, (list, tuple, set))
+            else None
+        )
         self._allowed = self._load_name_filter(allow_list)
         self._blocked = self._load_name_filter(block_list) or set()
         self._subsets = {subset_name} if isinstance(subset_name, str) else set(subset_name)
+        self._split_contract = self._load_split_contract(
+            split_manifest,
+            split_role,
+            split_seed,
+        )
         self._manifest = self._load_manifest()
         self.data_list = []
         self.packet_manifests = {}
         self._build_index()
+        if self._split_contract is not None:
+            selected_ids = sorted(self.packet_manifests)
+            if selected_ids != self._split_contract["ids"]:
+                raise ValueError(
+                    "dataset videos do not exactly consume the locked split role; "
+                    f"expected {self._split_contract['ids']}, found {selected_ids}"
+                )
         if not self.data_list:
             raise ValueError(f"no cached feature chunks found for subsets {sorted(self._subsets)}")
 
@@ -96,9 +124,123 @@ class StreamingFeatureDataset:
         with Path(value).open("r", encoding="utf-8") as handle:
             return {line.strip() for line in handle if line.strip()}
 
+    def _load_split_contract(self, split_manifest, split_role, split_seed):
+        provided = (split_manifest is not None, split_role is not None, split_seed is not None)
+        if not any(provided):
+            self.split_manifest_path = None
+            self.split_manifest_sha256 = None
+            self.split_manifest_file_sha256 = None
+            self.split_role = None
+            self.split_seed = None
+            return None
+        if not all(provided):
+            raise ValueError(
+                "split_manifest, split_role, and split_seed must be provided together"
+            )
+        if self.allow_list_path is None:
+            raise ValueError("a locked split contract requires a physical allow-list file")
+        if self._blocked:
+            raise ValueError("a locked split contract forbids an additional block-list")
+        if isinstance(split_seed, bool) or not isinstance(split_seed, numbers.Integral):
+            raise ValueError("split seed must be an integer")
+        split_seed = int(split_seed)
+
+        manifest_path = Path(split_manifest)
+        manifest = load_json(manifest_path)
+        if manifest.get("schema") != "full_petal.thumos_development_split":
+            raise ValueError("split manifest has an unsupported schema")
+        if manifest.get("schema_version") != THUMOS_DEVELOPMENT_SPLIT_SCHEMA_VERSION:
+            raise ValueError("split manifest has an unsupported schema version")
+        if not verify_content_hash(manifest):
+            raise ValueError("split manifest content hash does not verify")
+        if manifest.get("seed") != split_seed:
+            raise ValueError(
+                f"split seed mismatch: expected {split_seed}, found {manifest.get('seed')}"
+            )
+        role = str(split_role)
+        artifact_names = {
+            "fit_core": "fit_ids",
+            "calibration": "calibration_ids",
+        }
+        if role not in artifact_names:
+            raise ValueError(f"unsupported split role {role!r}")
+        split_records = manifest.get("splits")
+        if not isinstance(split_records, dict):
+            raise ValueError("split manifest is missing split records")
+        role_ids = {}
+        for declared_role in artifact_names:
+            split_record = split_records.get(declared_role)
+            if not isinstance(split_record, dict):
+                raise ValueError(f"split manifest is missing role {declared_role!r}")
+            declared_ids = split_record.get("ids")
+            if not isinstance(declared_ids, list) or not all(
+                isinstance(video_id, str) and video_id for video_id in declared_ids
+            ):
+                raise ValueError(
+                    f"split role {declared_role!r} must contain non-empty text IDs"
+                )
+            if declared_ids != sorted(set(declared_ids)):
+                raise ValueError(
+                    f"split role {declared_role!r} IDs must be sorted and unique"
+                )
+            if split_record.get("count") != len(declared_ids):
+                raise ValueError(
+                    f"split role {declared_role!r} count does not match its IDs"
+                )
+            if split_record.get("ids_sha256") != canonical_json_sha256(declared_ids):
+                raise ValueError(f"split role {declared_role!r} ID hash does not verify")
+            role_ids[declared_role] = declared_ids
+        overlap = sorted(set(role_ids["fit_core"]).intersection(role_ids["calibration"]))
+        if overlap:
+            raise ValueError("fit_core and calibration split roles overlap: " + ", ".join(overlap))
+        universe = manifest.get("universe")
+        if not isinstance(universe, dict):
+            raise ValueError("split manifest is missing its development universe")
+        universe_ids = universe.get("ids")
+        combined_ids = sorted([*role_ids["fit_core"], *role_ids["calibration"]])
+        if universe_ids != combined_ids:
+            raise ValueError("split roles do not exactly partition the development universe")
+        if universe.get("count") != len(universe_ids):
+            raise ValueError("development universe count does not match its IDs")
+        if universe.get("ids_sha256") != canonical_json_sha256(universe_ids):
+            raise ValueError("development universe ID hash does not verify")
+        ids = role_ids[role]
+
+        annotation = load_json(self.ann_file)
+        expected_annotation_hash = manifest.get("annotation", {}).get(
+            "canonical_sha256"
+        )
+        if expected_annotation_hash != canonical_json_sha256(annotation):
+            raise ValueError("split manifest annotation hash does not match dataset")
+
+        artifact = manifest.get("artifacts", {}).get(artifact_names[role])
+        if not isinstance(artifact, dict):
+            raise ValueError(f"split manifest is missing the {role!r} allow-list artifact")
+        if artifact.get("name") != self.allow_list_path.name:
+            raise ValueError("split allow-list filename does not match manifest")
+        if artifact.get("sha256") != _sha256_file(self.allow_list_path):
+            raise ValueError("split allow-list file hash does not verify")
+        allow_ids = load_id_file(self.allow_list_path)
+        if artifact.get("content_sha256") != canonical_json_sha256(allow_ids):
+            raise ValueError("split allow-list content hash does not verify")
+        if allow_ids != ids:
+            raise ValueError(
+                f"allow-list does not exactly match locked split role {role!r}"
+            )
+
+        self._allowed = set(ids)
+        self.split_manifest_path = manifest_path
+        self.split_manifest_sha256 = manifest["manifest_sha256"]
+        self.split_manifest_file_sha256 = _sha256_file(manifest_path)
+        self.split_role = role
+        self.split_seed = split_seed
+        return {
+            "ids": ids,
+            "manifest": manifest,
+        }
+
     def _load_manifest(self):
-        with self.cache_manifest_path.open("r", encoding="utf-8") as handle:
-            manifest = json.load(handle)
+        manifest = load_json(self.cache_manifest_path)
         if manifest.get("schema") != "ontad_feature_cache_v1":
             raise ValueError("cache manifest must use schema ontad_feature_cache_v1")
         if manifest.get("feature_policy") != "packet_recent_frame":
@@ -157,6 +299,8 @@ class StreamingFeatureDataset:
         if features.ndim != 2:
             raise ValueError(f"cached features for {video_name} must have shape [T,C]")
         num_tokens, feature_dim = map(int, features.shape)
+        if num_tokens <= 0:
+            raise ValueError(f"cached features for {video_name} must contain at least one token")
         if int(video_manifest.get("num_tokens", -1)) != num_tokens:
             raise ValueError(f"cache num_tokens mismatch for {video_name}")
         expected_dim = int(self._manifest.get("feature_dim", feature_dim))
@@ -174,8 +318,7 @@ class StreamingFeatureDataset:
         return feature_path, source_frames, feature_dim
 
     def _build_index(self):
-        with self.ann_file.open("r", encoding="utf-8") as handle:
-            database = json.load(handle)["database"]
+        database = load_json(self.ann_file)["database"]
         manifest_videos = self._manifest["videos"]
 
         for video_name, video_info in database.items():
@@ -201,6 +344,10 @@ class StreamingFeatureDataset:
                     "encoder_id": self._manifest["encoder_id"],
                     "feature_sha256": manifest_videos[video_name]["sha256"],
                     "source_frames": source_frames,
+                    "split_manifest_sha256": self.split_manifest_sha256,
+                    "split_manifest_file_sha256": self.split_manifest_file_sha256,
+                    "split_role": self.split_role,
+                    "split_seed": self.split_seed,
                     "video_id": video_name,
                 }
             )

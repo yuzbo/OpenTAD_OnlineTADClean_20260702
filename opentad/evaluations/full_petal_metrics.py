@@ -7,8 +7,11 @@ or ledger reordering. Input order is the online chronology used for matching.
 from collections import Counter, defaultdict
 import math
 
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 
-SCHEMA_VERSION = "full_petal_metrics.v1"
+
+SCHEMA_VERSION = "full_petal_metrics.v2"
 _EPSILON = 1e-9
 
 
@@ -229,6 +232,11 @@ def _normalize_emissions(value):
             f"{label}.sequence",
             False,
         )
+        row_fps = _first_present(row, ("fps",), f"{label}.fps", False)
+        if row_fps is not None:
+            row_fps = _finite_number(row_fps, f"{label}.fps")
+            if row_fps <= 0:
+                raise FullPetalInputError(f"{label}.fps must be positive")
         normalized.append(
             {
                 "index": index,
@@ -251,9 +259,16 @@ def _normalize_emissions(value):
                     if sequence is None
                     else _finite_number(sequence, f"{label}.sequence")
                 ),
+                "score": _finite_number(
+                    _first_present(row, ("score",), f"{label}.score"),
+                    f"{label}.score",
+                ),
+                "fps": row_fps,
                 "immutable": row.get("immutable"),
             }
         )
+        if not 0.0 <= normalized[-1]["score"] <= 1.0:
+            raise FullPetalInputError(f"{label}.score must lie in [0, 1]")
     return normalized
 
 
@@ -376,6 +391,118 @@ def _summary(values):
 
 def _rate(numerator, denominator):
     return float(numerator) / float(denominator) if denominator else 0.0
+
+
+def _stable_id_key(value):
+    return (type(value).__name__, repr(value))
+
+
+def _timely(prediction, target, latency_budget_sec, default_fps):
+    latency = prediction["emit_frame"] - target["segment"][1]
+    prediction_fps = prediction.get("fps") or default_fps
+    return -_EPSILON <= latency <= (
+        latency_budget_sec * prediction_fps + _EPSILON
+    )
+
+
+def _maximum_cardinality_tiou_matching(
+    targets,
+    predictions,
+    threshold,
+    latency_budget_sec,
+    default_fps,
+):
+    """Solve the preregistered lexicographic diagnostic assignment."""
+
+    pairs = []
+    grouped_targets = defaultdict(list)
+    grouped_predictions = defaultdict(list)
+    for target in targets:
+        grouped_targets[(target["stream_key"], target["label"])].append(target)
+    for prediction in predictions:
+        grouped_predictions[(prediction["stream_key"], prediction["label"])].append(
+            prediction
+        )
+
+    for group_key in sorted(
+        set(grouped_targets).intersection(grouped_predictions),
+        key=lambda value: (str(value[0]), _stable_id_key(value[1])),
+    ):
+        group_targets = sorted(
+            grouped_targets[group_key],
+            key=lambda row: (_stable_id_key(row["id"]), row["index"]),
+        )
+        group_predictions = sorted(
+            grouped_predictions[group_key],
+            key=lambda row: (-row["score"], _stable_id_key(row["id"]), row["index"]),
+        )
+        num_predictions = len(group_predictions)
+        num_targets = len(group_targets)
+        if not num_predictions or not num_targets:
+            continue
+
+        max_pairs = min(num_predictions, num_targets)
+        cardinality_bonus = float(max_pairs + 1)
+        invalid_weight = -cardinality_bonus
+        weights = np.zeros(
+            (num_predictions, num_targets + num_predictions),
+            dtype=np.float64,
+        )
+        weights[:, :num_targets] = invalid_weight
+        eligible = {}
+        tie_scale = 1e-9 / float(max(1, num_predictions * num_targets))
+        for prediction_index, prediction in enumerate(group_predictions):
+            for target_index, target in enumerate(group_targets):
+                tiou = _temporal_iou(prediction["segment"], target["segment"])
+                if tiou + _EPSILON < threshold or not _timely(
+                    prediction,
+                    target,
+                    latency_budget_sec,
+                    default_fps,
+                ):
+                    continue
+                eligible[(prediction_index, target_index)] = tiou
+                score_tie = prediction["score"] * tie_scale
+                id_tie = (
+                    (num_predictions - prediction_index)
+                    * (num_targets - target_index)
+                    * tie_scale
+                    * 1e-3
+                )
+                weights[prediction_index, target_index] = (
+                    cardinality_bonus + tiou + score_tie + id_tie
+                )
+
+        row_indices, column_indices = linear_sum_assignment(weights, maximize=True)
+        for prediction_index, target_index in zip(row_indices, column_indices):
+            if (prediction_index, target_index) not in eligible:
+                continue
+            prediction = group_predictions[prediction_index]
+            target = group_targets[target_index]
+            pairs.append(
+                {
+                    "prediction": prediction,
+                    "target": target,
+                    "tiou": eligible[(prediction_index, target_index)],
+                }
+            )
+
+    return sorted(pairs, key=lambda item: item["prediction"]["index"])
+
+
+def _union_length(intervals):
+    if not intervals:
+        return 0.0
+    ordered = sorted(intervals)
+    total = 0.0
+    current_start, current_end = ordered[0]
+    for start, end in ordered[1:]:
+        if start <= current_end + _EPSILON:
+            current_end = max(current_end, end)
+            continue
+        total += current_end - current_start
+        current_start, current_end = start, end
+    return total + current_end - current_start
 
 
 def _trace_rows(value):
@@ -514,83 +641,188 @@ def compute_full_petal_metrics(
     ground_truth,
     emissions,
     tiou_threshold=0.5,
+    fps=30.0,
+    latency_budget_sec=2.0,
     lifecycle_traces=None,
 ):
-    """Compute auditable Full PETAL metrics over every immutable emission."""
+    """Compute the preregistered identity diagnostics over immutable emissions."""
 
     threshold = _finite_number(tiou_threshold, "tiou_threshold")
     if threshold <= 0 or threshold > 1:
         raise FullPetalInputError("tiou_threshold must be in (0, 1]")
-
+    fps = _finite_number(fps, "fps")
+    if fps <= 0:
+        raise FullPetalInputError("fps must be positive")
+    latency_budget_sec = _finite_number(
+        latency_budget_sec,
+        "latency_budget_sec",
+    )
+    if latency_budget_sec < 0:
+        raise FullPetalInputError("latency_budget_sec must be non-negative")
     targets = _normalize_ground_truth(ground_truth)
     predictions = _normalize_emissions(emissions)
+    for prediction in predictions:
+        if prediction["fps"] is None:
+            prediction["fps"] = fps
     causal_validation, violations = _protocol_audit(predictions)
     if violations:
         raise FullPetalProtocolError(violations)
 
-    matched_target_indexes = set()
+    matched_pairs = _maximum_cardinality_tiou_matching(
+        targets,
+        predictions,
+        threshold,
+        latency_budget_sec,
+        fps,
+    )
+    matched_target_indexes = {
+        item["target"]["index"] for item in matched_pairs
+    }
+    matched_prediction_indexes = {
+        item["prediction"]["index"] for item in matched_pairs
+    }
     assignments_by_target = defaultdict(list)
     primary_pairs = []
-    emission_assignments = []
-    unmatched_emission_ids = []
+    assignment_by_prediction = {}
+    for item in matched_pairs:
+        prediction = item["prediction"]
+        target = item["target"]
+        pair = {
+            "ground_truth_id": target["id"],
+            "emission_id": prediction["id"],
+            "stream_key": target["stream_key"],
+            "label": target["label"],
+            "tiou": item["tiou"],
+            "endpoint_latency_frames": (
+                prediction["emit_frame"] - target["segment"][1]
+            ),
+        }
+        primary_pairs.append(pair)
+        assignment_by_prediction[prediction["index"]] = {
+            "emission_id": prediction["id"],
+            "status": "primary_match",
+            "ground_truth_id": target["id"],
+            "tiou": item["tiou"],
+        }
+        assignments_by_target[target["index"]].append(
+            {"prediction": prediction, "role": "primary_match", "tiou": item["tiou"]}
+        )
 
+    duplicate_prediction_indexes = set()
     for prediction in predictions:
+        if prediction["index"] in matched_prediction_indexes:
+            continue
         candidates = []
         for target in targets:
+            if target["index"] not in matched_target_indexes:
+                continue
             if prediction["stream_key"] != target["stream_key"]:
                 continue
             if prediction["label"] != target["label"]:
                 continue
             tiou = _temporal_iou(prediction["segment"], target["segment"])
-            if tiou + _EPSILON >= threshold:
+            if tiou + _EPSILON >= threshold and _timely(
+                prediction,
+                target,
+                latency_budget_sec,
+                fps,
+            ):
                 candidates.append((tiou, target))
-
-        available = [
-            candidate
-            for candidate in candidates
-            if candidate[1]["index"] not in matched_target_indexes
-        ]
-        if available:
-            tiou, target = min(available, key=lambda item: (-item[0], item[1]["index"]))
-            matched_target_indexes.add(target["index"])
-            role = "primary_match"
-            latency = prediction["emit_frame"] - target["segment"][1]
-            pair = {
-                "ground_truth_id": target["id"],
-                "emission_id": prediction["id"],
-                "stream_key": target["stream_key"],
-                "label": target["label"],
-                "tiou": tiou,
-                "endpoint_latency_frames": latency,
-            }
-            primary_pairs.append(pair)
-        elif candidates:
-            tiou, target = min(candidates, key=lambda item: (-item[0], item[1]["index"]))
-            role = "duplicate"
-        else:
-            target = None
-            tiou = None
-            role = "unmatched"
-
-        assignment = {
+        if not candidates:
+            continue
+        tiou, target = min(
+            candidates,
+            key=lambda item: (-item[0], _stable_id_key(item[1]["id"]), item[1]["index"]),
+        )
+        duplicate_prediction_indexes.add(prediction["index"])
+        assignment_by_prediction[prediction["index"]] = {
             "emission_id": prediction["id"],
-            "status": role,
-            "ground_truth_id": None if target is None else target["id"],
+            "status": "duplicate",
+            "ground_truth_id": target["id"],
             "tiou": tiou,
         }
-        emission_assignments.append(assignment)
-        if target is None:
-            unmatched_emission_ids.append(prediction["id"])
-        else:
-            assignments_by_target[target["index"]].append(
-                {"prediction": prediction, "role": role, "tiou": tiou}
-            )
+        assignments_by_target[target["index"]].append(
+            {"prediction": prediction, "role": "duplicate", "tiou": tiou}
+        )
 
-    duplicate_count = 0
-    duplicate_per_target = []
+    unmatched_primary_predictions = [
+        prediction
+        for prediction in predictions
+        if prediction["index"] not in matched_prediction_indexes
+    ]
+    fragment_prediction_indexes = set()
     fragmented_targets = []
-    distinct_fragment_count = 0
-    excess_fragment_count = 0
+    fragment_count = 0
+    for target in targets:
+        if target["index"] in matched_target_indexes:
+            continue
+        candidates = []
+        intersections = []
+        for prediction in unmatched_primary_predictions:
+            if prediction["stream_key"] != target["stream_key"]:
+                continue
+            if prediction["label"] != target["label"]:
+                continue
+            if not _timely(prediction, target, latency_budget_sec, fps):
+                continue
+            tiou = _temporal_iou(prediction["segment"], target["segment"])
+            intersection = (
+                max(prediction["segment"][0], target["segment"][0]),
+                min(prediction["segment"][1], target["segment"][1]),
+            )
+            if tiou + _EPSILON >= threshold or intersection[1] <= intersection[0]:
+                continue
+            candidates.append((prediction, tiou, intersection))
+            intersections.append(intersection)
+        if len(candidates) < 2:
+            continue
+        coverage = _union_length(intersections) / (
+            target["segment"][1] - target["segment"][0]
+        )
+        if coverage + _EPSILON < threshold:
+            continue
+        fragment_ids = [item[0]["id"] for item in candidates]
+        fragment_prediction_indexes.update(item[0]["index"] for item in candidates)
+        fragment_count += len(candidates)
+        fragmented_targets.append(
+            {
+                "ground_truth_id": target["id"],
+                "fragment_count": len(candidates),
+                "fragment_emission_ids": fragment_ids,
+                "intersections": [list(item[2]) for item in candidates],
+                "union_coverage": coverage,
+            }
+        )
+        for prediction, tiou, _ in candidates:
+            assignment = assignment_by_prediction.get(prediction["index"])
+            if assignment is None:
+                assignment_by_prediction[prediction["index"]] = {
+                    "emission_id": prediction["id"],
+                    "status": "fragment",
+                    "ground_truth_id": target["id"],
+                    "tiou": tiou,
+                }
+            else:
+                assignment.setdefault("fragment_ground_truth_ids", []).append(
+                    target["id"]
+                )
+
+    unmatched_emission_ids = []
+    for prediction in predictions:
+        if prediction["index"] not in assignment_by_prediction:
+            unmatched_emission_ids.append(prediction["id"])
+            assignment_by_prediction[prediction["index"]] = {
+                "emission_id": prediction["id"],
+                "status": "unmatched",
+                "ground_truth_id": None,
+                "tiou": None,
+            }
+    emission_assignments = [
+        assignment_by_prediction[prediction["index"]] for prediction in predictions
+    ]
+
+    duplicate_count = len(duplicate_prediction_indexes)
+    duplicate_per_target = []
     for pair in primary_pairs:
         target = next(
             item
@@ -604,7 +836,6 @@ def compute_full_petal_metrics(
             for item in assignments
             if item["role"] == "duplicate"
         ]
-        duplicate_count += len(duplicate_ids)
         duplicate_per_target.append(
             {
                 "ground_truth_id": target["id"],
@@ -614,35 +845,23 @@ def compute_full_petal_metrics(
             }
         )
 
-        distinct_segments = []
-        seen_segments = set()
-        for item in assignments:
-            segment = item["prediction"]["segment"]
-            if segment not in seen_segments:
-                seen_segments.add(segment)
-                distinct_segments.append(list(segment))
-        if len(distinct_segments) >= 2:
-            fragmented_targets.append(
-                {
-                    "ground_truth_id": target["id"],
-                    "distinct_fragment_count": len(distinct_segments),
-                    "segments": distinct_segments,
-                }
-            )
-            distinct_fragment_count += len(distinct_segments)
-            excess_fragment_count += len(distinct_segments) - 1
-
     matched_count = len(primary_pairs)
     emission_count = len(predictions)
     unmatched_count = len(unmatched_emission_ids)
     fragmentation_denominator = {
-        "name": "matched_ground_truth",
-        "value": matched_count,
+        "name": "all_ground_truth",
+        "value": len(targets),
     }
     endpoint_latencies = [pair["endpoint_latency_frames"] for pair in primary_pairs]
-    duplicate_rate = _rate(duplicate_count, emission_count)
-    fragmentation_rate = _rate(len(fragmented_targets), matched_count)
+    duplicate_per_gt = _rate(duplicate_count, len(targets))
+    duplicate_fraction = _rate(duplicate_count, emission_count)
+    duplicate_gt_count = sum(
+        int(item["duplicate_count"] > 0) for item in duplicate_per_target
+    )
+    duplicate_gt_rate = _rate(duplicate_gt_count, len(targets))
+    fragmentation_rate = _rate(len(fragmented_targets), len(targets))
     false_emission_rate = _rate(unmatched_count, emission_count)
+    recall = _rate(matched_count, len(targets))
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -654,15 +873,19 @@ def compute_full_petal_metrics(
             "unmatched_ground_truth": len(targets) - matched_count,
             "primary_matches": matched_count,
             "duplicate_emissions": duplicate_count,
+            "fragment_emissions": len(fragment_prediction_indexes),
             "unmatched_emissions": unmatched_count,
         },
         "matching": {
-            "policy": "chronological_greedy_class_aware_tiou",
+            "policy": "maximum_cardinality_then_total_tiou",
             "coordinate_system": "frames",
             "tiou_threshold": threshold,
+            "latency_budget_sec": latency_budget_sec,
+            "default_fps": fps,
+            "latency_budget_frame_policy": "latency_budget_sec * emission_fps",
             "tie_breaking": (
-                "Input emission order, then highest tIoU among unmatched GT, then GT input order; "
-                "later matches to locked GT are duplicates."
+                "Maximize cardinality, then total tIoU; numerical ties use descending "
+                "prediction score and deterministic emission/GT IDs."
             ),
             "pairs": primary_pairs,
             "emission_assignments": emission_assignments,
@@ -670,20 +893,32 @@ def compute_full_petal_metrics(
         },
         "duplicates": {
             "duplicate_emission_count": duplicate_count,
-            "rate": duplicate_rate,
-            "denominator": {"name": "all_emissions", "value": emission_count},
+            "duplicate_ground_truth_count": duplicate_gt_count,
+            "duplicate_per_gt": duplicate_per_gt,
+            "duplicate_fraction": duplicate_fraction,
+            "duplicate_gt_rate": duplicate_gt_rate,
+            "denominators": {
+                "duplicate_per_gt": {
+                    "name": "all_ground_truth",
+                    "value": len(targets),
+                },
+                "duplicate_fraction": {
+                    "name": "all_emissions",
+                    "value": emission_count,
+                },
+            },
             "per_matched_ground_truth": duplicate_per_target,
         },
         "fragmentation": {
             "fragmented_ground_truth_count": len(fragmented_targets),
-            "distinct_fragment_count": distinct_fragment_count,
-            "excess_fragment_count": excess_fragment_count,
+            "fragment_count": fragment_count,
             "rate": fragmentation_rate,
             "denominator": fragmentation_denominator,
             "definition": (
-                "A matched GT is fragmented when its assigned emissions contain at least two "
-                "distinct segment bounds, whether disjoint or overlapping; exact repeated bounds "
-                "remain duplicates but are not an additional fragment."
+                "An unmatched GT is fragmented when at least two timely, same-class primary-"
+                "unmatched "
+                "emissions each have positive overlap but are individually below the tIoU "
+                "threshold, while their intersection union covers at least that fraction of GT."
             ),
             "per_ground_truth": fragmented_targets,
         },
@@ -695,7 +930,10 @@ def compute_full_petal_metrics(
         },
         "endpoint_detection_latency_frames": _summary(endpoint_latencies),
         "lifecycle": compute_lifecycle_trace_metrics(lifecycle_traces),
-        "duplicate_rate": duplicate_rate,
+        "recall": recall,
+        "duplicate_per_gt": duplicate_per_gt,
+        "duplicate_fraction": duplicate_fraction,
+        "duplicate_gt_rate": duplicate_gt_rate,
         "fragmentation_rate": fragmentation_rate,
         "false_emission_rate": false_emission_rate,
     }

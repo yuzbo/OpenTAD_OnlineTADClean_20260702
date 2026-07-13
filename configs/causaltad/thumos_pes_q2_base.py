@@ -10,9 +10,11 @@ pilot_seeds = [705, 706, 707]
 annotation_path = "/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json"
 class_map = "/data/run01/sczc063/yuzibo/thumos14/annotations/category_idx.txt"
 manifest_root = "/data/run01/sczc063/yuzibo/thumos14/manifests/full_petal_q2"
+development_split_manifest = manifest_root + "/thumos_development_split.json"
 fit_core_manifest = manifest_root + "/thumos_fit_core_160.txt"
 calibration_manifest = manifest_root + "/thumos_calibration_40.txt"
 reporting_manifest = manifest_root + "/thumos_reporting_locked_211.txt"
+development_split_seed = 20260713
 
 feature_cache_path = "/data/run01/sczc063/yuzibo/thumos14/features/pes_siglip2_stride8"
 feature_cache_manifest = feature_cache_path + "/manifest.json"
@@ -48,6 +50,14 @@ profile_contract = dict(
     submit_via_slurm_only=True,
 )
 
+reporting_contract = dict(
+    locked_population=reporting_manifest,
+    expected_historical_count=211,
+    canonical_expected_count=213,
+    allow_during_training=False,
+    disclosure="locked after prior project-level exposure; not untouched",
+)
+
 _dataset_common = dict(
     type="StreamingFeatureDataset",
     ann_file=annotation_path,
@@ -57,6 +67,8 @@ _dataset_common = dict(
     chunk_size=chunk_size,
     feature_stride=feature_stride,
     stream_id="thumos-pes-q2-siglip2-stride8-v1",
+    split_manifest=development_split_manifest,
+    split_seed=development_split_seed,
 )
 
 dataset = dict(
@@ -64,16 +76,19 @@ dataset = dict(
         **_dataset_common,
         subset_name="training",
         allow_list=fit_core_manifest,
+        split_role="fit_core",
     ),
     val=dict(
         **_dataset_common,
         subset_name="training",
         allow_list=calibration_manifest,
+        split_role="calibration",
     ),
     test=dict(
         **_dataset_common,
-        subset_name="validation",
-        allow_list=reporting_manifest,
+        subset_name="training",
+        allow_list=calibration_manifest,
+        split_role="calibration",
         test_mode=True,
     ),
 )
@@ -138,7 +153,8 @@ solver = dict(
 
 evaluation = dict(
     type="OnlineAPBudgeted",
-    subset="validation",
+    subset="training",
+    allowed_videos=calibration_manifest,
     tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
     latency_budgets_sec=[0.5, 1.0, 2.0, 4.0],
     fps=fps,

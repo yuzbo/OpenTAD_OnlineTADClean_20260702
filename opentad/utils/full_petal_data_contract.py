@@ -25,6 +25,26 @@ FINEACTION_MANDATORY_GATES = (
     "completeness",
     "causal_readiness",
 )
+FINEACTION_REQUIRED_CHECKS = {
+    "protocol": (
+        "license",
+        "official_split",
+        "annotation_sha256",
+        "instance_interval_ids",
+    ),
+    "completeness": (
+        "raw_video_access",
+        "same_class_overlap_pairs",
+        "same_class_repeated_instances",
+        "qualified_ground_truth",
+        "qualified_videos",
+        "estimated_decode_storage_cost",
+    ),
+    "causal_readiness": (
+        "causal_preprocessing_contract",
+        "minimal_dataset_loader_smoke",
+    ),
+}
 HARDWARE_REQUIRED_DIMENSIONS = (
     "batch_size",
     "chunk_size",
@@ -1053,6 +1073,7 @@ def compare_reporting_universe(
     observed_ids,
     *,
     observed_provenance,
+    difference_reasons=None,
     seed,
     created_at,
     strict=True,
@@ -1080,6 +1101,35 @@ def compare_reporting_universe(
     missing_ids = sorted(locked_set.difference(observed_set))
     extra_ids = sorted(observed_set.difference(locked_set))
     matches = not missing_ids and not extra_ids
+    difference_ids = sorted([*missing_ids, *extra_ids])
+    if difference_reasons is None:
+        difference_reasons = {}
+    if not isinstance(difference_reasons, dict):
+        raise ContractValidationError("difference_reasons must be a JSON object")
+    unknown_reason_ids = sorted(set(difference_reasons).difference(difference_ids))
+    if unknown_reason_ids:
+        raise ContractValidationError(
+            "difference reasons contain IDs outside the observed difference: "
+            + ", ".join(unknown_reason_ids)
+        )
+    normalized_reasons = {}
+    for video_id in difference_ids:
+        reason = difference_reasons.get(video_id)
+        if isinstance(reason, str) and reason.strip():
+            normalized_reasons[video_id] = reason.strip()
+    unexplained_ids = sorted(set(difference_ids).difference(normalized_reasons))
+    if strict and unexplained_ids:
+        raise ContractValidationError(
+            "strict reporting comparison requires a difference reason for every ID; "
+            "missing: " + ", ".join(unexplained_ids)
+        )
+    status = (
+        "MATCH"
+        if matches
+        else "EXPLAINED_MISMATCH"
+        if not unexplained_ids
+        else "UNEXPLAINED_MISMATCH"
+    )
     payload = {
         "schema": "full_petal.reporting_universe_comparison",
         "schema_version": SCHEMA_VERSION,
@@ -1105,8 +1155,13 @@ def compare_reporting_universe(
             "matches": matches,
             "missing_ids": missing_ids,
             "extra_ids": extra_ids,
+            "difference_reasons": normalized_reasons,
+            "difference_reasons_sha256": canonical_json_sha256(
+                normalized_reasons
+            ),
+            "unexplained_ids": unexplained_ids,
         },
-        "status": "MATCH" if matches else "MISMATCH",
+        "status": status,
     }
     return _finalize_manifest(payload)
 
@@ -1242,11 +1297,132 @@ def _has_evidence(value):
     return False
 
 
+def _valid_sha256(value):
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _evidence_sha256(evidence, *keys):
+    if isinstance(evidence, str):
+        return evidence
+    if not isinstance(evidence, dict):
+        return None
+    for key in keys:
+        if key in evidence:
+            return evidence[key]
+    return None
+
+
+def _evidence_count(evidence):
+    value = evidence.get("count") if isinstance(evidence, dict) else evidence
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _fineaction_evidence_error(gate_name, check_name, evidence):
+    key = (gate_name, check_name)
+    if key == ("protocol", "license"):
+        if not isinstance(evidence, dict) or not isinstance(
+            evidence.get("license_id"), str
+        ) or not evidence["license_id"].strip():
+            return "license evidence requires a non-empty license_id"
+    elif key == ("protocol", "official_split"):
+        if not _valid_sha256(_evidence_sha256(evidence, "manifest_sha256")):
+            return "official split evidence requires manifest_sha256"
+    elif key == ("protocol", "annotation_sha256"):
+        if not _valid_sha256(_evidence_sha256(evidence, "sha256")):
+            return "annotation evidence requires a lowercase SHA-256"
+    elif key == ("protocol", "instance_interval_ids"):
+        verified_count = (
+            _evidence_count({"count": evidence.get("verified_count")})
+            if isinstance(evidence, dict)
+            else None
+        )
+        if (
+            not isinstance(evidence, dict)
+            or not isinstance(evidence.get("field"), str)
+            or not evidence["field"].strip()
+            or verified_count is None
+            or verified_count <= 0
+        ):
+            return "instance interval evidence requires an ID field and positive verified_count"
+    elif key == ("completeness", "raw_video_access"):
+        if not _valid_sha256(_evidence_sha256(evidence, "inventory_sha256")):
+            return "raw video access requires a hashed media inventory"
+    elif key == ("completeness", "same_class_overlap_pairs"):
+        count = _evidence_count(evidence)
+        if count is None or count < 20:
+            return "same-class overlap requires at least 20 audited pairs"
+    elif key == ("completeness", "same_class_repeated_instances"):
+        count = _evidence_count(evidence)
+        if count is None or count <= 0:
+            return "same-class repetition evidence requires a positive count"
+    elif key == ("completeness", "qualified_ground_truth"):
+        count = _evidence_count(evidence)
+        if count is None or count < 30:
+            return "identity qualification requires at least 30 GT instances"
+    elif key == ("completeness", "qualified_videos"):
+        count = _evidence_count(evidence)
+        if count is None or count <= 0:
+            return "qualified video evidence requires a positive count"
+    elif key == ("completeness", "estimated_decode_storage_cost"):
+        if not isinstance(evidence, dict):
+            return "cost evidence must contain decode_gpu_hours and storage_bytes"
+        decode = evidence.get("decode_gpu_hours")
+        storage = evidence.get("storage_bytes")
+        if (
+            isinstance(decode, bool)
+            or not isinstance(decode, (int, float))
+            or not math.isfinite(float(decode))
+            or float(decode) < 0
+            or isinstance(storage, bool)
+            or not isinstance(storage, int)
+            or storage <= 0
+        ):
+            return "cost evidence has invalid decode_gpu_hours or storage_bytes"
+    elif key == ("causal_readiness", "causal_preprocessing_contract"):
+        if not isinstance(evidence, dict):
+            return "causal preprocessing evidence must be an object"
+        if evidence.get("future_frames_allowed") is not False:
+            return "causal preprocessing must explicitly forbid future frames"
+        if not isinstance(evidence.get("timestamp_convention"), str) or not evidence[
+            "timestamp_convention"
+        ].strip():
+            return "causal preprocessing requires a timestamp convention"
+        if (
+            isinstance(evidence.get("frame_stride"), bool)
+            or not isinstance(evidence.get("frame_stride"), int)
+            or evidence["frame_stride"] <= 0
+        ):
+            return "causal preprocessing requires a positive frame_stride"
+        if not _valid_sha256(evidence.get("manifest_sha256")):
+            return "causal preprocessing requires manifest_sha256"
+    elif key == ("causal_readiness", "minimal_dataset_loader_smoke"):
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("status") != "PASS"
+            or not _valid_sha256(evidence.get("test_report_sha256"))
+        ):
+            return "loader smoke requires PASS and test_report_sha256"
+    return None
+
+
 def _build_qualification_gate(gate_name, raw_checks):
     if raw_checks is None:
         raw_checks = {}
     if not isinstance(raw_checks, dict):
         raise ContractValidationError(f"FineAction gate {gate_name} must be an object")
+
+    raw_checks = dict(raw_checks)
+    for required_name in FINEACTION_REQUIRED_CHECKS[gate_name]:
+        raw_checks.setdefault(
+            required_name,
+            {"mandatory": True, "passed": False, "evidence": None},
+        )
 
     checks = {}
     for check_name in sorted(raw_checks):
@@ -1270,17 +1446,35 @@ def _build_qualification_gate(gate_name, raw_checks):
             raw_check.get("evidence"),
             f"FineAction evidence {gate_name}.{check_name}",
         )
+        required = check_name in FINEACTION_REQUIRED_CHECKS[gate_name]
+        mandatory_override = required and mandatory is not True
+        if required:
+            mandatory = True
+        evidence_error = _fineaction_evidence_error(
+            gate_name,
+            check_name,
+            evidence,
+        )
+        if mandatory_override:
+            evidence_error = "required qualification checks cannot be optional"
+        evidence_valid = _has_evidence(evidence) and evidence_error is None
         checks[check_name] = {
             "mandatory": mandatory,
             "passed": passed,
             "has_evidence": _has_evidence(evidence),
+            "evidence_valid": evidence_valid,
+            "evidence_error": evidence_error,
             "evidence": evidence,
         }
 
     mandatory_names = [
         name for name, check in checks.items() if check["mandatory"]
     ]
-    failed = [name for name in mandatory_names if not checks[name]["passed"]]
+    failed = [
+        name
+        for name in mandatory_names
+        if not checks[name]["passed"] or not checks[name]["evidence_valid"]
+    ]
     missing_evidence = [
         name for name in mandatory_names if not checks[name]["has_evidence"]
     ]
@@ -1291,6 +1485,11 @@ def _build_qualification_gate(gate_name, raw_checks):
         "checks": checks,
         "failed_mandatory_checks": failed,
         "missing_evidence": missing_evidence,
+        "invalid_evidence": {
+            name: checks[name]["evidence_error"]
+            for name in mandatory_names
+            if checks[name]["evidence_error"] is not None
+        },
     }
 
 

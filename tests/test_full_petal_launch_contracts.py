@@ -59,10 +59,21 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
 
     assert cfg.dataset.train.subset_name == "training"
     assert cfg.dataset.val.subset_name == "training"
-    assert cfg.dataset.test.subset_name == "validation"
+    assert cfg.dataset.test.subset_name == "training"
     assert cfg.dataset.train.allow_list.endswith("thumos_fit_core_160.txt")
     assert cfg.dataset.val.allow_list.endswith("thumos_calibration_40.txt")
-    assert cfg.dataset.test.allow_list.endswith("thumos_reporting_locked_211.txt")
+    assert cfg.dataset.test.allow_list.endswith("thumos_calibration_40.txt")
+    assert cfg.dataset.train.split_role == "fit_core"
+    assert cfg.dataset.val.split_role == "calibration"
+    assert cfg.dataset.test.split_role == "calibration"
+    assert cfg.dataset.train.split_seed == 20260713
+    assert cfg.dataset.train.split_manifest.endswith("thumos_development_split.json")
+    assert cfg.evaluation.subset == "training"
+    assert cfg.evaluation.allowed_videos.endswith("thumos_calibration_40.txt")
+    assert cfg.reporting_contract.allow_during_training is False
+    assert cfg.reporting_contract.locked_population.endswith(
+        "thumos_reporting_locked_211.txt"
+    )
     assert cfg.solver.train.streaming is True
     assert cfg.solver.train.batch_size == 1
     assert cfg.inference.load_from_raw_predictions is False

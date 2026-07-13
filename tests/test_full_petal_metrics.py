@@ -14,6 +14,7 @@ def _emission(
     sequence_id=0,
     stream_key="stream-1",
     immutable=True,
+    score=0.75,
 ):
     return {
         "emission_id": emission_id,
@@ -24,6 +25,7 @@ def _emission(
         "source_frame": emit_frame if source_frame is None else source_frame,
         "sequence_id": sequence_id,
         "immutable": immutable,
+        "score": score,
     }
 
 
@@ -43,9 +45,19 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
         },
     ]
     emissions = [
-        _emission("emit-primary", [0, 10], emit_frame=12, sequence_id=0),
-        _emission("emit-exact-duplicate", [0, 10], emit_frame=13, sequence_id=1),
-        _emission("emit-fragment", [1, 9], emit_frame=14, sequence_id=2),
+        _emission(
+            "emit-primary", [0, 10], emit_frame=12, sequence_id=0, score=0.9
+        ),
+        _emission(
+            "emit-exact-duplicate",
+            [0, 10],
+            emit_frame=13,
+            sequence_id=1,
+            score=0.8,
+        ),
+        _emission(
+            "emit-fragment", [1, 9], emit_frame=14, sequence_id=2, score=0.7
+        ),
         _emission(
             "emit-wrong-class",
             [0, 10],
@@ -64,16 +76,21 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
         "unmatched_ground_truth": 1,
         "primary_matches": 1,
         "duplicate_emissions": 2,
+        "fragment_emissions": 0,
         "unmatched_emissions": 1,
     }
-    assert metrics["matching"]["policy"] == "chronological_greedy_class_aware_tiou"
+    assert metrics["matching"]["policy"] == "maximum_cardinality_then_total_tiou"
     assert metrics["matching"]["pairs"][0]["ground_truth_id"] == "gt-action"
     assert metrics["matching"]["pairs"][0]["emission_id"] == "emit-primary"
 
     duplicates = metrics["duplicates"]
     assert duplicates["duplicate_emission_count"] == 2
-    assert duplicates["rate"] == pytest.approx(0.5)
-    assert duplicates["denominator"] == {"name": "all_emissions", "value": 4}
+    assert duplicates["duplicate_per_gt"] == pytest.approx(1.0)
+    assert duplicates["duplicate_fraction"] == pytest.approx(0.5)
+    assert duplicates["denominators"] == {
+        "duplicate_per_gt": {"name": "all_ground_truth", "value": 2},
+        "duplicate_fraction": {"name": "all_emissions", "value": 4},
+    }
     assert duplicates["per_matched_ground_truth"] == [
         {
             "ground_truth_id": "gt-action",
@@ -84,28 +101,110 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
     ]
 
     fragmentation = metrics["fragmentation"]
-    assert fragmentation["fragmented_ground_truth_count"] == 1
-    assert fragmentation["distinct_fragment_count"] == 2
-    assert fragmentation["excess_fragment_count"] == 1
-    assert fragmentation["rate"] == pytest.approx(1.0)
+    assert fragmentation["fragmented_ground_truth_count"] == 0
+    assert fragmentation["fragment_count"] == 0
+    assert fragmentation["rate"] == pytest.approx(0.0)
     assert fragmentation["denominator"] == {
-        "name": "matched_ground_truth",
-        "value": 1,
+        "name": "all_ground_truth",
+        "value": 2,
     }
-    assert "disjoint or overlapping" in fragmentation["definition"]
+    assert "individually below" in fragmentation["definition"]
 
     false_emissions = metrics["false_emissions"]
     assert false_emissions["unmatched_emission_count"] == 1
     assert false_emissions["rate"] == pytest.approx(0.25)
     assert false_emissions["emission_ids"] == ["emit-wrong-class"]
-    assert metrics["duplicate_rate"] == pytest.approx(0.5)
-    assert metrics["fragmentation_rate"] == pytest.approx(1.0)
+    assert metrics["duplicate_per_gt"] == pytest.approx(1.0)
+    assert metrics["duplicate_fraction"] == pytest.approx(0.5)
+    assert metrics["fragmentation_rate"] == pytest.approx(0.0)
     assert metrics["false_emission_rate"] == pytest.approx(0.25)
 
     latency = metrics["endpoint_detection_latency_frames"]
     assert latency == {"count": 1, "mean": 2.0, "p50": 2.0, "p90": 2.0}
     assert metrics["causal_validation"]["passed"] is True
     assert metrics["causal_validation"]["num_emissions"] == 4
+
+
+def test_fragmentation_requires_multiple_subthreshold_parts_with_joint_coverage():
+    ground_truth = [
+        {"gt_id": "gt", "stream_key": "s", "label": "a", "segment": [0, 10]}
+    ]
+    emissions = [
+        _emission("left", [0, 4], label="a", stream_key="s", emit_frame=10),
+        _emission(
+            "right",
+            [6, 10],
+            label="a",
+            stream_key="s",
+            emit_frame=11,
+            sequence_id=1,
+        ),
+    ]
+
+    metrics = compute_full_petal_metrics(ground_truth, emissions, tiou_threshold=0.5)
+
+    assert metrics["counts"]["matched_ground_truth"] == 0
+    assert metrics["fragmentation"]["fragmented_ground_truth_count"] == 1
+    assert metrics["fragmentation"]["fragment_count"] == 2
+    assert metrics["fragmentation"]["rate"] == pytest.approx(1.0)
+    assert metrics["fragmentation"]["per_ground_truth"][0]["union_coverage"] == pytest.approx(
+        0.8
+    )
+
+
+def test_diagnostic_matching_maximizes_cardinality_before_pairwise_tiou():
+    ground_truth = [
+        {"gt_id": "g1", "stream_key": "s", "label": "a", "segment": [0, 10]},
+        {"gt_id": "g2", "stream_key": "s", "label": "a", "segment": [5, 15]},
+    ]
+    emissions = [
+        _emission(
+            "flexible",
+            [2, 13],
+            label="a",
+            stream_key="s",
+            emit_frame=15,
+            sequence_id=0,
+            score=0.9,
+        ),
+        _emission(
+            "g1-only",
+            [0, 8],
+            label="a",
+            stream_key="s",
+            emit_frame=16,
+            sequence_id=1,
+            score=0.8,
+        ),
+    ]
+
+    metrics = compute_full_petal_metrics(ground_truth, emissions, tiou_threshold=0.5)
+
+    assert metrics["counts"]["matched_ground_truth"] == 2
+    assert {
+        (pair["emission_id"], pair["ground_truth_id"])
+        for pair in metrics["matching"]["pairs"]
+    } == {("flexible", "g2"), ("g1-only", "g1")}
+
+
+def test_diagnostic_matching_applies_endpoint_latency_budget():
+    ground_truth = [
+        {"gt_id": "gt", "stream_key": "s", "label": "a", "segment": [0, 10]}
+    ]
+    emissions = [
+        _emission("late", [0, 10], label="a", stream_key="s", emit_frame=71)
+    ]
+
+    metrics = compute_full_petal_metrics(
+        ground_truth,
+        emissions,
+        tiou_threshold=0.5,
+        fps=30,
+        latency_budget_sec=2.0,
+    )
+
+    assert metrics["counts"]["matched_ground_truth"] == 0
+    assert metrics["counts"]["unmatched_emissions"] == 1
 
 
 def test_temporal_matching_has_deterministic_ground_truth_tie_breaking():
@@ -157,6 +256,7 @@ def test_explicit_frame_bounds_take_precedence_over_display_segment_units():
             "source_frame": 12,
             "sequence": 0,
             "immutable": True,
+            "score": 0.75,
         }
     ]
 

@@ -488,6 +488,12 @@ def test_historical_211_manifest_reports_exact_diff_against_observed_213():
         locked,
         observed_ids,
         observed_provenance={"kind": "synthetic_observation"},
+        difference_reasons={
+            "historical_000": "synthetic canonical removal",
+            "extra_a": "synthetic historical exclusion",
+            "extra_b": "synthetic historical exclusion",
+            "extra_c": "synthetic historical exclusion",
+        },
         seed=23,
         created_at=CREATED_AT,
         strict=True,
@@ -497,12 +503,21 @@ def test_historical_211_manifest_reports_exact_diff_against_observed_213():
     assert locked["universe"]["ids"] == sorted(locked_ids)
     assert comparison["observed_universe"]["count"] == 213
     assert comparison["observed_universe"]["ids"] == sorted(observed_ids)
-    assert comparison["comparison"] == {
-        "matches": False,
-        "missing_ids": ["historical_000"],
-        "extra_ids": ["extra_a", "extra_b", "extra_c"],
+    assert comparison["comparison"]["matches"] is False
+    assert comparison["comparison"]["missing_ids"] == ["historical_000"]
+    assert comparison["comparison"]["extra_ids"] == [
+        "extra_a",
+        "extra_b",
+        "extra_c",
+    ]
+    assert comparison["status"] == "EXPLAINED_MISMATCH"
+    assert comparison["comparison"]["difference_reasons"] == {
+        "extra_a": "synthetic historical exclusion",
+        "extra_b": "synthetic historical exclusion",
+        "extra_c": "synthetic historical exclusion",
+        "historical_000": "synthetic canonical removal",
     }
-    assert comparison["status"] == "MISMATCH"
+    assert len(comparison["comparison"]["difference_reasons_sha256"]) == 64
     assert verify_content_hash(locked)
     assert verify_content_hash(comparison)
 
@@ -512,6 +527,27 @@ def test_historical_reporting_counts_are_strict():
         build_reporting_universe_manifest(
             _ids("historical", 210),
             provenance={"kind": "synthetic_historical_source"},
+            seed=23,
+            created_at=CREATED_AT,
+            strict=True,
+        )
+
+
+def test_strict_reporting_comparison_rejects_unexplained_211_213_difference():
+    locked = build_reporting_universe_manifest(
+        _ids("historical", 211),
+        provenance={"kind": "synthetic_historical_source"},
+        seed=23,
+        created_at=CREATED_AT,
+        strict=True,
+    )
+
+    with pytest.raises(ContractValidationError, match="difference reason"):
+        compare_reporting_universe(
+            locked,
+            [*_ids("historical", 211), "extra_a", "extra_b"],
+            observed_provenance={"kind": "synthetic_observation"},
+            difference_reasons={},
             seed=23,
             created_at=CREATED_AT,
             strict=True,
@@ -642,14 +678,84 @@ def test_incomplete_fineaction_evidence_remains_unqualified():
     assert report["schema"] == "full_petal.fineaction_qualification"
     assert report["status"] == "FAIL"
     assert report["qualified"] is False
-    assert report["gates"]["protocol"]["status"] == "PASS"
+    assert report["gates"]["protocol"]["status"] == "FAIL"
+    assert "annotation_sha256" in report["gates"]["protocol"][
+        "failed_mandatory_checks"
+    ]
     assert report["gates"]["completeness"]["status"] == "FAIL"
-    assert report["gates"]["completeness"]["missing_evidence"] == [
-        "media_inventory"
+    assert "media_inventory" in report["gates"]["completeness"][
+        "missing_evidence"
+    ]
+    assert "same_class_overlap_pairs" in report["gates"]["completeness"][
+        "missing_evidence"
     ]
     assert report["gates"]["causal_readiness"]["status"] == "FAIL"
-    assert "causal_readiness: no mandatory checks declared" in report["failure_reasons"]
+    assert any(
+        reason.startswith("causal_readiness: mandatory checks failed")
+        for reason in report["failure_reasons"]
+    )
     assert verify_content_hash(report)
+
+
+def _fineaction_qualification_gates(overlap_pairs=20):
+    digest = "a" * 64
+
+    def check(evidence):
+        return {"mandatory": True, "passed": True, "evidence": evidence}
+
+    return {
+        "protocol": {
+            "license": check({"license_id": "FineAction-research"}),
+            "official_split": check({"manifest_sha256": digest}),
+            "annotation_sha256": check({"sha256": digest}),
+            "instance_interval_ids": check(
+                {"field": "instance_id", "verified_count": 30}
+            ),
+        },
+        "completeness": {
+            "raw_video_access": check({"inventory_sha256": digest}),
+            "same_class_overlap_pairs": check({"count": overlap_pairs}),
+            "same_class_repeated_instances": check({"count": 30}),
+            "qualified_ground_truth": check({"count": 30}),
+            "qualified_videos": check({"count": 10}),
+            "estimated_decode_storage_cost": check(
+                {"decode_gpu_hours": 12.0, "storage_bytes": 1024}
+            ),
+        },
+        "causal_readiness": {
+            "causal_preprocessing_contract": check(
+                {
+                    "timestamp_convention": "zero_based_source_frame",
+                    "future_frames_allowed": False,
+                    "frame_stride": 2,
+                    "manifest_sha256": digest,
+                }
+            ),
+            "minimal_dataset_loader_smoke": check(
+                {"status": "PASS", "test_report_sha256": digest}
+            ),
+        },
+    }
+
+
+def test_fineaction_qualification_enforces_identity_sample_thresholds():
+    failed = build_fineaction_qualification_report(
+        _fineaction_qualification_gates(overlap_pairs=19),
+        seed=29,
+        created_at=CREATED_AT,
+    )
+    passed = build_fineaction_qualification_report(
+        _fineaction_qualification_gates(overlap_pairs=20),
+        seed=29,
+        created_at=CREATED_AT,
+    )
+
+    assert failed["status"] == "FAIL"
+    assert failed["gates"]["completeness"]["checks"][
+        "same_class_overlap_pairs"
+    ]["evidence_valid"] is False
+    assert passed["status"] == "PASS"
+    assert passed["qualified"] is True
 
 
 def test_cli_builds_deterministic_thumos_json_from_explicit_splits(tmp_path):
@@ -702,6 +808,16 @@ def test_cli_loads_and_saves_reporting_hardware_and_fineaction_json(tmp_path):
     observed_ids_path = tmp_path / "observed-ids.json"
     locked_ids_path.write_text(json.dumps(locked_ids), encoding="utf-8")
     observed_ids_path.write_text(json.dumps(observed_ids), encoding="utf-8")
+    difference_reasons_path = tmp_path / "difference-reasons.json"
+    difference_reasons_path.write_text(
+        json.dumps(
+            {
+                "extra_a": "synthetic historical exclusion",
+                "extra_b": "synthetic historical exclusion",
+            }
+        ),
+        encoding="utf-8",
+    )
     locked_manifest = tmp_path / "locked-manifest.json"
     comparison_manifest = tmp_path / "comparison-manifest.json"
 
@@ -722,6 +838,8 @@ def test_cli_loads_and_saves_reporting_hardware_and_fineaction_json(tmp_path):
         locked_manifest,
         "--observed-ids",
         observed_ids_path,
+        "--difference-reasons",
+        difference_reasons_path,
         "--seed",
         "31",
         "--timestamp",

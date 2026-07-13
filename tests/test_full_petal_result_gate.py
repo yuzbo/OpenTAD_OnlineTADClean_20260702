@@ -67,8 +67,9 @@ def _run_row(claim, variant, seed, score, *, error_rate=0.10, protocol=None):
         "protocol": _protocol(claim) if protocol is None else protocol,
         "metrics": {
             "average_mAP": score,
-            "recall": 0.70,
-            "duplicate_rate": error_rate,
+            "average_mOnlineAP": score,
+            "identity_recall": 0.70,
+            "duplicate_per_gt": error_rate,
             "fragmentation_rate": error_rate,
             "false_emission_rate": 0.08,
             "endpoint_latency_frames_mean": 2.0,
@@ -316,7 +317,7 @@ def test_c1_pass_does_not_make_the_independent_c2_gate_pass(tmp_path):
     assert verdict["decisions"]["C1"]["scientific_metrics"]["passed"] is True
     assert verdict["decisions"]["C1"]["cost_parity"]["passed"] is True
     assert verdict["decisions"]["C2"]["status"] == "FAIL"
-    assert verdict["decisions"]["project_full_system"]["status"] == "FAIL"
+    assert verdict["decisions"]["project_full_system"]["status"] == "KILL"
     assert "C1" not in verdict["decisions"]["C2"]["requirements"]
 
 
@@ -326,7 +327,7 @@ def test_c2_can_pass_when_c1_fails_but_the_project_gate_cannot(tmp_path):
     assert verdict["decisions"]["C1"]["status"] == "FAIL"
     assert verdict["decisions"]["C2"]["status"] == "PASS"
     assert verdict["decisions"]["C2"]["raw_visual_audit"]["passed"] is True
-    assert verdict["decisions"]["project_full_system"]["status"] == "FAIL"
+    assert verdict["decisions"]["project_full_system"]["status"] == "KILL"
     assert verdict["decisions"]["project_full_system"]["requirements"] == {
         "C1": False,
         "C2": True,
@@ -341,8 +342,9 @@ def test_project_gate_requires_c1_c2_protocol_and_b0_separately(tmp_path):
 
     assert without_b0["decisions"]["C1"]["status"] == "PASS"
     assert without_b0["decisions"]["C2"]["status"] == "PASS"
-    assert without_b0["decisions"]["project_full_system"]["status"] == "FAIL"
-    assert complete["decisions"]["project_full_system"]["status"] == "PASS"
+    assert without_b0["decisions"]["project_full_system"]["status"] == "KILL"
+    assert complete["decisions"]["project_full_system"]["status"] == "NARROW"
+    assert complete["decisions"]["project_full_system"]["paper_level_pass"] is False
 
 
 def test_gate_rejects_unpaired_c1_seeds_and_protocol_mismatch(tmp_path):
@@ -378,7 +380,7 @@ def test_cli_scientific_fail_is_valid_unless_require_pass_is_requested(tmp_path)
     assert valid_fail.returncode == 0, valid_fail.stderr
     assert json.loads(valid_fail.stdout)["decisions"]["C1"]["status"] == "FAIL"
     assert required_pass.returncode == 4
-    assert json.loads(required_pass.stdout)["decisions"]["project_full_system"]["status"] == "FAIL"
+    assert json.loads(required_pass.stdout)["decisions"]["project_full_system"]["status"] == "KILL"
 
 
 def test_cli_returns_nonzero_json_errors_for_malformed_or_protocol_invalid_input(tmp_path):
@@ -419,7 +421,8 @@ def test_gate_rejects_placeholder_cost_and_online_ap_alias(tmp_path):
     for row in report["runs"]:
         if row["claim"] == "C1":
             row["cost"] = {"bogus": 1}
-        row["metrics"]["average_mOnlineAP"] = row["metrics"].pop("average_mAP")
+        row["metrics"]["mAP"] = row["metrics"].pop("average_mAP")
+        row["metrics"]["duplicate_rate"] = row["metrics"].pop("duplicate_per_gt")
 
     with pytest.raises(MODULE.ResultGateInputError, match="evidence|cost|average_mAP|metrics"):
         MODULE.evaluate_result_gates(report)

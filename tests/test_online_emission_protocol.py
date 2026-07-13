@@ -230,12 +230,13 @@ def test_streaming_safe_online_eval_rejects_callable_external_classifiers():
         validate_streaming_safe_ext_cls(lambda *_args: None, post_cfg=SimpleNamespace(streaming_safe_emission=True))
 
 
-def test_eval_engine_uses_streaming_safe_sliding_window_resolution():
+def test_eval_engine_verifies_streaming_ledger_without_reordering_it():
     source = (ROOT / "opentad/cores/test_engine.py").read_text(encoding="utf-8")
 
     assert "resolve_sliding_window_for_post_processing" in source
     assert "should_run_video_level_nms" in source
-    assert "sort_emission_ledger" in source
+    assert "verified_emission_result_dict" in source
+    assert "sort_emission_ledger" not in source
     assert "validate_streaming_safe_world_size" in source
     assert "validate_streaming_safe_ext_cls" in source
     assert "summarize_emission_ledger" in source

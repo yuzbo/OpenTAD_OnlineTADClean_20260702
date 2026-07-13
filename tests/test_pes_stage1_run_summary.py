@@ -33,7 +33,7 @@ def _row(segment, score=0.9, emit=10.2):
     }
 
 
-def test_duplicate_rate_counts_extra_eligible_immutable_emissions():
+def test_duplicate_metrics_use_canonical_ground_truth_and_emission_denominators():
     predictions = {
         "results": {
             "video": [
@@ -53,7 +53,8 @@ def test_duplicate_rate_counts_extra_eligible_immutable_emissions():
 
     assert report["true_positives"] == 1
     assert report["duplicate_false_positives"] == 1
-    assert report["duplicate_rate"] == pytest.approx(0.5)
+    assert report["duplicate_per_gt"] == pytest.approx(1.0)
+    assert report["duplicate_fraction"] == pytest.approx(0.5)
 
 
 def test_fragmentation_requires_multiple_timely_pieces_with_sufficient_union_coverage():

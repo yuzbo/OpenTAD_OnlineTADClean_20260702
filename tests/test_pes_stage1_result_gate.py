@@ -15,7 +15,7 @@ def _row(variant, seed, score, duplicate, fragmentation, gpu_hours=0.5):
         "variant": variant,
         "seed": seed,
         "average_mOnlineAP": score,
-        "duplicate_rate": duplicate,
+        "duplicate_per_gt": duplicate,
         "fragmentation_rate": fragmentation,
         "gpu_hours": gpu_hours,
         "protocol_violations": 0,
@@ -50,7 +50,7 @@ def test_gate_passes_only_as_a_mechanism_pilot_not_a_final_claim():
     assert verdict["needs_five_seed_confirmation"] is True
     assert set(verdict["comparisons"]) == {"fresh", "trackformer"}
     assert set(verdict["comparisons"]["fresh"]["error_reduction_fraction"]) == {
-        "duplicate_rate",
+        "duplicate_per_gt",
         "fragmentation_rate",
     }
 

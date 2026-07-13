@@ -10,7 +10,7 @@ from pathlib import Path
 VARIANTS = ("fresh", "trackformer", "persistent")
 REQUIRED_METRICS = (
     "average_mOnlineAP",
-    "duplicate_rate",
+    "duplicate_per_gt",
     "fragmentation_rate",
     "gpu_hours",
     "protocol_violations",
@@ -92,7 +92,7 @@ def evaluate_gate(
             persistent["average_mOnlineAP"] - baseline["average_mOnlineAP"]
         )
         error_reductions = {}
-        for key in ("duplicate_rate", "fragmentation_rate"):
+        for key in ("duplicate_per_gt", "fragmentation_rate"):
             error_reductions[key] = (
                 (baseline[key] - persistent[key]) / baseline[key]
                 if baseline[key] > 0

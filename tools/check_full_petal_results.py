@@ -19,7 +19,7 @@ from opentad.utils.immutable_event_ledger import (
 )
 
 
-SCHEMA_VERSION = "full_petal_result_gate.v1"
+SCHEMA_VERSION = "full_petal_result_gate.v2"
 
 C1_VARIANTS = {
     "fixed": "fixed",
@@ -46,16 +46,17 @@ C2_VARIANTS = {
 }
 
 METRIC_ALIASES = {
-    "average_mAP": ("average_mAP", "mAP", "map"),
-    "recall": ("recall", "instance_recall"),
-    "duplicate_rate": ("duplicate_rate",),
+    "average_mAP": ("average_mAP",),
+    "average_mOnlineAP": ("average_mOnlineAP",),
+    "identity_recall": ("identity_recall",),
+    "duplicate_per_gt": ("duplicate_per_gt",),
     "fragmentation_rate": ("fragmentation_rate",),
-    "false_emission_rate": ("false_emission_rate", "unmatched_emission_rate"),
+    "false_emission_rate": ("false_emission_rate",),
     "endpoint_latency_frames_mean": (
         "endpoint_latency_frames_mean",
         "endpoint_detection_latency_frames_mean",
     ),
-    "high_tiou_mAP": ("high_tiou_mAP", "mAP@0.7", "map_at_0.7"),
+    "high_tiou_mAP": ("high_tiou_mAP", "mAP@0.7"),
     "short_action_mAP": ("short_action_mAP",),
 }
 
@@ -321,16 +322,24 @@ def _metric(metrics, canonical_name, label, required=True):
         if required:
             raise ResultGateInputError(f"{label} is missing metric {canonical_name}")
         return None
+    bounds = {
+        "average_mAP": (0.0, 1.0),
+        "average_mOnlineAP": (0.0, 1.0),
+        "identity_recall": (0.0, 1.0),
+        "duplicate_per_gt": (0.0, None),
+        "fragmentation_rate": (0.0, 1.0),
+        "false_emission_rate": (0.0, 1.0),
+        "endpoint_latency_frames_mean": (0.0, None),
+        "high_tiou_mAP": (0.0, 1.0),
+        "short_action_mAP": (0.0, 1.0),
+    }
+    minimum, maximum = bounds[canonical_name]
     values = [
         _finite_number(
             value,
             f"{label}.{name}",
-            minimum=(None if canonical_name == "endpoint_latency_frames_mean" else 0.0),
-            maximum=(
-                None
-                if canonical_name == "endpoint_latency_frames_mean"
-                else 1.0
-            ),
+            minimum=minimum,
+            maximum=maximum,
         )
         for name, value in candidates
     ]
@@ -347,8 +356,9 @@ def _normalized_metrics(row, claim, label):
     if claim == "C1":
         required = (
             "average_mAP",
-            "recall",
-            "duplicate_rate",
+            "average_mOnlineAP",
+            "identity_recall",
+            "duplicate_per_gt",
             "fragmentation_rate",
             "false_emission_rate",
             "endpoint_latency_frames_mean",
@@ -904,8 +914,12 @@ def _c1_scientific_metrics(
         per_seed.append(
             {
                 "seed": seed,
-                "map_gain_points": 100.0 * (fixed["average_mAP"] - rematch["average_mAP"]),
-                "recall_delta_points": 100.0 * (fixed["recall"] - rematch["recall"]),
+                "online_map_gain_points": 100.0
+                * (fixed["average_mOnlineAP"] - rematch["average_mOnlineAP"]),
+                "standard_map_delta_points": 100.0
+                * (fixed["average_mAP"] - rematch["average_mAP"]),
+                "recall_delta_points": 100.0
+                * (fixed["identity_recall"] - rematch["identity_recall"]),
                 "false_emission_rate_delta": (
                     fixed["false_emission_rate"] - rematch["false_emission_rate"]
                 ),
@@ -915,13 +929,18 @@ def _c1_scientific_metrics(
                 ),
                 "error_reduction": {
                     name: _relative_reduction(fixed[name], rematch[name])
-                    for name in ("duplicate_rate", "fragmentation_rate")
+                    for name in ("duplicate_per_gt", "fragmentation_rate")
                 },
             }
         )
 
     aggregate = {
-        "map_gain_points": _mean(row["map_gain_points"] for row in per_seed),
+        "online_map_gain_points": _mean(
+            row["online_map_gain_points"] for row in per_seed
+        ),
+        "standard_map_delta_points": _mean(
+            row["standard_map_delta_points"] for row in per_seed
+        ),
         "recall_delta_points": _mean(row["recall_delta_points"] for row in per_seed),
         "false_emission_rate_delta": _mean(
             row["false_emission_rate_delta"] for row in per_seed
@@ -931,14 +950,19 @@ def _c1_scientific_metrics(
         ),
         "error_reduction": {
             name: _mean(row["error_reduction"][name] for row in per_seed)
-            for name in ("duplicate_rate", "fragmentation_rate")
+            for name in ("duplicate_per_gt", "fragmentation_rate")
         },
     }
     best_error_reduction = max(aggregate["error_reduction"].values())
-    map_path = aggregate["map_gain_points"] >= map_gain_points - 1e-12
+    map_path = aggregate["online_map_gain_points"] >= map_gain_points - 1e-12
     error_path = (
         best_error_reduction >= error_reduction - 1e-12
-        and aggregate["map_gain_points"] >= -map_parity_tolerance_points - 1e-12
+        and aggregate["online_map_gain_points"]
+        >= -map_parity_tolerance_points - 1e-12
+    )
+    standard_map_pass = (
+        aggregate["standard_map_delta_points"]
+        >= -map_parity_tolerance_points - 1e-12
     )
     recall_pass = aggregate["recall_delta_points"] >= -recall_tolerance_points - 1e-12
     false_emission_pass = (
@@ -947,7 +971,13 @@ def _c1_scientific_metrics(
     latency_pass = (
         aggregate["endpoint_latency_frames_delta"] <= latency_tolerance_frames + 1e-12
     )
-    passed = (map_path or error_path) and recall_pass and false_emission_pass and latency_pass
+    passed = (
+        (map_path or error_path)
+        and standard_map_pass
+        and recall_pass
+        and false_emission_pass
+        and latency_pass
+    )
     return {
         "passed": passed,
         "effect_paths": {
@@ -955,6 +985,7 @@ def _c1_scientific_metrics(
             "duplicate_or_fragmentation_reduction_at_map_parity": error_path,
         },
         "safety_checks": {
+            "standard_map_noninferior": standard_map_pass,
             "recall_noninferior": recall_pass,
             "false_emission_noninferior": false_emission_pass,
             "endpoint_latency_noninferior": latency_pass,
@@ -1187,15 +1218,26 @@ def evaluate_result_gates(
         "protocol": prerequisites["protocol"]["passed"],
         "B0": prerequisites["B0"]["passed"],
     }
-    project_pass = all(project_requirements.values())
+    screen_pass = all(project_requirements.values())
     project = {
-        "status": "PASS" if project_pass else "FAIL",
+        "status": "NARROW" if screen_pass else "KILL",
+        "scientific_status": "INCONCLUSIVE",
+        "paper_level_pass": False,
+        "scope": "development_screen_not_paper_claim",
         "requirements": project_requirements,
-        "reasons": [
-            f"required decision/prerequisite did not pass: {name}"
-            for name, passed in project_requirements.items()
-            if not passed
-        ],
+        "reasons": (
+            [
+                "development screens passed, but B5 evidence requires at least five "
+                "seeds, two qualified datasets, paired uncertainty, sample qualification, "
+                "and ID-shuffle sensitivity"
+            ]
+            if screen_pass
+            else [
+                f"required decision/prerequisite did not pass: {name}"
+                for name, passed in project_requirements.items()
+                if not passed
+            ]
+        ),
     }
     return {
         "schema_version": SCHEMA_VERSION,
