@@ -4,6 +4,7 @@ from .recall import Recall
 from .mAP_epic import mAP_EPIC
 from .online_map import OnlineMAP
 from .online_budgeted_map import OnlineAPBudgeted
+from .full_petal_metrics import compute_full_petal_metrics
 
 __all__ = [
     "build_evaluator",
@@ -12,4 +13,5 @@ __all__ = [
     "mAP_EPIC",
     "OnlineMAP",
     "OnlineAPBudgeted",
+    "compute_full_petal_metrics",
 ]
