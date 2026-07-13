@@ -2,6 +2,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable, List
 
+from .immutable_event_ledger import LedgerVerificationError, verify_rows
+
 
 class ProtocolViolation(ValueError):
     """Raised when an online protocol audit finds leaked or invalid evidence."""
@@ -157,6 +159,37 @@ def sort_emission_ledger(result_dict):
             ),
         )
     return sorted_results
+
+
+def verified_emission_result_dict(result_dict):
+    """Verify formal rows without changing ledger chronology or video ownership."""
+
+    if not isinstance(result_dict, dict):
+        raise LedgerVerificationError("formal emission results must be a video mapping")
+    flattened = []
+    video_order = []
+    for video_id, rows in result_dict.items():
+        if not isinstance(video_id, str) or not video_id:
+            raise LedgerVerificationError("formal emission video bucket must be non-empty text")
+        if not isinstance(rows, (list, tuple)):
+            raise LedgerVerificationError(f"formal emission rows for {video_id!r} must be a list")
+        video_order.append(video_id)
+        for row in rows:
+            if not isinstance(row, dict):
+                raise LedgerVerificationError(
+                    f"formal emission row in video bucket {video_id!r} must be a mapping"
+                )
+            if row.get("video_id") != video_id:
+                raise LedgerVerificationError(
+                    f"formal emission video bucket {video_id!r} conflicts with row video_id"
+                )
+            flattened.append(row)
+
+    report = verify_rows(flattened)
+    verified = {video_id: [] for video_id in video_order}
+    for row in report.rows:
+        verified[row["video_id"]].append(dict(row))
+    return verified
 
 
 def _to_float(value, default=None):

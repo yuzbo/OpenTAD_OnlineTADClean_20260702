@@ -1,5 +1,7 @@
 from dataclasses import dataclass, replace
+import hashlib
 import inspect
+import json
 import math
 from typing import Dict, Optional, Tuple
 
@@ -28,6 +30,30 @@ _BINDING_MODES = {
     "rematch": SupervisionMode.REMATCH,
     "prefix_rematch_active_pool": SupervisionMode.REMATCH,
 }
+
+
+def _formal_provenance_digest(input_digest, record):
+    if (
+        not isinstance(input_digest, str)
+        or len(input_digest) != 64
+        or any(character not in "0123456789abcdef" for character in input_digest)
+    ):
+        raise ProtocolViolation("input provenance must be a lowercase SHA-256 digest")
+    material = {
+        "input_provenance_digest": input_digest,
+        "stream_key": record.stream_key,
+        "slot_id": int(record.slot_id),
+        "emit_frame": int(record.emit_frame),
+        "max_source_frame": int(record.max_source_frame),
+    }
+    encoded = json.dumps(
+        material,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _zero(reference):
@@ -415,7 +441,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def _binding_rows(bindings):
         return tuple((int(row.instance_id), int(row.slot_id)) for row in bindings)
 
-    def _append_emissions(self, existing_rows, records, fps, class_names=None):
+    def _append_emissions(
+        self,
+        existing_rows,
+        records,
+        fps,
+        video_id,
+        input_provenance_digest,
+        class_names=None,
+    ):
         ledger = ImmutableEventLedger.from_rows(existing_rows)
         new_rows = []
         fps = float(fps)
@@ -436,6 +470,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     "event_id": event_id,
                     "stream_id": record.stream_key,
                     "stream_key": record.stream_key,
+                    "video_id": str(video_id),
                     "immutable": True,
                     "slot_id": int(record.slot_id),
                     "label": label,
@@ -444,6 +479,10 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     "end_frame": int(record.end_frame),
                     "emit_frame": int(record.emit_frame),
                     "source_frame": int(record.max_source_frame),
+                    "input_provenance_digest": input_provenance_digest,
+                    "provenance_digest": _formal_provenance_digest(
+                        input_provenance_digest, record
+                    ),
                     "segment": [record.start_frame / fps, record.end_frame / fps],
                     "emit_time_sec": record.emit_frame / fps,
                     "source_time_sec": record.max_source_frame / fps,
@@ -468,6 +507,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         runtime_state,
         feature_stride,
         fps,
+        video_id,
+        input_provenance_digest,
         class_names=None,
     ):
         state = self._to_head_state(runtime_state)
@@ -490,6 +531,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 ledger_rows,
                 records,
                 fps=fps,
+                video_id=video_id,
+                input_provenance_digest=input_provenance_digest,
                 class_names=class_names,
             )
             emissions.extend(rows)
@@ -532,6 +575,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             runtime_state,
             feature_stride=meta.get("feature_stride", meta.get("snippet_stride", 1)),
             fps=meta.get("fps", 1.0),
+            video_id=meta["video_id"],
+            input_provenance_digest=meta["input_provenance_digest"],
             class_names=class_names,
         )
         return TrajectoryInferenceOutput(logits, emissions, provisional, runtime)

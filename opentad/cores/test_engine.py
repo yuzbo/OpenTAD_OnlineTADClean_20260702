@@ -7,15 +7,19 @@ import torch.distributed as dist
 
 from opentad.utils import create_folder
 from opentad.utils.device import get_model_device, move_data_to_device
+from opentad.utils.immutable_event_ledger import (
+    load_verified_ledger,
+    persist_verified_ledger,
+)
 from opentad.utils.online_protocol import (
     is_streaming_safe_emission,
     resolve_sliding_window_for_post_processing,
     should_run_video_level_nms,
-    sort_emission_ledger,
     summarize_emission_ledger,
     validate_emission_ledger_summary,
     validate_streaming_safe_ext_cls,
     validate_streaming_safe_world_size,
+    verified_emission_result_dict,
 )
 from opentad.models.utils.post_processing import build_classifier, batched_nms
 from opentad.evaluations import build_evaluator
@@ -95,6 +99,39 @@ def eval_one_epoch(
     result_dict = gather_ddp_results(world_size, result_dict, cfg.post_processing)
     emission_summary = None
     if is_streaming_safe_emission(cfg.post_processing):
+        result_dict = verified_emission_result_dict(result_dict)
+        if not getattr(cfg.post_processing, "save_emission_ledger", True):
+            raise RuntimeError("formal streaming evaluation requires a persisted emission ledger")
+        if rank == 0:
+            ledger_filename = getattr(
+                cfg.post_processing,
+                "emission_ledger_filename",
+                "emission_ledger.jsonl",
+            )
+            ledger_path = os.path.join(cfg.work_dir, ledger_filename)
+            commitment_path = os.path.join(
+                cfg.work_dir,
+                getattr(
+                    cfg.post_processing,
+                    "emission_ledger_commitment_filename",
+                    f"{ledger_filename}.commitment.json",
+                ),
+            )
+            flattened_rows = [
+                row for rows in result_dict.values() for row in rows
+            ]
+            commitment = persist_verified_ledger(
+                ledger_path,
+                commitment_path,
+                flattened_rows,
+            )
+            verified = load_verified_ledger(ledger_path, commitment_path)
+            persisted_results = {video_id: [] for video_id in result_dict}
+            for row in verified.rows:
+                persisted_results[row["video_id"]].append(dict(row))
+            result_dict = verified_emission_result_dict(persisted_results)
+        else:
+            commitment = None
         emission_summary = summarize_emission_ledger(result_dict)
         validate_emission_ledger_summary(emission_summary)
 
@@ -105,6 +142,7 @@ def eval_one_epoch(
     if rank == 0:
         result_eval = dict(results=result_dict)
         if emission_summary is not None:
+            result_eval["ledger_commitment"] = commitment
             latency = emission_summary["latency_sec"]
             logger.info(
                 "[OnlineEval]: emissions=%d videos=%d streams=%d latency_mean=%s latency_p95=%s "
@@ -117,13 +155,6 @@ def eval_one_epoch(
                 latency["max"],
                 emission_summary["no_future"],
             )
-            if getattr(cfg.post_processing, "save_emission_ledger", True):
-                ledger_path = os.path.join(
-                    cfg.work_dir,
-                    getattr(cfg.post_processing, "emission_ledger_filename", "emission_ledger.json"),
-                )
-                with open(ledger_path, "w") as out:
-                    json.dump(dict(results=result_dict, summary=emission_summary), out, indent=2)
             if getattr(cfg.post_processing, "save_latency_summary", True):
                 summary_path = os.path.join(
                     cfg.work_dir,
@@ -157,7 +188,7 @@ def gather_ddp_results(world_size, result_dict, post_cfg):
                 result_dict[k] = v
 
     if is_streaming_safe_emission(post_cfg):
-        return sort_emission_ledger(result_dict)
+        return verified_emission_result_dict(result_dict)
 
     # do nms for sliding window, if needed
     if should_run_video_level_nms(post_cfg, getattr(post_cfg, "sliding_window", False)):

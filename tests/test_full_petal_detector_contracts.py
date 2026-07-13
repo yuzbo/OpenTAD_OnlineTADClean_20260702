@@ -47,6 +47,7 @@ def _meta(source_frames):
         "video_id": "video",
         "stream_id": "full-petal-contract",
         "input_format": "cached_features",
+        "input_provenance_digest": "a" * 64,
         "feature_stride": 8,
         "fps": 30.0,
         "source_frames": tuple(source_frames),
@@ -240,6 +241,8 @@ def test_formal_emission_is_hash_chained_and_standard_evaluator_ready():
     assert row["emit_time_sec"] == row["emit_frame"] / 30.0
     assert row["source_time_sec"] == row["source_frame"] / 30.0
     assert row["source_frame"] <= row["emit_frame"]
+    assert row["video_id"] == "video"
+    assert len(row["provenance_digest"]) == 64
     assert row["end_frame"] <= row["emit_frame"]
     assert row["sequence"] == 0
     assert len(row["row_hash"]) == 64

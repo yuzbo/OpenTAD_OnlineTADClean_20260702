@@ -63,11 +63,13 @@ def _fixture(tmp_path):
         "videos": {
             "train_a": {
                 "file": "train_a.npy",
+                "sha256": hashlib.sha256((feature_dir / "train_a.npy").read_bytes()).hexdigest(),
                 "num_tokens": 5,
                 "source_frames": [7, 15, 23, 31, 39],
             },
             "train_b": {
                 "file": "train_b.npy",
+                "sha256": hashlib.sha256((feature_dir / "train_b.npy").read_bytes()).hexdigest(),
                 "num_tokens": 3,
                 "source_frames": [7, 15, 23],
             },
@@ -100,6 +102,7 @@ def test_dataset_builds_complete_video_manifests_and_contiguous_chunks(tmp_path)
     assert first["metas"]["source_frames"] == (7, 15)
     assert first["metas"]["current_frame"] == 15
     assert first["metas"]["fps"] == pytest.approx(30.0)
+    assert len(first["metas"]["input_provenance_digest"]) == 64
     assert first["stream_control"]["is_video_start"] is True
     assert first["stream_control"]["is_video_end"] is False
 
@@ -181,6 +184,22 @@ def test_dataset_rejects_manifest_from_different_annotations(tmp_path):
     ann_file.write_text(json.dumps(annotation), encoding="utf-8")
 
     with pytest.raises(ValueError, match="annotation hash"):
+        _dataset_class()(
+            ann_file=ann_file,
+            subset_name="training",
+            class_map=class_map,
+            data_path=feature_dir,
+            cache_manifest=manifest_file,
+            chunk_size=2,
+            feature_stride=8,
+        )
+
+
+def test_dataset_rejects_feature_bytes_that_do_not_match_manifest(tmp_path):
+    ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)
+    np.save(feature_dir / "train_a.npy", np.zeros((5, 4), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="feature hash"):
         _dataset_class()(
             ann_file=ann_file,
             subset_name="training",

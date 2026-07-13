@@ -1,0 +1,63 @@
+import hashlib
+
+import pytest
+
+from opentad.utils.immutable_event_ledger import ImmutableEventLedger, LedgerVerificationError
+from opentad.utils.online_protocol import verified_emission_result_dict
+
+
+def _event(event_id, *, video_id="video-a", emit_frame=10, slot_id=0):
+    provenance = hashlib.sha256(f"{video_id}:{emit_frame}".encode("utf-8")).hexdigest()
+    return {
+        "event_id": event_id,
+        "stream_id": f"stream:{video_id}",
+        "stream_key": f"stream:{video_id}",
+        "video_id": video_id,
+        "immutable": True,
+        "slot_id": slot_id,
+        "label": "action",
+        "score": 0.75,
+        "start_frame": emit_frame - 2,
+        "end_frame": emit_frame,
+        "emit_frame": emit_frame,
+        "source_frame": emit_frame,
+        "provenance_digest": provenance,
+        "segment": [(emit_frame - 2) / 30.0, emit_frame / 30.0],
+    }
+
+
+def test_verified_results_preserve_hash_chain_order_for_same_frame_emissions():
+    ledger = ImmutableEventLedger()
+    first = ledger.append(_event("first", emit_frame=10, slot_id=1))
+    second = ledger.append(_event("second", emit_frame=10, slot_id=0))
+
+    verified = verified_emission_result_dict({"video-a": [first, second]})
+
+    assert [row["sequence"] for row in verified["video-a"]] == [0, 1]
+    with pytest.raises(LedgerVerificationError, match="replayed|sequence|reordered"):
+        verified_emission_result_dict({"video-a": [second, first]})
+
+
+def test_verified_results_reject_video_bucket_rebinding():
+    ledger = ImmutableEventLedger()
+    row = ledger.append(_event("first", video_id="video-a"))
+
+    with pytest.raises(LedgerVerificationError, match="video bucket"):
+        verified_emission_result_dict({"video-b": [row]})
+
+
+def test_verified_results_reject_unhashed_legacy_rows():
+    with pytest.raises(LedgerVerificationError, match="envelope"):
+        verified_emission_result_dict(
+            {
+                "video-a": [
+                    {
+                        "video_id": "video-a",
+                        "emit_frame": 10,
+                        "source_frame": 10,
+                        "end_frame": 10,
+                        "immutable": True,
+                    }
+                ]
+            }
+        )

@@ -27,6 +27,17 @@ def _sha256_file(path, chunk_size=1024 * 1024):
     return digest.hexdigest()
 
 
+def _canonical_json_sha256(value):
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 class StreamingFeatureDataset:
     """Chronological fixed-feature chunks with training-only prefix labels."""
 
@@ -48,6 +59,7 @@ class StreamingFeatureDataset:
         self.ann_file = Path(ann_file)
         self.data_path = Path(data_path)
         self.cache_manifest_path = Path(cache_manifest)
+        self.cache_manifest_sha256 = _sha256_file(self.cache_manifest_path)
         self.chunk_size = int(chunk_size)
         self.feature_stride = int(feature_stride)
         self.stream_id = str(stream_id)
@@ -136,6 +148,11 @@ class StreamingFeatureDataset:
         feature_path = self._feature_path(video_name, video_manifest)
         if not feature_path.is_file():
             raise FileNotFoundError(f"missing cached feature file: {feature_path}")
+        expected_feature_hash = video_manifest.get("sha256")
+        if not isinstance(expected_feature_hash, str) or len(expected_feature_hash) != 64:
+            raise ValueError(f"cache manifest is missing feature hash for {video_name}")
+        if _sha256_file(feature_path) != expected_feature_hash:
+            raise ValueError(f"cached feature hash mismatch for {video_name}")
         features = np.load(feature_path, mmap_mode="r")
         if features.ndim != 2:
             raise ValueError(f"cached features for {video_name} must have shape [T,C]")
@@ -177,6 +194,16 @@ class StreamingFeatureDataset:
                 video_info,
             )
             segments, labels = self._annotations(video_info)
+            input_provenance_digest = _canonical_json_sha256(
+                {
+                    "annotation_sha256": self._manifest["annotation_sha256"],
+                    "cache_manifest_sha256": self.cache_manifest_sha256,
+                    "encoder_id": self._manifest["encoder_id"],
+                    "feature_sha256": manifest_videos[video_name]["sha256"],
+                    "source_frames": source_frames,
+                    "video_id": video_name,
+                }
+            )
             packet_indices = []
             for chunk_index, start in enumerate(range(0, len(source_frames), self.chunk_size)):
                 end = min(start + self.chunk_size, len(source_frames))
@@ -193,6 +220,7 @@ class StreamingFeatureDataset:
                         end_token=end,
                         segments=segments,
                         labels=labels,
+                        input_provenance_digest=input_provenance_digest,
                     )
                 )
             self.packet_manifests[video_name] = packet_indices
@@ -218,6 +246,7 @@ class StreamingFeatureDataset:
             video_id=item["video_name"],
             stream_id=self.stream_id,
             input_format="cached_features",
+            input_provenance_digest=item["input_provenance_digest"],
             feature_stride=self.feature_stride,
             feature_dim=item["feature_dim"],
             fps=item["fps"],

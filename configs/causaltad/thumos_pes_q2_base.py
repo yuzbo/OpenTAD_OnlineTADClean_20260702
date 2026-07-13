@@ -119,6 +119,7 @@ post_processing = dict(
     sliding_window=False,
     save_emission_ledger=True,
     emission_ledger_filename="q2_emission_ledger.jsonl",
+    emission_ledger_commitment_filename="q2_emission_ledger.commitment.json",
     save_latency_summary=True,
     latency_summary_filename="q2_latency_summary.json",
     save_dict=False,

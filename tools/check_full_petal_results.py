@@ -2,9 +2,21 @@
 """Evaluate separate Full PETAL C1, C2, and project result gates."""
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
+import sys
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from opentad.utils.immutable_event_ledger import (
+    LedgerError,
+    load_verified_ledger,
+)
 
 
 SCHEMA_VERSION = "full_petal_result_gate.v1"
@@ -34,7 +46,7 @@ C2_VARIANTS = {
 }
 
 METRIC_ALIASES = {
-    "average_mAP": ("average_mAP", "average_mOnlineAP", "mAP", "map"),
+    "average_mAP": ("average_mAP", "mAP", "map"),
     "recall": ("recall", "instance_recall"),
     "duplicate_rate": ("duplicate_rate",),
     "fragmentation_rate": ("fragmentation_rate",),
@@ -46,6 +58,52 @@ METRIC_ALIASES = {
     "high_tiou_mAP": ("high_tiou_mAP", "mAP@0.7", "map_at_0.7"),
     "short_action_mAP": ("short_action_mAP",),
 }
+
+SHA256_FIELDS = (
+    "config",
+    "model",
+    "dataset_manifest",
+    "evaluator",
+    "metrics",
+    "run_manifest",
+)
+RUN_MANIFEST_SCHEMA = "full-petal-run-manifest-v1"
+B0_SCHEMA = "full-petal-b0-v1"
+B0_TEST_REPORT_SCHEMA = "full-petal-b0-test-report-v1"
+B0_AUDIT_REPORT_SCHEMA = "full-petal-b0-audit-report-v1"
+RAW_VISUAL_AUDIT_SCHEMA = "full-petal-raw-visual-audit-v1"
+
+PROTOCOL_REQUIRED_VALUES = {
+    "decision_cadence": "packet_end",
+    "nms": False,
+    "offline_nms": False,
+    "immutable_emissions": True,
+    "load_from_raw_predictions": False,
+    "runtime_identity": "persistent_slots",
+    "lifecycle": "canonical_shared",
+    "birth_rule": "first_threshold_crossing",
+    "start_parameterization": "scalar",
+    "endpoint_parameterization": "binary_first_crossing",
+}
+
+C1_COST_NUMERIC_FIELDS = (
+    "optimizer_events",
+    "successful_optimizer_events",
+    "skipped_optimizer_events",
+    "input_tokens",
+    "episodes",
+    "effective_batch_size",
+    "gpu_hours",
+    "wall_clock_sec",
+    "peak_vram_gb",
+)
+C1_COST_IDENTITY_FIELDS = (
+    "precision",
+    "optimizer_config_sha256",
+    "scheduler_config_sha256",
+    "data_order_sha256",
+    "loss_normalization_sha256",
+)
 
 
 class ResultGateError(ValueError):
@@ -73,6 +131,70 @@ def _canonical_json(value, label):
         raise ResultGateInputError(f"{label} must be canonical JSON data: {exc}") from exc
 
 
+def _sha256_bytes(value):
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_json(value, label):
+    return _sha256_bytes(_canonical_json(value, label).encode("utf-8"))
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    try:
+        with Path(path).open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError as exc:
+        raise ResultGateInputError(f"failed to hash evidence file {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def _required_sha256(value, label):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ResultGateInputError(f"{label} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _required_git_sha(value, label):
+    if (
+        not isinstance(value, str)
+        or len(value) != 40
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise ResultGateInputError(f"{label} must be a 40-character lowercase git SHA")
+    return value
+
+
+def _evidence_file(evidence, prefix, label):
+    path_key = f"{prefix}_path"
+    hash_key = f"{prefix}_sha256"
+    if path_key not in evidence or hash_key not in evidence:
+        raise ResultGateInputError(
+            f"{label} requires verified evidence fields {path_key} and {hash_key}"
+        )
+    raw_path = evidence[path_key]
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ResultGateInputError(f"{label}.{path_key} must be a non-empty path")
+    path = Path(raw_path).expanduser()
+    if not path.is_file():
+        raise ResultGateInputError(f"{label}.{path_key} is not a file: {path}")
+    expected = _required_sha256(evidence[hash_key], f"{label}.{hash_key}")
+    actual = _sha256_file(path)
+    if actual != expected:
+        raise ResultGateInputError(
+            f"{label}.{prefix} evidence hash mismatch: expected {expected}, found {actual}"
+        )
+    return path, actual
+
+
 def _finite_number(value, label, minimum=None, maximum=None):
     if isinstance(value, bool):
         raise ResultGateInputError(f"{label} must be a finite number")
@@ -87,6 +209,17 @@ def _finite_number(value, label, minimum=None, maximum=None):
     if maximum is not None and number > maximum:
         raise ResultGateInputError(f"{label} must be <= {maximum}")
     return number
+
+
+def _nonnegative_integer(value, label, *, positive=False):
+    if isinstance(value, bool) or not isinstance(value, int):
+        qualifier = "positive" if positive else "non-negative"
+        raise ResultGateInputError(f"{label} must be a {qualifier} integer")
+    minimum = 1 if positive else 0
+    if value < minimum:
+        qualifier = "positive" if positive else "non-negative"
+        raise ResultGateInputError(f"{label} must be a {qualifier} integer")
+    return value
 
 
 def _mean(values):
@@ -129,7 +262,7 @@ def _has_violations(value):
     raise ResultGateInputError("protocol_violations has an unsupported type")
 
 
-def _validate_row_protocol(row, label):
+def _validate_row_protocol(row, claim, label):
     metrics = row.get("metrics")
     violation_values = [row.get("protocol_violations")]
     if isinstance(metrics, dict):
@@ -151,12 +284,21 @@ def _validate_row_protocol(row, label):
     protocol = row.get("protocol")
     if not isinstance(protocol, dict) or not protocol:
         raise ResultGateInputError(f"{label}.protocol must be a non-empty object")
-    if protocol.get("offline_nms") is True or protocol.get("nms") not in (None, False):
-        raise ResultGateProtocolError(f"{label} enables forbidden NMS")
-    if protocol.get("immutable_emissions") is False:
-        raise ResultGateProtocolError(f"{label} disables immutable emissions")
-    if protocol.get("load_from_raw_predictions") is True:
-        raise ResultGateProtocolError(f"{label} enables raw-prediction loading")
+    expected_input = "matched_features" if claim == "C1" else "raw_video"
+    if protocol.get("input") != expected_input:
+        raise ResultGateProtocolError(
+            f"{label}.protocol.input must be {expected_input!r} for {claim}"
+        )
+    for field, expected in PROTOCOL_REQUIRED_VALUES.items():
+        if field not in protocol:
+            raise ResultGateInputError(f"{label}.protocol is missing required field {field}")
+        if protocol[field] != expected:
+            raise ResultGateProtocolError(
+                f"{label}.protocol.{field} must be {expected!r}, found {protocol[field]!r}"
+            )
+    capacity = protocol.get("capacity")
+    if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity <= 0:
+        raise ResultGateInputError(f"{label}.protocol.capacity must be a positive integer")
     _canonical_json(protocol, f"{label}.protocol")
     return protocol
 
@@ -224,10 +366,267 @@ def _normalized_cost(row, label):
     cost = row.get("cost")
     if not isinstance(cost, dict) or not cost:
         raise ResultGateInputError(f"{label}.cost must be a non-empty object for C1")
-    normalized = {}
-    for key, value in cost.items():
-        normalized[str(key)] = _finite_number(value, f"{label}.cost.{key}", minimum=0.0)
+    required = set(C1_COST_NUMERIC_FIELDS) | set(C1_COST_IDENTITY_FIELDS)
+    if set(cost) != required:
+        raise ResultGateInputError(
+            f"{label}.cost fields differ: expected {sorted(required)}, found {sorted(cost)}"
+        )
+    normalized = {
+        field: _finite_number(cost[field], f"{label}.cost.{field}", minimum=0.0)
+        for field in C1_COST_NUMERIC_FIELDS
+    }
+    for field in (
+        "optimizer_events",
+        "successful_optimizer_events",
+        "skipped_optimizer_events",
+        "input_tokens",
+        "episodes",
+        "effective_batch_size",
+    ):
+        normalized[field] = _nonnegative_integer(
+            cost[field],
+            f"{label}.cost.{field}",
+            positive=field in {"optimizer_events", "input_tokens", "episodes", "effective_batch_size"},
+        )
+    if normalized["optimizer_events"] != (
+        normalized["successful_optimizer_events"] + normalized["skipped_optimizer_events"]
+    ):
+        raise ResultGateInputError(
+            f"{label}.cost optimizer event accounting is inconsistent"
+        )
+    if normalized["skipped_optimizer_events"] != 0:
+        raise ResultGateProtocolError(f"{label}.cost records skipped optimizer events")
+    precision = cost["precision"]
+    if precision not in {"fp32", "fp16", "bf16"}:
+        raise ResultGateInputError(
+            f"{label}.cost.precision must be one of fp32, fp16, or bf16"
+        )
+    normalized["precision"] = precision
+    for field in C1_COST_IDENTITY_FIELDS[1:]:
+        normalized[field] = _required_sha256(cost[field], f"{label}.cost.{field}")
     return normalized
+
+
+def _load_evidence_json(path, label):
+    payload = _load_json(Path(path))
+    if not isinstance(payload, dict):
+        raise ResultGateInputError(f"{label} must be a JSON object")
+    return payload
+
+
+def _validate_raw_visual_audit(path, claim, variant, seed, hashes, label):
+    audit = _load_evidence_json(path, f"{label}.raw_visual_audit")
+    required = {
+        "schema_version",
+        "claim",
+        "variant",
+        "seed",
+        "model_sha256",
+        "dataset_manifest_sha256",
+        "registered_visual_params",
+        "nonzero_finite_grad_params",
+        "changed_visual_params",
+        "frozen_param_delta_max",
+        "status",
+    }
+    if set(audit) != required:
+        raise ResultGateInputError(
+            f"{label} raw visual audit fields differ: "
+            f"expected {sorted(required)}, found {sorted(audit)}"
+        )
+    if audit["schema_version"] != RAW_VISUAL_AUDIT_SCHEMA:
+        raise ResultGateInputError(f"{label} raw visual audit schema is unsupported")
+    if (
+        _claim_name(audit["claim"]) != claim
+        or _variant_name(claim, audit["variant"]) != variant
+        or _seed(audit["seed"], f"{label}.raw_visual_audit.seed") != seed
+    ):
+        raise ResultGateInputError(f"{label} raw visual audit run identity mismatch")
+    if audit["model_sha256"] != hashes["model"]:
+        raise ResultGateInputError(f"{label} raw visual audit model hash mismatch")
+    if audit["dataset_manifest_sha256"] != hashes["dataset_manifest"]:
+        raise ResultGateInputError(f"{label} raw visual audit dataset hash mismatch")
+
+    registered = _nonnegative_integer(
+        audit["registered_visual_params"],
+        f"{label}.raw_visual_audit.registered_visual_params",
+    )
+    finite_grad = _nonnegative_integer(
+        audit["nonzero_finite_grad_params"],
+        f"{label}.raw_visual_audit.nonzero_finite_grad_params",
+    )
+    changed = _nonnegative_integer(
+        audit["changed_visual_params"],
+        f"{label}.raw_visual_audit.changed_visual_params",
+    )
+    frozen_delta = _finite_number(
+        audit["frozen_param_delta_max"],
+        f"{label}.raw_visual_audit.frozen_param_delta_max",
+        minimum=0.0,
+    )
+    if finite_grad > registered or changed > registered:
+        raise ResultGateInputError(
+            f"{label} raw visual audit counts exceed registered visual parameters"
+        )
+    if audit["status"] != "PASS":
+        raise ResultGateProtocolError(f"{label} raw visual audit did not pass")
+    if variant == "frozen":
+        if any((registered, finite_grad, changed)) or frozen_delta > 1e-12:
+            raise ResultGateProtocolError(
+                f"{label} frozen raw visual audit records trainable or changed parameters"
+            )
+    else:
+        if registered <= 0 or finite_grad <= 0 or changed <= 0:
+            raise ResultGateProtocolError(
+                f"{label} adapted raw visual audit lacks nonzero gradients or parameter changes"
+            )
+        if frozen_delta > 1e-12:
+            raise ResultGateProtocolError(
+                f"{label} adapted raw visual audit changed frozen parameters"
+            )
+    return audit
+
+
+def _validate_run_manifest(
+    path,
+    row,
+    claim,
+    variant,
+    seed,
+    hashes,
+    raw_visual_hash,
+    label,
+):
+    manifest = _load_evidence_json(path, f"{label}.run_manifest")
+    required = {
+        "schema_version",
+        "claim",
+        "variant",
+        "seed",
+        "ledger_sha256",
+        "commitment_sha256",
+        "config_sha256",
+        "model_sha256",
+        "dataset_manifest_sha256",
+        "evaluator_sha256",
+        "metrics_sha256",
+        "cost_sha256",
+        "protocol_sha256",
+        "raw_visual_audit_sha256",
+    }
+    if set(manifest) != required:
+        raise ResultGateInputError(
+            f"{label}.run_manifest fields differ: "
+            f"expected {sorted(required)}, found {sorted(manifest)}"
+        )
+    if manifest["schema_version"] != RUN_MANIFEST_SCHEMA:
+        raise ResultGateInputError(f"{label}.run_manifest schema is unsupported")
+    if (
+        _claim_name(manifest["claim"]) != claim
+        or _variant_name(claim, manifest["variant"]) != variant
+        or _seed(manifest["seed"], f"{label}.run_manifest.seed") != seed
+    ):
+        raise ResultGateInputError(f"{label}.run_manifest run identity mismatch")
+
+    expected = {
+        "ledger_sha256": hashes["ledger"],
+        "commitment_sha256": hashes["commitment"],
+        "config_sha256": hashes["config"],
+        "model_sha256": hashes["model"],
+        "dataset_manifest_sha256": hashes["dataset_manifest"],
+        "evaluator_sha256": hashes["evaluator"],
+        "metrics_sha256": hashes["metrics"],
+        "cost_sha256": hashes.get("cost"),
+        "protocol_sha256": _sha256_json(row["protocol"], f"{label}.protocol"),
+        "raw_visual_audit_sha256": raw_visual_hash,
+    }
+    for field, expected_value in expected.items():
+        if manifest[field] != expected_value:
+            raise ResultGateInputError(f"{label}.run_manifest {field} mismatch")
+    return manifest
+
+
+def _validate_run_evidence(row, claim, variant, seed, label):
+    evidence = row.get("evidence")
+    if not isinstance(evidence, dict) or not evidence:
+        raise ResultGateInputError(f"{label} requires verified ledger evidence")
+
+    prefixes = ["ledger", "commitment", *SHA256_FIELDS]
+    if claim == "C1":
+        prefixes.append("cost")
+    else:
+        prefixes.append("raw_visual_audit")
+    expected_fields = {"ledger_count", "ledger_final_hashes"}
+    for prefix in prefixes:
+        expected_fields.update({f"{prefix}_path", f"{prefix}_sha256"})
+    if set(evidence) != expected_fields:
+        raise ResultGateInputError(
+            f"{label}.evidence fields differ: "
+            f"expected {sorted(expected_fields)}, found {sorted(evidence)}"
+        )
+
+    paths = {}
+    hashes = {}
+    for prefix in prefixes:
+        paths[prefix], hashes[prefix] = _evidence_file(evidence, prefix, label)
+
+    try:
+        ledger = load_verified_ledger(paths["ledger"], paths["commitment"])
+    except LedgerError as exc:
+        raise ResultGateInputError(f"{label} verified ledger evidence failed: {exc}") from exc
+    expected_count = _nonnegative_integer(
+        evidence["ledger_count"], f"{label}.evidence.ledger_count"
+    )
+    if ledger.count != expected_count:
+        raise ResultGateInputError(f"{label} ledger count differs from evidence")
+    expected_final_hashes = evidence["ledger_final_hashes"]
+    if not isinstance(expected_final_hashes, dict):
+        raise ResultGateInputError(
+            f"{label}.evidence.ledger_final_hashes must be an object"
+        )
+    for stream_id, final_hash in expected_final_hashes.items():
+        if not isinstance(stream_id, str) or not stream_id:
+            raise ResultGateInputError(f"{label} ledger final-hash stream id is invalid")
+        _required_sha256(final_hash, f"{label}.ledger_final_hashes.{stream_id}")
+    if ledger.final_hashes != expected_final_hashes:
+        raise ResultGateInputError(f"{label} ledger final hashes differ from evidence")
+
+    metrics_artifact = _load_evidence_json(paths["metrics"], f"{label}.metrics evidence")
+    if metrics_artifact != row.get("metrics"):
+        raise ResultGateInputError(f"{label} metrics differ from verified metrics evidence")
+    if claim == "C1":
+        cost_artifact = _load_evidence_json(paths["cost"], f"{label}.cost evidence")
+        if cost_artifact != row.get("cost"):
+            raise ResultGateInputError(f"{label} cost differs from verified cost evidence")
+
+    raw_visual_hash = None
+    raw_visual_audit = None
+    if claim == "C2":
+        raw_visual_hash = hashes["raw_visual_audit"]
+        raw_visual_audit = _validate_raw_visual_audit(
+            paths["raw_visual_audit"],
+            claim,
+            variant,
+            seed,
+            hashes,
+            label,
+        )
+    _validate_run_manifest(
+        paths["run_manifest"],
+        row,
+        claim,
+        variant,
+        seed,
+        hashes,
+        raw_visual_hash,
+        label,
+    )
+    return {
+        "hashes": hashes,
+        "ledger_count": ledger.count,
+        "ledger_final_hashes": ledger.final_hashes,
+        "raw_visual_audit": raw_visual_audit,
+    }
 
 
 def _collect_payloads(value):
@@ -250,80 +649,145 @@ def _collect_payloads(value):
     return containers, runs
 
 
-def _status_value(value, label):
-    if isinstance(value, bool):
-        return value, []
-    if not isinstance(value, dict):
-        raise ResultGateInputError(f"{label} must be a boolean or object")
-    if "passed" not in value or not isinstance(value["passed"], bool):
-        raise ResultGateInputError(f"{label}.passed must be a boolean")
-    violations = value.get("violations", [])
-    if not isinstance(violations, (list, tuple)):
-        raise ResultGateInputError(f"{label}.violations must be a sequence")
-    return value["passed"], list(violations)
-
-
-def _prerequisite_entries(container):
-    entries = {"protocol": [], "B0": []}
-    prerequisites = container.get("prerequisites")
-    if prerequisites is not None:
-        if not isinstance(prerequisites, dict):
-            raise ResultGateInputError("prerequisites must be an object")
-        if "protocol" in prerequisites:
-            entries["protocol"].append(
-                _status_value(prerequisites["protocol"], "prerequisites.protocol")
+def _b0_evidence_entry(containers):
+    forbidden = {"prerequisites", "protocol_b0", "protocol_passed", "b0_passed"}
+    entries = []
+    for index, container in enumerate(containers):
+        legacy = sorted(forbidden.intersection(container))
+        if legacy:
+            raise ResultGateInputError(
+                "protocol/B0 status cannot be self-attested; "
+                f"remove {legacy} and provide b0_evidence"
             )
-        b0_key = "B0" if "B0" in prerequisites else "b0" if "b0" in prerequisites else None
-        if b0_key is not None:
-            entries["B0"].append(
-                _status_value(prerequisites[b0_key], f"prerequisites.{b0_key}")
-            )
-
-    legacy = container.get("protocol_b0")
-    if legacy is not None:
-        if not isinstance(legacy, dict):
-            raise ResultGateInputError("protocol_b0 must be an object")
-        if "protocol_passed" in legacy:
-            entries["protocol"].append(
-                _status_value(legacy["protocol_passed"], "protocol_b0.protocol_passed")
-            )
-        if "b0_passed" in legacy:
-            entries["B0"].append(
-                _status_value(legacy["b0_passed"], "protocol_b0.b0_passed")
-            )
-    if "protocol_passed" in container:
-        entries["protocol"].append(
-            _status_value(container["protocol_passed"], "protocol_passed")
-        )
-    if "b0_passed" in container:
-        entries["B0"].append(_status_value(container["b0_passed"], "b0_passed"))
-    return entries
-
-
-def _normalize_prerequisites(containers):
-    combined = {"protocol": [], "B0": []}
-    for container in containers:
-        entries = _prerequisite_entries(container)
-        combined["protocol"].extend(entries["protocol"])
-        combined["B0"].extend(entries["B0"])
-
-    result = {}
-    for name in ("protocol", "B0"):
-        entries = combined[name]
-        values = {passed for passed, _ in entries}
-        if len(values) > 1:
-            raise ResultGateInputError(f"conflicting {name} prerequisite statuses")
-        violations = [violation for _, found in entries for violation in found]
-        passed = next(iter(values)) if values else False
-        if name == "protocol" and (violations or (entries and not passed)):
-            reason = violations or ["protocol prerequisite did not pass"]
-            raise ResultGateProtocolError(f"protocol prerequisite violation: {reason}")
-        result[name] = {
-            "provided": bool(entries),
-            "passed": bool(passed),
-            "violations": violations,
+        if "b0_evidence" in container:
+            entries.append((index, container["b0_evidence"]))
+    if len(entries) > 1:
+        canonical = {
+            _canonical_json(value, f"artifact[{index}].b0_evidence")
+            for index, value in entries
         }
-    return result
+        if len(canonical) > 1:
+            raise ResultGateInputError("conflicting B0 evidence artifacts")
+    return entries[0][1] if entries else None
+
+
+def _validate_b0_evidence(containers):
+    evidence = _b0_evidence_entry(containers)
+    if evidence is None:
+        return {"provided": False, "passed": False, "violations": []}
+    if not isinstance(evidence, dict) or set(evidence) != {"path", "sha256"}:
+        raise ResultGateInputError("b0_evidence requires exactly path and sha256")
+    wrapper = {
+        "b0_path": evidence["path"],
+        "b0_sha256": evidence["sha256"],
+    }
+    b0_path, b0_hash = _evidence_file(wrapper, "b0", "b0_evidence")
+    artifact = _load_evidence_json(b0_path, "b0_evidence artifact")
+    required = {
+        "schema_version",
+        "status",
+        "commit_sha",
+        "test_count",
+        "blocking_findings",
+        "protocol_violations",
+        "test_report_path",
+        "test_report_sha256",
+        "audit_report_path",
+        "audit_report_sha256",
+    }
+    if set(artifact) != required:
+        raise ResultGateInputError(
+            "B0 artifact fields differ: "
+            f"expected {sorted(required)}, found {sorted(artifact)}"
+        )
+    if artifact["schema_version"] != B0_SCHEMA:
+        raise ResultGateInputError("unsupported B0 artifact schema")
+    commit_sha = _required_git_sha(artifact["commit_sha"], "B0.commit_sha")
+    test_count = _nonnegative_integer(artifact["test_count"], "B0.test_count", positive=True)
+    blocking_findings = _nonnegative_integer(
+        artifact["blocking_findings"], "B0.blocking_findings"
+    )
+    protocol_violations = _nonnegative_integer(
+        artifact["protocol_violations"], "B0.protocol_violations"
+    )
+
+    linked = {
+        "test_report_path": artifact["test_report_path"],
+        "test_report_sha256": artifact["test_report_sha256"],
+        "audit_report_path": artifact["audit_report_path"],
+        "audit_report_sha256": artifact["audit_report_sha256"],
+    }
+    test_path, _ = _evidence_file(linked, "test_report", "B0")
+    audit_path, _ = _evidence_file(linked, "audit_report", "B0")
+    test_report = _load_evidence_json(test_path, "B0 test report")
+    audit_report = _load_evidence_json(audit_path, "B0 audit report")
+
+    test_required = {"schema_version", "status", "commit_sha", "collected", "passed", "failed"}
+    if set(test_report) != test_required or test_report.get("schema_version") != B0_TEST_REPORT_SCHEMA:
+        raise ResultGateInputError("B0 test report schema or fields are invalid")
+    if _required_git_sha(test_report["commit_sha"], "B0.test_report.commit_sha") != commit_sha:
+        raise ResultGateInputError("B0 test report commit does not match B0 artifact")
+    collected = _nonnegative_integer(test_report["collected"], "B0.test_report.collected")
+    passed = _nonnegative_integer(test_report["passed"], "B0.test_report.passed")
+    failed = _nonnegative_integer(test_report["failed"], "B0.test_report.failed")
+    test_pass = (
+        test_report["status"] == "PASS"
+        and collected == test_count
+        and passed == test_count
+        and failed == 0
+    )
+
+    audit_required = {
+        "schema_version",
+        "status",
+        "commit_sha",
+        "blocking_findings",
+        "protocol_violations",
+    }
+    if set(audit_report) != audit_required or audit_report.get("schema_version") != B0_AUDIT_REPORT_SCHEMA:
+        raise ResultGateInputError("B0 audit report schema or fields are invalid")
+    if _required_git_sha(audit_report["commit_sha"], "B0.audit_report.commit_sha") != commit_sha:
+        raise ResultGateInputError("B0 audit report commit does not match B0 artifact")
+    audit_blockers = _nonnegative_integer(
+        audit_report["blocking_findings"], "B0.audit_report.blocking_findings"
+    )
+    audit_violations = _nonnegative_integer(
+        audit_report["protocol_violations"], "B0.audit_report.protocol_violations"
+    )
+    audit_pass = (
+        audit_report["status"] == "PASS"
+        and audit_blockers == blocking_findings == 0
+        and audit_violations == protocol_violations == 0
+    )
+    overall_pass = artifact["status"] == "PASS" and test_pass and audit_pass
+    violations = []
+    if not test_pass:
+        violations.append("B0 test report did not pass or count accounting differs")
+    if not audit_pass:
+        violations.append("B0 audit report contains blockers or protocol violations")
+    if artifact["status"] not in {"PASS", "FAIL"}:
+        raise ResultGateInputError("B0.status must be PASS or FAIL")
+    return {
+        "provided": True,
+        "passed": overall_pass,
+        "violations": violations,
+        "artifact_sha256": b0_hash,
+        "commit_sha": commit_sha,
+        "test_count": test_count,
+    }
+
+
+def _normalize_prerequisites(containers, run_count):
+    b0 = _validate_b0_evidence(containers)
+    return {
+        "protocol": {
+            "provided": run_count > 0,
+            "passed": run_count > 0,
+            "violations": [],
+            "source": "verified_run_evidence",
+        },
+        "B0": b0,
+    }
 
 
 def _normalize_runs(raw_runs):
@@ -344,11 +808,13 @@ def _normalize_runs(raw_runs):
         if seed in grouped[claim][variant]:
             raise ResultGateInputError(f"duplicate {claim}/{variant} run for seed {seed}")
         label = f"runs[{index}]({claim}/{variant}/seed={seed})"
-        protocol = _validate_row_protocol(row, label)
+        evidence = _validate_run_evidence(row, claim, variant, seed, label)
+        protocol = _validate_row_protocol(row, claim, label)
         normalized = {
             "seed": seed,
             "protocol": protocol,
             "metrics": _normalized_metrics(row, claim, label),
+            "evidence": evidence,
         }
         if claim == "C1":
             normalized["cost"] = _normalized_cost(row, label)
@@ -399,9 +865,13 @@ def _cost_parity(grouped, seeds, tolerance):
             )
         metrics = {}
         for key in sorted(fixed):
-            scale = max(abs(fixed[key]), abs(rematch[key]), 1e-12)
-            relative_gap = abs(fixed[key] - rematch[key]) / scale
-            metric_pass = relative_gap <= tolerance + 1e-12
+            if key in C1_COST_IDENTITY_FIELDS:
+                relative_gap = 0.0 if fixed[key] == rematch[key] else None
+                metric_pass = fixed[key] == rematch[key]
+            else:
+                scale = max(abs(fixed[key]), abs(rematch[key]), 1e-12)
+                relative_gap = abs(fixed[key] - rematch[key]) / scale
+                metric_pass = relative_gap <= tolerance + 1e-12
             passed = passed and metric_pass
             metrics[key] = {
                 "fixed": fixed[key],
@@ -511,6 +981,7 @@ def _not_evaluated(claim, variants):
             "protocol_equality": False,
             "scientific_metrics": False,
             **({"cost_parity": False} if claim == "C1" else {}),
+            **({"raw_visual_audit": False} if claim == "C2" else {}),
         },
         "paired_seed_coverage": {
             "passed": False,
@@ -637,6 +1108,7 @@ def _evaluate_c2(grouped, map_gain_points, specialized_gain_points, map_parity_t
             "paired_seed_coverage": True,
             "protocol_equality": True,
             "scientific_metrics": scientific_pass,
+            "raw_visual_audit": True,
         },
         "paired_seed_coverage": {
             "passed": True,
@@ -644,6 +1116,17 @@ def _evaluate_c2(grouped, map_gain_points, specialized_gain_points, map_parity_t
             "variants": list(variants),
         },
         "protocol_equality": {"passed": True},
+        "raw_visual_audit": {
+            "passed": True,
+            "per_seed": [
+                {
+                    "seed": seed,
+                    "adapted": grouped["C2"]["adapted"][seed]["evidence"]["raw_visual_audit"],
+                    "frozen": grouped["C2"]["frozen"][seed]["evidence"]["raw_visual_audit"],
+                }
+                for seed in seeds
+            ],
+        },
         "scientific_metrics": scientific,
         "reasons": [] if scientific_pass else ["C2 raw-video scientific checks did not pass"],
     }
@@ -680,8 +1163,8 @@ def evaluate_result_gates(
         thresholds[name] = _finite_number(value, name, minimum=0.0)
 
     containers, raw_runs = _collect_payloads(artifacts)
-    prerequisites = _normalize_prerequisites(containers)
     grouped = _normalize_runs(raw_runs)
+    prerequisites = _normalize_prerequisites(containers, len(raw_runs))
     c1 = _evaluate_c1(
         grouped,
         thresholds["c1_cost_relative_tolerance"],
@@ -818,4 +1301,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

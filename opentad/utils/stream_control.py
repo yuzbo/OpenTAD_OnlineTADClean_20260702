@@ -23,6 +23,7 @@ MODEL_META_ALLOWLIST = frozenset(
         "frame_stride",
         "image_size",
         "input_format",
+        "input_provenance_digest",
         "input_policy",
         "max_cache_source_frame",
         "offset_frames",
@@ -171,6 +172,7 @@ _CAMEL_BOUNDARY_1 = re.compile(r"(.)([A-Z][a-z]+)")
 _CAMEL_BOUNDARY_2 = re.compile(r"([a-z0-9])([A-Z])")
 _NON_KEY_CHARACTER = re.compile(r"[^A-Za-z0-9]+")
 _IDENTIFIER_FIELDS = frozenset({"stream_id", "video_id", "video_name"})
+_HASH_FIELDS = frozenset({"input_provenance_digest"})
 _MODEL_SCALAR_FRAMES = frozenset(
     {
         "current_frame",
@@ -310,6 +312,15 @@ def _required_identifier(value, field):
         raise StreamMetadataError(f"{field} must be a non-empty string")
 
 
+def _required_sha256(value, field):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise StreamMetadataError(f"{field} must be a lowercase SHA-256 digest")
+
+
 def _integer(value, field, *, nonnegative=False):
     if isinstance(value, bool) or not isinstance(value, numbers.Integral):
         raise StreamMetadataError(f"{field} must be an integer")
@@ -354,6 +365,8 @@ def validate_model_meta(model_meta):
 
     for field in _IDENTIFIER_FIELDS.intersection(canonical):
         _required_identifier(canonical[field], field)
+    for field in _HASH_FIELDS.intersection(canonical):
+        _required_sha256(canonical[field], field)
     for field in _MODEL_SCALAR_FRAMES.intersection(canonical):
         canonical[field] = _integer(canonical[field], field)
     for field in _MODEL_FRAME_SEQUENCES.intersection(canonical):

@@ -16,6 +16,8 @@ from pathlib import Path
 
 LEDGER_SCHEMA = "opentad.immutable_event_ledger"
 LEDGER_VERSION = 1
+LEDGER_COMMITMENT_SCHEMA = "opentad.immutable_event_ledger.commitment"
+LEDGER_COMMITMENT_VERSION = 1
 GENESIS_HASH = "0" * 64
 
 _ENVELOPE_FIELDS = frozenset(
@@ -186,6 +188,39 @@ def _required_frame(value, field, error_type):
     return int(value)
 
 
+def _required_nonnegative_integer(value, field, error_type):
+    normalized = _required_frame(value, field, error_type)
+    if normalized < 0:
+        raise error_type(f"ledger {field} must be non-negative")
+    return normalized
+
+
+def _required_score(value, error_type):
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise error_type("ledger score must be a finite real number")
+    normalized = float(value)
+    if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
+        raise error_type("ledger score must be finite and lie in [0, 1]")
+    return normalized
+
+
+def _required_label(value, error_type):
+    if isinstance(value, bool):
+        raise error_type("ledger label must be a non-empty string or non-negative integer")
+    if isinstance(value, numbers.Integral):
+        normalized = int(value)
+        if normalized < 0:
+            raise error_type("ledger label integer must be non-negative")
+        return normalized
+    return _required_text(value, "label", error_type)
+
+
+def _required_hash(value, field, error_type):
+    if not _valid_hash(value):
+        raise error_type(f"ledger {field} must be a lowercase SHA-256 hex digest")
+    return value
+
+
 def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_id=None):
     if not isinstance(event, Mapping):
         raise error_type("ledger event must be a mapping")
@@ -206,6 +241,7 @@ def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_i
 
     stream_id = _required_text(stream_id, "stream_id", error_type)
     event_id = _required_text(payload.get("event_id"), "event_id", error_type)
+    video_id = _required_text(payload.get("video_id"), "video_id", error_type)
     if payload.get("immutable") is not True:
         raise error_type("ledger event must explicitly contain immutable=true")
 
@@ -216,22 +252,41 @@ def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_i
     ]
     if missing_frames:
         raise error_type(f"ledger event missing frame fields: {missing_frames}")
-    emit_frame = _required_frame(payload["emit_frame"], "emit_frame", error_type)
-    source_frame = _required_frame(payload["source_frame"], "source_frame", error_type)
-    end_frame = _required_frame(payload["end_frame"], "end_frame", error_type)
+    emit_frame = _required_nonnegative_integer(payload["emit_frame"], "emit_frame", error_type)
+    source_frame = _required_nonnegative_integer(payload["source_frame"], "source_frame", error_type)
+    end_frame = _required_nonnegative_integer(payload["end_frame"], "end_frame", error_type)
+    start_frame = _required_nonnegative_integer(
+        payload.get("start_frame"), "start_frame", error_type
+    )
+    slot_id = _required_nonnegative_integer(payload.get("slot_id"), "slot_id", error_type)
+    label = _required_label(payload.get("label"), error_type)
+    score = _required_score(payload.get("score"), error_type)
+    provenance_digest = _required_hash(
+        payload.get("provenance_digest"), "provenance_digest", error_type
+    )
     if source_frame > emit_frame:
         raise error_type(
             f"ledger source_frame={source_frame} exceeds emit_frame={emit_frame}"
         )
     if end_frame > emit_frame:
         raise error_type(f"ledger end_frame={end_frame} exceeds emit_frame={emit_frame}")
+    if start_frame > end_frame:
+        raise error_type(
+            f"ledger start_frame={start_frame} exceeds end_frame={end_frame}"
+        )
 
     _reject_mutation_semantics(payload)
     payload["stream_id"] = stream_id
     payload["event_id"] = event_id
+    payload["video_id"] = video_id
     payload["emit_frame"] = emit_frame
     payload["source_frame"] = source_frame
+    payload["start_frame"] = start_frame
     payload["end_frame"] = end_frame
+    payload["slot_id"] = slot_id
+    payload["label"] = label
+    payload["score"] = score
+    payload["provenance_digest"] = provenance_digest
     return _json_copy(payload)
 
 
@@ -574,31 +629,86 @@ class ImmutableEventLedger:
         return len(self._rows)
 
 
+class _ExclusiveWriterLease:
+    """Hold one OS-managed lease for a ledger path until explicitly released."""
+
+    def __init__(self, ledger_path):
+        self.path = Path(f"{ledger_path}.lock")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        self._closed = False
+        try:
+            if os.fstat(self._descriptor).st_size == 0:
+                os.write(self._descriptor, b"0")
+                os.fsync(self._descriptor)
+            os.lseek(self._descriptor, 0, os.SEEK_SET)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            os.close(self._descriptor)
+            self._closed = True
+            raise LedgerValidationError(
+                f"unable to acquire exclusive writer lease for {ledger_path}"
+            ) from exc
+
+    def close(self):
+        if self._closed:
+            return
+        try:
+            os.lseek(self._descriptor, 0, os.SEEK_SET)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(self._descriptor, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(self._descriptor)
+            self._closed = True
+
+
 class AtomicLedgerWriter:
     """Append canonical rows with one OS-level append write per event."""
 
-    def __init__(self, path, *, fsync=True):
+    def __init__(self, path, *, fsync=True, create_new=False):
         self.path = Path(path)
         self.fsync = bool(fsync)
         self._lock = threading.Lock()
+        self._closed = False
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        if self.path.exists() and not self.path.is_file():
-            raise LedgerValidationError(f"ledger path is not a file: {self.path}")
-        if self.path.exists():
-            existing = self.path.read_bytes()
-            if existing and not existing.endswith(b"\n"):
-                raise LedgerVerificationError(
-                    "existing ledger does not end at an atomic JSONL record boundary"
-                )
-            rows = read_ledger(self.path)
-            self._ledger = ImmutableEventLedger.from_rows(rows)
-            self._size = len(existing)
-        else:
-            existing = b""
-            self._ledger = ImmutableEventLedger()
-            self._size = 0
-        self._content_hasher = hashlib.sha256(existing)
-        self._content_digest = self._content_hasher.digest()
+        self._lease = _ExclusiveWriterLease(self.path)
+        try:
+            if create_new and self.path.exists():
+                raise LedgerValidationError(f"ledger path already exists: {self.path}")
+            if self.path.exists() and not self.path.is_file():
+                raise LedgerValidationError(f"ledger path is not a file: {self.path}")
+            if self.path.exists():
+                existing = self.path.read_bytes()
+                if existing and not existing.endswith(b"\n"):
+                    raise LedgerVerificationError(
+                        "existing ledger does not end at an atomic JSONL record boundary"
+                    )
+                rows = read_ledger(self.path)
+                self._ledger = ImmutableEventLedger.from_rows(rows)
+                self._size = len(existing)
+            else:
+                existing = b""
+                self._ledger = ImmutableEventLedger()
+                self._size = 0
+            self._content_hasher = hashlib.sha256(existing)
+            self._content_digest = self._content_hasher.digest()
+        except Exception:
+            self._lease.close()
+            self._closed = True
+            raise
 
     def _current_state(self):
         digest = hashlib.sha256()
@@ -617,6 +727,8 @@ class AtomicLedgerWriter:
 
     def append(self, event, *, stream_id=None):
         with self._lock:
+            if self._closed:
+                raise LedgerValidationError("ledger writer is closed")
             current_size, current_digest = self._current_state()
             if current_size != self._size or current_digest != self._content_digest:
                 raise LedgerVerificationError(
@@ -665,7 +777,149 @@ class AtomicLedgerWriter:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
         return False
+
+    def close(self):
+        with self._lock:
+            if self._closed:
+                return
+            self._lease.close()
+            self._closed = True
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def _sha256_file(path, chunk_size=1024 * 1024):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_exclusive_canonical_json(path, payload):
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (canonical_json(payload) + "\n").encode("utf-8")
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    flags |= getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(output_path, flags, 0o600)
+    except FileExistsError as exc:
+        raise LedgerValidationError(f"commitment path already exists: {output_path}") from exc
+    try:
+        written = os.write(descriptor, encoded)
+        if written != len(encoded):
+            raise OSError(f"partial commitment write: {written} of {len(encoded)} bytes")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _read_canonical_json_file(path, description):
+    input_path = Path(path)
+    try:
+        encoded = input_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise LedgerVerificationError(f"unable to read {description} {input_path}: {exc}") from exc
+    if not encoded.endswith("\n") or encoded.count("\n") != 1:
+        raise LedgerVerificationError(f"{description} must be one canonical JSON line")
+    raw = encoded[:-1]
+    try:
+        payload = json.loads(
+            raw,
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise LedgerVerificationError(f"invalid {description}: {exc}") from exc
+    if not isinstance(payload, dict) or canonical_json(payload) != raw:
+        raise LedgerVerificationError(f"{description} must use canonical JSON encoding")
+    return payload
+
+
+def persist_verified_ledger(ledger_path, commitment_path, rows):
+    """Publish verified formal rows and a separate immutable tail commitment."""
+
+    ledger_path = Path(ledger_path)
+    commitment_path = Path(commitment_path)
+    if ledger_path.exists():
+        raise LedgerValidationError(f"ledger path already exists: {ledger_path}")
+    if commitment_path.exists():
+        raise LedgerValidationError(f"commitment path already exists: {commitment_path}")
+
+    source = verify_rows(rows)
+    with AtomicLedgerWriter(ledger_path, create_new=True) as writer:
+        for expected in source.rows:
+            actual = writer.append(_payload_from_row(expected))
+            if actual != expected:
+                raise LedgerVerificationError("persisted ledger row differs from verified source row")
+
+    persisted = verify_ledger(
+        ledger_path,
+        expected_count=source.count,
+        expected_final_hash=source.final_hashes,
+    )
+    commitment = {
+        "schema": LEDGER_COMMITMENT_SCHEMA,
+        "version": LEDGER_COMMITMENT_VERSION,
+        "ledger_filename": ledger_path.name,
+        "ledger_sha256": _sha256_file(ledger_path),
+        "count": persisted.count,
+        "stream_counts": persisted.stream_counts,
+        "final_hashes": persisted.final_hashes,
+    }
+    _write_exclusive_canonical_json(commitment_path, commitment)
+    return _json_copy(commitment)
+
+
+def load_verified_ledger(ledger_path, commitment_path):
+    """Load a ledger only when its external immutable commitment verifies."""
+
+    ledger_path = Path(ledger_path)
+    commitment = _read_canonical_json_file(commitment_path, "ledger commitment")
+    required = {
+        "schema",
+        "version",
+        "ledger_filename",
+        "ledger_sha256",
+        "count",
+        "stream_counts",
+        "final_hashes",
+    }
+    if set(commitment) != required:
+        raise LedgerVerificationError(
+            f"ledger commitment fields differ: expected {sorted(required)}, found {sorted(commitment)}"
+        )
+    if (
+        commitment["schema"] != LEDGER_COMMITMENT_SCHEMA
+        or commitment["version"] != LEDGER_COMMITMENT_VERSION
+    ):
+        raise LedgerVerificationError("unsupported ledger commitment schema/version")
+    if commitment["ledger_filename"] != ledger_path.name:
+        raise LedgerVerificationError("ledger commitment filename does not match ledger path")
+    expected_file_hash = _required_hash(
+        commitment["ledger_sha256"], "commitment ledger_sha256", LedgerVerificationError
+    )
+    try:
+        actual_file_hash = _sha256_file(ledger_path)
+    except OSError as exc:
+        raise LedgerVerificationError(f"unable to hash committed ledger {ledger_path}: {exc}") from exc
+    if actual_file_hash != expected_file_hash:
+        raise LedgerVerificationError("ledger file hash does not match commitment")
+    return verify_ledger(
+        ledger_path,
+        expected_count=commitment["count"],
+        expected_final_hash=commitment["final_hashes"],
+    )
 
 
 class ImmutableEventLedgerReader:
@@ -695,6 +949,8 @@ __all__ = [
     "ImmutableEventLedger",
     "ImmutableEventLedgerReader",
     "InMemoryEventLedger",
+    "LEDGER_COMMITMENT_SCHEMA",
+    "LEDGER_COMMITMENT_VERSION",
     "LEDGER_SCHEMA",
     "LEDGER_VERSION",
     "LedgerError",
@@ -704,6 +960,8 @@ __all__ = [
     "LedgerVerificationResult",
     "canonical_json",
     "compute_row_hash",
+    "load_verified_ledger",
+    "persist_verified_ledger",
     "read_ledger",
     "verify_ledger",
     "verify_rows",

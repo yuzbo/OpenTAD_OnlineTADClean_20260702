@@ -11,6 +11,8 @@ from opentad.utils.immutable_event_ledger import (
     LedgerVerificationError,
     canonical_json,
     compute_row_hash,
+    load_verified_ledger,
+    persist_verified_ledger,
     read_ledger,
     verify_ledger,
     verify_rows,
@@ -21,11 +23,16 @@ def _event(event_id, stream_id="stream-a", emit_frame=10, **overrides):
     event = {
         "event_id": event_id,
         "stream_id": stream_id,
+        "video_id": "video-a",
         "emit_frame": emit_frame,
         "source_frame": emit_frame,
+        "start_frame": max(0, emit_frame - 2),
         "end_frame": emit_frame,
         "immutable": True,
+        "slot_id": 0,
         "label": "action",
+        "score": 0.75,
+        "provenance_digest": "a" * 64,
     }
     event.update(overrides)
     return event
@@ -78,7 +85,7 @@ def test_in_memory_ledger_builds_independent_per_stream_chains():
         ({"type": "DELETE"}, "append-only"),
         ({"payload": {"action": "mutate"}}, "append-only"),
         ({"payload": {"replacesEventId": "old-event"}}, "append-only"),
-        ({"score": float("nan")}, "canonical JSON"),
+        ({"score": float("nan")}, "finite"),
     ],
 )
 def test_writer_rejects_non_immutable_future_mutating_or_noncanonical_events(change, message):
@@ -97,6 +104,18 @@ def test_writer_requires_immutable_marker_and_rejects_reserved_fields():
         ledger.append(missing)
     with pytest.raises(LedgerValidationError, match="reserved"):
         ledger.append(_event("reserved", sequence=99))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["video_id", "slot_id", "start_frame", "label", "score", "provenance_digest"],
+)
+def test_writer_requires_complete_formal_emission_provenance(field):
+    event = _event("missing-formal-field")
+    del event[field]
+
+    with pytest.raises(LedgerValidationError, match=field):
+        ImmutableEventLedger().append(event)
 
 
 def test_writer_rejects_duplicate_ids_and_decreasing_emit_frames():
@@ -135,6 +154,7 @@ def test_atomic_writer_only_appends_and_can_resume_existing_chain(tmp_path):
     assert first["sequence"] == 0
     assert second["sequence"] == 1
 
+    writer.close()
     resumed = AtomicLedgerWriter(path)
     third = resumed.append(_event("third", emit_frame=8))
     assert third["sequence"] == 2
@@ -147,6 +167,43 @@ def test_atomic_writer_only_appends_and_can_resume_existing_chain(tmp_path):
         expected_final_hash=third["row_hash"],
     )
     assert len(rows) == report.count == 3
+    resumed.close()
+
+
+def test_atomic_writer_holds_one_exclusive_process_lease(tmp_path):
+    path = tmp_path / "events.jsonl"
+    writer = AtomicLedgerWriter(path)
+
+    with pytest.raises(LedgerValidationError, match="exclusive writer lease"):
+        AtomicLedgerWriter(path)
+
+    writer.close()
+    resumed = AtomicLedgerWriter(path)
+    resumed.close()
+
+
+def test_persisted_ledger_requires_external_commitment_and_round_trips(tmp_path):
+    source = ImmutableEventLedger()
+    rows = (
+        source.append(_event("first", emit_frame=3)),
+        source.append(_event("second", emit_frame=5)),
+    )
+    ledger_path = tmp_path / "formal.jsonl"
+    commitment_path = tmp_path / "formal.commitment.json"
+
+    commitment = persist_verified_ledger(ledger_path, commitment_path, rows)
+    report = load_verified_ledger(ledger_path, commitment_path)
+
+    assert report.rows == rows
+    assert commitment["count"] == 2
+    assert commitment["final_hashes"] == report.final_hashes
+
+    with pytest.raises(LedgerValidationError, match="already exists"):
+        persist_verified_ledger(ledger_path, commitment_path, rows)
+
+    commitment_path.unlink()
+    with pytest.raises(LedgerVerificationError, match="commitment"):
+        load_verified_ledger(ledger_path, commitment_path)
 
 
 def test_atomic_writer_rejects_same_size_external_edits(tmp_path):

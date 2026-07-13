@@ -68,6 +68,10 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     assert cfg.inference.load_from_raw_predictions is False
     assert "nms" not in cfg.post_processing
     assert cfg.post_processing.streaming_safe_emission is True
+    assert cfg.post_processing.emission_ledger_filename.endswith(".jsonl")
+    assert cfg.post_processing.emission_ledger_commitment_filename.endswith(
+        ".commitment.json"
+    )
 
 
 def test_q2_configs_keep_pointer_hazard_and_raw_video_out_of_c1_gate():
