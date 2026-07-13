@@ -45,9 +45,25 @@ experiment_contract = dict(
 profile_contract = dict(
     warmup_steps=50,
     measured_steps=200,
+    step_unit="optimizer_event",
+    world_size=1,
     b1_total_gpu_hour_cap=2,
     b2_total_gpu_hour_cap=10,
     submit_via_slurm_only=True,
+)
+
+launch_contract = dict(
+    schema_version="full-petal-launch-contract-v1",
+    required_reviewer_id="019f5abd-5104-79b3-882e-354ca796f2c1",
+    required_review_scope=[
+        "P0_evidence_chain",
+        "training_lifecycle",
+        "data_metrics",
+        "optimizer_launch",
+        "full_B0",
+    ],
+    allowed_cfg_overrides=["work_dir"],
+    require_clean_checkout=True,
 )
 
 reporting_contract = dict(
@@ -124,7 +140,12 @@ model = dict(
     ),
 )
 
-optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.05)
+optimizer = dict(
+    type="AdamW",
+    lr=2e-4,
+    weight_decay=0.05,
+    audit=dict(fail_on_frozen=True),
+)
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=1, max_epoch=12)
 
 inference = dict(load_from_raw_predictions=False, save_raw_prediction=False)

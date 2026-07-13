@@ -145,6 +145,7 @@ def train_one_epoch(
     runtime_debug_interval=-1,
     scaler=None,
     amp_dtype=None,
+    fixed_step_profiler=None,
 ):
     """Training the model for one epoch"""
 
@@ -171,6 +172,8 @@ def train_one_epoch(
     successful_optimizer_events = 0
     skipped_optimizer_events = 0
     optimizer.zero_grad(set_to_none=True)
+    if fixed_step_profiler is not None:
+        fixed_step_profiler.start()
 
     for iter_idx, raw_data_dict in enumerate(train_loader):
         control = _transaction_control(raw_data_dict) if transaction is not None else None
@@ -217,6 +220,8 @@ def train_one_epoch(
             episode_loss_records.clear()
             optimizer_events += 1
             skipped_optimizer_events += 1
+            if fixed_step_profiler is not None:
+                fixed_step_profiler.record_skipped_optimizer_event()
             skip_until_boundary = not boundary
             continue
 
@@ -274,6 +279,8 @@ def train_one_epoch(
             episode_weight = 0.0
             episode_loss_records.clear()
             skipped_optimizer_events += 1
+            if fixed_step_profiler is not None:
+                fixed_step_profiler.record_skipped_optimizer_event()
             continue
 
         try:
@@ -294,6 +301,10 @@ def train_one_epoch(
         if model_ema is not None:
             model_ema.update(model)
         optimizer.zero_grad(set_to_none=True)
+        if fixed_step_profiler is not None and fixed_step_profiler.record_optimizer_event():
+            episode_weight = 0.0
+            episode_loss_records.clear()
+            break
 
         for loss_record in episode_loss_records:
             reduced = reduce_loss(loss_record)
@@ -361,6 +372,9 @@ def train_one_epoch(
         "optimizer_events": optimizer_events,
         "successful_optimizer_events": successful_optimizer_events,
         "skipped_optimizer_events": skipped_optimizer_events,
+        "fixed_step_profile_complete": bool(
+            fixed_step_profiler is not None and fixed_step_profiler.complete
+        ),
     }
 
 

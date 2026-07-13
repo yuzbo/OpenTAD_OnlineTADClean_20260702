@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from .layer_decay_optimizer import build_vit_optimizer
 from opentad.utils.optimizer_audit import audit_optimizer_coverage
@@ -8,6 +10,7 @@ def _unwrap_model(model):
 
 
 def build_optimizer(cfg, model, logger):
+    cfg = copy.deepcopy(dict(cfg))
     optimizer_type = cfg["type"]
     cfg.pop("type")
     audit_cfg = cfg.pop("audit", True)
@@ -20,8 +23,9 @@ def build_optimizer(cfg, model, logger):
     target_model = _unwrap_model(model)
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
-    if hasattr(target_model, "backbone"):  # if backbone exists
-        if target_model.backbone.freeze_backbone == False:  # not frozen
+    backbone = getattr(target_model, "backbone", None)
+    if backbone is not None:
+        if getattr(backbone, "freeze_backbone", False) is False:
             assert (
                 backbone_cfg is not None
             ), "Freeze_backbone is set to False, but backbone parameters is not provided in the optimizer config."
@@ -35,12 +39,15 @@ def build_optimizer(cfg, model, logger):
                 )
                 backbone_optim_groups = target_model.backbone.get_optim_groups(adapter_cfg)
                 if len(backbone_optim_groups) > 0:
-                    logger.info("Train frozen-backbone adapters...")
+                    if logger is not None:
+                        logger.info("Train frozen-backbone adapters...")
                 else:
-                    logger.info(f"Freeze the backbone...")
+                    if logger is not None:
+                        logger.info("Freeze the backbone...")
             else:
                 backbone_optim_groups = []
-                logger.info(f"Freeze the backbone...")
+                if logger is not None:
+                    logger.info("Freeze the backbone...")
     else:
         backbone_optim_groups = []
 
@@ -56,6 +63,8 @@ def build_optimizer(cfg, model, logger):
         for name, param in target_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
+                continue
+            if not param.requires_grad:
                 continue
             detector_params.append(param)
         det_optim_groups = [dict(params=detector_params)]

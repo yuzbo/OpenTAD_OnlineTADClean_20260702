@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from copy import deepcopy
 
 import pytest
 
@@ -29,6 +30,16 @@ class TinyModel(nn.Module):
 class FakeOptimizer:
     def __init__(self, groups):
         self.param_groups = groups
+
+
+class HeadOnlyModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = None
+        self.head = nn.Linear(2, 2)
+        self.frozen_aux = nn.Linear(2, 1)
+        for parameter in self.frozen_aux.parameters():
+            parameter.requires_grad = False
 
 
 def test_optimizer_audit_accepts_exact_trainable_coverage():
@@ -121,3 +132,26 @@ def test_optimizer_audit_rejects_unknown_parameter_objects():
 
     assert report.unknown_optimizer_parameters == ("<unknown:0>",)
     assert not report.passed
+
+
+def test_optimizer_builder_handles_none_backbone_without_mutating_config():
+    from opentad.cores.optimizer import build_optimizer
+
+    model = HeadOnlyModel()
+    config = {
+        "type": "AdamW",
+        "lr": 1e-3,
+        "weight_decay": 0.01,
+        "audit": {"fail_on_frozen": True},
+    }
+    original = deepcopy(config)
+
+    optimizer = build_optimizer(config, model, logger=None)
+
+    optimizer_ids = {
+        id(parameter)
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    }
+    assert optimizer_ids == {id(parameter) for parameter in model.head.parameters()}
+    assert config == original

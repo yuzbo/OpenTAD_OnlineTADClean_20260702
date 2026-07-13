@@ -39,8 +39,15 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     assert cfg.gpu_authorization == "BLOCKED_UNTIL_B0_AND_PROFILE"
     assert cfg.profile_contract.warmup_steps == 50
     assert cfg.profile_contract.measured_steps == 200
+    assert cfg.profile_contract.step_unit == "optimizer_event"
+    assert cfg.profile_contract.world_size == 1
     assert cfg.profile_contract.b1_total_gpu_hour_cap == 2
     assert cfg.profile_contract.b2_total_gpu_hour_cap == 10
+    assert cfg.optimizer.audit.fail_on_frozen is True
+    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v1"
+    assert cfg.launch_contract.required_reviewer_id == (
+        "019f5abd-5104-79b3-882e-354ca796f2c1"
+    )
 
     assert cfg.experiment_contract.changed_axis == "post_birth_target_to_slot_loss_binding"
     assert cfg.experiment_contract.shared_first_crossing_birth is True
@@ -104,3 +111,82 @@ def test_streaming_evaluator_does_not_inject_rank_into_model_metadata():
     )
 
     assert 'meta["eval_rank"]' not in source
+
+
+def _entrypoint_source(name):
+    return (ROOT / "tools" / name).read_text(encoding="utf-8")
+
+
+def test_full_petal_gate_runs_before_ddp_and_cuda_in_every_entrypoint():
+    for name in ("train.py", "test.py"):
+        source = _entrypoint_source(name)
+        main_offset = source.index("def main()")
+        gate_offset = source.index("validate_full_petal_launch(", main_offset)
+        ddp_offset = source.index("dist.init_process_group(", main_offset)
+        cuda_offset = source.index("torch.cuda.set_device(", main_offset)
+
+        assert gate_offset < ddp_offset
+        assert gate_offset < cuda_offset
+
+
+def test_profile_path_exits_before_checkpoint_or_evaluation():
+    source = _entrypoint_source("train.py")
+    completion_offset = source.index('train_stats["fixed_step_profile_complete"]')
+    artifact_offset = source.index('"fixed_step_profile.json"', completion_offset)
+    return_offset = source.index("            return", artifact_offset)
+    checkpoint_offset = source.index("        # save checkpoint", completion_offset)
+    validation_offset = source.index("        # val for one epoch", completion_offset)
+
+    assert completion_offset < artifact_offset < return_offset
+    assert return_offset < checkpoint_offset < validation_offset
+    assert "build_fixed_step_profile_artifact(" in source
+    assert "fixed_step_profiler.measurements()" in source
+
+
+def test_test_entrypoint_uses_resolved_amp_dtype():
+    source = _entrypoint_source("test.py")
+
+    assert "amp_dtype = resolve_amp_dtype(" in source
+    assert "amp_dtype=amp_dtype," in source
+
+
+def test_legacy_smoke_cannot_launch_full_petal():
+    source = _entrypoint_source("smoke_pes_stage1.py")
+
+    assert "is_full_petal_route(cfg)" in source
+    assert "cannot use the legacy Stage-1 smoke launcher" in source
+
+
+def test_ticket_builder_and_slurm_launcher_use_the_locked_gate():
+    builder = _entrypoint_source("build_full_petal_launch_ticket.py")
+    launcher = (
+        ROOT / "tools" / "remote" / "submit_full_petal_q2_n16r4.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "build_launch_ticket(" in builder
+    assert '--launch-mode "${MODE}"' in launcher
+    assert '--launch-ticket "${TICKET}"' in launcher
+    assert "--nproc_per_node=1" in launcher
+    assert "ALLOW_FORMAL" in launcher
+
+
+def test_isolated_torch_runner_bypasses_only_package_level_registration():
+    source = (
+        ROOT / "tools" / "testing" / "run_isolated_torch_pytest.py"
+    ).read_text(encoding="utf-8")
+
+    assert "_install_focused_opentad" in source
+    assert 'sys.path.insert(0, str(repo_root))' in source
+    assert "pytest.main(args.pytest_args)" in source
+    assert "nms_1d_cpu" not in source
+    assert "mmcv" not in source
+
+
+def test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo():
+    source = _entrypoint_source("run_full_petal_b0.py")
+
+    assert "Full PETAL B0 requires a clean committed checkout" in source
+    assert '"junit_sha256"' in source
+    assert '"log_sha256"' in source
+    assert "B0 evidence must be written outside the repository" in source
+    assert "run_isolated_torch_pytest.py" in source

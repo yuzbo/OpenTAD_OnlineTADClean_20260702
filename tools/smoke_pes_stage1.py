@@ -23,6 +23,7 @@ from opentad.utils.training_audit import (  # noqa: E402
     audit_training_update,
     snapshot_trainable_parameters,
 )
+from opentad.utils.full_petal_launch import is_full_petal_route  # noqa: E402
 
 
 def parse_args():
@@ -56,6 +57,11 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options:
         cfg.merge_from_dict(args.cfg_options)
+    if is_full_petal_route(cfg):
+        raise RuntimeError(
+            "Full PETAL Q2 cannot use the legacy Stage-1 smoke launcher; "
+            "complete B0 and independent review before the fixed-step profile"
+        )
     if cfg.inference.load_from_raw_predictions:
         raise RuntimeError("load_from_raw_predictions is forbidden for Stage-1 smoke")
 

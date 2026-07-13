@@ -7,14 +7,16 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+from pathlib import Path
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from mmengine.config import Config, DictAction
 from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
-from opentad.cores import eval_one_epoch
+from opentad.cores import eval_one_epoch, resolve_amp_dtype
 from opentad.utils import update_workdir, set_seed, create_folder, setup_logger
+from opentad.utils.full_petal_launch import validate_full_petal_launch
 
 
 def parse_args():
@@ -25,6 +27,8 @@ def parse_args():
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
+    parser.add_argument("--launch-mode", choices=("profile", "formal"))
+    parser.add_argument("--launch-ticket", type=str)
     args = parser.parse_args()
     return args
 
@@ -36,6 +40,17 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+
+    validate_full_petal_launch(
+        cfg,
+        args.config,
+        mode=args.launch_mode,
+        ticket_path=args.launch_ticket,
+        entrypoint="test",
+        cfg_override_keys=tuple((args.cfg_options or {}).keys()),
+        environ=os.environ,
+        repository_root=Path(__file__).resolve().parents[1],
+    )
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -99,8 +114,12 @@ def main():
 
     # AMP: automatic mixed precision
     use_amp = getattr(cfg.solver, "amp", False)
+    amp_dtype = resolve_amp_dtype(
+        use_amp,
+        getattr(cfg.solver, "amp_dtype", "fp16"),
+    )
     if use_amp:
-        logger.info("Using Automatic Mixed Precision...")
+        logger.info("Using Automatic Mixed Precision with dtype=%s...", amp_dtype)
 
     # test the detector
     logger.info("Testing Starts...\n")
@@ -112,6 +131,7 @@ def main():
         args.rank,
         model_ema=None,  # since we have loaded the ema model above
         use_amp=use_amp,
+        amp_dtype=amp_dtype,
         world_size=args.world_size,
         not_eval=args.not_eval,
     )

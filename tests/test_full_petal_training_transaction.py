@@ -13,6 +13,7 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
     _stream_key,
 )
+from opentad.utils.fixed_step_profile import FixedStepProfiler
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import (
     PrefixInstanceTarget,
@@ -297,6 +298,34 @@ def _toy_loader():
     ]
 
 
+def _two_episode_loader():
+    return _toy_loader() + [
+        {
+            "inputs": torch.tensor([3.0]),
+            "stream_control": [_control(start=True, end=False)],
+        },
+        {
+            "inputs": torch.tensor([4.0]),
+            "stream_control": [_control(start=False, end=True)],
+        },
+    ]
+
+
+class _ProfileBackend:
+    def __init__(self):
+        self.synchronizations = 0
+        self.peak_resets = 0
+
+    def synchronize(self):
+        self.synchronizations += 1
+
+    def reset_peak_memory(self):
+        self.peak_resets += 1
+
+    def peak_memory_bytes(self):
+        return 4096
+
+
 def test_train_engine_steps_once_per_complete_episode():
     model = _TransactionalToy()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -338,3 +367,43 @@ def test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step():
     assert model.rollbacks == 1
     assert scheduler.steps == 0
     assert torch.equal(model.weight.detach(), before)
+
+
+def test_fixed_step_profile_stops_only_after_committed_episode_boundary():
+    model = _TransactionalToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    backend = _ProfileBackend()
+    timestamps = iter((10.0, 12.0))
+    profiler = FixedStepProfiler(
+        0,
+        1,
+        backend=backend,
+        clock=lambda: next(timestamps),
+    )
+
+    stats = train_one_epoch(
+        _two_episode_loader(),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        logging_interval=10,
+        fixed_step_profiler=profiler,
+    )
+
+    assert stats == {
+        "optimizer_events": 1,
+        "successful_optimizer_events": 1,
+        "skipped_optimizer_events": 0,
+        "fixed_step_profile_complete": True,
+    }
+    assert model.forward_calls == 2
+    assert model.commits == 1
+    assert model.rollbacks == 0
+    assert model.pending is False
+    assert scheduler.steps == 1
+    assert backend.synchronizations == 2
+    assert backend.peak_resets == 1
+    assert profiler.measurements()["total_optimizer_events"] == 1

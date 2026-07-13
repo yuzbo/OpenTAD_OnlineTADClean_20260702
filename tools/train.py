@@ -7,6 +7,8 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import json
+from pathlib import Path
 import torch
 import torch.distributed as dist
 from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
@@ -33,6 +35,12 @@ from opentad.utils import (
     save_checkpoint,
     save_best_checkpoint,
 )
+from opentad.utils.fixed_step_profile import FixedStepProfiler, TorchCudaProfileBackend
+from opentad.utils.full_petal_launch import (
+    PROFILE_MODE,
+    build_fixed_step_profile_artifact,
+    validate_full_petal_launch,
+)
 
 
 def parse_args():
@@ -44,6 +52,8 @@ def parse_args():
     parser.add_argument("--not_eval", action="store_true", help="whether not to eval, only do inference")
     parser.add_argument("--disable_deterministic", action="store_true", help="disable deterministic for faster speed")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
+    parser.add_argument("--launch-mode", choices=("profile", "formal"))
+    parser.add_argument("--launch-ticket", type=str)
     args = parser.parse_args()
     return args
 
@@ -66,6 +76,19 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+
+    launch_authorization = validate_full_petal_launch(
+        cfg,
+        args.config,
+        mode=args.launch_mode,
+        ticket_path=args.launch_ticket,
+        entrypoint="train",
+        cfg_override_keys=tuple((args.cfg_options or {}).keys()),
+        environ=os.environ,
+        repository_root=Path(__file__).resolve().parents[1],
+    )
+    if launch_authorization is not None and args.launch_mode == PROFILE_MODE and args.resume:
+        raise RuntimeError("fixed-step profile cannot resume from a checkpoint")
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -163,6 +186,14 @@ def main():
     else:
         scaler = None
 
+    fixed_step_profiler = None
+    if launch_authorization is not None and launch_authorization.mode == PROFILE_MODE:
+        fixed_step_profiler = FixedStepProfiler(
+            launch_authorization.warmup_optimizer_events,
+            launch_authorization.measured_optimizer_events,
+            backend=TorchCudaProfileBackend(args.local_rank),
+        )
+
     # build optimizer and scheduler
     optimizer = build_optimizer(cfg.optimizer, model, logger)
     scheduler, max_epoch = build_scheduler(cfg.scheduler, optimizer, len(train_loader))
@@ -196,7 +227,7 @@ def main():
         _set_dataloader_epoch(train_loader, epoch)
 
         # train for one epoch
-        train_one_epoch(
+        train_stats = train_one_epoch(
             train_loader,
             model,
             optimizer,
@@ -209,7 +240,37 @@ def main():
             runtime_debug_interval=cfg.workflow.get("runtime_debug_interval", -1),
             scaler=scaler,
             amp_dtype=amp_dtype,
+            fixed_step_profiler=fixed_step_profiler,
         )
+
+        if fixed_step_profiler is not None and train_stats["fixed_step_profile_complete"]:
+            if args.rank == 0:
+                precision = (
+                    "bf16"
+                    if amp_dtype is torch.bfloat16
+                    else "fp16"
+                    if amp_dtype is torch.float16
+                    else "fp32"
+                )
+                artifact = build_fixed_step_profile_artifact(
+                    launch_authorization,
+                    cfg,
+                    fixed_step_profiler.measurements(),
+                    precision=precision,
+                    gpu_name=torch.cuda.get_device_name(args.local_rank),
+                    torch_version=torch.__version__,
+                    cuda_version=torch.version.cuda,
+                )
+                output = Path(cfg.work_dir) / "fixed_step_profile.json"
+                output.write_text(
+                    json.dumps(artifact, allow_nan=False, indent=2, sort_keys=True)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                logger.info("Fixed-step profile PASS: %s", output)
+            dist.barrier()
+            logger.info("Profile completed without entering formal training")
+            return
 
         # save checkpoint
         save_checkpoint_enabled = not cfg.workflow.get("disable_checkpoint", False)
@@ -253,6 +314,10 @@ def main():
                     world_size=args.world_size,
                     not_eval=args.not_eval,
                 )
+    if fixed_step_profiler is not None:
+        raise RuntimeError(
+            "training schedule ended before the fixed-step profile reached its event budget"
+        )
     logger.info("Training Over...\n")
 
 
