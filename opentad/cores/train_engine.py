@@ -5,6 +5,17 @@ from opentad.utils.misc import AverageMeter, reduce_loss
 from opentad.utils.device import get_model_device, move_data_to_device
 
 
+def resolve_amp_dtype(enabled, amp_dtype="fp16"):
+    if not bool(enabled):
+        return None
+    normalized = str(amp_dtype).strip().lower()
+    if normalized in {"fp16", "float16"}:
+        return torch.float16
+    if normalized in {"bf16", "bfloat16"}:
+        return torch.bfloat16
+    raise ValueError("amp_dtype must be one of fp16, float16, bf16, or bfloat16")
+
+
 def _unwrap_model(model):
     return getattr(model, "module", model)
 
@@ -83,13 +94,16 @@ def train_one_epoch(
     logging_interval=200,
     runtime_debug_interval=-1,
     scaler=None,
+    amp_dtype=None,
 ):
     """Training the model for one epoch"""
 
     logger.info("[Train]: Epoch {:d} started".format(curr_epoch))
     losses_tracker = {}
     num_iters = len(train_loader)
-    use_amp = False if scaler is None else True
+    if amp_dtype is None and scaler is not None:
+        amp_dtype = torch.float16
+    use_amp = amp_dtype is not None
 
     target = _unwrap_model(model)
     if hasattr(target, "reset_online_states"):
@@ -101,7 +115,7 @@ def train_one_epoch(
     model_device = get_model_device(model)
     for iter_idx, data_dict in enumerate(train_loader):
         data_dict = move_data_to_device(data_dict, model_device)
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         # current learning rate
         curr_backbone_lr = None
@@ -111,7 +125,7 @@ def train_one_epoch(
         curr_det_lr = scheduler.get_last_lr()[-1]
 
         # forward pass
-        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+        with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
             losses = model(**data_dict, return_loss=True)
 
         if not torch.isfinite(losses["cost"]):
@@ -124,7 +138,7 @@ def train_one_epoch(
             continue
 
         # compute the gradients
-        if use_amp:
+        if scaler is not None:
             scaler.scale(losses["cost"]).backward()
         else:
             losses["cost"].backward()
@@ -132,14 +146,14 @@ def train_one_epoch(
         # gradient clipping (to stabilize training if necessary)
         grads_unscaled = False
         if clip_grad_l2norm > 0.0:
-            if use_amp:
+            if scaler is not None:
                 scaler.unscale_(optimizer)
                 grads_unscaled = True
             grad_clip_parameters = _grad_clip_parameters(model)
             torch.nn.utils.clip_grad_norm_(grad_clip_parameters, clip_grad_l2norm)
 
         # update parameters
-        if use_amp:
+        if scaler is not None:
             if not grads_unscaled:
                 scaler.unscale_(optimizer)
             bad_param_name = _find_first_nonfinite_grad(model)
@@ -240,8 +254,13 @@ def val_one_epoch(
     curr_epoch,
     model_ema=None,
     use_amp=False,
+    amp_dtype=None,
 ):
     """Validating the model for one epoch: compute the loss"""
+
+    if amp_dtype is None and use_amp:
+        amp_dtype = torch.float16
+    use_amp = amp_dtype is not None
 
     # load the ema dict for evaluation
     if model_ema != None:
@@ -258,7 +277,7 @@ def val_one_epoch(
     model_device = get_model_device(model)
     for data_dict in tqdm.tqdm(val_loader, disable=(rank != 0)):
         data_dict = move_data_to_device(data_dict, model_device)
-        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+        with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
             with torch.no_grad():
                 losses = model(**data_dict, return_loss=True)
 

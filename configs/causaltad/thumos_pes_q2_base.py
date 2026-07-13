@@ -132,6 +132,7 @@ solver = dict(
     clip_grad_norm=1.0,
     ema=False,
     amp=True,
+    amp_dtype="bf16",
 )
 
 evaluation = dict(

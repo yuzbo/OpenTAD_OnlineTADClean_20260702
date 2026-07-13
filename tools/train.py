@@ -15,7 +15,14 @@ from torch.cuda.amp import GradScaler
 from mmengine.config import Config, DictAction
 from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
-from opentad.cores import train_one_epoch, val_one_epoch, eval_one_epoch, build_optimizer, build_scheduler
+from opentad.cores import (
+    build_optimizer,
+    build_scheduler,
+    eval_one_epoch,
+    resolve_amp_dtype,
+    train_one_epoch,
+    val_one_epoch,
+)
 from opentad.utils import (
     set_seed,
     update_workdir,
@@ -142,9 +149,17 @@ def main():
 
     # AMP: automatic mixed precision
     use_amp = getattr(cfg.solver, "amp", False)
+    amp_dtype = resolve_amp_dtype(
+        use_amp,
+        getattr(cfg.solver, "amp_dtype", "fp16"),
+    )
     if use_amp:
-        logger.info("Using Automatic Mixed Precision...")
-        scaler = GradScaler()
+        logger.info("Using Automatic Mixed Precision with dtype=%s...", amp_dtype)
+        scaler = (
+            GradScaler(enabled=amp_dtype is torch.float16)
+            if amp_dtype is torch.float16
+            else None
+        )
     else:
         scaler = None
 
@@ -193,6 +208,7 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             runtime_debug_interval=cfg.workflow.get("runtime_debug_interval", -1),
             scaler=scaler,
+            amp_dtype=amp_dtype,
         )
 
         # save checkpoint
@@ -212,6 +228,7 @@ def main():
                     epoch,
                     model_ema=model_ema,
                     use_amp=use_amp,
+                    amp_dtype=amp_dtype,
                 )
 
                 # save the best checkpoint
@@ -232,6 +249,7 @@ def main():
                     args.rank,
                     model_ema=model_ema,
                     use_amp=use_amp,
+                    amp_dtype=amp_dtype,
                     world_size=args.world_size,
                     not_eval=args.not_eval,
                 )
