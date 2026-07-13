@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from opentad.utils.full_petal_data_contract import (  # noqa: E402
     ContractValidationError,
+    THUMOS_DEVELOPMENT_SPLIT_SEED,
     build_fineaction_qualification_report,
     build_hardware_runtime_manifest,
     build_reporting_universe_manifest,
@@ -23,6 +24,7 @@ from opentad.utils.full_petal_data_contract import (  # noqa: E402
     load_json,
     save_json,
     sha256_file,
+    write_thumos_development_split,
 )
 
 
@@ -85,6 +87,59 @@ def parse_args(argv=None):
         required=True,
     )
     _add_common_output_arguments(thumos, include_strict=True)
+
+    development_split = commands.add_parser(
+        "thumos-development-split",
+        help="Generate the deterministic THUMOS fit-core/calibration split",
+    )
+    development_split.add_argument("--annotation", type=Path, required=True)
+    development_split.add_argument("--train-subset", required=True)
+    development_split.add_argument(
+        "--chunk-duration-seconds",
+        "--chunk-duration",
+        dest="chunk_duration_seconds",
+        type=float,
+        required=True,
+    )
+    development_split.add_argument(
+        "--bounded-memory-seconds",
+        "--bounded-memory",
+        dest="bounded_memory_seconds",
+        type=float,
+        required=True,
+    )
+    development_split.add_argument(
+        "--fit-output",
+        "--fit-ids-output",
+        dest="fit_output",
+        type=Path,
+        required=True,
+    )
+    development_split.add_argument(
+        "--calibration-output",
+        "--calibration-ids-output",
+        dest="calibration_output",
+        type=Path,
+        required=True,
+    )
+    development_split.add_argument(
+        "--seed",
+        type=int,
+        default=THUMOS_DEVELOPMENT_SPLIT_SEED,
+    )
+    development_split.add_argument("--output", type=Path, required=True)
+    development_strict = development_split.add_mutually_exclusive_group()
+    development_strict.add_argument(
+        "--strict",
+        dest="strict",
+        action="store_true",
+    )
+    development_strict.add_argument(
+        "--no-strict",
+        dest="strict",
+        action="store_false",
+    )
+    development_split.set_defaults(strict=True)
 
     reporting_lock = commands.add_parser(
         "reporting-lock",
@@ -160,6 +215,20 @@ def _build_thumos(args):
     )
 
 
+def _build_thumos_development_split(args):
+    return write_thumos_development_split(
+        args.annotation,
+        fit_ids_path=args.fit_output,
+        calibration_ids_path=args.calibration_output,
+        manifest_path=args.output,
+        train_subset=args.train_subset,
+        chunk_duration_seconds=args.chunk_duration_seconds,
+        bounded_memory_seconds=args.bounded_memory_seconds,
+        seed=args.seed,
+        strict=args.strict,
+    )
+
+
 def _build_reporting_lock(args):
     ids = load_id_file(args.ids)
     return build_reporting_universe_manifest(
@@ -222,6 +291,7 @@ def _build_fineaction(args):
 
 BUILDERS = {
     "thumos": _build_thumos,
+    "thumos-development-split": _build_thumos_development_split,
     "reporting-lock": _build_reporting_lock,
     "reporting-compare": _build_reporting_comparison,
     "hardware": _build_hardware,
@@ -233,10 +303,16 @@ def main(argv=None):
     parser, args = parse_args(argv)
     try:
         manifest = BUILDERS[args.command](args)
-        output = save_json(args.output, manifest)
+        if args.command == "thumos-development-split":
+            output = args.output
+        else:
+            output = save_json(args.output, manifest)
     except ContractValidationError as exc:
         parser.error(str(exc))
     print(f"FULL_PETAL_MANIFEST={output}")
+    if args.command == "thumos-development-split":
+        print(f"FULL_PETAL_FIT_IDS={args.fit_output}")
+        print(f"FULL_PETAL_CALIBRATION_IDS={args.calibration_output}")
     return 0
 
 

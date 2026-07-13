@@ -1,7 +1,8 @@
 """Deterministic manifests for Full PETAL data and protocol qualification."""
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime
+from fractions import Fraction
 import hashlib
 import hmac
 import json
@@ -13,6 +14,10 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 THUMOS_TRAIN_COUNT = 160
 THUMOS_VALIDATION_COUNT = 40
+THUMOS_DEVELOPMENT_UNIVERSE_COUNT = 200
+THUMOS_DEVELOPMENT_SPLIT_SEED = 20260713
+THUMOS_DEVELOPMENT_SPLIT_SCHEMA_VERSION = "thumos-development-split-v1"
+THUMOS_DEVELOPMENT_SPLIT_ALGORITHM_VERSION = "1.0.0"
 HISTORICAL_REPORTING_COUNT = 211
 OBSERVED_REPORTING_COUNT = 213
 FINEACTION_MANDATORY_GATES = (
@@ -225,14 +230,26 @@ def _finalize_manifest(payload):
     return finalized
 
 
+def _finalize_manifest_sha256(payload):
+    finalized = _json_clone(payload, "manifest")
+    finalized.pop("manifest_sha256", None)
+    finalized["manifest_sha256"] = canonical_json_sha256(finalized)
+    return finalized
+
+
 def verify_content_hash(manifest):
     if not isinstance(manifest, dict):
         return False
-    expected = manifest.get("content_sha256")
+    hash_field = (
+        "content_sha256"
+        if "content_sha256" in manifest
+        else "manifest_sha256"
+    )
+    expected = manifest.get(hash_field)
     if not isinstance(expected, str):
         return False
     payload = _json_clone(manifest, "manifest")
-    payload.pop("content_sha256", None)
+    payload.pop(hash_field, None)
     return hmac.compare_digest(expected, canonical_json_sha256(payload))
 
 
@@ -267,6 +284,557 @@ def load_id_file(path):
         return _validated_ids(payload, f"ID file {path.name}")
     ids = [line for line in text.splitlines() if line]
     return _validated_ids(ids, f"ID file {path.name}")
+
+
+def save_id_file(path, ids):
+    """Atomically save canonical, newline-delimited IDs."""
+
+    path = Path(path)
+    canonical_ids = sorted(_validated_ids(ids, f"ID output {path.name}"))
+    serialized = "\n".join(canonical_ids) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        temporary.write_bytes(serialized.encode("utf-8"))
+        os.replace(temporary, path)
+    except OSError as exc:
+        raise ContractValidationError(
+            f"failed to save ID file {path.name}: {exc}"
+        ) from exc
+    return path
+
+
+def _require_finite_number(value, label):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractValidationError(f"{label} must be a finite number")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ContractValidationError(f"{label} must be a finite number")
+    return value
+
+
+def _validated_development_video(video_id, record):
+    duration = _require_positive_number(
+        record.get("duration"),
+        f"video {video_id} duration",
+    )
+    duration = float(duration)
+    raw_annotations = record.get("annotations")
+    if not isinstance(raw_annotations, list):
+        raise ContractValidationError(
+            f"video {video_id} annotations must be a JSON list"
+        )
+
+    annotations = []
+    for index, annotation in enumerate(raw_annotations):
+        label_prefix = f"video {video_id} annotation {index}"
+        if not isinstance(annotation, dict):
+            raise ContractValidationError(f"{label_prefix} must be a JSON object")
+        segment = annotation.get("segment")
+        if not isinstance(segment, (list, tuple)) or len(segment) != 2:
+            raise ContractValidationError(
+                f"{label_prefix} segment must contain exactly [start, end]"
+            )
+        start = _require_finite_number(segment[0], f"{label_prefix} segment start")
+        end = _require_finite_number(segment[1], f"{label_prefix} segment end")
+        if start < 0 or end <= start or end > duration:
+            raise ContractValidationError(
+                f"{label_prefix} segment must satisfy 0 <= start < end <= duration"
+            )
+        label = _require_nonempty_string(
+            annotation.get("label"),
+            f"{label_prefix} label",
+        )
+        if label != label.strip():
+            raise ContractValidationError(
+                f"{label_prefix} label has leading or trailing whitespace"
+            )
+        annotations.append({"start": start, "end": end, "label": label})
+    return {"duration": duration, "annotations": annotations}
+
+
+def _development_training_videos(annotation, train_subset):
+    database = _annotation_database(annotation)
+    videos = {}
+    for video_id, record in sorted(database.items()):
+        if not isinstance(record, dict):
+            raise ContractValidationError(
+                f"annotation database record {video_id} must be a JSON object"
+            )
+        if record.get("subset") != train_subset:
+            continue
+        videos[video_id] = _validated_development_video(video_id, record)
+    return videos
+
+
+def _contains_temporal_overlap(annotations, *, same_class):
+    groups = defaultdict(list)
+    for annotation in annotations:
+        key = annotation["label"] if same_class else None
+        groups[key].append((annotation["start"], annotation["end"]))
+    for intervals in groups.values():
+        maximum_end = None
+        for start, end in sorted(intervals):
+            if maximum_end is not None and start < maximum_end:
+                return True
+            maximum_end = end if maximum_end is None else max(maximum_end, end)
+    return False
+
+
+def _crosses_chunk_boundary(start, end, chunk_duration_seconds):
+    boundary_index = math.floor(start / chunk_duration_seconds) + 1
+    boundary = boundary_index * chunk_duration_seconds
+    return start < boundary < end
+
+
+def _rank_quantile_bins(videos, value_key, bin_count=4):
+    ranked_ids = sorted(
+        videos,
+        key=lambda video_id: (videos[video_id][value_key], video_id),
+    )
+    universe_count = len(ranked_ids)
+    return {
+        video_id: f"q{min(bin_count, rank * bin_count // universe_count + 1)}"
+        for rank, video_id in enumerate(ranked_ids)
+    }
+
+
+def _stratum_key(feature_name, value):
+    encoded_value = canonical_json_bytes(value).decode("utf-8")
+    return f"{feature_name}:{encoded_value}"
+
+
+def _development_stratum_vectors(videos, chunk_duration, bounded_memory):
+    features = {}
+    for video_id, video in videos.items():
+        annotations = video["annotations"]
+        class_counts = Counter(row["label"] for row in annotations)
+        features[video_id] = {
+            "duration": video["duration"],
+            "instance_count": len(annotations),
+            "class_counts": class_counts,
+            "any_temporal_overlap": _contains_temporal_overlap(
+                annotations,
+                same_class=False,
+            ),
+            "same_class_repetition": any(
+                count > 1 for count in class_counts.values()
+            ),
+            "same_class_temporal_overlap": _contains_temporal_overlap(
+                annotations,
+                same_class=True,
+            ),
+            "crosses_chunk_boundary": any(
+                _crosses_chunk_boundary(
+                    row["start"],
+                    row["end"],
+                    chunk_duration,
+                )
+                for row in annotations
+            ),
+            "start_precedes_bounded_memory_at_endpoint": any(
+                row["start"] < row["end"] - bounded_memory
+                for row in annotations
+            ),
+        }
+
+    duration_bins = _rank_quantile_bins(features, "duration")
+    instance_bins = _rank_quantile_bins(features, "instance_count")
+    boolean_features = (
+        "any_temporal_overlap",
+        "same_class_repetition",
+        "same_class_temporal_overlap",
+        "crosses_chunk_boundary",
+        "start_precedes_bounded_memory_at_endpoint",
+    )
+    vectors = {}
+    for video_id in sorted(features):
+        feature = features[video_id]
+        vector = Counter()
+        for label, count in sorted(feature["class_counts"].items()):
+            vector[_stratum_key("class_instance_count", label)] = count
+        vector[
+            _stratum_key("video_duration_quartile", duration_bins[video_id])
+        ] = 1
+        vector[
+            _stratum_key("instances_per_video_bin", instance_bins[video_id])
+        ] = 1
+        for feature_name in boolean_features:
+            vector[_stratum_key(feature_name, feature[feature_name])] = 1
+        vectors[video_id] = dict(vector)
+    return vectors
+
+
+def _stratum_universe_totals(vectors):
+    totals = Counter()
+    for vector in vectors.values():
+        totals.update(vector)
+    return totals
+
+
+def _seeded_video_rank(seed, video_id):
+    material = f"{seed}\0{video_id}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()
+
+
+def _greedy_calibration_ids(vectors, calibration_count, seed):
+    """Select whole videos by exact normalized squared-deficit minimization."""
+
+    universe_count = len(vectors)
+    universe_totals = _stratum_universe_totals(vectors)
+    selected_totals = Counter()
+    remaining = set(vectors)
+    selected = []
+    tie_ranks = {
+        video_id: _seeded_video_rank(seed, video_id) for video_id in vectors
+    }
+
+    for selected_count in range(calibration_count):
+        next_count = selected_count + 1
+        best = None
+        for video_id in sorted(remaining):
+            delta = Fraction(0, 1)
+            for stratum, weight in vectors[video_id].items():
+                total = universe_totals[stratum]
+                baseline = (
+                    universe_count * selected_totals[stratum]
+                    - next_count * total
+                )
+                with_candidate = baseline + universe_count * weight
+                delta += Fraction(
+                    with_candidate * with_candidate - baseline * baseline,
+                    total * total,
+                )
+            candidate = (delta, tie_ranks[video_id], video_id)
+            if best is None or candidate < best:
+                best = candidate
+        chosen_id = best[2]
+        selected.append(chosen_id)
+        selected_totals.update(vectors[chosen_id])
+        remaining.remove(chosen_id)
+    return sorted(selected)
+
+
+def _rounded_ratio(numerator, denominator):
+    return round(float(Fraction(numerator, denominator)), 12)
+
+
+def _development_split_diagnostics(vectors, fit_ids, calibration_ids):
+    universe_count = len(vectors)
+    calibration_count = len(calibration_ids)
+    universe_totals = _stratum_universe_totals(vectors)
+    calibration_totals = Counter()
+    for video_id in calibration_ids:
+        calibration_totals.update(vectors[video_id])
+
+    per_stratum = {}
+    diagnostic_rows = []
+    for stratum in sorted(universe_totals):
+        universe_total = universe_totals[stratum]
+        calibration_total = calibration_totals[stratum]
+        fit_total = universe_total - calibration_total
+        target_numerator = universe_total * calibration_count
+        target = Fraction(target_numerator, universe_count)
+        delta = Fraction(calibration_total, 1) - target
+        absolute_delta = abs(delta)
+        relative_delta = absolute_delta / target
+        per_stratum[stratum] = {
+            "universe": universe_total,
+            "fit": fit_total,
+            "calibration": calibration_total,
+            "target_calibration": _rounded_ratio(
+                target_numerator,
+                universe_count,
+            ),
+            "calibration_delta": round(float(delta), 12),
+            "absolute_calibration_delta": round(float(absolute_delta), 12),
+        }
+        diagnostic_rows.append((stratum, absolute_delta, relative_delta))
+
+    worst = sorted(
+        diagnostic_rows,
+        key=lambda row: (-row[1], row[0]),
+    )[:10]
+    absolute_total = sum((row[1] for row in diagnostic_rows), Fraction(0, 1))
+    normalized_squared_error = sum(
+        (row[2] * row[2] for row in diagnostic_rows),
+        Fraction(0, 1),
+    )
+    diagnostics = {
+        "stratum_count": len(per_stratum),
+        "target_calibration_fraction": _rounded_ratio(
+            calibration_count,
+            universe_count,
+        ),
+        "mean_absolute_calibration_delta": round(
+            float(absolute_total / len(diagnostic_rows)),
+            12,
+        ),
+        "max_absolute_calibration_delta": round(
+            float(max(row[1] for row in diagnostic_rows)),
+            12,
+        ),
+        "max_relative_calibration_delta": round(
+            float(max(row[2] for row in diagnostic_rows)),
+            12,
+        ),
+        "normalized_squared_error": round(float(normalized_squared_error), 12),
+        "worst_strata": [
+            {
+                "name": stratum,
+                "absolute_calibration_delta": round(float(absolute_delta), 12),
+            }
+            for stratum, absolute_delta, _ in worst
+        ],
+        "counts_are_exact": (
+            len(fit_ids) == universe_count - calibration_count
+            and len(calibration_ids) == calibration_count
+        ),
+    }
+    return per_stratum, diagnostics
+
+
+def build_thumos_development_split(
+    annotation_path,
+    *,
+    train_subset,
+    chunk_duration_seconds,
+    bounded_memory_seconds,
+    seed=THUMOS_DEVELOPMENT_SPLIT_SEED,
+    strict=True,
+    fit_count=THUMOS_TRAIN_COUNT,
+    calibration_count=THUMOS_VALIDATION_COUNT,
+):
+    """Build a deterministic fit-core/development-calibration split manifest."""
+
+    if not isinstance(strict, bool):
+        raise ContractValidationError("strict must be a boolean")
+    train_subset = _require_nonempty_string(train_subset, "train_subset")
+    if train_subset != train_subset.strip():
+        raise ContractValidationError(
+            "train_subset cannot have leading or trailing whitespace"
+        )
+    seed = _require_seed(seed)
+    fit_count = _require_positive_int(fit_count, "fit_count")
+    calibration_count = _require_positive_int(
+        calibration_count,
+        "calibration_count",
+    )
+    chunk_duration = float(
+        _require_positive_number(
+            chunk_duration_seconds,
+            "chunk_duration_seconds",
+        )
+    )
+    bounded_memory = float(
+        _require_positive_number(
+            bounded_memory_seconds,
+            "bounded_memory_seconds",
+        )
+    )
+
+    annotation_path = Path(annotation_path)
+    annotation = load_json(annotation_path)
+    videos = _development_training_videos(annotation, train_subset)
+    universe_count = len(videos)
+    if strict and universe_count != THUMOS_DEVELOPMENT_UNIVERSE_COUNT:
+        raise ContractValidationError(
+            "strict THUMOS development universe requires "
+            f"{THUMOS_DEVELOPMENT_UNIVERSE_COUNT} IDs, got {universe_count}"
+        )
+    if strict and (
+        fit_count != THUMOS_TRAIN_COUNT
+        or calibration_count != THUMOS_VALIDATION_COUNT
+    ):
+        raise ContractValidationError(
+            "strict THUMOS development split requires exactly "
+            f"{THUMOS_TRAIN_COUNT}/{THUMOS_VALIDATION_COUNT} fit/calibration IDs"
+        )
+    if fit_count + calibration_count != universe_count:
+        raise ContractValidationError(
+            "requested split counts must equal the selected annotation universe; "
+            f"fit={fit_count}, calibration={calibration_count}, "
+            f"universe={universe_count}"
+        )
+
+    vectors = _development_stratum_vectors(
+        videos,
+        chunk_duration,
+        bounded_memory,
+    )
+    calibration_ids = _greedy_calibration_ids(
+        vectors,
+        calibration_count,
+        seed,
+    )
+    calibration_set = set(calibration_ids)
+    fit_ids = sorted(set(videos).difference(calibration_set))
+    universe_ids = sorted(videos)
+    per_stratum, diagnostics = _development_split_diagnostics(
+        vectors,
+        fit_ids,
+        calibration_ids,
+    )
+    canonical_annotation_hash = canonical_json_sha256(annotation)
+    payload = {
+        "schema": "full_petal.thumos_development_split",
+        "schema_version": THUMOS_DEVELOPMENT_SPLIT_SCHEMA_VERSION,
+        "dataset": "THUMOS14",
+        "seed": seed,
+        "annotation": {
+            "name": annotation_path.name,
+            "sha256": canonical_annotation_hash,
+            "canonical_sha256": canonical_annotation_hash,
+        },
+        "algorithm": {
+            "name": "deterministic_greedy_group_stratification",
+            "version": THUMOS_DEVELOPMENT_SPLIT_ALGORITHM_VERSION,
+            "kind": "deterministic_greedy_approximation",
+            "group_unit": "video_id",
+            "objective": (
+                "at step k choose video v minimizing sum_s "
+                "((N*(C_s+w_v_s)-k*U_s)/U_s)^2 using exact rational "
+                "arithmetic, where N is universe size, C_s is the selected "
+                "total, w_v_s is the video weight, and U_s is universe total"
+            ),
+            "tie_breaking": (
+                "ascending sha256(seed + NUL + video_id), then ascending video_id"
+            ),
+        },
+        "parameters": {
+            "train_subset": train_subset,
+            "strict": strict,
+            "fit_count": fit_count,
+            "calibration_count": calibration_count,
+            "chunk_duration_seconds": chunk_duration,
+            "bounded_memory_seconds": bounded_memory,
+            "quantile_bin_count": 4,
+            "quantile_method": (
+                "ascending empirical rank; ties by video_id; "
+                "bin=floor(rank*4/universe)+1"
+            ),
+            "interval_semantics": (
+                "half-open for overlap: touching endpoints do not overlap"
+            ),
+        },
+        "universe": {
+            "count": universe_count,
+            "ids": universe_ids,
+            "ids_sha256": canonical_json_sha256(universe_ids),
+        },
+        "splits": {
+            "fit_core": {
+                "count": len(fit_ids),
+                "ids": fit_ids,
+                "ids_sha256": canonical_json_sha256(fit_ids),
+            },
+            "calibration": {
+                "count": len(calibration_ids),
+                "ids": calibration_ids,
+                "ids_sha256": canonical_json_sha256(calibration_ids),
+            },
+        },
+        "stratification": {
+            "definitions": {
+                "class_instance_count": (
+                    "integer annotation count for each label in a video; "
+                    "counts are weighted stratum contributions"
+                ),
+                "video_duration_quartile": (
+                    "four equal-frequency empirical rank bins over video duration"
+                ),
+                "instances_per_video_bin": (
+                    "four equal-frequency empirical rank bins over annotation count"
+                ),
+                "any_temporal_overlap": (
+                    "true iff two half-open annotation intervals overlap"
+                ),
+                "same_class_repetition": (
+                    "true iff one label occurs at least twice in the video"
+                ),
+                "same_class_temporal_overlap": (
+                    "true iff overlapping half-open intervals share a label"
+                ),
+                "crosses_chunk_boundary": (
+                    "true iff start < k*chunk_duration_seconds < end for an "
+                    "integer k"
+                ),
+                "start_precedes_bounded_memory_at_endpoint": (
+                    "true iff start < end - bounded_memory_seconds for an action"
+                ),
+            },
+            "class_labels": sorted(
+                {
+                    annotation["label"]
+                    for video in videos.values()
+                    for annotation in video["annotations"]
+                }
+            ),
+            "per_stratum_totals": per_stratum,
+        },
+        "imbalance_diagnostics": diagnostics,
+    }
+    return _finalize_manifest_sha256(payload)
+
+
+def _require_distinct_output_paths(annotation_path, output_paths):
+    resolved_annotation = Path(annotation_path).resolve()
+    resolved_outputs = [Path(path).resolve() for path in output_paths]
+    if len(set(resolved_outputs)) != len(resolved_outputs):
+        raise ContractValidationError("development split output paths must be distinct")
+    if resolved_annotation in resolved_outputs:
+        raise ContractValidationError(
+            "development split output paths cannot overwrite the annotation file"
+        )
+
+
+def write_thumos_development_split(
+    annotation_path,
+    *,
+    fit_ids_path,
+    calibration_ids_path,
+    manifest_path,
+    train_subset,
+    chunk_duration_seconds,
+    bounded_memory_seconds,
+    seed=THUMOS_DEVELOPMENT_SPLIT_SEED,
+    strict=True,
+    fit_count=THUMOS_TRAIN_COUNT,
+    calibration_count=THUMOS_VALIDATION_COUNT,
+):
+    """Write canonical ID files and their path-free development manifest."""
+
+    _require_distinct_output_paths(
+        annotation_path,
+        (fit_ids_path, calibration_ids_path, manifest_path),
+    )
+    manifest = build_thumos_development_split(
+        annotation_path,
+        train_subset=train_subset,
+        chunk_duration_seconds=chunk_duration_seconds,
+        bounded_memory_seconds=bounded_memory_seconds,
+        seed=seed,
+        strict=strict,
+        fit_count=fit_count,
+        calibration_count=calibration_count,
+    )
+    fit_ids = manifest["splits"]["fit_core"]["ids"]
+    calibration_ids = manifest["splits"]["calibration"]["ids"]
+    fit_ids_path = save_id_file(fit_ids_path, fit_ids)
+    calibration_ids_path = save_id_file(calibration_ids_path, calibration_ids)
+
+    payload = _json_clone(manifest, "development split manifest")
+    payload.pop("manifest_sha256", None)
+    payload["artifacts"] = {
+        "fit_ids": _file_record(fit_ids_path, content=fit_ids),
+        "calibration_ids": _file_record(
+            calibration_ids_path,
+            content=calibration_ids,
+        ),
+    }
+    finalized = _finalize_manifest_sha256(payload)
+    save_json(manifest_path, finalized)
+    return finalized
 
 
 def build_thumos_protocol_manifest(

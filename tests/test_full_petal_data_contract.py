@@ -11,6 +11,7 @@ from opentad.utils.full_petal_data_contract import (
     build_fineaction_qualification_report,
     build_hardware_runtime_manifest,
     build_reporting_universe_manifest,
+    build_thumos_development_split,
     build_thumos_manifest_from_annotation_subsets,
     build_thumos_manifest_from_split_files,
     build_thumos_protocol_manifest,
@@ -36,6 +37,7 @@ EXTRACTION_IDENTITY = {
     "policy": "synthetic-causal-extraction",
     "stride": 4,
 }
+DEVELOPMENT_SPLIT_SEED = 20260713
 
 
 def _ids(prefix, count):
@@ -61,6 +63,63 @@ def _write_annotation(path, train_ids, validation_ids, extra_ids=()):
     )
     path.write_text(json.dumps({"database": database}), encoding="utf-8")
     return path
+
+
+def _development_annotation_payload(count=200, *, tie_rich=False, reverse=False):
+    database = {}
+    indices = range(count - 1, -1, -1) if reverse else range(count)
+    for index in indices:
+        video_id = f"training_{index:03d}"
+        if tie_rich:
+            duration = 64.0
+            annotations = [{"segment": [4.0, 8.0], "label": "Action"}]
+        else:
+            duration = float(40 + (index % 20) * 3)
+            label = f"Class_{index % 5}"
+            annotations = [
+                {
+                    "segment": [float(2 + index % 5), float(8 + index % 5)],
+                    "label": label,
+                }
+            ]
+            if index % 3 == 0:
+                annotations.append(
+                    {"segment": [6.0, 12.0], "label": f"Class_{(index + 1) % 5}"}
+                )
+            if index % 5 == 0:
+                annotations.append({"segment": [20.0, 24.0], "label": label})
+            if index % 7 == 0:
+                annotations.append({"segment": [4.0, 10.0], "label": label})
+            if index % 11 == 0:
+                annotations.append({"segment": [15.0, 17.0], "label": "Cross"})
+            if index % 13 == 0:
+                annotations.append({"segment": [1.0, 30.0], "label": "Long"})
+        database[video_id] = {
+            "subset": "training",
+            "duration": duration,
+            "annotations": annotations,
+        }
+    return {"database": database}
+
+
+def _write_development_annotation(path, **kwargs):
+    path.write_text(
+        json.dumps(_development_annotation_payload(**kwargs)),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _build_development_split(annotation, **overrides):
+    arguments = {
+        "train_subset": "training",
+        "chunk_duration_seconds": 16.0,
+        "bounded_memory_seconds": 24.0,
+        "seed": DEVELOPMENT_SPLIT_SEED,
+        "strict": True,
+    }
+    arguments.update(overrides)
+    return build_thumos_development_split(annotation, **arguments)
 
 
 def _metadata():
@@ -118,6 +177,196 @@ def test_strict_thumos_annotation_subsets_lock_canonical_160_40(tmp_path):
     assert manifest["created_at"] == CREATED_AT
     assert len(manifest["annotation"]["sha256"]) == 64
     assert len(manifest["annotation"]["content_sha256"]) == 64
+    assert verify_content_hash(manifest)
+
+
+def test_thumos_development_split_is_exact_stratified_and_hashed(tmp_path):
+    annotation = _write_development_annotation(tmp_path / "annotations.json")
+
+    manifest = _build_development_split(annotation)
+
+    assert manifest["schema"] == "full_petal.thumos_development_split"
+    assert manifest["schema_version"] == "thumos-development-split-v1"
+    assert manifest["seed"] == DEVELOPMENT_SPLIT_SEED
+    assert manifest["algorithm"]["name"] == "deterministic_greedy_group_stratification"
+    assert manifest["algorithm"]["version"]
+    assert manifest["parameters"]["train_subset"] == "training"
+    assert manifest["parameters"]["chunk_duration_seconds"] == 16.0
+    assert manifest["parameters"]["bounded_memory_seconds"] == 24.0
+    assert manifest["universe"]["count"] == 200
+    assert manifest["splits"]["fit_core"]["count"] == 160
+    assert manifest["splits"]["calibration"]["count"] == 40
+
+    fit_ids = manifest["splits"]["fit_core"]["ids"]
+    calibration_ids = manifest["splits"]["calibration"]["ids"]
+    assert fit_ids == sorted(fit_ids)
+    assert calibration_ids == sorted(calibration_ids)
+    assert not set(fit_ids).intersection(calibration_ids)
+    assert sorted([*fit_ids, *calibration_ids]) == manifest["universe"]["ids"]
+
+    required_strata = {
+        "class_instance_count",
+        "video_duration_quartile",
+        "instances_per_video_bin",
+        "any_temporal_overlap",
+        "same_class_repetition",
+        "same_class_temporal_overlap",
+        "crosses_chunk_boundary",
+        "start_precedes_bounded_memory_at_endpoint",
+    }
+    assert set(manifest["stratification"]["definitions"]) == required_strata
+    totals = manifest["stratification"]["per_stratum_totals"]
+    assert totals
+    assert all(
+        row["universe"] == row["fit"] + row["calibration"]
+        for row in totals.values()
+    )
+    for stratum in required_strata:
+        assert any(name.startswith(f"{stratum}:") for name in totals)
+    assert manifest["imbalance_diagnostics"]["stratum_count"] == len(totals)
+    assert len(manifest["annotation"]["canonical_sha256"]) == 64
+    assert len(manifest["manifest_sha256"]) == 64
+    assert verify_content_hash(manifest)
+
+
+def test_thumos_development_split_ignores_annotation_dictionary_order(tmp_path):
+    annotation = _write_development_annotation(tmp_path / "annotations.json")
+    first = _build_development_split(annotation)
+
+    _write_development_annotation(annotation, reverse=True)
+    second = _build_development_split(annotation)
+
+    assert first == second
+
+
+def test_thumos_development_split_seed_is_reproducible_and_breaks_ties(tmp_path):
+    annotation = _write_development_annotation(
+        tmp_path / "tie-rich.json",
+        tie_rich=True,
+    )
+
+    first = _build_development_split(annotation)
+    repeated = _build_development_split(annotation)
+    alternate = _build_development_split(annotation, seed=DEVELOPMENT_SPLIT_SEED + 1)
+
+    assert first == repeated
+    assert first["splits"]["calibration"]["ids"] != alternate["splits"][
+        "calibration"
+    ]["ids"]
+    for manifest in (first, alternate):
+        assert manifest["splits"]["fit_core"]["count"] == 160
+        assert manifest["splits"]["calibration"]["count"] == 40
+        assert verify_content_hash(manifest)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda payload: payload["database"]["training_000"].update(
+                duration=0.0
+            ),
+            "duration",
+        ),
+        (
+            lambda payload: payload["database"]["training_000"]["annotations"][
+                0
+            ].update(segment=[4.0, 4.0]),
+            "segment",
+        ),
+        (
+            lambda payload: payload["database"]["training_000"]["annotations"][
+                0
+            ].pop("label"),
+            "label",
+        ),
+        (
+            lambda payload: payload["database"]["training_000"].update(
+                duration=float("inf")
+            ),
+            "non-finite",
+        ),
+    ],
+)
+def test_thumos_development_split_rejects_malformed_annotations(
+    tmp_path,
+    mutate,
+    message,
+):
+    payload = _development_annotation_payload()
+    mutate(payload)
+    annotation = tmp_path / "malformed.json"
+    annotation.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ContractValidationError, match=message):
+        _build_development_split(annotation)
+
+
+def test_thumos_development_split_rejects_non_200_duplicate_and_impossible_counts(
+    tmp_path,
+):
+    short_annotation = _write_development_annotation(
+        tmp_path / "short.json",
+        count=199,
+    )
+    with pytest.raises(ContractValidationError, match="strict.*200.*199"):
+        _build_development_split(short_annotation)
+
+    duplicate_annotation = tmp_path / "duplicate.json"
+    record = '{"subset":"training","duration":10.0,"annotations":[]}'
+    duplicate_annotation.write_text(
+        '{"database":{"duplicate":' + record + ',"duplicate":' + record + "}}",
+        encoding="utf-8",
+    )
+    with pytest.raises(ContractValidationError, match="duplicate JSON key.*duplicate"):
+        _build_development_split(duplicate_annotation)
+
+    annotation = _write_development_annotation(tmp_path / "annotations.json")
+    with pytest.raises(ContractValidationError, match="split counts.*universe"):
+        _build_development_split(
+            annotation,
+            strict=False,
+            fit_count=159,
+            calibration_count=40,
+        )
+
+
+def test_cli_writes_thumos_development_ids_and_path_free_manifest(tmp_path):
+    annotation = _write_development_annotation(tmp_path / "annotations.json")
+    fit_output = tmp_path / "outputs" / "thumos_fit_core_160.txt"
+    calibration_output = tmp_path / "outputs" / "thumos_calibration_40.txt"
+    manifest_output = tmp_path / "outputs" / "thumos_development_split.json"
+
+    _run_cli(
+        "thumos-development-split",
+        "--annotation",
+        annotation,
+        "--train-subset",
+        "training",
+        "--chunk-duration-seconds",
+        "16",
+        "--bounded-memory-seconds",
+        "24",
+        "--fit-output",
+        fit_output,
+        "--calibration-output",
+        calibration_output,
+        "--seed",
+        str(DEVELOPMENT_SPLIT_SEED),
+        "--output",
+        manifest_output,
+    )
+
+    manifest = load_json(manifest_output)
+    assert load_id_file(fit_output) == manifest["splits"]["fit_core"]["ids"]
+    assert load_id_file(calibration_output) == manifest["splits"]["calibration"][
+        "ids"
+    ]
+    assert manifest["artifacts"]["fit_ids"]["name"] == fit_output.name
+    assert manifest["artifacts"]["calibration_ids"]["name"] == (
+        calibration_output.name
+    )
+    assert str(tmp_path) not in manifest_output.read_text(encoding="utf-8")
     assert verify_content_hash(manifest)
 
 
