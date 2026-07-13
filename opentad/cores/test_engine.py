@@ -30,10 +30,15 @@ def eval_one_epoch(
     rank,
     model_ema=None,
     use_amp=False,
+    amp_dtype=None,
     world_size=0,
     not_eval=False,
 ):
     """Inference and Evaluation the model"""
+
+    if amp_dtype is None and use_amp:
+        amp_dtype = torch.float16
+    use_amp = amp_dtype is not None
 
     # load the ema dict for evaluation
     if model_ema != None:
@@ -70,12 +75,7 @@ def eval_one_epoch(
     result_dict = {}
     for data_dict in tqdm.tqdm(test_loader, disable=(rank != 0)):
         data_dict = move_data_to_device(data_dict, model_device)
-        if is_streaming_safe_emission(cfg.post_processing):
-            for meta in data_dict.get("metas", []):
-                if isinstance(meta, dict):
-                    meta["eval_rank"] = int(rank)
-
-        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+        with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
             with torch.no_grad():
                 results = model(
                     **data_dict,

@@ -415,9 +415,12 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def _binding_rows(bindings):
         return tuple((int(row.instance_id), int(row.slot_id)) for row in bindings)
 
-    def _append_emissions(self, existing_rows, records, class_names=None):
+    def _append_emissions(self, existing_rows, records, fps, class_names=None):
         ledger = ImmutableEventLedger.from_rows(existing_rows)
         new_rows = []
+        fps = float(fps)
+        if not math.isfinite(fps) or fps <= 0:
+            raise ProtocolViolation("fps must be positive for formal emission timestamps")
         for record in records:
             label = int(record.label)
             if class_names is not None:
@@ -441,7 +444,16 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     "end_frame": int(record.end_frame),
                     "emit_frame": int(record.emit_frame),
                     "source_frame": int(record.max_source_frame),
+                    "segment": [record.start_frame / fps, record.end_frame / fps],
+                    "emit_time_sec": record.emit_frame / fps,
+                    "source_time_sec": record.max_source_frame / fps,
+                    "fps": fps,
                     "latency_frames": int(record.emit_frame - record.end_frame),
+                    "latency_sec": (record.emit_frame - record.end_frame) / fps,
+                    "predicted_end_latency_sec": (
+                        record.emit_frame - record.end_frame
+                    )
+                    / fps,
                     "latency_definition": "emit_time_minus_predicted_end_time",
                 }
             )
@@ -455,6 +467,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         source_frames,
         runtime_state,
         feature_stride,
+        fps,
         class_names=None,
     ):
         state = self._to_head_state(runtime_state)
@@ -476,6 +489,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             ledger_rows, rows = self._append_emissions(
                 ledger_rows,
                 records,
+                fps=fps,
                 class_names=class_names,
             )
             emissions.extend(rows)
@@ -517,6 +531,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             source_frames,
             runtime_state,
             feature_stride=meta.get("feature_stride", meta.get("snippet_stride", 1)),
+            fps=meta.get("fps", 1.0),
             class_names=class_names,
         )
         return TrajectoryInferenceOutput(logits, emissions, provisional, runtime)

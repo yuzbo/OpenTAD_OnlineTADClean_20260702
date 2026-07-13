@@ -10,6 +10,7 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
 )
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
+from opentad.utils.immutable_event_ledger import verify_rows
 
 
 def _head():
@@ -184,3 +185,62 @@ def test_future_feature_perturbation_does_not_change_earlier_prefix_logits():
             changed.logits[index]["class_logits"],
             atol=1e-6,
         )
+
+
+class _ScriptedTrajectoryHead(PersistentEventSetHead):
+    def step(self, feature, state, source_frame):
+        outputs, state = super().step(feature, state, source_frame)
+        end_now = int(source_frame) >= 15
+        outputs.update(
+            birth_logits=torch.tensor([[10.0, -10.0]], device=feature.device),
+            alive_logits=torch.tensor([[10.0, -10.0]], device=feature.device),
+            class_logits=torch.tensor(
+                [[[0.0, 10.0, 0.0], [10.0, 0.0, 0.0]]],
+                device=feature.device,
+            ),
+            end_hazard_logits=torch.tensor(
+                [[10.0 if end_now else -10.0, -10.0]],
+                device=feature.device,
+            ),
+            endpoint_offset=torch.zeros(1, 2, device=feature.device),
+            start_offset=torch.ones(1, 2, device=feature.device),
+        )
+        return outputs, state
+
+
+def test_formal_emission_is_hash_chained_and_standard_evaluator_ready():
+    head = _ScriptedTrajectoryHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=2,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        refractory_steps=1,
+    )
+    detector = PersistentTrajectoryOnlineDetector(head=head).eval()
+    source_frames = (7, 15)
+
+    output = detector.infer_step(
+        torch.randn(1, 4, 2),
+        torch.ones(1, 2, dtype=torch.bool),
+        _meta(source_frames),
+        class_names=("C0", "C1", "C2"),
+    )
+
+    assert len(output.emissions) == 1
+    row = output.emissions[0]
+    assert row["immutable"] is True
+    assert row["label"] == "C1"
+    assert row["segment"] == [row["start_frame"] / 30.0, row["end_frame"] / 30.0]
+    assert row["emit_time_sec"] == row["emit_frame"] / 30.0
+    assert row["source_time_sec"] == row["source_frame"] / 30.0
+    assert row["source_frame"] <= row["emit_frame"]
+    assert row["end_frame"] <= row["emit_frame"]
+    assert row["sequence"] == 0
+    assert len(row["row_hash"]) == 64
+    assert verify_rows(output.runtime_state.ledger_rows).count == 1

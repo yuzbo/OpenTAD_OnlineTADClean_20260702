@@ -81,3 +81,11 @@ def test_q2_configs_keep_pointer_hazard_and_raw_video_out_of_c1_gate():
         assert cfg.model.head.endpoint_mode != "hazard"
         assert cfg.experiment_contract.input == "fixed_cached_causal_features"
         assert cfg.experiment_contract.offline_nms is False
+
+
+def test_streaming_evaluator_does_not_inject_rank_into_model_metadata():
+    source = (ROOT / "opentad" / "cores" / "test_engine.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'meta["eval_rank"]' not in source
