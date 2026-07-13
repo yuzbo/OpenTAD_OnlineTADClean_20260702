@@ -171,6 +171,19 @@ FORBIDDEN_MODEL_META_KEYS = frozenset(
 _CAMEL_BOUNDARY_1 = re.compile(r"(.)([A-Z][a-z]+)")
 _CAMEL_BOUNDARY_2 = re.compile(r"([a-z0-9])([A-Z])")
 _NON_KEY_CHARACTER = re.compile(r"[^A-Za-z0-9]+")
+_NESTED_TAINT_TOKENS = frozenset(
+    {
+        "annotation",
+        "endpoint",
+        "future",
+        "groundtruth",
+        "gt",
+        "label",
+        "lookahead",
+        "target",
+        "terminal",
+    }
+)
 _IDENTIFIER_FIELDS = frozenset({"stream_id", "video_id", "video_name"})
 _HASH_FIELDS = frozenset({"input_provenance_digest"})
 _MODEL_SCALAR_FRAMES = frozenset(
@@ -293,10 +306,12 @@ def _find_model_taint(value, path):
             key = _normalize_key(raw_key)
             control_key = STREAM_CONTROL_ALIASES.get(key, key)
             target_key = TRAINING_TARGET_ALIASES.get(key, key)
+            compact_key = key.replace("_", "")
             if (
                 key in FORBIDDEN_MODEL_META_KEYS
                 or control_key in FORBIDDEN_MODEL_META_KEYS
                 or target_key in FORBIDDEN_MODEL_META_KEYS
+                or any(token in compact_key for token in _NESTED_TAINT_TOKENS)
             ):
                 raise StreamMetadataError(
                     f"model metadata taint at {path}.{raw_key}: {key!r} is control/target-only"
@@ -454,11 +469,11 @@ def validate_stream_control(stream_control):
         canonical[field] = _integer(canonical[field], field, nonnegative=True)
     if "duration" in canonical:
         _positive_number(canonical["duration"], "duration")
-    if canonical.get("reset_stream") and not (
-        canonical.get("is_video_end") or canonical.get("is_video_start")
-    ):
+    if canonical.get("reset_stream") and canonical.get("is_video_start"):
+        raise StreamMetadataError("stream start and reset_stream cannot share one packet")
+    if canonical.get("reset_stream") and not canonical.get("is_video_end"):
         raise StreamMetadataError(
-            "reset_stream=true is only valid at a declared stream boundary"
+            "reset_stream=true is only valid at a declared stream boundary with is_video_end=true"
         )
     return canonical
 

@@ -299,6 +299,15 @@ def test_state_rejects_non_bijections_and_slots_outside_capacity():
             born_instance_ids={4},
         )
 
+    with pytest.raises(ValueError, match="bijection|duplicate|inverse"):
+        PrefixTrajectorySupervisionState(
+            num_slots=2,
+            mode="fixed",
+            instance_to_slot={4: 0, 5: 0},
+            slot_to_instance={0: 5},
+            born_instance_ids={4, 5},
+        )
+
 
 def test_transition_rejects_unknown_active_ids_and_future_endpoint_leaks():
     state = PrefixTrajectorySupervisionState(num_slots=1, mode="fixed")
@@ -311,13 +320,44 @@ def test_transition_rejects_unknown_active_ids_and_future_endpoint_leaks():
         )
     assert state.snapshot() == pristine
 
-    leaked = _Target(instance_id=4, start_frame=1.0, end_frame=99.0)
-    with pytest.raises(ValueError, match="future endpoint"):
+    future_start = _Target(instance_id=4, start_frame=9.0)
+    with pytest.raises(ValueError, match="future start"):
         state.transition(
-            _Step(current_frame=7, births=(leaked,), active=(leaked,)),
+            _Step(current_frame=7, births=(future_start,), active=(future_start,)),
             [[0.0]],
         )
     assert state.snapshot() == pristine
+
+    visible = _Target(instance_id=4, start_frame=1.0)
+    state.transition(
+        _Step(current_frame=7, births=(visible,), active=(visible,)),
+        [[0.0]],
+    )
+    before_future_end = state.snapshot()
+    with pytest.raises(ValueError, match="future endpoint"):
+        state.transition(
+            _Step(
+                current_frame=15,
+                ends=(_Target(4, start_frame=1.0, end_frame=99.0),),
+            ),
+            [[0.0]],
+        )
+    assert state.snapshot() == before_future_end
+
+
+def test_birth_candidates_intersect_runtime_available_slots():
+    target = _Target(instance_id=8, start_frame=1.0)
+    state = PrefixTrajectorySupervisionState(num_slots=2, mode="fixed")
+
+    result = state.transition(
+        _Step(current_frame=7, births=(target,), active=(target,)),
+        [[0.0, 9.0]],
+        available_slots=(1,),
+    )
+
+    assert result.birth_candidates == (1,)
+    assert result.birth_mask == (False, True)
+    assert _bindings(result.birth_assignments) == {8: 1}
 
 
 def test_failed_cost_provider_transition_is_atomic():

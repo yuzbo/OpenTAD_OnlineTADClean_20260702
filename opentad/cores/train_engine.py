@@ -1,4 +1,6 @@
 import copy
+from collections.abc import Mapping
+
 import torch
 import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
@@ -82,6 +84,54 @@ def _grad_clip_parameters(model):
     return model.parameters()
 
 
+def _transaction_target(model):
+    target = _unwrap_model(model)
+    required = (
+        "has_pending_online_update",
+        "commit_online_update",
+        "rollback_online_update",
+    )
+    return target if all(callable(getattr(target, name, None)) for name in required) else None
+
+
+def _transaction_control(data_dict):
+    controls = data_dict.get("stream_control")
+    if not isinstance(controls, (list, tuple)) or len(controls) != 1:
+        raise RuntimeError("transactional online training requires one stream_control lane")
+    control = controls[0]
+    if not isinstance(control, Mapping):
+        raise RuntimeError("transactional stream_control must be a mapping")
+    for field in ("is_video_start", "is_video_end"):
+        if field not in control or not isinstance(control[field], bool):
+            raise RuntimeError(f"transactional stream_control requires boolean {field}")
+    return control
+
+
+def _optimizer_weight(losses):
+    value = losses.get("_optimizer_weight")
+    if value is None:
+        return 1.0
+    if not torch.is_tensor(value) or value.numel() != 1:
+        raise RuntimeError("_optimizer_weight must be a scalar tensor")
+    weight = float(value.detach().item())
+    if not torch.isfinite(value.detach()).item() or weight <= 0:
+        raise RuntimeError("_optimizer_weight must be positive and finite")
+    return weight
+
+
+def _normalize_accumulated_gradients(model, denominator):
+    if denominator <= 0:
+        raise RuntimeError("episode gradient denominator must be positive")
+    for param in model.parameters():
+        if param.grad is not None:
+            param.grad.div_(denominator)
+
+
+def _rollback_online_transaction(transaction):
+    if transaction is not None and transaction.has_pending_online_update():
+        transaction.rollback_online_update()
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -113,117 +163,171 @@ def train_one_epoch(
 
     model.train()
     model_device = get_model_device(model)
-    for iter_idx, data_dict in enumerate(train_loader):
-        data_dict = move_data_to_device(data_dict, model_device)
-        optimizer.zero_grad(set_to_none=True)
+    transaction = _transaction_target(model)
+    episode_weight = 0.0
+    episode_loss_records = []
+    skip_until_boundary = False
+    optimizer_events = 0
+    successful_optimizer_events = 0
+    skipped_optimizer_events = 0
+    optimizer.zero_grad(set_to_none=True)
 
-        # current learning rate
+    for iter_idx, raw_data_dict in enumerate(train_loader):
+        control = _transaction_control(raw_data_dict) if transaction is not None else None
+        boundary = True if control is None else bool(
+            control["is_video_end"] or control.get("reset_stream", False)
+        )
+        if skip_until_boundary:
+            if control["is_video_start"]:
+                raise RuntimeError("a new stream started before the failed episode boundary")
+            if boundary:
+                skip_until_boundary = False
+            continue
+
+        data_dict = move_data_to_device(raw_data_dict, model_device)
         curr_backbone_lr = None
-        if hasattr(target, "backbone"):  # if backbone exists
-            if getattr(target.backbone, "freeze_backbone", True) == False:  # not frozen
-                curr_backbone_lr = scheduler.get_last_lr()[0]
+        if hasattr(target, "backbone") and not getattr(
+            target.backbone, "freeze_backbone", True
+        ):
+            curr_backbone_lr = scheduler.get_last_lr()[0]
         curr_det_lr = scheduler.get_last_lr()[-1]
 
-        # forward pass
-        with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
-            losses = model(**data_dict, return_loss=True)
+        try:
+            with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
+                losses = model(**data_dict, return_loss=True)
+        except Exception:
+            _rollback_online_transaction(transaction)
+            optimizer.zero_grad(set_to_none=True)
+            raise
 
-        if not torch.isfinite(losses["cost"]):
+        cost = losses.get("cost")
+        if not torch.is_tensor(cost) or cost.numel() != 1:
+            _rollback_online_transaction(transaction)
+            optimizer.zero_grad(set_to_none=True)
+            raise RuntimeError("model losses must contain one scalar cost tensor")
+        if not torch.isfinite(cost.detach()).item():
             logger.error(
-                "[Train]: non-finite cost detected at epoch=%d iter=%d, skip optimizer step",
+                "[Train]: non-finite cost at epoch=%d iter=%d; rollback episode",
                 curr_epoch,
                 iter_idx,
             )
+            _rollback_online_transaction(transaction)
             optimizer.zero_grad(set_to_none=True)
+            episode_weight = 0.0
+            episode_loss_records.clear()
+            optimizer_events += 1
+            skipped_optimizer_events += 1
+            skip_until_boundary = not boundary
             continue
 
-        # compute the gradients
+        weight = _optimizer_weight(losses)
+        weighted_cost = cost * weight
         if scaler is not None:
-            scaler.scale(losses["cost"]).backward()
+            scaler.scale(weighted_cost).backward()
         else:
-            losses["cost"].backward()
+            weighted_cost.backward()
+        episode_weight += weight
+        episode_loss_records.append(
+            {
+                key: value.detach()
+                for key, value in losses.items()
+                if key != "_optimizer_weight"
+            }
+        )
+        if not boundary:
+            continue
 
-        # gradient clipping (to stabilize training if necessary)
-        grads_unscaled = False
-        if clip_grad_l2norm > 0.0:
+        optimizer_events += 1
+        if transaction is not None and not transaction.has_pending_online_update():
+            optimizer.zero_grad(set_to_none=True)
+            raise RuntimeError("episode boundary has no staged online state")
+        if scaler is not None:
+            scaler.unscale_(optimizer)
+        _normalize_accumulated_gradients(model, episode_weight)
+        bad_param_name = _find_first_nonfinite_grad(model)
+        if bad_param_name is None and clip_grad_l2norm > 0.0:
+            torch.nn.utils.clip_grad_norm_(
+                _grad_clip_parameters(model), clip_grad_l2norm
+            )
+            bad_param_name = _find_first_nonfinite_grad(model)
+
+        if bad_param_name is not None:
+            logger.error(
+                "[Train]: non-finite episode gradients at epoch=%d iter=%d param=%s; rollback",
+                curr_epoch,
+                iter_idx,
+                bad_param_name,
+            )
+            debug_report = _collect_runtime_debug(model, data_dict, bad_param_name)
+            if debug_report is not None:
+                debug_report.update(_summarize_grad_health(model))
+                logger.error(
+                    "[Train][Diag]: epoch=%d iter=%d %s",
+                    curr_epoch,
+                    iter_idx,
+                    _format_debug_report(debug_report),
+                )
+            _rollback_online_transaction(transaction)
+            optimizer.zero_grad(set_to_none=True)
             if scaler is not None:
-                scaler.unscale_(optimizer)
-                grads_unscaled = True
-            grad_clip_parameters = _grad_clip_parameters(model)
-            torch.nn.utils.clip_grad_norm_(grad_clip_parameters, clip_grad_l2norm)
-
-        # update parameters
-        if scaler is not None:
-            if not grads_unscaled:
-                scaler.unscale_(optimizer)
-            bad_param_name = _find_first_nonfinite_grad(model)
-            if bad_param_name is not None:
-                logger.error(
-                    "[Train]: non-finite gradients detected at epoch=%d iter=%d, param=%s, skip optimizer step",
-                    curr_epoch,
-                    iter_idx,
-                    bad_param_name,
-                )
-                debug_report = _collect_runtime_debug(model, data_dict, bad_param_name)
-                if debug_report is not None:
-                    debug_report.update(_summarize_grad_health(model))
-                    logger.error(
-                        "[Train][Diag]: epoch=%d iter=%d %s",
-                        curr_epoch,
-                        iter_idx,
-                        _format_debug_report(debug_report),
-                    )
-                optimizer.zero_grad(set_to_none=True)
                 scaler.update()
-                continue
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            bad_param_name = _find_first_nonfinite_grad(model)
-            if bad_param_name is not None:
-                logger.error(
-                    "[Train]: non-finite gradients detected at epoch=%d iter=%d, param=%s, skip optimizer step",
-                    curr_epoch,
-                    iter_idx,
-                    bad_param_name,
-                )
-                debug_report = _collect_runtime_debug(model, data_dict, bad_param_name)
-                if debug_report is not None:
-                    debug_report.update(_summarize_grad_health(model))
-                    logger.error(
-                        "[Train][Diag]: epoch=%d iter=%d %s",
-                        curr_epoch,
-                        iter_idx,
-                        _format_debug_report(debug_report),
-                    )
-                optimizer.zero_grad(set_to_none=True)
-                continue
-            optimizer.step()
+            episode_weight = 0.0
+            episode_loss_records.clear()
+            skipped_optimizer_events += 1
+            continue
 
-        # update scheduler
+        try:
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            if transaction is not None:
+                transaction.commit_online_update()
+        except Exception:
+            _rollback_online_transaction(transaction)
+            optimizer.zero_grad(set_to_none=True)
+            raise
+
         scheduler.step()
-
-        # update ema
+        successful_optimizer_events += 1
         if model_ema is not None:
             model_ema.update(model)
+        optimizer.zero_grad(set_to_none=True)
 
-        # track all losses
-        losses = reduce_loss(losses)  # only for log
-        for key, value in losses.items():
-            if key not in losses_tracker:
-                losses_tracker[key] = AverageMeter()
-            losses_tracker[key].update(value.item())
+        for loss_record in episode_loss_records:
+            reduced = reduce_loss(loss_record)
+            for key, value in reduced.items():
+                if key not in losses_tracker:
+                    losses_tracker[key] = AverageMeter()
+                losses_tracker[key].update(value.item())
+        episode_weight = 0.0
+        episode_loss_records.clear()
 
-        # printing each logging_interval
-        if ((iter_idx != 0) and (iter_idx % logging_interval) == 0) or ((iter_idx + 1) == num_iters):
-            # print to terminal
-            block1 = "[Train]: [{:03d}][{:05d}/{:05d}]".format(curr_epoch, iter_idx, num_iters - 1)
+        should_print = (
+            ((iter_idx != 0) and (iter_idx % logging_interval) == 0)
+            or ((iter_idx + 1) == num_iters)
+        ) and "cost" in losses_tracker
+        if should_print:
+            block1 = "[Train]: [{:03d}][{:05d}/{:05d}]".format(
+                curr_epoch, iter_idx, num_iters - 1
+            )
             block2 = "Loss={:.4f}".format(losses_tracker["cost"].avg)
-            block3 = ["{:s}={:.4f}".format(key, value.avg) for key, value in losses_tracker.items() if key != "cost"]
+            block3 = [
+                "{:s}={:.4f}".format(key, value.avg)
+                for key, value in losses_tracker.items()
+                if key != "cost"
+            ]
             block4 = "lr_det={:.1e}".format(curr_det_lr)
             if curr_backbone_lr is not None:
-                block4 = "lr_backbone={:.1e}".format(curr_backbone_lr) + "  " + block4
-            block5 = "mem={:.0f}MB".format(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0)
+                block4 = (
+                    "lr_backbone={:.1e}".format(curr_backbone_lr)
+                    + "  "
+                    + block4
+                )
+            block5 = "mem={:.0f}MB".format(
+                torch.cuda.max_memory_allocated() / 1024.0 / 1024.0
+            )
             logger.info("  ".join([block1, block2, "  ".join(block3), block4, block5]))
 
         should_log_runtime_debug = (
@@ -244,6 +348,20 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+
+    if skip_until_boundary:
+        raise RuntimeError("failed online episode ended before its declared boundary")
+    if episode_weight or (
+        transaction is not None and transaction.has_pending_online_update()
+    ):
+        _rollback_online_transaction(transaction)
+        optimizer.zero_grad(set_to_none=True)
+        raise RuntimeError("online training epoch ended with an uncommitted episode")
+    return {
+        "optimizer_events": optimizer_events,
+        "successful_optimizer_events": successful_optimizer_events,
+        "skipped_optimizer_events": skipped_optimizer_events,
+    }
 
 
 def val_one_epoch(
@@ -274,12 +392,26 @@ def val_one_epoch(
     target = _unwrap_model(model)
     if hasattr(target, "reset_online_states"):
         target.reset_online_states()
+    transaction = _transaction_target(model)
     model_device = get_model_device(model)
-    for data_dict in tqdm.tqdm(val_loader, disable=(rank != 0)):
-        data_dict = move_data_to_device(data_dict, model_device)
-        with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
-            with torch.no_grad():
-                losses = model(**data_dict, return_loss=True)
+    for raw_data_dict in tqdm.tqdm(val_loader, disable=(rank != 0)):
+        control = _transaction_control(raw_data_dict) if transaction is not None else None
+        boundary = True if control is None else bool(
+            control["is_video_end"] or control.get("reset_stream", False)
+        )
+        data_dict = move_data_to_device(raw_data_dict, model_device)
+        try:
+            with torch.cuda.amp.autocast(dtype=amp_dtype, enabled=use_amp):
+                with torch.no_grad():
+                    losses = model(**data_dict, return_loss=True)
+        except Exception:
+            _rollback_online_transaction(transaction)
+            raise
+        if not torch.isfinite(losses["cost"].detach()).item():
+            _rollback_online_transaction(transaction)
+            raise RuntimeError("validation produced a non-finite online episode loss")
+        if transaction is not None and boundary:
+            transaction.commit_online_update()
 
         # track all losses
         losses = reduce_loss(losses)  # only for log
@@ -287,6 +419,10 @@ def val_one_epoch(
             if key not in losses_tracker:
                 losses_tracker[key] = AverageMeter()
             losses_tracker[key].update(value.item())
+
+    if transaction is not None and transaction.has_pending_online_update():
+        transaction.rollback_online_update()
+        raise RuntimeError("validation ended with an uncommitted online episode")
 
     # print to terminal
     block1 = "[Val]: [{:03d}]".format(curr_epoch)

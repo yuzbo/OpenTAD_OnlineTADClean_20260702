@@ -162,3 +162,71 @@ def test_two_same_class_slots_emit_independently_once_then_rearm():
     repeated, state = head.decode_step(quiet_outputs, state, current_frame=39)
     assert repeated == []
     assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+
+
+def test_binary_endpoint_uses_first_crossing_frame_not_unsupervised_offset():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        birth_threshold=0.5,
+        alive_threshold=0.5,
+        end_threshold=0.5,
+    )
+    state = _state(head)
+    birth = {
+        "birth_logits": torch.tensor([[10.0, -10.0]]),
+        "alive_logits": torch.tensor([[10.0, -10.0]]),
+        "class_logits": torch.tensor([[[0.0, 10.0, 0.0], [10.0, 0.0, 0.0]]]),
+        "end_hazard_logits": torch.tensor([[-10.0, -10.0]]),
+        "endpoint_offset": torch.tensor([[7.0, 0.0]]),
+        "start_offset": torch.zeros(1, 2),
+        "memory_frames": (7,),
+    }
+    _, state = head.decode_step(birth, state, current_frame=7, feature_stride=1)
+    ending = dict(birth)
+    ending.update(
+        birth_logits=torch.tensor([[-10.0, -10.0]]),
+        end_hazard_logits=torch.tensor([[10.0, -10.0]]),
+        memory_frames=(7, 15),
+    )
+
+    emissions, _ = head.decode_step(ending, state, current_frame=15, feature_stride=1)
+
+    assert len(emissions) == 1
+    assert emissions[0].end_frame == emissions[0].emit_frame == 15
+
+
+def test_emission_label_and_score_share_the_same_historical_class_peak():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="hazard",
+        birth_threshold=0.5,
+        alive_threshold=0.5,
+        end_threshold=0.5,
+    )
+    state = _state(head)
+    birth = {
+        "birth_logits": torch.tensor([[10.0, -10.0]]),
+        "alive_logits": torch.tensor([[10.0, -10.0]]),
+        "class_logits": torch.tensor([[[0.0, 12.0, 0.0], [10.0, 0.0, 0.0]]]),
+        "end_hazard_logits": torch.tensor([[-10.0, -10.0]]),
+        "endpoint_offset": torch.zeros(1, 2),
+        "start_offset": torch.zeros(1, 2),
+        "memory_frames": (7,),
+    }
+    _, state = head.decode_step(birth, state, current_frame=7)
+    ending = dict(birth)
+    ending.update(
+        birth_logits=torch.tensor([[-10.0, -10.0]]),
+        class_logits=torch.tensor([[[0.0, 1.0, 2.0], [10.0, 0.0, 0.0]]]),
+        end_hazard_logits=torch.tensor([[10.0, -10.0]]),
+        memory_frames=(7, 15),
+    )
+
+    emissions, _ = head.decode_step(ending, state, current_frame=15)
+
+    assert len(emissions) == 1
+    assert emissions[0].label == 1
+    assert emissions[0].score > 0.99

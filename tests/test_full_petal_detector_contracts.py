@@ -188,6 +188,31 @@ def test_future_feature_perturbation_does_not_change_earlier_prefix_logits():
         )
 
 
+def test_inference_masked_tail_does_not_advance_the_decision_clock():
+    detector = _detector().eval()
+    first = detector.infer_step(
+        torch.randn(1, 4, 1),
+        torch.ones(1, 1, dtype=torch.bool),
+        _meta((7,)),
+    )
+    tail = detector.infer_step(
+        torch.randn(1, 4, 2),
+        torch.tensor([[True, False]]),
+        _meta((15, 23)),
+        runtime_state=first.runtime_state,
+    )
+
+    assert tail.runtime_state.last_decision_frame == 15
+    assert 23 not in tail.runtime_state.source_frames
+    with pytest.raises(ProtocolViolation, match="right-padded"):
+        detector.infer_step(
+            torch.randn(1, 4, 2),
+            torch.tensor([[False, True]]),
+            _meta((15, 23)),
+            runtime_state=first.runtime_state,
+        )
+
+
 class _ScriptedTrajectoryHead(PersistentEventSetHead):
     def step(self, feature, state, source_frame):
         outputs, state = super().step(feature, state, source_frame)
@@ -247,3 +272,83 @@ def test_formal_emission_is_hash_chained_and_standard_evaluator_ready():
     assert row["sequence"] == 0
     assert len(row["row_hash"]) == 64
     assert verify_rows(output.runtime_state.ledger_rows).count == 1
+
+
+class _TwoActiveBindingProbeHead(PersistentEventSetHead):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.binding_probe = torch.nn.Parameter(torch.zeros(2))
+
+    def step(self, feature, state, source_frame):
+        outputs, state = super().step(feature, state, source_frame)
+        desired = (
+            torch.tensor([0.75, 0.125], device=feature.device)
+            if int(source_frame) == 7
+            else torch.tensor([1.125, 1.75], device=feature.device)
+        )
+        outputs["start_offset"] = desired.unsqueeze(0) + 0.01 * self.binding_probe.unsqueeze(0)
+        outputs["birth_logits"] = outputs["birth_logits"] * 0.0
+        outputs["class_logits"] = outputs["class_logits"] * 0.0
+        return outputs, state
+
+
+def _two_active_probe_detector(binding_mode):
+    head = _TwoActiveBindingProbeHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=2,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        birth_threshold=1.1,
+        alive_threshold=1.1,
+        end_threshold=1.1,
+        refractory_steps=1,
+    )
+    return PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode=binding_mode,
+        detach_stream_state=True,
+    )
+
+
+def test_two_active_one_factor_changes_only_loss_binding_and_its_gradient():
+    fixed = _two_active_probe_detector("fixed_birth_slot").train()
+    rematch = _two_active_probe_detector("prefix_rematch_active_pool").train()
+    rematch.load_state_dict(fixed.state_dict())
+    frames = (7, 15)
+    schedule = build_prefix_instance_schedule(
+        segments=[[1.0, 30.0], [6.0, 31.0]],
+        labels=[1, 1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    inputs = torch.randn(1, 4, 2)
+    masks = torch.ones(1, 2, dtype=torch.bool)
+
+    fixed_output = fixed.train_episode(inputs, masks, _meta(frames), schedule)
+    rematch_output = rematch.train_episode(inputs, masks, _meta(frames), schedule)
+
+    for audit_key in (
+        "birth_assignments",
+        "canonical_lifecycle",
+        "birth_mask_trace",
+        "alive_mask_trace",
+        "endpoint_slot_trace",
+    ):
+        assert fixed_output.audit[audit_key] == rematch_output.audit[audit_key]
+    assert fixed_output.audit["loss_bindings"][0] == rematch_output.audit["loss_bindings"][0]
+    assert fixed_output.audit["loss_bindings"][1] != rematch_output.audit["loss_bindings"][1]
+    for loss_name in ("birth_loss", "alive_loss", "class_loss", "end_loss"):
+        assert torch.equal(fixed_output.losses[loss_name], rematch_output.losses[loss_name])
+
+    fixed_output.losses["cost"].backward()
+    rematch_output.losses["cost"].backward()
+
+    assert fixed.head.binding_probe.grad is not None
+    assert rematch.head.binding_probe.grad is not None
+    assert not torch.equal(fixed.head.binding_probe.grad, rematch.head.binding_probe.grad)

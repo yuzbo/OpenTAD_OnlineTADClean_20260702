@@ -219,6 +219,10 @@ class PrefixTrajectorySupervisionState:
 
     def validate(self):
         """Validate canonical bijections, lifecycle sets, slots, and counters."""
+        if len(set(self.instance_to_slot.values())) != len(self.instance_to_slot):
+            raise SupervisionInvariantError(
+                "instance_to_slot must be a bijection without duplicate slots"
+            )
         expected_reverse = {
             slot_id: instance_id
             for instance_id, slot_id in self.instance_to_slot.items()
@@ -281,7 +285,14 @@ class PrefixTrajectorySupervisionState:
             last_current_frame=self.last_current_frame,
         )
 
-    def transition(self, schedule_step, cost_matrix=None, *, cost_provider=None):
+    def transition(
+        self,
+        schedule_step,
+        cost_matrix=None,
+        *,
+        cost_provider=None,
+        available_slots=None,
+    ):
         """Apply one prefix step atomically and return pre-retirement bindings.
 
         Births are globally assigned to slots free at entry.  Endpoint instances
@@ -298,7 +309,11 @@ class PrefixTrajectorySupervisionState:
         if cost_matrix is None:
             raise ValueError("a cost_matrix or cost_provider is required")
         next_state = self.clone()
-        result = next_state._transition_in_place(schedule_step, cost_matrix)
+        result = next_state._transition_in_place(
+            schedule_step,
+            cost_matrix,
+            available_slots=available_slots,
+        )
         self.instance_to_slot = dict(next_state.instance_to_slot)
         self.slot_to_instance = dict(next_state.slot_to_instance)
         self.born_instance_ids = set(next_state.born_instance_ids)
@@ -309,7 +324,7 @@ class PrefixTrajectorySupervisionState:
         self.last_current_frame = next_state.last_current_frame
         return result
 
-    def _transition_in_place(self, schedule_step, cost_matrix):
+    def _transition_in_place(self, schedule_step, cost_matrix, *, available_slots=None):
         self.validate()
         current_frame = int(schedule_step.current_frame)
         if self.last_current_frame is not None and current_frame <= self.last_current_frame:
@@ -320,6 +335,33 @@ class PrefixTrajectorySupervisionState:
         birth_items = tuple(schedule_step.births)
         active_items = tuple(schedule_step.active)
         end_items = tuple(schedule_step.ends)
+        early_step_ids = {
+            int(item.instance_id)
+            for item in birth_items + active_items + end_items
+        }
+        resurrected = tuple(sorted(self.retired_instance_ids.intersection(early_step_ids)))
+        if resurrected:
+            raise SupervisionInvariantError(
+                f"retired instance cannot reappear in a schedule: {resurrected}"
+            )
+        for item in birth_items + active_items + end_items:
+            start_frame = float(item.start_frame)
+            if not math.isfinite(start_frame) or start_frame > current_frame:
+                raise SupervisionInvariantError(
+                    f"instance {item.instance_id} contains a future start frame"
+                )
+        if self.last_current_frame is not None:
+            delayed_births = tuple(
+                sorted(
+                    int(item.instance_id)
+                    for item in birth_items
+                    if float(item.start_frame) <= self.last_current_frame
+                )
+            )
+            if delayed_births:
+                raise SupervisionInvariantError(
+                    f"birth crossings must occur after the previous decision: {delayed_births}"
+                )
         leaked = tuple(
             sorted(
                 int(item.instance_id)
@@ -330,6 +372,27 @@ class PrefixTrajectorySupervisionState:
         if leaked:
             raise SupervisionInvariantError(
                 f"birth/active schedule entries contain a future endpoint: {leaked}"
+            )
+        invalid_ends = []
+        for item in end_items:
+            end_frame = getattr(item, "end_frame", None)
+            if end_frame is None:
+                invalid_ends.append(int(item.instance_id))
+                continue
+            end_frame = float(end_frame)
+            if (
+                not math.isfinite(end_frame)
+                or end_frame <= float(item.start_frame)
+                or end_frame > current_frame
+            ):
+                invalid_ends.append(int(item.instance_id))
+                continue
+            if self.last_current_frame is not None and end_frame <= self.last_current_frame:
+                invalid_ends.append(int(item.instance_id))
+        if invalid_ends:
+            raise SupervisionInvariantError(
+                "end schedule entries contain a future endpoint or invalid endpoint crossing: "
+                f"{tuple(sorted(invalid_ends))}"
             )
         births = tuple(sorted(int(item.instance_id) for item in birth_items))
         active = tuple(sorted(int(item.instance_id) for item in active_items))
@@ -354,13 +417,6 @@ class PrefixTrajectorySupervisionState:
                 f"active/end schedule entries reference unknown instances: {unknown}"
             )
         step_ids = tuple(sorted(set(births + active + ends)))
-        resurrected = tuple(
-            sorted(self.retired_instance_ids.intersection(step_ids))
-        )
-        if resurrected:
-            raise SupervisionInvariantError(
-                f"retired instance cannot reappear in a schedule: {resurrected}"
-            )
         repeated_births = tuple(sorted(self.born_instance_ids.intersection(births)))
         if repeated_births:
             raise SupervisionInvariantError(
@@ -404,8 +460,23 @@ class PrefixTrajectorySupervisionState:
                 )
             ]
 
+        if available_slots is None:
+            runtime_available = set(range(self.num_slots))
+        else:
+            available_slots = tuple(available_slots)
+            if (
+                any(type(slot) is not int for slot in available_slots)
+                or len(set(available_slots)) != len(available_slots)
+                or any(not 0 <= slot < self.num_slots for slot in available_slots)
+            ):
+                raise SupervisionInvariantError(
+                    "available_slots must contain unique in-capacity integer slots"
+                )
+            runtime_available = set(available_slots)
         birth_candidates = tuple(
-            slot for slot in range(self.num_slots) if slot not in self.slot_to_instance
+            slot
+            for slot in range(self.num_slots)
+            if slot not in self.slot_to_instance and slot in runtime_available
         )
         birth_assignments = ()
         if births and birth_candidates:

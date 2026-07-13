@@ -97,6 +97,20 @@ def test_nested_terminal_or_target_aliases_are_rejected_from_model_values(tainte
         sanitize_stream_metadata(_causal_meta(processor_policy=tainted_policy))
 
 
+@pytest.mark.parametrize(
+    "tainted_policy",
+    [
+        {"futureContext": {"frames": [17]}},
+        {"lookaheadFrames": 8},
+        {"gtHints": {"class": 1}},
+        {"targetEndpoint": 31},
+    ],
+)
+def test_compound_nested_future_and_gt_taint_is_rejected(tainted_policy):
+    with pytest.raises(StreamMetadataError, match="taint"):
+        validate_model_meta(_causal_meta(encoder_policy=tainted_policy))
+
+
 def test_aliases_are_canonicalized_into_the_correct_plane():
     model_meta, stream_control = sanitize_stream_metadata(
         {
@@ -183,6 +197,10 @@ def test_end_of_stream_reset_is_legal_only_in_control_plane():
     assert control["reset_stream"] is True
     with pytest.raises(StreamMetadataError, match="stream boundary"):
         validate_stream_control({"reset_stream": True})
+    with pytest.raises(StreamMetadataError, match="start.*reset|reset.*start"):
+        validate_stream_control(
+            {"is_video_start": True, "is_video_end": False, "reset_stream": True}
+        )
 
 
 def test_targets_must_use_the_training_target_structure_in_control():

@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..builder import DETECTORS, build_backbone, build_head, build_projection
-from ..dense_heads.persistent_event_set_head import PersistentEventSetState
+from ..dense_heads.persistent_event_set_head import SLOT_FREE, PersistentEventSetState
 from opentad.utils.immutable_event_ledger import ImmutableEventLedger
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_trajectory_supervision import (
@@ -90,6 +90,7 @@ class PersistentTrajectoryRuntimeState:
     refractory: torch.Tensor
     start_state: torch.Tensor
     score_state: torch.Tensor
+    label_state: torch.Tensor
     ledger_rows: Tuple[dict, ...]
     last_decision_frame: int
 
@@ -162,6 +163,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         }
         self._runtime_states = {}
         self._supervision_states = {}
+        self._staged_runtime_states = {}
+        self._staged_supervision_states = {}
+        self._staged_terminal_keys = set()
         self.last_episode_audit = {}
 
     @staticmethod
@@ -175,7 +179,36 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def reset_online_states(self):
         self._runtime_states.clear()
         self._supervision_states.clear()
+        self._staged_runtime_states.clear()
+        self._staged_supervision_states.clear()
+        self._staged_terminal_keys.clear()
         self.last_episode_audit = {}
+
+    def has_pending_online_update(self):
+        return bool(self._staged_runtime_states or self._staged_supervision_states)
+
+    def commit_online_update(self):
+        if not self.has_pending_online_update():
+            raise ProtocolViolation("no staged online training state is available to commit")
+        if set(self._staged_runtime_states) != set(self._staged_supervision_states):
+            raise ProtocolViolation("staged runtime and supervision keys are inconsistent")
+        if set(self._staged_runtime_states) != self._staged_terminal_keys:
+            raise ProtocolViolation("only a complete terminal episode may be committed")
+        for key, runtime in self._staged_runtime_states.items():
+            if key in self._staged_terminal_keys:
+                self._runtime_states.pop(key, None)
+                self._supervision_states.pop(key, None)
+            else:
+                self._runtime_states[key] = runtime
+                self._supervision_states[key] = self._staged_supervision_states[key]
+        self._staged_runtime_states.clear()
+        self._staged_supervision_states.clear()
+        self._staged_terminal_keys.clear()
+
+    def rollback_online_update(self):
+        self._staged_runtime_states.clear()
+        self._staged_supervision_states.clear()
+        self._staged_terminal_keys.clear()
 
     def _validate_meta(self, model_meta):
         try:
@@ -208,6 +241,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             refractory=state.refractory,
             start_state=state.start_frames,
             score_state=state.peak_class_scores,
+            label_state=state.peak_class_labels,
             ledger_rows=(),
             last_decision_frame=-1,
         )
@@ -223,6 +257,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             refractory=state.refractory,
             start_frames=state.start_state,
             peak_class_scores=state.score_state,
+            peak_class_labels=state.label_state,
             ledger=[],
             instance_to_slot={},
             slot_to_instance={},
@@ -238,6 +273,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             refractory=state.refractory,
             start_state=state.start_frames,
             score_state=state.peak_class_scores,
+            label_state=state.peak_class_labels,
             ledger_rows=tuple(dict(row) for row in ledger_rows),
             last_decision_frame=int(decision_frame),
         )
@@ -253,6 +289,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             refractory=state.refractory.detach(),
             start_state=state.start_state.detach(),
             score_state=state.score_state.detach(),
+            label_state=state.label_state.detach(),
             ledger_rows=tuple(dict(row) for row in state.ledger_rows),
         )
 
@@ -336,6 +373,62 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         for item in tuple(schedule_step.births) + tuple(schedule_step.active) + tuple(schedule_step.ends):
             targets[int(item.instance_id)] = item
         return targets
+
+    def _validate_schedule_step(
+        self,
+        schedule_step,
+        source_frame,
+        previous_decision_frame,
+        *,
+        masked,
+    ):
+        if not all(hasattr(schedule_step, field) for field in ("current_frame", "births", "active", "ends")):
+            raise ProtocolViolation("supervision schedule step has an invalid schema")
+        current_frame = int(schedule_step.current_frame)
+        if current_frame != int(source_frame):
+            raise ProtocolViolation("schedule decision frame does not match source provenance")
+        channels = {
+            "birth": tuple(schedule_step.births),
+            "active": tuple(schedule_step.active),
+            "end": tuple(schedule_step.ends),
+        }
+        if masked:
+            if any(channels.values()):
+                raise ProtocolViolation("masked stream tokens cannot carry supervision")
+            return
+
+        for channel, items in channels.items():
+            for item in items:
+                instance_id = getattr(item, "instance_id", None)
+                label = getattr(item, "label", None)
+                if type(instance_id) is not int or instance_id < 0:
+                    raise ProtocolViolation("schedule instance ids must be non-negative integers")
+                if type(label) is not int or not 0 <= label < self.head.num_classes:
+                    raise ProtocolViolation("schedule labels must lie in the configured class range")
+                try:
+                    start_frame = float(item.start_frame)
+                except (TypeError, ValueError) as exc:
+                    raise ProtocolViolation("schedule start frame must be finite") from exc
+                if not math.isfinite(start_frame) or start_frame > current_frame:
+                    raise ProtocolViolation("schedule contains a future start frame")
+                endpoint = getattr(item, "end_frame", None)
+                if channel in {"birth", "active"} and endpoint is not None:
+                    raise ProtocolViolation("birth/active schedule contains a future endpoint")
+                if channel == "birth" and start_frame <= previous_decision_frame:
+                    raise ProtocolViolation("birth target is not a first-observable crossing")
+                if channel == "end":
+                    try:
+                        endpoint = float(endpoint)
+                    except (TypeError, ValueError) as exc:
+                        raise ProtocolViolation("end target requires a finite endpoint") from exc
+                    if (
+                        not math.isfinite(endpoint)
+                        or endpoint <= start_frame
+                        or endpoint > current_frame
+                    ):
+                        raise ProtocolViolation("end target contains a future endpoint")
+                    if endpoint <= previous_decision_frame:
+                        raise ProtocolViolation("endpoint target is not a first-observable crossing")
 
     def _cost_provider(self, outputs, schedule_step, feature_stride):
         targets = self._targets_by_id(schedule_step)
@@ -566,7 +659,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             runtime_state = self._initial_runtime_state(features, stream_key)
         elif runtime_state.stream_key != stream_key:
             raise ProtocolViolation("runtime state stream key does not match model metadata")
-        if source_frames and source_frames[0] <= runtime_state.last_decision_frame:
+        valid_mask = tuple(bool(value) for value in masks[0].tolist())
+        if any(valid_mask[index] and not valid_mask[index - 1] for index in range(1, len(valid_mask))):
+            raise ProtocolViolation("stream masks must be right-padded without later valid tokens")
+        valid_frames = tuple(
+            frame for frame, is_valid in zip(source_frames, valid_mask) if is_valid
+        )
+        if not valid_frames:
+            raise ProtocolViolation("inference packet contains no valid causal token")
+        if valid_frames[0] <= runtime_state.last_decision_frame:
             raise ProtocolViolation("stream tokens must be chronological and non-overlapping")
         logits, emissions, provisional, runtime = self._scan_and_decode(
             features,
@@ -598,14 +699,39 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         runtime = initial_runtime_state or self._initial_runtime_state(features, stream_key)
         if runtime.stream_key != stream_key:
             raise ProtocolViolation("runtime state stream key does not match the episode")
-        supervision = initial_supervision_state or PrefixTrajectorySupervisionState(
-            num_slots=self.head.num_slots,
-            mode=self.supervision_mode,
+        supervision = (
+            initial_supervision_state.clone()
+            if initial_supervision_state is not None
+            else PrefixTrajectorySupervisionState(
+                num_slots=self.head.num_slots,
+                mode=self.supervision_mode,
+            )
         )
         if supervision.mode is not self.supervision_mode:
             raise ProtocolViolation("supervision state binding mode does not match the detector")
-        if source_frames and source_frames[0] <= runtime.last_decision_frame:
+        valid_mask = tuple(bool(value) for value in masks[0].tolist())
+        if any(valid_mask[index] and not valid_mask[index - 1] for index in range(1, len(valid_mask))):
+            raise ProtocolViolation("stream masks must be right-padded without later valid tokens")
+        valid_frames = tuple(
+            frame for frame, is_valid in zip(source_frames, valid_mask) if is_valid
+        )
+        if valid_frames and valid_frames[0] <= runtime.last_decision_frame:
             raise ProtocolViolation("training episodes must be chronological and non-overlapping")
+
+        previous_decision_frame = runtime.last_decision_frame
+        for source_frame, schedule_step, is_valid in zip(
+            source_frames,
+            supervision_schedule,
+            valid_mask,
+        ):
+            self._validate_schedule_step(
+                schedule_step,
+                source_frame,
+                previous_decision_frame,
+                masked=not is_valid,
+            )
+            if is_valid:
+                previous_decision_frame = int(source_frame)
 
         state = self._to_head_state(runtime)
         sums = None
@@ -623,10 +749,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         for index, (source_frame, schedule_step) in enumerate(
             zip(source_frames, supervision_schedule)
         ):
-            if int(schedule_step.current_frame) != int(source_frame):
-                raise ProtocolViolation("schedule decision frame does not match source provenance")
             if not bool(masks[0, index].item()):
                 continue
+            available_slots = tuple(
+                slot
+                for slot, status in enumerate(state.slot_status.tolist())
+                if int(status) == SLOT_FREE
+            )
             outputs, state = self.head.step(features[:, :, index], state, source_frame)
             transition = supervision.transition(
                 schedule_step,
@@ -635,6 +764,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     schedule_step,
                     feature_stride,
                 ),
+                available_slots=available_slots,
             )
             raw = self._step_losses(
                 outputs,
@@ -668,10 +798,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         losses["cost"] = sum(
             losses[name] * self.loss_weights[name] for name in self.loss_weights
         )
+        losses["_optimizer_weight"] = losses["cost"].new_tensor(float(valid_steps))
         runtime = self._from_head_state(
             state,
             runtime.ledger_rows,
-            source_frames[-1],
+            valid_frames[-1],
         )
         audit = {
             "binding_mode": self.trajectory_binding_mode,
@@ -684,7 +815,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "slot_exhaustion": exhaustion,
             "rematch_swap_count": rematch_swaps,
             "valid_supervised_steps": valid_steps,
-            "max_source_frame": max(source_frames),
+            "max_source_frame": valid_frames[-1],
             "runtime_state_contains_gt": False,
         }
         self.last_episode_audit = audit
@@ -696,7 +827,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             audit=audit,
         )
 
-    def _prepare_stream(self, inputs, masks, metas, stream_control):
+    def _prepare_stream(self, inputs, masks, metas, stream_control, *, training):
         if inputs.shape[0] != 1 or len(metas) != 1 or len(stream_control) != 1:
             raise ProtocolViolation("persistent trajectory execution requires one stream lane")
         meta = self._validate_meta(metas[0])
@@ -707,8 +838,18 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     f"{field} conflicts across model and control planes"
                 )
         key = _stream_key(meta)
-        runtime = self._runtime_states.get(key)
-        supervision = self._supervision_states.get(key)
+        if training:
+            if key in self._staged_terminal_keys:
+                raise ProtocolViolation("terminal training state must be committed or rolled back")
+            runtime = self._staged_runtime_states.get(key, self._runtime_states.get(key))
+            supervision = self._staged_supervision_states.get(
+                key, self._supervision_states.get(key)
+            )
+        else:
+            if self.has_pending_online_update():
+                raise ProtocolViolation("inference cannot run while training state is staged")
+            runtime = self._runtime_states.get(key)
+            supervision = self._supervision_states.get(key)
         if control.get("is_video_start", False):
             if runtime is not None or supervision is not None:
                 raise ProtocolViolation("stream start received while state already exists")
@@ -742,6 +883,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             masks,
             metas,
             stream_control,
+            training=return_loss,
         )
         if return_loss:
             if prefix_schedule is None or len(prefix_schedule) != 1:
@@ -754,12 +896,16 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 initial_runtime_state=runtime,
                 initial_supervision_state=supervision,
             )
-            self._runtime_states[key] = output.runtime_state
-            self._supervision_states[key] = output.supervision_state
+            self._staged_runtime_states[key] = output.runtime_state
+            self._staged_supervision_states[key] = output.supervision_state
+            if control.get("is_video_end", False) or control.get("reset_stream", False):
+                self._staged_terminal_keys.add(key)
             result = output.losses
         else:
             if prefix_schedule is not None:
                 raise ProtocolViolation("inference rejects supervision schedules")
+            if "training_targets" in control:
+                raise ProtocolViolation("inference rejects training targets in the control plane")
             output = self.infer_step(
                 inputs,
                 masks,
@@ -770,7 +916,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             self._runtime_states[key] = output.runtime_state
             video_name = meta.get("video_name", meta.get("video_id", "unknown"))
             result = {video_name: [dict(row) for row in output.emissions]}
-        if control.get("is_video_end", False) or control.get("reset_stream", False):
+        if not return_loss and (
+            control.get("is_video_end", False) or control.get("reset_stream", False)
+        ):
             self._runtime_states.pop(key, None)
             self._supervision_states.pop(key, None)
         return result

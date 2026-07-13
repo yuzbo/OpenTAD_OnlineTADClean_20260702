@@ -35,6 +35,7 @@ class PersistentEventSetState:
     refractory: torch.Tensor
     start_frames: torch.Tensor
     peak_class_scores: torch.Tensor
+    peak_class_labels: torch.Tensor
     ledger: List[EventSetEmissionRecord] = field(default_factory=list)
     instance_to_slot: Dict[int, int] = field(default_factory=dict)
     slot_to_instance: Dict[int, int] = field(default_factory=dict)
@@ -115,7 +116,9 @@ class PersistentEventSetHead(nn.Module):
         self.alive_head = nn.Linear(self.hidden_dim, 1)
         self.class_head = nn.Linear(self.hidden_dim, self.num_classes)
         self.end_head = nn.Linear(self.hidden_dim, 1)
-        self.endpoint_offset_head = nn.Linear(self.hidden_dim, 1)
+        self.endpoint_offset_head = (
+            nn.Linear(self.hidden_dim, 1) if self.endpoint_mode == "hazard" else None
+        )
         self.start_offset_head = nn.Linear(self.hidden_dim, 1)
         nn.init.normal_(self.before_memory, std=0.02)
 
@@ -130,6 +133,9 @@ class PersistentEventSetHead(nn.Module):
             refractory=torch.zeros(self.num_slots, dtype=torch.long, device=device),
             start_frames=torch.full((self.num_slots,), float("nan"), dtype=dtype, device=device),
             peak_class_scores=torch.zeros(self.num_slots, dtype=dtype, device=device),
+            peak_class_labels=torch.full(
+                (self.num_slots,), -1, dtype=torch.long, device=device
+            ),
         )
 
     def _base_queries(self, state, batch_size, device, dtype):
@@ -159,13 +165,18 @@ class PersistentEventSetHead(nn.Module):
 
         pointer_scores = torch.einsum("bkd,bmd->bkm", queries, memory) / math.sqrt(self.hidden_dim)
         sentinel = torch.einsum("bkd,d->bk", queries, self.before_memory.to(queries)).unsqueeze(-1)
+        endpoint_offset = (
+            self.endpoint_offset_head(queries).sigmoid().squeeze(-1)
+            * self.max_endpoint_offset
+            if self.endpoint_offset_head is not None
+            else queries.new_zeros((queries.shape[0], self.num_slots))
+        )
         outputs = {
             "birth_logits": self.birth_head(queries).squeeze(-1),
             "alive_logits": self.alive_head(queries).squeeze(-1),
             "class_logits": self.class_head(queries),
             "end_hazard_logits": self.end_head(queries).squeeze(-1),
-            "endpoint_offset": self.endpoint_offset_head(queries).sigmoid().squeeze(-1)
-            * self.max_endpoint_offset,
+            "endpoint_offset": endpoint_offset,
             "start_offset": self.start_offset_head(queries).sigmoid().squeeze(-1) * self.memory_size,
             "start_pointer_logits": torch.cat([sentinel, pointer_scores], dim=-1),
             "memory_frames": memory_frames,
@@ -180,6 +191,7 @@ class PersistentEventSetHead(nn.Module):
             refractory=state.refractory,
             start_frames=state.start_frames,
             peak_class_scores=state.peak_class_scores,
+            peak_class_labels=state.peak_class_labels,
             ledger=state.ledger,
             instance_to_slot=state.instance_to_slot,
             slot_to_instance=state.slot_to_instance,
@@ -224,12 +236,17 @@ class PersistentEventSetHead(nn.Module):
         end = outputs["end_hazard_logits"].detach().sigmoid()[0]
         class_probs = outputs["class_logits"].detach().softmax(dim=-1)[0]
         class_scores, labels = class_probs.max(dim=-1)
-        offsets = outputs["endpoint_offset"].detach()[0]
+        offsets = (
+            outputs["endpoint_offset"].detach()[0]
+            if self.endpoint_mode == "hazard"
+            else None
+        )
 
         status = state.slot_status.clone()
         refractory = state.refractory.clone()
         start_frames = state.start_frames.clone()
         peak_scores = state.peak_class_scores.clone()
+        peak_labels = state.peak_class_labels.clone()
         ledger = list(state.ledger)
         emitted = []
 
@@ -251,6 +268,7 @@ class PersistentEventSetHead(nn.Module):
                     self._decode_start(outputs, slot, current_frame, feature_stride)
                 )
                 peak_scores[slot] = class_scores[slot]
+                peak_labels[slot] = labels[slot]
                 just_born = True
 
             if (
@@ -261,20 +279,26 @@ class PersistentEventSetHead(nn.Module):
                 status[slot] = SLOT_FREE
                 start_frames[slot] = float("nan")
                 peak_scores[slot] = 0.0
+                peak_labels[slot] = -1
                 continue
 
-            peak_scores[slot] = torch.maximum(peak_scores[slot], class_scores[slot])
+            if class_scores[slot] > peak_scores[slot]:
+                peak_scores[slot] = class_scores[slot]
+                peak_labels[slot] = labels[slot]
             if end[slot] < self.end_threshold:
                 continue
 
             start_frame = int(round(float(start_frames[slot].item())))
-            end_frame = int(round(current_frame - float(offsets[slot].item())))
+            if self.endpoint_mode == "binary":
+                end_frame = current_frame
+            else:
+                end_frame = int(round(current_frame - float(offsets[slot].item())))
             end_frame = min(current_frame, max(start_frame, end_frame))
             score = math.sqrt(max(float(peak_scores[slot].item()) * float(end[slot].item()), 0.0))
             record = EventSetEmissionRecord(
                 stream_key=state.stream_key,
                 slot_id=slot,
-                label=int(labels[slot].item()),
+                label=int(peak_labels[slot].item()),
                 score=score,
                 start_frame=start_frame,
                 end_frame=end_frame,
@@ -287,6 +311,7 @@ class PersistentEventSetHead(nn.Module):
             refractory[slot] = self.refractory_steps
             start_frames[slot] = float("nan")
             peak_scores[slot] = 0.0
+            peak_labels[slot] = -1
 
         next_state = PersistentEventSetState(
             stream_key=state.stream_key,
@@ -297,6 +322,7 @@ class PersistentEventSetHead(nn.Module):
             refractory=refractory,
             start_frames=start_frames,
             peak_class_scores=peak_scores,
+            peak_class_labels=peak_labels,
             ledger=ledger,
             instance_to_slot=state.instance_to_slot,
             slot_to_instance=state.slot_to_instance,
