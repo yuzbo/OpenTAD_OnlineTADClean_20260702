@@ -1,5 +1,6 @@
 from copy import deepcopy
 import importlib.util
+import json
 from pathlib import Path
 
 from mmengine.config import Config
@@ -52,7 +53,7 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     assert cfg.profile_contract.b1_total_gpu_hour_cap == 2
     assert cfg.profile_contract.b2_total_gpu_hour_cap == 10
     assert cfg.optimizer.audit.fail_on_frozen is True
-    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v2"
+    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v3"
     assert cfg.launch_contract.required_reviewer_id == (
         "019f5abd-5104-79b3-882e-354ca796f2c1"
     )
@@ -61,6 +62,26 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
         "formal",
         "review",
         "profile",
+    }
+    assert dict(cfg.launch_contract.evidence_trust_model) == {
+        "schema_version": "full-petal-evidence-trust-model-v1",
+        "purpose": "scientific_reproducibility",
+        "trusted_computing_base": [
+            "launch_validator",
+            "train_engine",
+            "runtime_evidence_session",
+            "in_process_attestation_key_material",
+        ],
+        "guarantees": [
+            "fail_closed_lifecycle_wiring",
+            "provenance_binding",
+            "post_publication_tamper_evidence",
+        ],
+        "out_of_scope": [
+            "arbitrary_code_execution_inside_tcb",
+            "in_process_private_key_compromise",
+        ],
+        "key_compromise_action": "BLOCK_ROTATE_AND_RERUN",
     }
 
     assert cfg.experiment_contract.changed_axis == "post_birth_target_to_slot_loss_binding"
@@ -229,3 +250,15 @@ def test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo():
     assert '"audit_report_path": audit_report_path.name' in source
     assert "sign_b0_evidence(" in source
     assert "_sign_payload(" not in source
+
+
+def test_b0_manifest_hash_locks_evidence_trust_model_sources():
+    manifest = json.loads(
+        (ROOT / "tools" / "testing" / "full_petal_b0_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    locked_paths = {item["path"] for item in manifest["runner_sources"]}
+
+    assert "FULL_PETAL_TRUST_MODEL.md" in locked_paths
+    assert "configs/causaltad/thumos_pes_q2_base.py" in locked_paths

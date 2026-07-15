@@ -175,6 +175,26 @@ def _config(root, roots, *, formal=False):
             "allowed_cfg_overrides": ["work_dir"],
             "require_clean_checkout": True,
             "trusted_scontrol_path": str(trusted_scontrol.resolve()),
+            "evidence_trust_model": {
+                "schema_version": "full-petal-evidence-trust-model-v1",
+                "purpose": "scientific_reproducibility",
+                "trusted_computing_base": [
+                    "launch_validator",
+                    "train_engine",
+                    "runtime_evidence_session",
+                    "in_process_attestation_key_material",
+                ],
+                "guarantees": [
+                    "fail_closed_lifecycle_wiring",
+                    "provenance_binding",
+                    "post_publication_tamper_evidence",
+                ],
+                "out_of_scope": [
+                    "arbitrary_code_execution_inside_tcb",
+                    "in_process_private_key_compromise",
+                ],
+                "key_compromise_action": "BLOCK_ROTATE_AND_RERUN",
+            },
             "attestation_trust_roots": roots,
         },
         "work_dir": str(root / "work"),
@@ -183,6 +203,25 @@ def _config(root, roots, *, formal=False):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text("fixture = True\n", encoding="utf-8")
     return cfg, config_path
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("missing", "expanded_claim", "hidden_key_compromise"),
+)
+def test_launch_contract_rejects_changed_evidence_trust_boundary(tmp_path, mutation):
+    roots, _, _, _ = _keys(tmp_path)
+    cfg, _ = _config(tmp_path, roots)
+    trust_model = cfg["launch_contract"]["evidence_trust_model"]
+    if mutation == "missing":
+        cfg["launch_contract"].pop("evidence_trust_model")
+    elif mutation == "expanded_claim":
+        trust_model["guarantees"].append("hostile_process_remote_attestation")
+    else:
+        trust_model["out_of_scope"].remove("in_process_private_key_compromise")
+
+    with pytest.raises(FullPetalLaunchError, match="evidence_trust_model"):
+        launch_module._launch_contract(cfg)
 
 
 def _b0(root, private_key, *, commit):

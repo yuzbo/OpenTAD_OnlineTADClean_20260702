@@ -1,4 +1,9 @@
-"""One-launch, in-memory attestation for optimizer and profile evidence."""
+"""One-launch lifecycle evidence for scientific reproducibility.
+
+The launch validator, training engine, runtime session, and in-process signing
+key are the trusted computing base. The signatures bind provenance and expose
+post-publication modification; they are not hostile-process remote attestation.
+"""
 
 from __future__ import annotations
 
@@ -140,7 +145,7 @@ def _public_key_record(key, session_id):
 
 
 class RuntimeEvidenceSession:
-    """Ephemeral signer whose private key never leaves the live launch process."""
+    """TCB-resident ephemeral signer for one validated launch process."""
 
     __slots__ = (
         "__active_boundary",

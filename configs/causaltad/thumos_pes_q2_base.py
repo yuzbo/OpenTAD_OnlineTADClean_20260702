@@ -56,7 +56,7 @@ profile_contract = dict(
 )
 
 launch_contract = dict(
-    schema_version="full-petal-launch-contract-v2",
+    schema_version="full-petal-launch-contract-v3",
     required_reviewer_id="019f5abd-5104-79b3-882e-354ca796f2c1",
     required_review_scope=[
         "P0_evidence_chain",
@@ -68,6 +68,26 @@ launch_contract = dict(
     allowed_cfg_overrides=["work_dir"],
     require_clean_checkout=True,
     trusted_scontrol_path="/usr/bin/scontrol",
+    evidence_trust_model=dict(
+        schema_version="full-petal-evidence-trust-model-v1",
+        purpose="scientific_reproducibility",
+        trusted_computing_base=[
+            "launch_validator",
+            "train_engine",
+            "runtime_evidence_session",
+            "in_process_attestation_key_material",
+        ],
+        guarantees=[
+            "fail_closed_lifecycle_wiring",
+            "provenance_binding",
+            "post_publication_tamper_evidence",
+        ],
+        out_of_scope=[
+            "arbitrary_code_execution_inside_tcb",
+            "in_process_private_key_compromise",
+        ],
+        key_compromise_action="BLOCK_ROTATE_AND_RERUN",
+    ),
     attestation_trust_roots=dict(
         b0=dict(
             key_id="full-petal-b0-20260713",

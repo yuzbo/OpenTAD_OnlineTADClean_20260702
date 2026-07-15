@@ -19,6 +19,8 @@ from opentad.utils.full_petal_b0 import (  # noqa: E402
 
 
 RUNNER_SOURCES = (
+    "FULL_PETAL_TRUST_MODEL.md",
+    "configs/causaltad/thumos_pes_q2_base.py",
     "tools/run_full_petal_b0.py",
     "tools/testing/run_isolated_torch_pytest.py",
     "tools/build_full_petal_b0_manifest.py",

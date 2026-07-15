@@ -6,6 +6,14 @@
   ],
   "runner_sources": [
     {
+      "path": "FULL_PETAL_TRUST_MODEL.md",
+      "sha256": "b984fe3732e6fdbc35e8f5ad314872f55fac8f0ec949b63e0bbd8861920e73a7"
+    },
+    {
+      "path": "configs/causaltad/thumos_pes_q2_base.py",
+      "sha256": "4ff6e4f9a18dc017595fcdc860aa22b169e2ec622ac744ae8d7d6f626edc7d6f"
+    },
+    {
       "path": "tools/run_full_petal_b0.py",
       "sha256": "4693b04e055a8ee104d33b49519685c74389b172197448577d16c851e6c78318"
     },
@@ -15,7 +23,7 @@
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
-      "sha256": "34943783accaf18c55c4ba91c3e9f24b7a466d92357f169958d859edc46ab220"
+      "sha256": "713a664481209d2e300fcd943e9a82001034a2a25404cc9b7f199f0a98fb8b42"
     },
     {
       "path": "tools/build_full_petal_launch_ticket.py",
@@ -71,7 +79,7 @@
     },
     {
       "path": "opentad/utils/full_petal_runtime_attestation.py",
-      "sha256": "06dc250aeb5f3511e9da85c60961fded54421d00639c0abefa57f202cd2ab41e"
+      "sha256": "5e7020a183206841cbfc6ec8fcb479727d8a87fec611865a935e7062cb44aa39"
     },
     {
       "path": "opentad/utils/evidence_bundle.py",
@@ -79,7 +87,7 @@
     },
     {
       "path": "opentad/utils/full_petal_launch.py",
-      "sha256": "d1d25c0366a230b935ee1bcf2adefece0c1804d1e82b86fdce2d1c4bded56c0c"
+      "sha256": "9e8115818003904aa05ab6d79a0147e51faba12be661ca66ddc04a36e7190d94"
     },
     {
       "path": "opentad/utils/full_petal_training_evidence.py",
@@ -369,7 +377,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_contracts.py",
-          "sha256": "4e41902a58f3680599ea8c3284af64c0ada28cf96c1341334b4464c90c2b348c",
+          "sha256": "362a17e24b9d99f0ac0cacfda725c049cdfe2b876ca4e0512ede523abf637128",
           "test_functions": [
             "test_q2_bridge_configs_change_only_post_birth_loss_binding",
             "test_q2_bridge_freezes_scientific_and_cost_contracts",
@@ -382,13 +390,15 @@
             "test_ticket_builder_and_slurm_launcher_use_the_locked_gate",
             "test_ticket_builder_requires_external_non_overwritable_output",
             "test_isolated_torch_runner_bypasses_only_package_level_registration",
-            "test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo"
+            "test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo",
+            "test_b0_manifest_hash_locks_evidence_trust_model_sources"
           ]
         },
         {
           "path": "tests/test_full_petal_launch_gate.py",
-          "sha256": "611abf8d120b3fbb99e448212912d84714830b01ae882d3f624ddae8533c40de",
+          "sha256": "30a2879802db423cd5b2e44e52afb8c4c1ecde038520994af3d32f12956e13f9",
           "test_functions": [
+            "test_launch_contract_rejects_changed_evidence_trust_boundary",
             "test_non_full_petal_config_does_not_require_a_ticket",
             "test_production_has_no_dictionary_to_launch_receipt_signer",
             "test_manual_or_mutated_launch_authorization_is_rejected",

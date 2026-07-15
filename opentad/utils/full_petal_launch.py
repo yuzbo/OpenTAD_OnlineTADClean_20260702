@@ -65,7 +65,8 @@ from .full_petal_runtime_attestation import (
 )
 
 
-LAUNCH_CONTRACT_SCHEMA = "full-petal-launch-contract-v2"
+LAUNCH_CONTRACT_SCHEMA = "full-petal-launch-contract-v3"
+EVIDENCE_TRUST_MODEL_SCHEMA = "full-petal-evidence-trust-model-v1"
 LAUNCH_TICKET_SCHEMA = "full-petal-launch-ticket-v2"
 REVIEW_SCHEMA = "full-petal-independent-review-v2"
 PROFILE_SCHEMA = "full-petal-fixed-step-profile-v3"
@@ -85,6 +86,21 @@ _SCIENTIFIC_DIGEST_EXCLUSIONS = {
 }
 _RESOLVED_DIGEST_EXCLUSIONS = {"work_dir"}
 _TRUST_ROLES = {"b0", "review", "profile", "formal"}
+_EVIDENCE_TRUSTED_COMPUTING_BASE = (
+    "launch_validator",
+    "train_engine",
+    "runtime_evidence_session",
+    "in_process_attestation_key_material",
+)
+_EVIDENCE_GUARANTEES = (
+    "fail_closed_lifecycle_wiring",
+    "provenance_binding",
+    "post_publication_tamper_evidence",
+)
+_EVIDENCE_OUT_OF_SCOPE = (
+    "arbitrary_code_execution_inside_tcb",
+    "in_process_private_key_compromise",
+)
 
 
 class FullPetalLaunchError(RuntimeError):
@@ -1021,6 +1037,7 @@ def _launch_contract(cfg):
         "require_clean_checkout",
         "trusted_scontrol_path",
         "attestation_trust_roots",
+        "evidence_trust_model",
     }
     _require_exact_fields(contract, required, "launch_contract")
     if contract["schema_version"] != LAUNCH_CONTRACT_SCHEMA:
@@ -1047,8 +1064,40 @@ def _launch_contract(cfg):
         raise FullPetalLaunchError(
             "launch_contract trusted_scontrol_path must be absolute"
         )
+    _evidence_trust_model(contract)
     _trust_roots(contract)
     return contract
+
+
+def _evidence_trust_model(contract):
+    model = contract["evidence_trust_model"]
+    if not isinstance(model, Mapping):
+        raise FullPetalLaunchError(
+            "launch_contract requires an evidence_trust_model mapping"
+        )
+    required = {
+        "schema_version",
+        "purpose",
+        "trusted_computing_base",
+        "guarantees",
+        "out_of_scope",
+        "key_compromise_action",
+    }
+    _require_exact_fields(model, required, "evidence_trust_model")
+    expected = {
+        "schema_version": EVIDENCE_TRUST_MODEL_SCHEMA,
+        "purpose": "scientific_reproducibility",
+        "trusted_computing_base": list(_EVIDENCE_TRUSTED_COMPUTING_BASE),
+        "guarantees": list(_EVIDENCE_GUARANTEES),
+        "out_of_scope": list(_EVIDENCE_OUT_OF_SCOPE),
+        "key_compromise_action": "BLOCK_ROTATE_AND_RERUN",
+    }
+    if dict(model) != expected:
+        raise FullPetalLaunchError(
+            "evidence_trust_model must match the locked scientific-reproducibility "
+            "trust boundary"
+        )
+    return model
 
 
 def _profile_contract(cfg):
