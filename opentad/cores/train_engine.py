@@ -330,6 +330,10 @@ def train_one_epoch(
         raise RuntimeError(
             "visual parameter evidence requires the authenticated optimizer event recorder"
         )
+    if optimizer_event_recorder is not None and transaction is None:
+        raise RuntimeError(
+            "authenticated optimizer evidence requires transactional online state"
+        )
 
     for iter_idx, raw_data_dict in enumerate(train_loader):
         control = _transaction_control(raw_data_dict) if transaction is not None else None
@@ -381,11 +385,9 @@ def train_one_epoch(
             if fixed_step_profiler is not None:
                 fixed_step_profiler.record_skipped_optimizer_event()
             if optimizer_event_recorder is not None:
-                optimizer_event_recorder.record(
-                    epoch=curr_epoch,
-                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
-                    input_tokens=episode_input_tokens,
-                    skipped=True,
+                raise RuntimeError(
+                    "authenticated training cannot continue after a skipped "
+                    "optimizer boundary"
                 )
             episode_input_tokens = 0
             skip_until_boundary = not boundary
@@ -441,16 +443,15 @@ def train_one_epoch(
             if fixed_step_profiler is not None:
                 fixed_step_profiler.record_skipped_optimizer_event()
             if optimizer_event_recorder is not None:
-                optimizer_event_recorder.record(
-                    epoch=curr_epoch,
-                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
-                    input_tokens=episode_input_tokens,
-                    skipped=True,
+                raise RuntimeError(
+                    "authenticated training cannot continue after a skipped "
+                    "optimizer boundary"
                 )
             episode_input_tokens = 0
             continue
 
         mutation_snapshot = None
+        boundary_proof = None
         try:
             if transaction is not None:
                 mutation_snapshot = _capture_training_mutation_snapshot(
@@ -463,6 +464,8 @@ def train_one_epoch(
                     visual_parameter_event_recorder=visual_parameter_event_recorder,
                     transaction=transaction,
                 )
+            if optimizer_event_recorder is not None:
+                boundary_proof = optimizer_event_recorder.begin_optimizer_boundary()
             if scaler is not None:
                 scaler.unscale_(optimizer)
             _normalize_accumulated_gradients(model, episode_weight)
@@ -478,12 +481,24 @@ def train_one_epoch(
                 )
             if visual_parameter_event_recorder is not None:
                 visual_parameter_event_recorder.capture_before(model, optimizer)
-            if scaler is not None:
+            if optimizer_event_recorder is not None:
+                optimizer_event_recorder.execute_optimizer_step(
+                    boundary_proof, optimizer, scaler=scaler
+                )
+            elif scaler is not None:
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 optimizer.step()
             scheduler.step()
+            if model_ema is not None:
+                model_ema.update(model)
+            if optimizer_event_recorder is not None:
+                optimizer_event_recorder.commit_online_transaction(
+                    boundary_proof, transaction
+                )
+            elif transaction is not None:
+                transaction.commit_online_update()
             optimizer_event = None
             if optimizer_event_recorder is not None:
                 optimizer_event = optimizer_event_recorder.record(
@@ -491,6 +506,7 @@ def train_one_epoch(
                     episode_id=_episode_identity(control, curr_epoch, iter_idx),
                     input_tokens=episode_input_tokens,
                     skipped=False,
+                    boundary_proof=boundary_proof,
                 )
             if visual_parameter_event_recorder is not None:
                 if not isinstance(optimizer_event, Mapping):
@@ -500,11 +516,13 @@ def train_one_epoch(
                 visual_parameter_event_recorder.record_after(
                     optimizer_event["event_id"], model
                 )
-            if model_ema is not None:
-                model_ema.update(model)
-            if transaction is not None:
-                transaction.commit_online_update()
         except Exception:
+            boundary_abort_error = None
+            if boundary_proof is not None and optimizer_event_recorder is not None:
+                try:
+                    optimizer_event_recorder.abort_optimizer_boundary(boundary_proof)
+                except Exception as exc:
+                    boundary_abort_error = exc
             if mutation_snapshot is not None:
                 _rollback_failed_training_mutation(
                     mutation_snapshot,
@@ -520,6 +538,10 @@ def train_one_epoch(
             else:
                 _rollback_online_transaction(transaction)
                 optimizer.zero_grad(set_to_none=True)
+            if boundary_abort_error is not None:
+                raise RuntimeError(
+                    "failed to abort optimizer evidence boundary"
+                ) from boundary_abort_error
             raise
 
         successful_optimizer_events += 1

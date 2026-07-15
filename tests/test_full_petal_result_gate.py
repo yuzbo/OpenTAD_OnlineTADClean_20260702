@@ -11,7 +11,10 @@ import torch
 from mmengine import Config
 
 from opentad.utils.full_petal_attestation import generate_private_key, public_key_base64
-from tests.full_petal_attestation_fixture import attest_fixture as _sign_payload
+from tests.full_petal_attestation_fixture import (
+    attest_fixture as _sign_payload,
+    committed_optimizer_envelope,
+)
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
@@ -41,10 +44,12 @@ from opentad.utils.full_petal_training_evidence import (
 )
 from opentad.utils.full_petal_launch import resolved_config_sha256
 from opentad.utils.full_petal_runtime_attestation import issue_runtime_session
+from opentad.utils.full_petal_fineaction_executor import (
+    run_fineaction_loader_evidence,
+    run_fineaction_preprocessing_evidence,
+)
 from opentad.utils.full_petal_role_signing import (
     sign_fineaction_license_authorization,
-    sign_fineaction_loader_run,
-    sign_fineaction_preprocessing_run,
 )
 from opentad.utils.immutable_event_ledger import (
     ImmutableEventLedger,
@@ -333,69 +338,34 @@ def _fineaction_sources(
             key_id="fineaction-license-test",
         ),
     )
-    preprocessing_source = root / "fineaction-preprocess.py"
-    preprocessing_source.write_text("print('causal preprocessing')\n", encoding="utf-8")
-    preprocessing_junit = root / "fineaction-preprocess.xml"
-    preprocessing_junit.write_text(
-        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
-        '<testcase classname="fineaction.preprocessing" name="test_causal" />'
-        "</testsuite></testsuites>\n",
+    preprocessing_source = root / "fineaction-preprocess-test.py"
+    preprocessing_source.write_text(
+        "def test_causal_preprocessing():\n    assert True\n",
         encoding="utf-8",
     )
-    preprocessing_log = root / "fineaction-preprocess.log"
-    preprocessing_log.write_text(
-        "FINEACTION_CAUSAL_PREPROCESS_PASS\n", encoding="utf-8"
+    preprocessing = run_fineaction_preprocessing_evidence(
+        preprocessing_source,
+        root / "preprocessing-evidence",
+        annotation_sha256=sha256_file(annotation),
+        media_inventory_sha256=sha256_file(inventory),
+        timestamp_convention="zero_based_source_frame",
+        frame_stride=2,
+        private_key_path=execution_private,
+        key_id="fineaction-execution-test",
     )
-    preprocessing = _write_json(
-        root / "preprocessing.json",
-        sign_fineaction_preprocessing_run(
-            {
-                "schema_version": "full-petal-fineaction-preprocessing-run-v1",
-                "dataset": "FineAction",
-                "status": "PASS",
-                "command": ["python", preprocessing_source.name],
-                "source": _reference(preprocessing_source, root),
-                "junit": _reference(preprocessing_junit, root),
-                "log": _reference(preprocessing_log, root),
-                "future_frames_allowed": False,
-                "timestamp_convention": "zero_based_source_frame",
-                "frame_stride": 2,
-                "annotation_sha256": sha256_file(annotation),
-                "media_inventory_sha256": sha256_file(inventory),
-            },
-            private_key_path=execution_private,
-            key_id="fineaction-execution-test",
-        ),
-    )
-    loader_source = root / "fineaction-loader-smoke.py"
-    loader_source.write_text("print('loader smoke')\n", encoding="utf-8")
-    loader_junit = root / "fineaction-loader-smoke.xml"
-    loader_junit.write_text(
-        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
-        '<testcase classname="fineaction.loader" name="test_loader" />'
-        "</testsuite></testsuites>\n",
+    loader_source = root / "fineaction-loader-smoke-test.py"
+    loader_source.write_text(
+        "def test_minimal_loader_smoke():\n    assert True\n",
         encoding="utf-8",
     )
-    loader_log = root / "fineaction-loader-smoke.log"
-    loader_log.write_text("FINEACTION_LOADER_SMOKE_PASS\n", encoding="utf-8")
-    smoke = _write_json(
-        root / "loader-smoke.json",
-        sign_fineaction_loader_run(
-            {
-                "schema_version": "full-petal-fineaction-loader-run-v1",
-                "dataset": "FineAction",
-                "status": "PASS",
-                "command": ["python", loader_source.name],
-                "source": _reference(loader_source, root),
-                "junit": _reference(loader_junit, root),
-                "log": _reference(loader_log, root),
-                "annotation_sha256": sha256_file(annotation),
-                "media_inventory_sha256": sha256_file(inventory),
-                "preprocessing_sha256": sha256_file(preprocessing),
-            },
-            private_key_path=execution_private,
-            key_id="fineaction-execution-test",
-        ),
+    smoke = run_fineaction_loader_evidence(
+        loader_source,
+        root / "loader-evidence",
+        annotation_sha256=sha256_file(annotation),
+        media_inventory_sha256=sha256_file(inventory),
+        preprocessing_sha256=sha256_file(preprocessing),
+        private_key_path=execution_private,
+        key_id="fineaction-execution-test",
     )
     return {
         "annotation": annotation,
@@ -535,9 +505,15 @@ def _training_event(seed, training_identity=None):
 
 
 def _signed_runtime_event(runtime_session, event_kind, payload):
+    if event_kind == "optimizer-event":
+        envelope = committed_optimizer_envelope(runtime_session, payload)
+    elif event_kind == "visual-parameter-event":
+        envelope = runtime_session.sign_visual_parameter_event(payload)
+    else:
+        raise AssertionError(f"unsupported runtime fixture event kind: {event_kind}")
     return {
         **payload,
-        **runtime_session.sign_event(event_kind, payload),
+        **envelope,
     }
 
 

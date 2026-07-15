@@ -29,6 +29,7 @@ RUNTIME_SESSION_SCHEMA = "full-petal-runtime-session-v1"
 RUNTIME_EVENT_SCHEMA = "full-petal-runtime-event-v1"
 RUNTIME_PROFILE_ROLE = "fixed-step-profile"
 RUNTIME_GENESIS_HASH = "0" * 64
+RUNTIME_STATE_DOMAIN = b"full-petal-runtime-state-v1\n"
 RUNTIME_EVENT_FIELDS = {
     "runtime_session_id",
     "runtime_sequence",
@@ -40,6 +41,16 @@ RUNTIME_EVENT_FIELDS = {
 
 class RuntimeAttestationError(ValueError):
     pass
+
+
+class _OptimizerBoundaryProof:
+    __slots__ = ("session_id", "nonce")
+
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+        raise RuntimeAttestationError(
+            "optimizer boundary proofs are issued by the runtime session"
+        )
 
 
 def _canonical_bytes(value):
@@ -87,17 +98,30 @@ class RuntimeEvidenceSession:
         self.__sequence = 0
         self.__head = RUNTIME_GENESIS_HASH
         self.__profile_issued = False
+        self.__active_boundary = None
+        self.__visual_optimizer_event_id = None
 
     @property
     def binding(self):
         return copy.deepcopy(_public_key_record(self.__key, self.__session_id))
 
     def state_dict(self):
-        return {
+        if self.__active_boundary is not None:
+            raise RuntimeAttestationError(
+                "cannot snapshot an active optimizer boundary"
+            )
+        body = {
             "session_id": self.__session_id,
             "sequence": self.__sequence,
             "head": self.__head,
             "profile_issued": self.__profile_issued,
+            "visual_optimizer_event_id": self.__visual_optimizer_event_id,
+        }
+        return {
+            **body,
+            "state_signature": base64.b64encode(
+                self.__key.sign(RUNTIME_STATE_DOMAIN + _canonical_bytes(body))
+            ).decode("ascii"),
         }
 
     def load_state_dict(self, state):
@@ -106,8 +130,21 @@ class RuntimeEvidenceSession:
             "sequence",
             "head",
             "profile_issued",
+            "visual_optimizer_event_id",
+            "state_signature",
         }:
             raise RuntimeAttestationError("runtime session state fields differ")
+        body = dict(state)
+        encoded_signature = body.pop("state_signature")
+        try:
+            signature = base64.b64decode(encoded_signature, validate=True)
+            self.__key.public_key().verify(
+                signature, RUNTIME_STATE_DOMAIN + _canonical_bytes(body)
+            )
+        except (ValueError, TypeError, InvalidSignature) as exc:
+            raise RuntimeAttestationError(
+                "runtime session state signature is invalid"
+            ) from exc
         if state["session_id"] != self.__session_id:
             raise RuntimeAttestationError("runtime session identity cannot change")
         sequence = state["sequence"]
@@ -122,13 +159,70 @@ class RuntimeEvidenceSession:
             raise RuntimeAttestationError("runtime session head is invalid")
         if not isinstance(state["profile_issued"], bool):
             raise RuntimeAttestationError("runtime profile state is invalid")
+        visual_optimizer_event_id = state["visual_optimizer_event_id"]
+        if visual_optimizer_event_id is not None and (
+            not isinstance(visual_optimizer_event_id, str)
+            or not visual_optimizer_event_id.strip()
+        ):
+            raise RuntimeAttestationError(
+                "runtime visual optimizer event identity is invalid"
+            )
         self.__sequence = sequence
         self.__head = head
         self.__profile_issued = state["profile_issued"]
+        self.__active_boundary = None
+        self.__visual_optimizer_event_id = visual_optimizer_event_id
 
-    def sign_event(self, event_kind, payload):
-        if event_kind not in {"optimizer-event", "visual-parameter-event"}:
-            raise RuntimeAttestationError("runtime event kind is unsupported")
+    def begin_optimizer_boundary(self):
+        if self.__active_boundary is not None:
+            raise RuntimeAttestationError("an optimizer boundary is already active")
+        proof = object.__new__(_OptimizerBoundaryProof)
+        proof.session_id = self.__session_id
+        proof.nonce = secrets.token_hex(32)
+        self.__active_boundary = {
+            "proof": proof,
+            "optimizer_step_completed": False,
+            "transaction_commit_completed": False,
+        }
+        self.__visual_optimizer_event_id = None
+        return proof
+
+    def _boundary(self, proof):
+        active = self.__active_boundary
+        if (
+            active is None
+            or not isinstance(proof, _OptimizerBoundaryProof)
+            or active["proof"] is not proof
+            or proof.session_id != self.__session_id
+        ):
+            raise RuntimeAttestationError(
+                "optimizer boundary proof is not active for this session"
+            )
+        return active
+
+    def _confirm_optimizer_step_completed(self, proof):
+        active = self._boundary(proof)
+        if active["optimizer_step_completed"]:
+            raise RuntimeAttestationError("optimizer step was already confirmed")
+        active["optimizer_step_completed"] = True
+
+    def _confirm_transaction_commit_completed(self, proof):
+        active = self._boundary(proof)
+        if not active["optimizer_step_completed"]:
+            raise RuntimeAttestationError(
+                "transaction commit cannot precede optimizer step"
+            )
+        if active["transaction_commit_completed"]:
+            raise RuntimeAttestationError("transaction commit was already confirmed")
+        active["transaction_commit_completed"] = True
+
+    def abort_optimizer_boundary(self, proof):
+        if self.__active_boundary is None:
+            return
+        self._boundary(proof)
+        self.__active_boundary = None
+
+    def _sign_runtime_event(self, event_kind, payload):
         if not isinstance(payload, Mapping) or set(payload) & RUNTIME_EVENT_FIELDS:
             raise RuntimeAttestationError("runtime event payload is invalid")
         unsigned = {
@@ -152,9 +246,46 @@ class RuntimeEvidenceSession:
         self.__head = event_hash
         return envelope
 
+    def sign_committed_optimizer_event(self, payload, proof):
+        active = self._boundary(proof)
+        if not active["optimizer_step_completed"]:
+            raise RuntimeAttestationError(
+                "optimizer event lacks a completed optimizer step"
+            )
+        if not active["transaction_commit_completed"]:
+            raise RuntimeAttestationError(
+                "optimizer event lacks a committed online transaction"
+            )
+        if not isinstance(payload, Mapping):
+            raise RuntimeAttestationError("optimizer event payload is invalid")
+        event_id = payload.get("event_id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            raise RuntimeAttestationError("optimizer event identity is invalid")
+        envelope = self._sign_runtime_event("optimizer-event", payload)
+        self.__active_boundary = None
+        self.__visual_optimizer_event_id = event_id
+        return envelope
+
+    def sign_visual_parameter_event(self, payload):
+        if self.__active_boundary is not None:
+            raise RuntimeAttestationError(
+                "visual evidence cannot be issued during an active optimizer boundary"
+            )
+        if not isinstance(payload, Mapping):
+            raise RuntimeAttestationError("visual event payload is invalid")
+        if payload.get("optimizer_event_id") != self.__visual_optimizer_event_id:
+            raise RuntimeAttestationError(
+                "visual event is not bound to the committed optimizer event"
+            )
+        return self._sign_runtime_event("visual-parameter-event", payload)
+
     def sign_profile(self, payload):
         if self.__profile_issued:
             raise RuntimeAttestationError("runtime session already issued a profile")
+        if self.__active_boundary is not None:
+            raise RuntimeAttestationError(
+                "runtime profile cannot be issued during an optimizer boundary"
+            )
         if not isinstance(payload, Mapping) or ATTESTATION_FIELD in payload:
             raise RuntimeAttestationError("runtime profile payload is invalid")
         body = copy.deepcopy(dict(payload))

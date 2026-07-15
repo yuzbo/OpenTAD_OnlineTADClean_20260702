@@ -8,6 +8,7 @@ import opentad.utils.full_petal_launch as launch_module
 import opentad.utils.full_petal_identity as identity_module
 import opentad.utils.full_petal_role_signing as role_signing_module
 import opentad.utils.full_petal_b0 as b0_module
+from tests.full_petal_attestation_fixture import committed_optimizer_envelope
 from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_role_signing import (
     sign_b0_evidence,
@@ -95,7 +96,7 @@ def _profile_trace(root, runtime_session):
         [
             (lambda payload: {
                 **payload,
-                **runtime_session.sign_event("optimizer-event", payload),
+                **committed_optimizer_envelope(runtime_session, payload),
             })(
                 {
                 "event_id": f"optimizer-event-{index:08d}",

@@ -15,7 +15,7 @@
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
-      "sha256": "ad6b4e163811d445f76db1a6941e9944db44e6161c7a8cd9a32f94730e0be682"
+      "sha256": "34943783accaf18c55c4ba91c3e9f24b7a466d92357f169958d859edc46ab220"
     },
     {
       "path": "tools/build_full_petal_launch_ticket.py",
@@ -34,6 +34,10 @@
       "sha256": "d925c53a3ed182fa0b05cbafa2f0aab0ff6a55563fdc7cbd99fd93ad1b3fc65a"
     },
     {
+      "path": "tools/run_full_petal_fineaction_evidence.py",
+      "sha256": "3540e97662ebebeed1d631de70fb351fbf53e2fafaaf2806bca4e25c959b5ebe"
+    },
+    {
       "path": "tools/train.py",
       "sha256": "cb8566a3c5ab1c1f7b389f7138641594e4a0bec45424e2140dcc5931fbc86572"
     },
@@ -47,7 +51,7 @@
     },
     {
       "path": "tests/full_petal_attestation_fixture.py",
-      "sha256": "92f7585301215e173dc0fb182493cb9393a2c5c1bcef2b1c632a45c245e85b8a"
+      "sha256": "e064c0b1d99a64fcbabbd0047fd6f321a3fd1231bf4e7306ef36ca36b41e387b"
     },
     {
       "path": "opentad/utils/full_petal_b0.py",
@@ -59,11 +63,15 @@
     },
     {
       "path": "opentad/utils/full_petal_role_signing.py",
-      "sha256": "320bd58803685b6497d2f12d5e7a2e4252754d230649ecc0a562c480e7a9a36f"
+      "sha256": "cda2716b49ed2d73840b32aa400cda7e717d8323a3c1b32d24e0f3bbfb80a83f"
+    },
+    {
+      "path": "opentad/utils/full_petal_fineaction_executor.py",
+      "sha256": "edbefd93a9225e03884c32f224dd21806ad3117508127abe82807f135cf8ce7e"
     },
     {
       "path": "opentad/utils/full_petal_runtime_attestation.py",
-      "sha256": "e9ed44a38dbc7a87cb11e69b8a645ddddb64b64a6f51d160517f5cfc715b8132"
+      "sha256": "88c7cc29b8f59bf2cde4f4b7d286b6871f66dcc1f5fe1185b758768ed74b7aa4"
     },
     {
       "path": "opentad/utils/evidence_bundle.py",
@@ -75,11 +83,11 @@
     },
     {
       "path": "opentad/utils/full_petal_training_evidence.py",
-      "sha256": "8ec0b45c6f34803d4d62889a4905610e10d99f6a2f61cb768dfbd5ba84c68113"
+      "sha256": "ac6b23eedae8e229d4d1cd69040005df4a491aa4b661b740d24a89cea77d349a"
     },
     {
       "path": "opentad/utils/full_petal_data_contract.py",
-      "sha256": "38fb01abce0ce3a06fb4d6ddc0aa37c207eb11e5c215398a5ab666b695355e5c"
+      "sha256": "5451aba2dd493c5a1770d9711efeb40d88f8438af56423096a4f381194fa1469"
     },
     {
       "path": "opentad/utils/full_petal_identity.py",
@@ -103,11 +111,11 @@
     },
     {
       "path": "opentad/cores/train_engine.py",
-      "sha256": "097a6b09e24f7828675d7c4940c357119d3cb44848d1bc7809c5fd1720f2e80e"
+      "sha256": "9fa7612d2afb1f73e013f8d041b59bef570e919b174f64e47a8cb5710548cff2"
     },
     {
       "path": "tools/check_full_petal_results.py",
-      "sha256": "d90a10a670646b9addc3b0f9ca332234081443c905ef20cd3a0f960023c5b5d9"
+      "sha256": "36254a03cf60867073744ea84d02795f88991eb19028e77c8a14501c54222491"
     }
   ],
   "schema_version": "full-petal-b0-manifest-v1",
@@ -299,7 +307,7 @@
         },
         {
           "path": "tests/test_full_petal_data_contract.py",
-          "sha256": "b0d3495f2ae5dca1f50ad1488cc7c7c58ac6b7bab20af580a4dca9b97cfd6c50",
+          "sha256": "e55afc4855b8d39c8c7c31ec29993017226e3985a913756e3020cc63a08a325d",
           "test_functions": [
             "test_chunk_boundary_uses_exact_decimal_arithmetic",
             "test_strict_thumos_annotation_subsets_lock_canonical_160_40",
@@ -326,6 +334,9 @@
             "test_fineaction_rejects_legacy_self_authored_license_pass",
             "test_fineaction_rejects_tampered_execution_leaf",
             "test_fineaction_rejects_tampered_execution_attestation",
+            "test_fineaction_locked_executor_rejects_unrelated_pass_junit_and_log",
+            "test_fineaction_locked_executor_never_signs_a_failed_run",
+            "test_production_has_no_direct_fineaction_execution_signer",
             "test_cli_builds_deterministic_thumos_json_from_explicit_splits",
             "test_cli_loads_and_saves_reporting_hardware_and_fineaction_json"
           ]
@@ -376,7 +387,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_gate.py",
-          "sha256": "77ad9ff8d00ef90a95ce3160386524bf8ad5451070415e9f8425a4ec83171891",
+          "sha256": "611abf8d120b3fbb99e448212912d84714830b01ae882d3f624ddae8533c40de",
           "test_functions": [
             "test_non_full_petal_config_does_not_require_a_ticket",
             "test_production_has_no_dictionary_to_launch_receipt_signer",
@@ -436,7 +447,7 @@
         },
         {
           "path": "tests/test_full_petal_result_gate.py",
-          "sha256": "a3aab0a82c235d16e1ffc96c675dd72a107d8b17a1fe0decb2338151076496d0",
+          "sha256": "7d0b6df480a7b53a4ba38c7507db7faafec599c64499d89e19f2a5d061f53e05",
           "test_functions": [
             "test_signed_replay_can_pass_independent_claim_and_project_gates",
             "test_c1_and_c2_remain_independent",
@@ -478,10 +489,13 @@
         },
         {
           "path": "tests/test_full_petal_training_evidence.py",
-          "sha256": "a423e3f043d22f0a063a3008efb9a52ca951db515ddae6850e450e4f932c1d26",
+          "sha256": "434078704c8de32ac493efafd7041b4f7dd9630080b2cbfea172fd14c98f29ab",
           "test_functions": [
             "test_training_cost_is_derived_from_committed_optimizer_events",
             "test_optimizer_event_recorder_commits_exact_runtime_events",
+            "test_optimizer_event_requires_step_and_transaction_commit",
+            "test_optimizer_event_rejects_a_scaler_skipped_optimizer_step",
+            "test_runtime_session_state_rejects_unsigned_mutation",
             "test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence",
             "test_training_tail_commitment_rejects_valid_prefix_truncation",
             "test_self_consistent_trace_from_uncertified_runtime_session_is_rejected",
@@ -493,7 +507,7 @@
         },
         {
           "path": "tests/test_full_petal_training_transaction.py",
-          "sha256": "2d2cda68052bfcb934be41ab6b030d4ebfbacac342308aefc2ba850b79b363c4",
+          "sha256": "891ff57d54acac40d07358733b98033208bfe425741bce2413d2ee3ae150a6bf",
           "test_functions": [
             "test_stream_key_uses_structured_identity_without_delimiter_collisions",
             "test_training_forward_stages_state_across_chunks_until_atomic_commit",
@@ -505,7 +519,7 @@
             "test_train_engine_steps_once_per_complete_episode",
             "test_train_engine_records_one_successful_event_per_complete_episode",
             "test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step",
-            "test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event",
+            "test_nonfinite_episode_blocks_authenticated_optimizer_evidence",
             "test_commit_failure_restores_all_parameter_optimizer_scheduler_and_scaler_mutation",
             "test_every_post_gradient_failure_restores_the_complete_training_transaction",
             "test_training_produces_event_bound_visual_parameter_evidence",

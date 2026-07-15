@@ -222,86 +222,10 @@ def sign_fineaction_license_authorization(payload, *, private_key_path, key_id):
     return body
 
 
-def sign_fineaction_preprocessing_run(payload, *, private_key_path, key_id):
-    body = _validated_body(
-        payload,
-        fields={
-            "schema_version",
-            "dataset",
-            "status",
-            "command",
-            "source",
-            "junit",
-            "log",
-            "annotation_sha256",
-            "media_inventory_sha256",
-            "future_frames_allowed",
-            "timestamp_convention",
-            "frame_stride",
-        },
-        schema="full-petal-fineaction-preprocessing-run-v1",
-    )
-    if (
-        body["dataset"] != "FineAction"
-        or body["status"] != "PASS"
-        or body["future_frames_allowed"] is not False
-    ):
-        raise AttestationError(
-            "FineAction preprocessing signer requires a causal PASS run"
-        )
-    key_id = _validated_key_id(key_id)
-    key = _load_ed25519_key(private_key_path)
-    role = "fineaction-causal-preprocessing-run"
-    body[ATTESTATION_FIELD] = {
-        "schema_version": ATTESTATION_SCHEMA,
-        "algorithm": ATTESTATION_ALGORITHM,
-        "role": role,
-        "key_id": key_id,
-        "public_key_sha256": _public_digest(key),
-        "signature": base64.b64encode(key.sign(_message(payload, role))).decode("ascii"),
-    }
-    return body
-
-
-def sign_fineaction_loader_run(payload, *, private_key_path, key_id):
-    body = _validated_body(
-        payload,
-        fields={
-            "schema_version",
-            "dataset",
-            "status",
-            "command",
-            "source",
-            "junit",
-            "log",
-            "annotation_sha256",
-            "media_inventory_sha256",
-            "preprocessing_sha256",
-        },
-        schema="full-petal-fineaction-loader-run-v1",
-    )
-    if body["dataset"] != "FineAction" or body["status"] != "PASS":
-        raise AttestationError("FineAction loader signer requires a PASS run")
-    key_id = _validated_key_id(key_id)
-    key = _load_ed25519_key(private_key_path)
-    role = "fineaction-loader-smoke-run"
-    body[ATTESTATION_FIELD] = {
-        "schema_version": ATTESTATION_SCHEMA,
-        "algorithm": ATTESTATION_ALGORITHM,
-        "role": role,
-        "key_id": key_id,
-        "public_key_sha256": _public_digest(key),
-        "signature": base64.b64encode(key.sign(_message(payload, role))).decode("ascii"),
-    }
-    return body
-
-
 __all__ = [
     "sign_b0_evidence",
     "sign_fixed_step_profile",
     "sign_fineaction_license_authorization",
-    "sign_fineaction_loader_run",
-    "sign_fineaction_preprocessing_run",
     "sign_formal_run",
     "sign_independent_review",
 ]

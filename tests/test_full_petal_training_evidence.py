@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import pytest
+import torch
 
 import opentad.utils.evidence_bundle as evidence_bundle_module
 from opentad.utils.evidence_bundle import (
@@ -11,8 +12,12 @@ from opentad.utils.evidence_bundle import (
     resolve_bundle_path,
 )
 from opentad.utils.full_petal_attestation import generate_private_key
+from tests.full_petal_attestation_fixture import committed_optimizer_envelope
 from opentad.utils.full_petal_role_signing import sign_formal_run
-from opentad.utils.full_petal_runtime_attestation import issue_runtime_session
+from opentad.utils.full_petal_runtime_attestation import (
+    RuntimeAttestationError,
+    issue_runtime_session,
+)
 from opentad.utils.full_petal_training_evidence import (
     OptimizerEventTraceRecorder,
     TrainingEvidenceError,
@@ -41,8 +46,32 @@ def _event(index, runtime_session, *, elapsed=None):
     }
     return {
         **payload,
-        **runtime_session.sign_event("optimizer-event", payload),
+        **committed_optimizer_envelope(runtime_session, payload),
     }
+
+
+class _CommittedTransaction:
+    def __init__(self):
+        self.pending = True
+        self.commits = 0
+
+    def has_pending_online_update(self):
+        return self.pending
+
+    def commit_online_update(self):
+        assert self.pending
+        self.pending = False
+        self.commits += 1
+
+
+def _record_committed(recorder, **kwargs):
+    proof = recorder.begin_optimizer_boundary()
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    parameter.grad = torch.tensor(1.0)
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    recorder.execute_optimizer_step(proof, optimizer)
+    recorder.commit_online_transaction(proof, _CommittedTransaction())
+    return recorder.record(boundary_proof=proof, skipped=False, **kwargs)
 
 
 def test_training_cost_is_derived_from_committed_optimizer_events(tmp_path):
@@ -84,17 +113,17 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
         peak_memory_reader=lambda: next(peak_memory),
     )
 
-    first = recorder.record(
+    first = _record_committed(
+        recorder,
         epoch=0,
         episode_id="video-a",
         input_tokens=128,
-        skipped=False,
     )
-    second = recorder.record(
+    second = _record_committed(
+        recorder,
         epoch=0,
         episode_id="video-b",
         input_tokens=32,
-        skipped=True,
     )
 
     assert first["event_id"] == "optimizer-event-00000000"
@@ -103,7 +132,7 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
     assert first["peak_memory_bytes"] == 2048
     assert second["event_id"] == "optimizer-event-00000001"
     assert second["elapsed_seconds"] == 2.0
-    assert second["skipped"] is True
+    assert second["skipped"] is False
 
     trace = tmp_path / "formal_training_trace.jsonl"
     commitment = tmp_path / "formal_training_trace.commitment.json"
@@ -116,11 +145,89 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
 
     assert len(rows) == 2
     assert cost["optimizer_events"] == 2
-    assert cost["successful_optimizer_events"] == 1
-    assert cost["skipped_optimizer_events"] == 1
+    assert cost["successful_optimizer_events"] == 2
+    assert cost["skipped_optimizer_events"] == 0
     assert cost["input_tokens"] == 160
     assert cost["wall_clock_sec"] == 2.0
     assert cost["peak_vram_gb"] == 4096 / float(1024**3)
+
+
+def test_optimizer_event_requires_step_and_transaction_commit():
+    timestamps = iter((0.0, 1.0, 2.0, 3.0, 4.0))
+    recorder = OptimizerEventTraceRecorder(
+        precision="fp32",
+        effective_batch_size=1,
+        world_size=1,
+        optimizer_config_sha256="1" * 64,
+        scheduler_config_sha256="2" * 64,
+        data_order_sha256="3" * 64,
+        loss_normalization_sha256="4" * 64,
+        runtime_session=issue_runtime_session(),
+        clock=lambda: next(timestamps),
+    )
+    kwargs = {
+        "epoch": 0,
+        "episode_id": "video-a",
+        "input_tokens": 8,
+        "skipped": False,
+    }
+
+    with pytest.raises(TrainingEvidenceError, match="not active"):
+        recorder.record(boundary_proof=object(), **kwargs)
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    parameter.grad = torch.tensor(1.0)
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    proof = recorder.begin_optimizer_boundary()
+    with pytest.raises(TrainingEvidenceError, match="completed optimizer step"):
+        recorder.record(boundary_proof=proof, **kwargs)
+    recorder.execute_optimizer_step(proof, optimizer)
+    with pytest.raises(TrainingEvidenceError, match="committed online transaction"):
+        recorder.record(boundary_proof=proof, **kwargs)
+    transaction = _CommittedTransaction()
+    recorder.commit_online_transaction(proof, transaction)
+    event = recorder.record(boundary_proof=proof, **kwargs)
+
+    assert event["event_id"] == "optimizer-event-00000000"
+    assert recorder.events == (event,)
+    assert parameter.item() == pytest.approx(0.9)
+    assert transaction.commits == 1
+
+
+def test_optimizer_event_rejects_a_scaler_skipped_optimizer_step():
+    class SkippingScaler:
+        def step(self, optimizer):
+            del optimizer
+
+        def update(self):
+            pass
+
+    recorder = OptimizerEventTraceRecorder(
+        precision="fp16",
+        effective_batch_size=1,
+        world_size=1,
+        optimizer_config_sha256="1" * 64,
+        scheduler_config_sha256="2" * 64,
+        data_order_sha256="3" * 64,
+        loss_normalization_sha256="4" * 64,
+        runtime_session=issue_runtime_session(),
+    )
+    optimizer = torch.optim.SGD([torch.nn.Parameter(torch.tensor(1.0))], lr=0.1)
+    proof = recorder.begin_optimizer_boundary()
+
+    with pytest.raises(TrainingEvidenceError, match="optimizer.step was not executed"):
+        recorder.execute_optimizer_step(proof, optimizer, scaler=SkippingScaler())
+
+    recorder.abort_optimizer_boundary(proof)
+    assert recorder.events == ()
+
+
+def test_runtime_session_state_rejects_unsigned_mutation():
+    session = issue_runtime_session()
+    state = session.state_dict()
+    state["sequence"] = 1
+
+    with pytest.raises(RuntimeAttestationError, match="state signature is invalid"):
+        session.load_state_dict(state)
 
 
 def test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence(tmp_path):
@@ -142,11 +249,11 @@ def test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence(tmp_path
     with pytest.raises(TrainingEvidenceError, match="empty"):
         recorder.persist(trace, commitment)
 
-    recorder.record(
+    _record_committed(
+        recorder,
         epoch=0,
         episode_id="video-a",
         input_tokens=8,
-        skipped=False,
     )
     recorder.persist(trace, commitment)
     with pytest.raises(TrainingEvidenceError, match="overwrite"):

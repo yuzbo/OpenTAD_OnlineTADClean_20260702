@@ -18,7 +18,21 @@ from .evidence_bundle import (
     strict_json_from_bytes,
 )
 from .full_petal_attestation import AttestationError, verify_payload
-from .full_petal_b0 import B0EvidenceError, junit_cases
+from .full_petal_b0 import B0EvidenceError, junit_cases, test_functions
+from .full_petal_fineaction_executor import (
+    FINEACTION_EXECUTOR_SCHEMA,
+    FINEACTION_LOADER_SCHEMA,
+    FINEACTION_PREPROCESSING_SCHEMA,
+    LOCKED_CWD,
+    LOCKED_ENVIRONMENT_KEYS,
+    LOCKED_JUNIT_PATH,
+    LOCKED_LOG_PATH,
+    LOCKED_SOURCE_PATH,
+    fineaction_execution_sha256,
+    fineaction_invocation_sha256,
+    fineaction_junit_prefix,
+    locked_command_for_kind,
+)
 
 
 SCHEMA_VERSION = 1
@@ -1616,23 +1630,75 @@ def _fineaction_verified_leaf(reference, base_dir, label):
         raise ContractValidationError(str(exc)) from exc
 
 
-def _fineaction_execution_leaves(source, path, label, pass_marker):
+def _fineaction_execution_leaves(source, path, label, pass_marker, kind):
+    if source["executor_schema"] != FINEACTION_EXECUTOR_SCHEMA:
+        raise ContractValidationError(f"{label} executor schema is not locked")
     command = source["command"]
     if not isinstance(command, list) or not command or not all(
         isinstance(item, str) and item for item in command
     ):
         raise ContractValidationError(f"{label} command is invalid")
+    if source["cwd"] != LOCKED_CWD:
+        raise ContractValidationError(f"{label} working directory is not locked")
+    environment_overrides = source["environment_overrides"]
+    _require_exact_json_fields(
+        environment_overrides,
+        LOCKED_ENVIRONMENT_KEYS,
+        f"{label} environment overrides",
+    )
+    expected_environment = {
+        "PYTHONHASHSEED": "0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    }
+    if any(
+        environment_overrides.get(key) != value
+        for key, value in expected_environment.items()
+    ):
+        raise ContractValidationError(f"{label} environment overrides are not locked")
+    python_path = environment_overrides["PYTHONPATH"]
+    if not isinstance(python_path, str) or not python_path or not Path(python_path).is_absolute():
+        raise ContractValidationError(f"{label} PYTHONPATH is not an absolute path")
+    exit_code = source["exit_code"]
+    if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code != 0:
+        raise ContractValidationError(f"{label} exit status is not a successful execution")
+
+    for field, expected_path in (
+        ("source", LOCKED_SOURCE_PATH),
+        ("junit", LOCKED_JUNIT_PATH),
+        ("log", LOCKED_LOG_PATH),
+    ):
+        reference = source[field]
+        if not isinstance(reference, dict) or reference.get("path") != expected_path:
+            raise ContractValidationError(f"{label} {field} path is not executor-owned")
     source_path, source_bytes = _fineaction_verified_leaf(
         source["source"], Path(path).parent, f"{label} source"
     )
-    if source["source"]["path"] not in command and source_path.name not in command:
-        raise ContractValidationError(f"{label} command does not execute its bound source")
     if source_path.suffix != ".py" or not source_bytes.strip():
         raise ContractValidationError(f"{label} source is not a non-empty Python file")
     try:
-        compile(source_bytes, str(source_path), "exec")
-    except (SyntaxError, ValueError) as exc:
+        declared_tests = test_functions(source_path, source_bytes=source_bytes)
+    except B0EvidenceError as exc:
         raise ContractValidationError(f"{label} source is not valid Python: {exc}") from exc
+    if not declared_tests:
+        raise ContractValidationError(f"{label} source declares no pytest tests")
+    python_executable = command[0]
+    if not Path(python_executable).is_absolute() or not Path(
+        python_executable
+    ).name.lower().startswith("python"):
+        raise ContractValidationError(f"{label} Python executable is not locked")
+    expected_command = locked_command_for_kind(
+        kind, python_executable, source["source"]["sha256"]
+    )
+    if command != expected_command:
+        raise ContractValidationError(f"{label} command differs from the locked executor")
+    expected_invocation = fineaction_invocation_sha256(
+        command, environment_overrides, source["source"]
+    )
+    if source["invocation_sha256"] != expected_invocation:
+        raise ContractValidationError(f"{label} invocation binding is invalid")
+
     _, junit_bytes = _fineaction_verified_leaf(
         source["junit"], Path(path).parent, f"{label} JUnit"
     )
@@ -1648,6 +1714,17 @@ def _fineaction_execution_leaves(source, path, label, pass_marker):
         or counts["skipped"]
     ):
         raise ContractValidationError(f"{label} JUnit has not reached a clean PASS")
+    junit_prefix = fineaction_junit_prefix(kind, source["source"]["sha256"])
+    declared_tests = set(declared_tests)
+    for case in cases:
+        if not case["classname"].startswith(f"{junit_prefix}."):
+            raise ContractValidationError(
+                f"{label} JUnit is not bound to the executed source"
+            )
+        if case["name"].split("[", 1)[0] not in declared_tests:
+            raise ContractValidationError(
+                f"{label} JUnit testcase is absent from the executed source"
+            )
     _, log_bytes = _fineaction_verified_leaf(
         source["log"], Path(path).parent, f"{label} log"
     )
@@ -1655,10 +1732,31 @@ def _fineaction_execution_leaves(source, path, label, pass_marker):
         log_text = log_bytes.decode("utf-8")
     except UnicodeError as exc:
         raise ContractValidationError(f"{label} log is not UTF-8") from exc
-    if pass_marker not in log_text:
+    log_header = (
+        f"FULL_PETAL_FINEACTION_EXECUTOR={FINEACTION_EXECUTOR_SCHEMA}\n"
+        f"INVOCATION_SHA256={expected_invocation}\n"
+        "ACTUAL_ARGV="
+        + json.dumps(command, separators=(",", ":"))
+        + f"\nCWD={LOCKED_CWD}\nENVIRONMENT_OVERRIDES="
+        + json.dumps(
+            environment_overrides, separators=(",", ":"), sort_keys=True
+        )
+        + "\nRETURN_CODE=0\n"
+    )
+    if not log_text.startswith(log_header):
+        raise ContractValidationError(f"{label} log is not bound to its invocation")
+    if not log_text.endswith(f"\n{pass_marker}\n"):
         raise ContractValidationError(f"{label} log lacks its execution PASS marker")
+    expected_execution = fineaction_execution_sha256(
+        expected_invocation, exit_code, source["junit"], source["log"]
+    )
+    if source["execution_sha256"] != expected_execution:
+        raise ContractValidationError(f"{label} execution binding is invalid")
     return {
         "command_sha256": canonical_json_sha256(command),
+        "execution_sha256": expected_execution,
+        "exit_code": exit_code,
+        "invocation_sha256": expected_invocation,
         "source_sha256": source["source"]["sha256"],
         "junit_sha256": source["junit"]["sha256"],
         "log_sha256": source["log"]["sha256"],
@@ -1742,12 +1840,18 @@ def _fineaction_preprocessing(path, trust_root, signed):
         source,
         {
             "schema_version",
+            "executor_schema",
             "dataset",
             "status",
             "command",
+            "cwd",
+            "environment_overrides",
+            "exit_code",
             "source",
             "junit",
             "log",
+            "invocation_sha256",
+            "execution_sha256",
             "future_frames_allowed",
             "timestamp_convention",
             "frame_stride",
@@ -1757,7 +1861,7 @@ def _fineaction_preprocessing(path, trust_root, signed):
         "FineAction preprocessing source",
     )
     if (
-        source["schema_version"] != "full-petal-fineaction-preprocessing-run-v1"
+        source["schema_version"] != FINEACTION_PREPROCESSING_SCHEMA
         or source["dataset"] != "FineAction"
         or source["status"] != "PASS"
     ):
@@ -1776,6 +1880,7 @@ def _fineaction_preprocessing(path, trust_root, signed):
         path,
         "FineAction causal preprocessing",
         "FINEACTION_CAUSAL_PREPROCESS_PASS",
+        "preprocessing",
     )
     return {**source, "execution": execution}
 
@@ -1795,12 +1900,18 @@ def _fineaction_loader_smoke(path, trust_root, signed):
         source,
         {
             "schema_version",
+            "executor_schema",
             "dataset",
             "status",
             "command",
+            "cwd",
+            "environment_overrides",
+            "exit_code",
             "source",
             "junit",
             "log",
+            "invocation_sha256",
+            "execution_sha256",
             "annotation_sha256",
             "media_inventory_sha256",
             "preprocessing_sha256",
@@ -1808,7 +1919,7 @@ def _fineaction_loader_smoke(path, trust_root, signed):
         "FineAction loader smoke source",
     )
     if (
-        source["schema_version"] != "full-petal-fineaction-loader-run-v1"
+        source["schema_version"] != FINEACTION_LOADER_SCHEMA
         or source["dataset"] != "FineAction"
         or source["status"] != "PASS"
     ):
@@ -1825,6 +1936,7 @@ def _fineaction_loader_smoke(path, trust_root, signed):
         path,
         "FineAction loader smoke",
         "FINEACTION_LOADER_SMOKE_PASS",
+        "loader",
     )
     return {**source, "execution": execution}
 

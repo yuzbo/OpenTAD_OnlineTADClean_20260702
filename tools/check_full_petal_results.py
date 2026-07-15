@@ -1356,6 +1356,10 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             runtime_binding=training_receipt["execution_session"],
             require_contiguous_runtime=claim == "C1",
         )
+        if cost["skipped_optimizer_events"] != 0:
+            raise TrainingEvidenceError(
+                "formal training trace contains an uncommitted optimizer boundary"
+            )
     except TrainingEvidenceError as exc:
         raise ResultGateInputError(f"{label} training trace is invalid: {exc}") from exc
     actual_training_identity = {

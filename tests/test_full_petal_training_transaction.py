@@ -409,17 +409,56 @@ class _OptimizerEventRecorder:
     def __init__(self, *, fail_record=False):
         self.calls = []
         self.fail_record = fail_record
+        self.active_boundary = None
+
+    def begin_optimizer_boundary(self):
+        assert self.active_boundary is None
+        self.active_boundary = {
+            "optimizer_step_completed": False,
+            "transaction_commit_completed": False,
+        }
+        return self.active_boundary
+
+    def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
+        assert proof is self.active_boundary
+        if scaler is None:
+            optimizer.step()
+        else:
+            scaler.step(optimizer)
+            scaler.update()
+        proof["optimizer_step_completed"] = True
+
+    def commit_online_transaction(self, proof, transaction):
+        assert proof is self.active_boundary
+        assert proof["optimizer_step_completed"] is True
+        transaction.commit_online_update()
+        proof["transaction_commit_completed"] = True
+
+    def abort_optimizer_boundary(self, proof):
+        if self.active_boundary is not None:
+            assert proof is self.active_boundary
+            self.active_boundary = None
 
     def record(self, **event):
+        proof = event.pop("boundary_proof")
+        assert proof is self.active_boundary
+        assert proof == {
+            "optimizer_step_completed": True,
+            "transaction_commit_completed": True,
+        }
         self.calls.append(dict(event))
+        self.active_boundary = None
         if self.fail_record:
             raise RuntimeError("injected recorder failure")
+        return {"event_id": f"event-{len(self.calls) - 1}"}
 
     def state_dict(self):
+        assert self.active_boundary is None
         return {"calls": list(self.calls)}
 
     def load_state_dict(self, state):
         self.calls = list(state["calls"])
+        self.active_boundary = None
 
 
 class _FaultAfterStepAdamW(torch.optim.AdamW):
@@ -555,31 +594,25 @@ def test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step():
     assert torch.equal(model.weight.detach(), before)
 
 
-def test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event():
+def test_nonfinite_episode_blocks_authenticated_optimizer_evidence():
     model = _TransactionalToy(fail_second=True)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     scheduler = _Scheduler()
     recorder = _OptimizerEventRecorder()
 
-    train_one_epoch(
-        _toy_loader(),
-        model,
-        optimizer,
-        scheduler,
-        curr_epoch=2,
-        logger=_Logger(),
-        logging_interval=10,
-        optimizer_event_recorder=recorder,
-    )
+    with pytest.raises(RuntimeError, match="cannot continue after a skipped"):
+        train_one_epoch(
+            _toy_loader(),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=2,
+            logger=_Logger(),
+            logging_interval=10,
+            optimizer_event_recorder=recorder,
+        )
 
-    assert recorder.calls == [
-        {
-            "epoch": 2,
-            "episode_id": "video",
-            "input_tokens": 2,
-            "skipped": True,
-        }
-    ]
+    assert recorder.calls == []
 
 
 def test_commit_failure_restores_all_parameter_optimizer_scheduler_and_scaler_mutation():
@@ -695,7 +728,7 @@ def test_every_post_gradient_failure_restores_the_complete_training_transaction(
         "ema": _state_digest(model_ema.state_dict()),
     }
     assert after == before
-    assert model.commits == 0
+    assert model.commits == (1 if fault == "recorder" else 0)
     assert model.rollbacks == 1
     assert model.pending is False
 
@@ -774,7 +807,7 @@ def test_visual_evidence_failure_rolls_back_optimizer_and_both_evidence_streams(
     } == before
     assert optimizer_recorder.events == ()
     assert visual_recorder.events == ()
-    assert model.commits == 0
+    assert model.commits == 1
     assert model.rollbacks == 1
 
 

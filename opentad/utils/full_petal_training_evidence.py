@@ -182,7 +182,17 @@ class OptimizerEventTraceRecorder:
             "data_order_sha256": data_order_sha256,
             "loss_normalization_sha256": loss_normalization_sha256,
         }
-        if runtime_session is None or not callable(getattr(runtime_session, "sign_event", None)):
+        required_runtime_methods = {
+            "begin_optimizer_boundary",
+            "_confirm_optimizer_step_completed",
+            "_confirm_transaction_commit_completed",
+            "abort_optimizer_boundary",
+            "sign_committed_optimizer_event",
+        }
+        if runtime_session is None or not all(
+            callable(getattr(runtime_session, name, None))
+            for name in required_runtime_methods
+        ):
             raise TrainingEvidenceError(
                 "optimizer event recorder requires a live runtime evidence session"
             )
@@ -248,11 +258,79 @@ class OptimizerEventTraceRecorder:
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
 
-    def record(self, *, epoch, episode_id, input_tokens, skipped):
+    def begin_optimizer_boundary(self):
+        try:
+            return self._runtime_session.begin_optimizer_boundary()
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
+
+    def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
+        register_hook = getattr(optimizer, "register_step_post_hook", None)
+        if not callable(register_hook):
+            raise TrainingEvidenceError(
+                "authenticated optimizer evidence requires an optimizer step hook"
+            )
+        optimizer_step_completed = False
+
+        def confirm_step(*args, **kwargs):
+            del args, kwargs
+            nonlocal optimizer_step_completed
+            optimizer_step_completed = True
+
+        hook = register_hook(confirm_step)
+        try:
+            if scaler is None:
+                optimizer.step()
+            else:
+                scaler.step(optimizer)
+                scaler.update()
+        finally:
+            hook.remove()
+        if not optimizer_step_completed:
+            raise TrainingEvidenceError(
+                "optimizer.step was not executed at the authenticated boundary"
+            )
+        try:
+            self._runtime_session._confirm_optimizer_step_completed(proof)
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
+
+    def commit_online_transaction(self, proof, transaction):
+        has_pending = getattr(transaction, "has_pending_online_update", None)
+        commit = getattr(transaction, "commit_online_update", None)
+        if not callable(has_pending) or not callable(commit):
+            raise TrainingEvidenceError(
+                "authenticated optimizer evidence requires an online transaction"
+            )
+        if not has_pending():
+            raise TrainingEvidenceError(
+                "authenticated optimizer boundary has no pending online transaction"
+            )
+        commit()
+        if has_pending():
+            raise TrainingEvidenceError(
+                "online transaction remained pending after commit"
+            )
+        try:
+            self._runtime_session._confirm_transaction_commit_completed(proof)
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
+
+    def abort_optimizer_boundary(self, proof):
+        try:
+            self._runtime_session.abort_optimizer_boundary(proof)
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
+
+    def record(self, *, epoch, episode_id, input_tokens, skipped, boundary_proof):
         if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
             raise TrainingEvidenceError("optimizer event epoch must be non-negative")
         if not isinstance(episode_id, str) or not episode_id.strip():
             raise TrainingEvidenceError("optimizer event episode_id must be non-empty")
+        if skipped is not False:
+            raise TrainingEvidenceError(
+                "authenticated optimizer evidence cannot record a skipped boundary"
+            )
         sequence = len(self._events)
         self._synchronize()
         elapsed = float(self._clock()) - self._started_at
@@ -268,8 +346,8 @@ class OptimizerEventTraceRecorder:
         }
         normalized_payload = _normalize_event_payload(payload)
         try:
-            envelope = self._runtime_session.sign_event(
-                "optimizer-event", normalized_payload
+            envelope = self._runtime_session.sign_committed_optimizer_event(
+                normalized_payload, boundary_proof
             )
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
@@ -835,7 +913,9 @@ class VisualParameterEventRecorder:
         self.parameter_prefixes = prefixes
         self.parameter_names = tuple(sorted(parameters))
         self._optimizer_parameter_ids = optimizer_parameter_ids
-        if runtime_session is None or not callable(getattr(runtime_session, "sign_event", None)):
+        if runtime_session is None or not callable(
+            getattr(runtime_session, "sign_visual_parameter_event", None)
+        ):
             raise TrainingEvidenceError(
                 "visual parameter recorder requires a live runtime evidence session"
             )
@@ -956,9 +1036,7 @@ class VisualParameterEventRecorder:
                 }
             )
             try:
-                envelope = self._runtime_session.sign_event(
-                    "visual-parameter-event", payload
-                )
+                envelope = self._runtime_session.sign_visual_parameter_event(payload)
             except RuntimeAttestationError as exc:
                 raise TrainingEvidenceError(str(exc)) from exc
             events.append(_normalize_visual_event({**payload, **envelope}))
@@ -1624,6 +1702,10 @@ def validate_formal_run_artifacts(
         runtime_binding=runtime_binding,
         require_contiguous_runtime=claim == "C1",
     )
+    if cost["skipped_optimizer_events"] != 0:
+        raise TrainingEvidenceError(
+            "formal training trace contains an uncommitted optimizer boundary"
+        )
     if {field: cost[field] for field in expected_training_identity} != expected_training_identity:
         raise TrainingEvidenceError(
             "formal training trace identity differs from config/data-derived values"

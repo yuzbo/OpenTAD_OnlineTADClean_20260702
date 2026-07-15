@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+import opentad.utils.full_petal_role_signing as role_signing_module
 from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_data_contract import (
     ContractValidationError,
@@ -28,11 +29,17 @@ from opentad.utils.full_petal_data_contract import (
     validate_reporting_artifacts_from_sources,
     verify_content_hash,
     _crosses_chunk_boundary,
+    _fineaction_execution_leaves,
+)
+from opentad.utils.full_petal_fineaction_executor import (
+    FineActionExecutionError,
+    fineaction_invocation_sha256,
+    locked_command_for_kind,
+    run_fineaction_loader_evidence,
+    run_fineaction_preprocessing_evidence,
 )
 from opentad.utils.full_petal_role_signing import (
     sign_fineaction_license_authorization,
-    sign_fineaction_loader_run,
-    sign_fineaction_preprocessing_run,
 )
 
 
@@ -800,89 +807,34 @@ def _fineaction_sources(tmp_path, *, overlapping=True):
             key_id="fineaction-license-test",
         ),
     )
-    preprocessing_source = tmp_path / "fineaction-preprocess.py"
-    preprocessing_source.write_text("print('causal preprocessing')\n", encoding="utf-8")
-    preprocessing_junit = tmp_path / "fineaction-preprocess.xml"
-    preprocessing_junit.write_text(
-        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
-        '<testcase classname="fineaction.preprocessing" name="test_causal" />'
-        "</testsuite></testsuites>\n",
+    preprocessing_source = tmp_path / "fineaction-preprocess-test.py"
+    preprocessing_source.write_text(
+        "def test_causal_preprocessing():\n    assert True\n",
         encoding="utf-8",
     )
-    preprocessing_log = tmp_path / "fineaction-preprocess.log"
-    preprocessing_log.write_text(
-        "FINEACTION_CAUSAL_PREPROCESS_PASS\n", encoding="utf-8"
+    preprocessing_path = run_fineaction_preprocessing_evidence(
+        preprocessing_source,
+        tmp_path / "preprocessing-evidence",
+        annotation_sha256=sha256_file(annotation_path),
+        media_inventory_sha256=sha256_file(inventory_path),
+        timestamp_convention="zero_based_source_frame",
+        frame_stride=2,
+        private_key_path=execution_private,
+        key_id="fineaction-execution-test",
     )
-    preprocessing_path = tmp_path / "preprocessing.json"
-    save_json(
-        preprocessing_path,
-        sign_fineaction_preprocessing_run(
-            {
-                "schema_version": "full-petal-fineaction-preprocessing-run-v1",
-                "dataset": "FineAction",
-                "status": "PASS",
-                "command": ["python", preprocessing_source.name],
-                "source": {
-                    "path": preprocessing_source.name,
-                    "sha256": sha256_file(preprocessing_source),
-                },
-                "junit": {
-                    "path": preprocessing_junit.name,
-                    "sha256": sha256_file(preprocessing_junit),
-                },
-                "log": {
-                    "path": preprocessing_log.name,
-                    "sha256": sha256_file(preprocessing_log),
-                },
-                "future_frames_allowed": False,
-                "timestamp_convention": "zero_based_source_frame",
-                "frame_stride": 2,
-                "annotation_sha256": sha256_file(annotation_path),
-                "media_inventory_sha256": sha256_file(inventory_path),
-            },
-            private_key_path=execution_private,
-            key_id="fineaction-execution-test",
-        ),
-    )
-    loader_source = tmp_path / "fineaction-loader-smoke.py"
-    loader_source.write_text("print('loader smoke')\n", encoding="utf-8")
-    loader_junit = tmp_path / "fineaction-loader-smoke.xml"
-    loader_junit.write_text(
-        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
-        '<testcase classname="fineaction.loader" name="test_loader" />'
-        "</testsuite></testsuites>\n",
+    loader_source = tmp_path / "fineaction-loader-smoke-test.py"
+    loader_source.write_text(
+        "def test_minimal_loader_smoke():\n    assert True\n",
         encoding="utf-8",
     )
-    loader_log = tmp_path / "fineaction-loader-smoke.log"
-    loader_log.write_text("FINEACTION_LOADER_SMOKE_PASS\n", encoding="utf-8")
-    smoke_path = tmp_path / "loader-smoke.json"
-    save_json(
-        smoke_path,
-        sign_fineaction_loader_run(
-            {
-                "schema_version": "full-petal-fineaction-loader-run-v1",
-                "dataset": "FineAction",
-                "status": "PASS",
-                "command": ["python", loader_source.name],
-                "source": {
-                    "path": loader_source.name,
-                    "sha256": sha256_file(loader_source),
-                },
-                "junit": {
-                    "path": loader_junit.name,
-                    "sha256": sha256_file(loader_junit),
-                },
-                "log": {
-                    "path": loader_log.name,
-                    "sha256": sha256_file(loader_log),
-                },
-                "annotation_sha256": sha256_file(annotation_path),
-                "media_inventory_sha256": sha256_file(inventory_path),
-                "preprocessing_sha256": sha256_file(preprocessing_path),
-            },
-            private_key_path=execution_private,
-            key_id="fineaction-execution-test",
-        ),
+    smoke_path = run_fineaction_loader_evidence(
+        loader_source,
+        tmp_path / "loader-evidence",
+        annotation_sha256=sha256_file(annotation_path),
+        media_inventory_sha256=sha256_file(inventory_path),
+        preprocessing_sha256=sha256_file(preprocessing_path),
+        private_key_path=execution_private,
+        key_id="fineaction-execution-test",
     )
     sources = {
         "annotation": annotation_path,
@@ -1001,12 +953,12 @@ def test_fineaction_rejects_legacy_self_authored_license_pass(tmp_path):
 @pytest.mark.parametrize(
     "leaf_name",
     (
-        "fineaction-preprocess.py",
-        "fineaction-preprocess.xml",
-        "fineaction-preprocess.log",
-        "fineaction-loader-smoke.py",
-        "fineaction-loader-smoke.xml",
-        "fineaction-loader-smoke.log",
+        "preprocessing-evidence/source.py",
+        "preprocessing-evidence/junit.xml",
+        "preprocessing-evidence/execution.log",
+        "loader-evidence/source.py",
+        "loader-evidence/junit.xml",
+        "loader-evidence/execution.log",
     ),
 )
 def test_fineaction_rejects_tampered_execution_leaf(tmp_path, leaf_name):
@@ -1035,6 +987,64 @@ def test_fineaction_rejects_tampered_execution_attestation(tmp_path):
             created_at=CREATED_AT,
             trust_roots=trust_roots,
         )
+
+
+def test_fineaction_locked_executor_rejects_unrelated_pass_junit_and_log(tmp_path):
+    sources, _ = _fineaction_sources(tmp_path)
+    preprocessing_path = sources["preprocessing"]
+    payload = load_json(preprocessing_path)
+    payload.pop("attestation")
+    unrelated_source = preprocessing_path.parent / "source.py"
+    unrelated_source.write_text(
+        "def test_unrelated_compiling_source():\n    assert True\n",
+        encoding="utf-8",
+    )
+    payload["source"]["sha256"] = sha256_file(unrelated_source)
+    payload["command"] = locked_command_for_kind(
+        "preprocessing", payload["command"][0], payload["source"]["sha256"]
+    )
+    payload["invocation_sha256"] = fineaction_invocation_sha256(
+        payload["command"], payload["environment_overrides"], payload["source"]
+    )
+
+    with pytest.raises(ContractValidationError, match="JUnit is not bound"):
+        _fineaction_execution_leaves(
+            payload,
+            preprocessing_path,
+            "FineAction causal preprocessing",
+            "FINEACTION_CAUSAL_PREPROCESS_PASS",
+            "preprocessing",
+        )
+
+
+def test_fineaction_locked_executor_never_signs_a_failed_run(tmp_path):
+    source = tmp_path / "failing.py"
+    source.write_text("def test_failure():\n    assert False\n", encoding="utf-8")
+    private_key = tmp_path / "execution.pem"
+    generate_private_key(private_key)
+    output_dir = tmp_path / "failed-evidence"
+
+    with pytest.raises(FineActionExecutionError, match="subprocess failed"):
+        run_fineaction_preprocessing_evidence(
+            source,
+            output_dir,
+            annotation_sha256="1" * 64,
+            media_inventory_sha256="2" * 64,
+            timestamp_convention="zero_based_source_frame",
+            frame_stride=2,
+            private_key_path=private_key,
+            key_id="fineaction-execution-test",
+        )
+
+    assert not (output_dir / "execution.json").exists()
+    assert "FINEACTION_CAUSAL_PREPROCESS_PASS" not in (
+        output_dir / "execution.log"
+    ).read_text(encoding="utf-8")
+
+
+def test_production_has_no_direct_fineaction_execution_signer():
+    assert not hasattr(role_signing_module, "sign_fineaction_preprocessing_run")
+    assert not hasattr(role_signing_module, "sign_fineaction_loader_run")
 
 
 def test_cli_builds_deterministic_thumos_json_from_explicit_splits(tmp_path):

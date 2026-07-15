@@ -35,3 +35,10 @@ def attest_fixture(payload, *, private_key_path, key_id, role):
         "signature": base64.b64encode(key.sign(_message(payload, role))).decode("ascii"),
     }
     return body
+
+
+def committed_optimizer_envelope(runtime_session, payload):
+    proof = runtime_session.begin_optimizer_boundary()
+    runtime_session._confirm_optimizer_step_completed(proof)
+    runtime_session._confirm_transaction_commit_completed(proof)
+    return runtime_session.sign_committed_optimizer_event(payload, proof)
