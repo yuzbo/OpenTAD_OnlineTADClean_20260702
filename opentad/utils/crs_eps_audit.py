@@ -92,14 +92,26 @@ def _pair_vector_metrics(left, right):
             "norm_ratio": None,
             "sign_agreement": None,
         }
-    left_norm = float(torch.linalg.vector_norm(left).item())
-    right_norm = float(torch.linalg.vector_norm(right).item())
+    if not torch.isfinite(left).all() or not torch.isfinite(right).all():
+        return {
+            "comparable": False,
+            "cosine": None,
+            "norm_ratio": None,
+            "sign_agreement": None,
+        }
+    left_stable = left.double()
+    right_stable = right.double()
+    left_norm = float(torch.linalg.vector_norm(left_stable).item())
+    right_norm = float(torch.linalg.vector_norm(right_stable).item())
     if left_norm == 0.0 and right_norm == 0.0:
         cosine = 1.0
     elif left_norm == 0.0 or right_norm == 0.0:
         cosine = 0.0
     else:
-        cosine = float(torch.dot(left, right).item() / (left_norm * right_norm))
+        cosine = float(
+            torch.dot(left_stable, right_stable).item() / (left_norm * right_norm)
+        )
+        cosine = max(-1.0, min(1.0, cosine))
     nonzero = (left != 0) | (right != 0)
     sign_agreement = (
         float((torch.sign(left[nonzero]) == torch.sign(right[nonzero])).float().mean().item())
@@ -115,11 +127,30 @@ def _pair_vector_metrics(left, right):
 
 
 def _runtime_record(runtime):
+    finite_fields = {
+        "queries": runtime.queries,
+        "feature_memory": runtime.feature_memory,
+        "score_state": runtime.score_state,
+    }
+    invalid = [
+        name
+        for name, value in finite_fields.items()
+        if not bool(torch.isfinite(value).all())
+    ]
+    start_has_infinity = bool(torch.isinf(runtime.start_state).any())
+    if invalid or start_has_infinity:
+        raise CrsEpsAuditError(
+            "runtime continuous state contains invalid non-finite values: "
+            + ", ".join([*invalid, *(["start_state"] if start_has_infinity else [])])
+        )
+    start_state_nan_mask = torch.isnan(runtime.start_state)
     continuous = torch.cat(
         [
             runtime.queries.detach().float().reshape(-1).cpu(),
             runtime.feature_memory.detach().float().reshape(-1).cpu(),
-            runtime.start_state.detach().float().reshape(-1).cpu(),
+            torch.nan_to_num(runtime.start_state.detach().float(), nan=0.0)
+            .reshape(-1)
+            .cpu(),
             runtime.score_state.detach().float().reshape(-1).cpu(),
         ]
     )
@@ -127,6 +158,7 @@ def _runtime_record(runtime):
         "slot_status": runtime.slot_status.detach().cpu().tolist(),
         "refractory": runtime.refractory.detach().cpu().tolist(),
         "label_state": runtime.label_state.detach().cpu().tolist(),
+        "start_state_nan_mask": start_state_nan_mask.detach().cpu().tolist(),
         "source_frames": list(runtime.source_frames),
         "last_decision_frame": runtime.last_decision_frame,
     }
@@ -134,7 +166,7 @@ def _runtime_record(runtime):
         "digest": object_digest(runtime.__dict__),
         "continuous": continuous,
         "continuous_digest": object_digest(continuous),
-        "continuous_norm": float(torch.linalg.vector_norm(continuous).item()),
+        "continuous_norm": float(torch.linalg.vector_norm(continuous.double()).item()),
         "discrete": discrete,
         "discrete_digest": object_digest(discrete),
     }

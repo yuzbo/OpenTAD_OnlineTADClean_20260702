@@ -1296,3 +1296,49 @@ Reversibility:
 - A future schema may separate manifest and runtime draw indices explicitly,
   but the attested model-facing control must always hash the exact values it
   consumes.
+
+## DR-036: Make G0 Similarity Sentinel-Aware Without Changing Its Margins
+
+Status: correction implemented; replacement B0 and same-reviewer acceptance
+pending.
+
+Decision:
+
+> Preserve the model's NaN sentinel semantics in a discrete start-state mask,
+> compare a zero-canonicalized start-state vector continuously, reject
+> non-finite values in all other runtime tensors, and compute vector metrics in
+> float64. Do not change G0 samples, thresholds, checkpoint seed, or method
+> after observing the failed diagnostic.
+
+Reasons:
+
+- free slots intentionally carry NaN start frames, so raw vector norms are not
+  defined even when two runtime states are semantically identical;
+- sentinel location is discrete state and must match exactly rather than being
+  silently discarded;
+- float32 norm/dot arithmetic produced a cosine above one for identical finite
+  gradients;
+- the gate must measure replay fidelity, not representation artifacts of an
+  internal empty-slot sentinel.
+
+Rejected alternatives:
+
+- lower the preregistered runtime or gradient thresholds;
+- drop the difficult preselected videos;
+- replace the deterministic checkpoint after seeing diagnostics;
+- convert every NaN/Inf in every runtime tensor to zero;
+- cite unsigned diagnostic numbers as a G0 PASS or KILL;
+- continue to profile while G0 lacks a signed terminal artifact.
+
+Source:
+
+- fail-closed G0 execution and read-only numeric diagnosis on 2026-07-16;
+- `opentad/utils/crs_eps_audit.py`;
+- `tests/test_crs_eps_paired_audit.py`;
+- [discussion_timeline.md#T29-g0-reveals-sentinel-unsafe-runtime-similarity-measurement](discussion_timeline.md).
+
+Reversibility:
+
+- Alternative formally specified runtime metrics would require a new schema
+  and preregistration. The current selection and margins remain frozen for
+  this route's next terminal G0 run.

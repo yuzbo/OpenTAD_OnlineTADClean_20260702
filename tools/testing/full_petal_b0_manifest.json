@@ -151,7 +151,7 @@
     },
     {
       "path": "opentad/utils/crs_eps_audit.py",
-      "sha256": "a8de2c80b7d10e6a8fe399d0d76a441568d7ea060a1400a9fcd663fbada2ef47"
+      "sha256": "fa6b1b105d2d76c52d398dce0ffbc337cf0fbc6162d5ee6ee0eb098ef956672f"
     },
     {
       "path": "opentad/utils/crs_eps_gold_gate.py",
@@ -409,9 +409,10 @@
         },
         {
           "path": "tests/test_crs_eps_paired_audit.py",
-          "sha256": "0e6c16ea82deed56ff3f6f92623a1bf0de79e3c3b2017f0432f84f314f0cb99d",
+          "sha256": "3fc73426d810e26ccd1c9e8c4157ba698e514de88b6e9bf0723aa23d7e654e14",
           "test_functions": [
             "test_binding_twin_restores_rng_and_closes_identical_single_instance_trace",
+            "test_pair_vector_metrics_are_stable_for_large_values_and_reject_nonfinite",
             "test_matched_pair_rejects_parameter_drift_before_forward",
             "test_replay_fidelity_pair_reports_state_shape_mismatch_without_false_cosine"
           ]

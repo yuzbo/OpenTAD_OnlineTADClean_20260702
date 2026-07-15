@@ -922,3 +922,32 @@ Current decision:
 > acceptance. Rebuild all G0 preregistration artifacts under the replacement
 > commit before another audit attempt. Profile and formal training remain
 > blocked.
+
+### T29: G0 Reveals Sentinel-Unsafe Runtime Similarity Measurement
+
+Commit `5639fa85f55ac03c12761977ef82b25ea4aabfa6` passed local/Linux B0 at
+`579/579` and the same reviewer again returned PASS. The rebuilt G0 reused the
+same sample and threshold input bytes as the superseded attempt. All 16 audit
+controls passed payload and sequence preflight, but terminal signing stopped
+because `runtime_continuous_comparison.cosine` was non-finite.
+
+Read-only diagnosis showed finite losses and gradients. The non-finite runtime
+norm came from the model's intentional `start_frames=NaN` sentinel for free
+slots, which the audit had concatenated directly into its continuous vector.
+The diagnostic also found a float32 identical-vector cosine of `1.000055`, so
+the metric implementation lacked stable precision. The correction records the
+start-state NaN mask as discrete state, maps only that legal sentinel to zero
+for continuous comparison, rejects other non-finite runtime tensors, and uses
+float64 norm/dot computation with cosine clamped to `[-1,1]`.
+
+Unsigned diagnostics suggest that several preselected dynamic-replay cases may
+violate the preregistered absolute gradient-fidelity margin. This is not a
+terminal G0 result, but it must not be hidden: the next exact signed run may
+legitimately return KILL. Samples, margins, checkpoint seed, and model logic are
+frozen and will not be relaxed in response.
+
+Current decision:
+
+> Treat sentinel handling and numerical precision as audit-measurement fixes,
+> not method tuning. Freeze them, restart B0/review, and rerun the unchanged G0
+> contract to a signed PASS or KILL. A KILL blocks profile.

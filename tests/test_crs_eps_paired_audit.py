@@ -8,6 +8,7 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
 )
 from opentad.utils.crs_eps_audit import (
+    _pair_vector_metrics,
     CrsEpsAuditError,
     capture_rng_snapshot,
     rng_snapshot_digest,
@@ -119,10 +120,29 @@ def test_binding_twin_restores_rng_and_closes_identical_single_instance_trace():
     assert rng_snapshot_digest(capture_rng_snapshot()) == rng_before
     assert trace["logits_equal"] is True
     assert trace["runtime_discrete_equal"] is True
+    assert trace["runtime_continuous_comparison"]["cosine"] == pytest.approx(1.0)
+    assert trace["left"]["runtime"]["continuous_norm"] >= 0.0
     assert trace["gradient_comparison"]["cosine"] == pytest.approx(1.0)
     assert trace["gradient_comparison"]["sign_agreement"] == pytest.approx(1.0)
     assert trace["left"]["losses"] == pytest.approx(trace["right"]["losses"])
     assert len(trace["trace_sha256"]) == 64
+
+
+def test_pair_vector_metrics_are_stable_for_large_values_and_reject_nonfinite():
+    values = torch.tensor([1e30, -1e30], dtype=torch.float32)
+
+    stable = _pair_vector_metrics(values, values.clone())
+    invalid = _pair_vector_metrics(values, torch.tensor([float("nan"), 0.0]))
+
+    assert stable["comparable"] is True
+    assert stable["cosine"] == pytest.approx(1.0)
+    assert stable["sign_agreement"] == pytest.approx(1.0)
+    assert invalid == {
+        "comparable": False,
+        "cosine": None,
+        "norm_ratio": None,
+        "sign_agreement": None,
+    }
 
 
 def test_matched_pair_rejects_parameter_drift_before_forward():
