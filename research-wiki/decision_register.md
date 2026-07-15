@@ -1253,3 +1253,46 @@ Reversibility:
 - The concrete list representation may be schema-versioned in the future, but
   persisted-byte reproduction and a fresh evidence chain after source changes
   are irreversible requirements.
+
+## DR-035: Normalize G0 Singleton Index Before Payload Attestation
+
+Status: correction implemented; replacement B0 and same-reviewer acceptance
+pending.
+
+Decision:
+
+> A selected manifest draw may retain its original index in the outer G0
+> selection record, but the model-facing singleton audit control must use
+> runtime draw index zero and must compute its payload and sequence hashes only
+> after that normalization. Any source correction restarts the evidence chain.
+
+Reasons:
+
+- `video_group_size=1` requires `draw_index=0` at model entry;
+- hashing the original index and later overwriting it makes the signed runtime
+  identity internally inconsistent;
+- the outer audit row still records the selected manifest index, so selection
+  provenance is not lost by normalizing the singleton control;
+- failure occurred before a valid audit row or terminal result, preserving
+  outcome-blind selection and margins.
+
+Rejected alternatives:
+
+- exempt G0 controls from payload-hash verification;
+- allow singleton groups to carry an out-of-range original draw index;
+- rewrite the already-signed selection or margins;
+- replace the stress sample with a draw-zero case;
+- reuse the `cde6196` B0/review after changing source code.
+
+Source:
+
+- fail-closed G0 execution on 2026-07-16;
+- `opentad/datasets/crs_eps_feature.py`;
+- `tests/test_crs_eps_training_contracts.py`;
+- [discussion_timeline.md#T28-nonzero-g0-draw-exposes-singleton-runtime-index-drift](discussion_timeline.md).
+
+Reversibility:
+
+- A future schema may separate manifest and runtime draw indices explicitly,
+  but the attested model-facing control must always hash the exact values it
+  consumes.

@@ -195,7 +195,7 @@
     },
     {
       "path": "opentad/datasets/crs_eps_feature.py",
-      "sha256": "a91a629ef3b58cb94f70c0f9d600632cb74ac4032b7df8cfe98b01265d748132"
+      "sha256": "2856247bff18a960418278020c74edcfeed4a4db4e3ecf516a8c3095c22d1618"
     },
     {
       "path": "opentad/models/dense_heads/persistent_event_set_head.py",
@@ -434,7 +434,7 @@
         },
         {
           "path": "tests/test_crs_eps_training_contracts.py",
-          "sha256": "6f41484aa36a56b5e6245816bb4ae2ff17dc761b50d6f6b129e0ecac73b07820",
+          "sha256": "616b199ddffc6c2754e3bdc290dc648a59adb613f3ed09568446f9821545a632",
           "test_functions": [
             "test_crs_eps_gradient_starts_at_original_global_detach_boundary",
             "test_crs_eps_rejects_clipped_or_drifted_training_weights",

@@ -276,6 +276,7 @@ class CrsEpsFeatureDataset(StreamingFeatureDataset):
         else:
             replay_start = supervised_start
         audit_draw = dict(draw)
+        audit_draw["draw_index"] = 0
         audit_draw["episode_id"] = f'{draw["episode_id"]}:g0:{mode}'
         audit_draw["replay_range"] = [replay_start, supervised_end]
         audit_draw["left_censored_instance_ids"] = self._left_censored_instance_ids(

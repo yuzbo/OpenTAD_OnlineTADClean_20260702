@@ -859,4 +859,16 @@ def test_gold_audit_replay_arms_are_explicit_and_do_not_mutate_training_manifest
         draw["supervised_range"]
     ]
     assert all(sample["crs_eps"]["video_group_size"] == 1 for sample in samples.values())
+    nonzero_draw = dataset.build_gold_audit_sample(
+        video,
+        video["draws"][1],
+        "dynamic_birth",
+        manifest_sha256=original_hash,
+    )
+    control = nonzero_draw["crs_eps"]
+    assert control["draw_index"] == 0
+    assert control["episode_payload_sha256"] == episode_payload_sha256(control)
+    assert control["episode_sequence_sha256"] == canonical_json_sha256(
+        [control["episode_payload_sha256"]]
+    )
     assert dataset.current_episode_manifest_sha256 == original_hash

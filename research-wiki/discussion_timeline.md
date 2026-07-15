@@ -893,3 +893,32 @@ Current decision:
 > Freeze the serialization correction, regenerate the target-Linux leaf and
 > signed B0 root, and obtain a fresh PASS from the same reviewer. Only then
 > rebuild and run G0; profile and formal training remain blocked.
+
+### T28: Nonzero G0 Draw Exposes Singleton Runtime-Index Drift
+
+The serialization correction commit
+`cde619639a14a7cbb5f8cd4603ed8fcb66933d44` passed local and Linux B0 at
+`579/579`; the same reviewer returned PASS with no P0/P1/P2 finding or protocol
+violation. A fresh metadata-only G0 selection and margin preregistration then
+succeeded. The first real audit execution stopped before producing any signed
+row or `audit.json` because a selected manifest draw with index one failed its
+episode-payload hash at model entry.
+
+The audit helper correctly turns each selected draw into a singleton runtime
+group, whose runtime draw index must be zero. It previously hashed the copied
+payload while it still carried the original manifest index and only later
+overrode the runtime index in `_build_sample`. Draw-zero fixtures therefore
+passed while any selected nonzero draw failed closed. The correction sets the
+singleton runtime index before computing the audit payload and sequence hashes;
+a new regression uses a nonzero manifest draw and verifies both hashes.
+
+No valid loss, gradient, runtime-state, gate, quality, profile, or GPU result
+was emitted. The failed evidence bundle remains immutable and is superseded,
+not edited.
+
+Current decision:
+
+> Freeze the singleton-index correction and restart B0 plus same-reviewer
+> acceptance. Rebuild all G0 preregistration artifacts under the replacement
+> commit before another audit attempt. Profile and formal training remain
+> blocked.
