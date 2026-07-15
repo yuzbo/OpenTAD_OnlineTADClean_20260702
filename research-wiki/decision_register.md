@@ -956,3 +956,57 @@ Reversibility:
 
 - The implementation details are reversible after a new audited commit. The
   ban on profiling a ticket/runtime identity mismatch is not reversible.
+
+## DR-029: Answer Round 1 Before CRS-EPS Implementation
+
+Status: proposed author-response contract; no GPU or implementation permission.
+
+Decision:
+
+> Accept the finding that current Q2 is not CRS-EPS. Answer Q1-Q12 and obtain a
+> Round-2 protocol decision before implementing event-centric training. In
+> parallel, only the already-proven launch P0 may be repaired without GPU work.
+
+Proposed author choices:
+
+- preserve video-uniform per-video decision-time mean as the primary target
+  risk;
+- use CRS-EPS as candidate main training, a tiny preregistered full-stream
+  state/loss/gradient audit, and complete chronological validation/test;
+- replay gold state from video start and dynamically extend sampled context to
+  every active instance's earliest observable birth;
+- never initialize slots or hidden state from GT;
+- replace cross-protocol optimizer-event throughput with multi-denominator
+  physical and ESS accounting;
+- cap all new pre-Stage-2 GPU work at 10 GPU-hours;
+- use standard average temporal mAP at tIoU 0.3:0.7 as primary external
+  quality, identity-linked errors as mechanism endpoints, and recall/FN plus
+  completion delay as safety endpoints;
+- stop Full PETAL and raw-video Stage 2 if fixed binding lacks a meaningful,
+  identity-linked advantage over rematch;
+- keep unavailable extractor provenance, 211/213 IDs, and second-dataset
+  access explicitly unknown and fail closed at their appropriate gates.
+
+Reason:
+
+- current code scans all selected tokens and only reduces optimizer mutations;
+- implementing a sampler before freezing its target risk and state replay would
+  make sampled/full comparison uninterpretable;
+- active-at-entry is a scientific issue because oracle slot initialization
+  would invalidate the intended online state trajectory;
+- optimizer events have incompatible meanings across complete-video and short
+  episode protocols;
+- Round 2 is the last design discussion before implementation and should
+  resolve these contracts without changing the task.
+
+Sources:
+
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md`;
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md`;
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md`.
+
+Reversibility:
+
+- The proposed choices may be revised by the author after Round 2 and before
+  sampler implementation. Once an experiment manifest is frozen, changes
+  require a new protocol version, B0, review, and authorization.

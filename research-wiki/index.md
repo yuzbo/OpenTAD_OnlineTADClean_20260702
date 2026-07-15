@@ -22,14 +22,18 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 
 The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted after a Pro `REVISE` and independent verification of the TrackFormer/On-TAD/causal-backbone reconstruction attack.
 
-The current executable experiment is the narrower **Q2 Persistent Binding Study**:
-fixed post-birth supervision versus per-prefix rematching on identical cached
-features. It is blocked before profile by `P0-LAUNCH-WORKDIR`; the previous
-profile permission is revoked. Raw-video adaptation, LoRA, paper-method claims,
-and formal training remain blocked.
+The current implementation is the narrower **Q2 Persistent Binding reference**:
+fixed post-birth supervision versus per-prefix rematching on complete-video
+chronological cached features. Round 1 verified that it is not CRS-EPS: every
+token is scanned, state is detached across chunks, and one optimizer event is
+issued per video. A CRS-EPS-main/full-stream-gold hybrid is only provisional.
+`P0-LAUNCH-WORKDIR`, profile, raw-video adaptation, paper-method claims, and
+formal training remain blocked.
 
 Read [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
 its [independent absorption](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md),
+the [CRS-EPS/Q2 Round-1 review](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md),
+its [absorption](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md),
 and [DR-028](decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work)
 before any GPU action.
 

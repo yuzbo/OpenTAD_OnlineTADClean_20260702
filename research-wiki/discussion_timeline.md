@@ -691,3 +691,43 @@ Current decision:
 > Do not profile or train. First close the launch-workdir P0 with a real
 > submit-shell integration test, then close the scientific evidence contracts,
 > freeze a new commit, regenerate B0, and obtain a fresh independent PASS.
+
+### T22: Round 1 Proves Current Q2 Is Not CRS-EPS
+
+The focused Pro discussion reviewed public implementation anchor `f4ea53e` and
+returned `REVISE-BEFORE-IMPLEMENTATION`.
+
+Code-grounded correction:
+
+- Q2 enumerates every cached token in every selected video;
+- every token enters the sequential temporal/loss path;
+- numerical state is carried but detached across 64-token chunks;
+- gradients are accumulated and normalized to one per-video mean before one
+  optimizer event at video end;
+- event anchors, bounded sampled episodes, inclusion probabilities, weighting,
+  ESS, and sampled/full audits are absent;
+- therefore `CRS_EPS_IMPLEMENTED=NO`.
+
+The full route remains useful only as an exhaustive reference for its exact
+video-uniform, cached-token, chunk-detached objective. The provisional direction
+is CRS-EPS main training plus a tiny full-stream state/loss/gradient gold audit
+and complete chronological evaluation, but Round 2 must freeze the protocol.
+
+The recommended author response selects video-uniform target risk, dynamic
+replay to every active instance's earliest observable birth, a 10 GPU-hour cap
+for all future pre-Stage-2 work, a multi-denominator profile, one-token formal
+serving, and immediate route kill if fixed binding lacks identity-linked gain.
+Extractor provenance, 211-versus-213 identities, and second-dataset access stay
+explicitly unknown.
+
+Artifacts:
+
+- [`../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md`](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md);
+- [`../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md`](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md);
+- [`../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md`](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md).
+
+Current decision:
+
+> Send Q1-Q12 for Round 2, fix the launch P0 without GPU work, and do not
+> implement CRS-EPS until target risk, state replay, weighting, gold audit,
+> profile, metrics, and kill contracts are frozen.

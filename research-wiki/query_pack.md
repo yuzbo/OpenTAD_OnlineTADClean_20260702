@@ -13,7 +13,7 @@ The task is fixed to standard fully supervised Online Temporal Action Detection/
 
 PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
 
-The executable route is a **Q2 cached-feature binding study**, not a paper method: fixed post-birth supervision versus per-prefix rematching in one shared detector. A 2026-07-15 audit found `P0-LAUNCH-WORKDIR`; profile and training are blocked until a new commit passes fresh B0 and review.
+Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all tokens with chunk-detached state and steps once/video. Round 1 returned `REVISE-BEFORE-IMPLEMENTATION`; hybrid is provisional; P0, profile, and training remain blocked.
 
 ## Top Gaps
 
@@ -28,7 +28,7 @@ The executable route is a **Q2 cached-feature binding study**, not a paper metho
 
 ## Candidate Portfolio
 
-- **Persistent Event-Set Stage 1:** only approved active experiment. It must beat both FRESH and a faithful Temporal TrackFormer under matched features.
+- **Q2 fixed/rematch:** treatment is partially identifiable, but no training protocol is approved. Round 2 must freeze target risk, active-at-entry replay, paired traces, and multi-denominator cost accounting.
 - **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
 - **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
 - **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
@@ -86,4 +86,4 @@ Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more 
 
 ## Current Final Goal
 
-Do not start profile or training. Fix the dynamic `work_dir` mismatch with a real submit-shell test; then close extractor provenance, packet clocks, the paired one-factor trace, and 211/213 evidence. Freeze a new commit, regenerate B0, and require a fresh `PASS / PROFILE=ALLOW`. DDP and resume remain out of scope. A Q2 pass permits only a minimal matched kill test and renewed novelty review; raw-video PEFT needs a separate decision.
+Do not start profile or training. Answer Round-1 Q1-Q12 and obtain the Round-2 protocol verdict while independently fixing dynamic `work_dir` with a real submit-shell test. Current author-response draft selects video-uniform risk, CRS-EPS main plus tiny full-stream gold audit, dynamic replay to earliest observable birth, a 10 GPU-hour future cap, and one-token formal serving; these remain protocol decisions, not evidence. Then implement, freeze a new commit, regenerate B0, and require `PASS / PROFILE=ALLOW`.

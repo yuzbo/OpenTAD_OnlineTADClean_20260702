@@ -2,13 +2,30 @@
 type: idea
 node_id: idea:crs-eps-training
 title: "CRS-EPS: Instance-aware Causal Risk-Set Event-Centric Prefix-Episode Training"
-stage: active
+stage: round2-protocol-pending
 outcome: pending
-updated: 2026-07-11
+updated: 2026-07-15
 target_gaps: ["G3", "G4", "G7"]
 ---
 
 # CRS-EPS Training
+
+## 2026-07-15 Implementation Audit
+
+The Q2 implementation at `f4ea53e` does **not** implement CRS-EPS. It performs
+complete-video chronological cached-feature training, carries detached
+numerical state between 64-token chunks, and steps the optimizer once per
+video. It has no event-anchor mixture, sampled-episode manifest, bounded
+burn-in/supervised suffix, inclusion probabilities, weighting, ESS, or
+sampled/full fidelity audit.
+
+Round 1 returned `REVISE-BEFORE-IMPLEMENTATION` and provisionally recommends a
+hybrid: CRS-EPS as candidate main training, a tiny preregistered full-stream
+state/loss/gradient audit, and complete chronological validation/test. The
+target risk, active-at-entry replay, profile denominators, and non-inferiority
+contract must be frozen in Round 2 before implementation. See
+[`../../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md`](../../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md)
+and its [independent absorption](../../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md).
 
 ## One-Line Thesis
 
