@@ -1387,3 +1387,50 @@ Reversibility:
 - Alternative lifecycle encodings require a schema change, but every accepted
   runtime metric must continue to prove that its sentinel representation is
   valid before canonicalization.
+
+## DR-038: Preregister Exact G0 Checkpoint Bytes Before Any Replay Outcome
+
+Status: correction implemented; replacement B0 and same-reviewer acceptance
+pending.
+
+Decision:
+
+> G0 selection v3 must sign a contained checkpoint path, exact SHA-256, byte
+> size, state key, and deterministic generation identity. Preregistration must
+> reproduce the model state from the exact config and manifest seed. The audit
+> runner must verify those signed bytes before model construction, and launch
+> validation must recursively rehash them before accepting G0 evidence.
+
+Reasons:
+
+- the prior terminal audit accurately recorded the checkpoint it consumed but
+  did not prove that the choice preceded all model diagnostics;
+- signed samples and margins could be reused with another compatible
+  checkpoint, leaving a post-diagnostic degree of freedom;
+- deterministic state reproduction binds the checkpoint to the model/config
+  rather than accepting an arbitrary loadable state;
+- a bundle-relative raw-byte reference lets launch validation detect later
+  replacement without trusting an absolute path.
+
+Rejected alternatives:
+
+- document the old checkpoint SHA only in an unsigned policy note;
+- trust the checkpoint field written after traces complete;
+- bind only a seed without reproducing state tensors;
+- allow launch validation to trust a signed digest without reopening bytes;
+- reuse any v2 selection, margins, audit, B0, or review artifact.
+
+Source:
+
+- same-reviewer exact-commit audit of `29bc0aee90faef61f16e32130b8c1368fc78e755`;
+- `tools/preregister_crs_eps_gold_audit.py`;
+- `tools/run_crs_eps_gold_audit.py`;
+- `opentad/utils/crs_eps_gold_gate.py`;
+- `opentad/utils/full_petal_launch.py`;
+- [discussion_timeline.md#T31-same-reviewer-finds-post-diagnostic-checkpoint-choice-freedom](discussion_timeline.md).
+
+Reversibility:
+
+- Checkpoint packaging may change under a future schema, but outcome-blind
+  byte identity, deterministic generation identity, and recursive launch
+  verification are permanent requirements for this G0 route.

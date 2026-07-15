@@ -7,11 +7,11 @@
   "runner_sources": [
     {
       "path": "FULL_PETAL_TRUST_MODEL.md",
-      "sha256": "87e9b3df2cb15361ce13c841e6d40df1eff670cc2b52875f9a141fb99b2accc5"
+      "sha256": "1d15a0b4509cd16087d988360cf12c13568a2a7f624426cd6be28a725a2fad13"
     },
     {
       "path": "FULL_PETAL_EXECUTION_GATES.md",
-      "sha256": "8c74516e1d40fa913d1ae5a6db0d78db992470087f9535eb2afb6e23017e1294"
+      "sha256": "81634bb80b2e52e729eefcbfd38f6df605fafe9e9a79f70475d7dca2710fd794"
     },
     {
       "path": "configs/causaltad/thumos_pes_q2_base.py",
@@ -63,11 +63,11 @@
     },
     {
       "path": "tools/preregister_crs_eps_gold_audit.py",
-      "sha256": "ab8656a07259636247e3bf9f90b78431bde6930f075fb13de6a951f6c3ba8875"
+      "sha256": "b13d484abba34bacbdeb68c993b9426c1c36849fdc8878c9b84467dbb887a0c5"
     },
     {
       "path": "tools/run_crs_eps_gold_audit.py",
-      "sha256": "47d4424aeace5dd73a08e71e6c4a5ac869f0a885e1e63f801081dd22dd87108d"
+      "sha256": "e91af5b91e2e931b6237ff2ff68e465092f42288e777e72f0941613a1db26516"
     },
     {
       "path": "tools/build_full_petal_run_manifest.py",
@@ -111,7 +111,7 @@
     },
     {
       "path": "opentad/utils/full_petal_role_signing.py",
-      "sha256": "823c67d96cf58b79d96fee627d2f3584501ca9f402db1993af010a62a2fbee43"
+      "sha256": "9fef2d55750cb3847dfe89d6d8656f9bfd217dba26cb595447df85cf3324b55b"
     },
     {
       "path": "opentad/utils/full_petal_fineaction_executor.py",
@@ -127,7 +127,7 @@
     },
     {
       "path": "opentad/utils/full_petal_launch.py",
-      "sha256": "b376157fd5a71e656c4e9d151efd41552810ce835880a1e6df1185cc3f265218"
+      "sha256": "6f52ce5b3d48ece7677e2e9d1e46d311687dad9fe5be688ed729da478c2fb10b"
     },
     {
       "path": "opentad/utils/full_petal_training_evidence.py",
@@ -155,11 +155,11 @@
     },
     {
       "path": "opentad/utils/crs_eps_gold_gate.py",
-      "sha256": "33e2c3972134291b21a72a0bc1015c654775a5eedb06ccdfc473032fc2e8cd26"
+      "sha256": "a4a7794c2bb23731b79e7984175ec25c591eb03ae2983a8ae2d68f0fcbe66a81"
     },
     {
       "path": "opentad/utils/crs_eps_gold_evidence.py",
-      "sha256": "bbdd9dec4854205df1729c6b32b137946ed698eda64d58950e5d52deac02560b"
+      "sha256": "3d55bd3031dafcc1ff7074496424a75e33e0bb20816ae09b1a0f646619a2ab62"
     },
     {
       "path": "opentad/utils/immutable_event_ledger.py",
@@ -388,13 +388,15 @@
         },
         {
           "path": "tests/test_crs_eps_g0_evidence.py",
-          "sha256": "664f3e48fc5c077a17ec46f34e3d866dad6f02d8ade2dbcac2c12ab206ee643d",
+          "sha256": "b640cb1d2669994261c4c910d795854d0d7f4ed073edc70969be928553aea150",
           "test_functions": [
             "test_signed_g0_pass_reproduces_and_binds_exact_launch",
             "test_g0_manifest_seed_and_sampling_contract_are_launch_bound",
             "test_g0_checkpoint_digest_is_from_the_exact_loaded_bytes",
+            "test_preregistration_reproduces_checkpoint_from_frozen_seed",
             "test_g0_kill_or_mismatched_launch_binding_cannot_authorize_profile",
             "test_post_result_margin_file_substitution_breaks_the_signed_chain",
+            "test_post_preregistration_checkpoint_substitution_breaks_the_signed_chain",
             "test_loaded_dataset_bytes_override_self_consistent_false_provenance"
           ]
         },

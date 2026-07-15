@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
+import pickle
+
+import torch
 
 from .crs_eps_sampling import sampling_specs_sha256, validate_epoch_manifest
 from .full_petal_identity import build_data_identity, scientific_source_identity
@@ -11,6 +15,52 @@ from .full_petal_identity import build_data_identity, scientific_source_identity
 
 class CrsEpsGoldEvidenceError(ValueError):
     pass
+
+
+def checkpoint_state_from_bytes(payload, state_key):
+    """Parse and normalize the exact checkpoint bytes consumed by G0."""
+
+    if not isinstance(payload, bytes) or not payload:
+        raise CrsEpsGoldEvidenceError("G0 checkpoint payload must be non-empty bytes")
+    if state_key not in {"state_dict", "state_dict_ema"}:
+        raise CrsEpsGoldEvidenceError("G0 checkpoint state key is unsupported")
+    try:
+        checkpoint = torch.load(
+            io.BytesIO(payload),
+            map_location="cpu",
+            weights_only=True,
+        )
+    except (
+        EOFError,
+        OSError,
+        pickle.UnpicklingError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise CrsEpsGoldEvidenceError(
+            f"cannot parse frozen G0 checkpoint bytes: {exc}"
+        ) from exc
+    if not isinstance(checkpoint, dict) or state_key not in checkpoint:
+        raise CrsEpsGoldEvidenceError(
+            f"frozen G0 checkpoint lacks the explicit {state_key} state"
+        )
+    state = checkpoint[state_key]
+    if not isinstance(state, dict):
+        raise CrsEpsGoldEvidenceError("G0 checkpoint model state is not a mapping")
+    normalized = {}
+    for name, value in state.items():
+        if not isinstance(name, str) or not torch.is_tensor(value):
+            raise CrsEpsGoldEvidenceError(
+                "G0 checkpoint state requires text keys and tensor values"
+            )
+        normalized_name = name[7:] if name.startswith("module.") else name
+        if normalized_name in normalized:
+            raise CrsEpsGoldEvidenceError(
+                "G0 checkpoint contains colliding normalized parameter names"
+            )
+        normalized[normalized_name] = value
+    return normalized
 
 
 def sha256_file(path):
@@ -86,5 +136,6 @@ def bind_manifest_to_loaded_dataset(
 __all__ = [
     "CrsEpsGoldEvidenceError",
     "bind_manifest_to_loaded_dataset",
+    "checkpoint_state_from_bytes",
     "sha256_file",
 ]

@@ -980,3 +980,35 @@ Current decision:
 > restart Linux B0, signed root B0, and same-reviewer acceptance. G0 samples,
 > margins, checkpoint, and model method remain unchanged; profile and formal
 > training stay blocked.
+
+### T31: Same Reviewer Finds Post-Diagnostic Checkpoint Choice Freedom
+
+The lifecycle correction commit
+`29bc0aee90faef61f16e32130b8c1368fc78e755` passed signed local and
+N16R4/Linux B0 at `586/586`. The same reviewer closed the sentinel finding but
+returned `REVISE / PROFILE=BLOCK / NEXT_GATE=FIX` because the G0 checkpoint was
+not part of outcome-blind preregistration.
+
+The v2 selection and margin signatures fixed the commit, data, manifest,
+samples, and thresholds. The audit runner accepted `--checkpoint` only at
+execution time and wrote its digest into the terminal audit. Consequently, one
+already-signed selection/margin pair could be executed with two different
+structure-compatible checkpoints; both terminal audits would truthfully name
+the bytes they used, but neither could prove which checkpoint had been frozen
+before the earlier unsigned diagnostic.
+
+The correction replaces G0 selection, margins, and audit schemas with v3.
+Selection now signs the checkpoint's bundle-relative path, SHA-256, byte size,
+state key, and deterministic generation identity. Preregistration rebuilds the
+model under the immutable manifest seed and exact config and requires every
+state tensor to match. The runner verifies the signed bytes before model
+construction, and launch validation reopens and rehashes the same contained
+checkpoint before accepting a G0 PASS.
+
+Current decision:
+
+> A terminal audit that merely reports its checkpoint is insufficient after
+> any prior diagnostic. Freeze checkpoint identity before execution, make
+> margins bind that signed selection, and reject replacement bytes, state-key
+> drift, seed drift, or deterministic-state drift before any trace. Restart the
+> complete B0/review chain; G0, profile, and formal training remain blocked.

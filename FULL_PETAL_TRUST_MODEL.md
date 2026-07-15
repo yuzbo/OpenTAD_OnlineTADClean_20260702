@@ -21,8 +21,10 @@ during a validated launch:
 4. `in_process_attestation_key_material`: the ephemeral Ed25519 private key
    held by the validated launch process.
 5. `g0_preregistration_and_audit_runner`: verifies the loaded dataset bytes,
-   consumes signed outcome-blind selection/margins, executes the CPU four-arm
-   audit, and signs its terminal result with the external G0 role key.
+   reproduces and preregisters the exact deterministic checkpoint identity,
+   consumes signed outcome-blind selection/margins, verifies the checkpoint
+   bytes again before model construction, executes the CPU four-arm audit, and
+   signs its terminal result with the external G0 role key.
 
 The exact machine-readable representation is locked in
 `launch_contract.evidence_trust_model`. Launch validation rejects any missing,

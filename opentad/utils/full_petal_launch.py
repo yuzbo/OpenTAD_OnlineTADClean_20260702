@@ -65,6 +65,7 @@ from .crs_eps_gold_gate import (
     MARGIN_ATTESTATION_ROLE,
     SELECTION_ATTESTATION_ROLE,
     evaluate_gold_audit,
+    validate_gold_checkpoint,
     validate_gold_margins,
     validate_gold_selection,
 )
@@ -707,12 +708,19 @@ def _validate_g0_artifact(
     _require_exact_fields(audit["config"], {"path", "sha256"}, "G0 config reference")
     if audit["config"]["sha256"] != config_file_sha256:
         raise FullPetalLaunchError("CRS-EPS G0 used a different config file")
-    _require_exact_fields(
-        audit["checkpoint"], {"path", "sha256", "state_key"}, "G0 checkpoint reference"
-    )
-    _require_sha256(audit["checkpoint"]["sha256"], "G0 checkpoint SHA256")
-    if audit["checkpoint"]["state_key"] not in {"state_dict", "state_dict_ema"}:
-        raise FullPetalLaunchError("CRS-EPS G0 checkpoint state key is unsupported")
+    try:
+        checkpoint = validate_gold_checkpoint(audit["checkpoint"])
+        _, checkpoint_bytes = read_verified_bundle_bytes(
+            {"path": checkpoint["path"], "sha256": checkpoint["sha256"]},
+            path.parent,
+            "G0 preregistered checkpoint",
+        )
+    except (CrsEpsGoldGateError, EvidenceBundleError) as exc:
+        raise FullPetalLaunchError(
+            f"CRS-EPS G0 checkpoint binding is invalid: {exc}"
+        ) from exc
+    if len(checkpoint_bytes) != checkpoint["byte_size"]:
+        raise FullPetalLaunchError("CRS-EPS G0 checkpoint byte size differs")
     _require_exact_fields(
         audit["episode_manifest"],
         {"path", "file_sha256", "manifest_sha256", "sampling_specs_sha256"},
@@ -776,6 +784,10 @@ def _validate_g0_artifact(
             raise FullPetalLaunchError(f"CRS-EPS G0 {field} digest differs")
     selection = preregistrations["selection"]
     margins = preregistrations["margins"]
+    if selection["checkpoint"] != checkpoint:
+        raise FullPetalLaunchError(
+            "CRS-EPS G0 audit checkpoint differs from signed preregistration"
+        )
     common_bindings = {
         "commit_sha": commit_sha,
         "resolved_config_sha256": resolved_config_sha256,
@@ -791,6 +803,10 @@ def _validate_g0_artifact(
             )
     if margins["selection_artifact_sha256"] != audit["selection"]["sha256"]:
         raise FullPetalLaunchError("CRS-EPS G0 margins do not bind the selection")
+    if checkpoint["generation"]["seed"] != int(runtime_seed):
+        raise FullPetalLaunchError(
+            "CRS-EPS G0 checkpoint seed differs from the launch seed"
+        )
     try:
         recomputed_gate = evaluate_gold_audit(audit["rows"], margins)
     except CrsEpsGoldGateError as exc:

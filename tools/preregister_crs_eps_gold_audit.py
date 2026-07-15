@@ -2,10 +2,15 @@
 """Sign outcome-blind CRS-EPS G0 sample selection and decision margins."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import random
 import subprocess
 import sys
+
+import numpy as np
+import torch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,18 +19,24 @@ if str(ROOT) not in sys.path:
 
 from mmengine import Config  # noqa: E402
 from opentad.datasets import build_dataset  # noqa: E402
+from opentad.models import build_detector  # noqa: E402
 from opentad.utils.crs_eps_gold_evidence import (  # noqa: E402
     CrsEpsGoldEvidenceError,
     bind_manifest_to_loaded_dataset,
+    checkpoint_state_from_bytes,
     sha256_file,
 )
 from opentad.utils.crs_eps_gold_gate import (  # noqa: E402
+    CHECKPOINT_GENERATION_METHOD,
+    CHECKPOINT_GENERATION_SCHEMA_VERSION,
     MARGIN_SCHEMA_VERSION,
     SELECTION_SCHEMA_VERSION,
 )
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
     publish_exclusive_file,
+    read_stable_file_bytes,
+    relative_bundle_path,
     strict_json_from_bytes,
 )
 from opentad.utils.full_petal_attestation import (  # noqa: E402
@@ -113,12 +124,95 @@ def _publish(path, payload):
     publish_exclusive_file(path, encoded)
 
 
+def _deterministic_checkpoint_binding(
+    checkpoint_path,
+    *,
+    checkpoint_key,
+    checkpoint_seed,
+    cfg,
+    bundle_root,
+):
+    if not 0 <= checkpoint_seed <= 0xFFFFFFFF:
+        raise GoldPreregistrationError(
+            "G0 checkpoint seed must fit the deterministic 32-bit seed domain"
+        )
+    try:
+        resolved, checkpoint_bytes = read_stable_file_bytes(
+            checkpoint_path, "frozen G0 checkpoint"
+        )
+        checkpoint_relative = relative_bundle_path(
+            resolved, bundle_root, "frozen G0 checkpoint"
+        )
+        checkpoint_state = checkpoint_state_from_bytes(
+            checkpoint_bytes, checkpoint_key
+        )
+    except (CrsEpsGoldEvidenceError, EvidenceBundleError, OSError) as exc:
+        raise GoldPreregistrationError(
+            f"cannot bind frozen G0 checkpoint: {exc}"
+        ) from exc
+
+    python_rng = random.getstate()
+    numpy_rng = np.random.get_state()
+    torch_rng = torch.random.get_rng_state().clone()
+    try:
+        random.seed(checkpoint_seed)
+        np.random.seed(checkpoint_seed)
+        torch.manual_seed(checkpoint_seed)
+        reference_model = build_detector(dict(cfg.model)).cpu()
+    finally:
+        random.setstate(python_rng)
+        np.random.set_state(numpy_rng)
+        torch.random.set_rng_state(torch_rng)
+    reference_state = reference_model.state_dict()
+    if set(checkpoint_state) != set(reference_state):
+        raise GoldPreregistrationError(
+            "G0 checkpoint does not match the deterministic model state keys"
+        )
+    drifted = []
+    for name, expected in reference_state.items():
+        actual = checkpoint_state[name]
+        if (
+            actual.shape != expected.shape
+            or actual.dtype != expected.dtype
+            or not torch.equal(actual.detach().cpu(), expected.detach().cpu())
+        ):
+            drifted.append(name)
+    if drifted:
+        raise GoldPreregistrationError(
+            "G0 checkpoint differs from deterministic initialization: "
+            + ", ".join(drifted[:8])
+        )
+    parameter_count = sum(
+        parameter.numel() for parameter in reference_model.parameters()
+    )
+    return {
+        "path": checkpoint_relative,
+        "sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
+        "byte_size": len(checkpoint_bytes),
+        "state_key": checkpoint_key,
+        "generation": {
+            "schema_version": CHECKPOINT_GENERATION_SCHEMA_VERSION,
+            "method": CHECKPOINT_GENERATION_METHOD,
+            "seed": checkpoint_seed,
+            "parameter_count": parameter_count,
+            "not_evidence_of_model_quality": True,
+        },
+    }
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path)
     parser.add_argument("--episode-manifest", type=Path, required=True)
     parser.add_argument("--samples", type=Path, required=True)
     parser.add_argument("--margin-thresholds", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument(
+        "--checkpoint-key",
+        choices=("state_dict", "state_dict_ema"),
+        default="state_dict",
+    )
+    parser.add_argument("--checkpoint-seed", type=int, required=True)
     parser.add_argument("--selection-output", type=Path, required=True)
     parser.add_argument("--margins-output", type=Path, required=True)
     parser.add_argument("--signing-key", type=Path, required=True)
@@ -139,6 +233,10 @@ def main(argv=None):
         config_path.relative_to(ROOT.resolve())
         cfg = Config.fromfile(str(config_path))
         manifest = _load_json(args.episode_manifest.resolve(strict=True), "G0 manifest")
+        if args.checkpoint_seed != manifest.get("seed"):
+            raise GoldPreregistrationError(
+                "G0 checkpoint seed must equal the immutable manifest seed"
+            )
         dataset = build_dataset(dict(cfg.dataset.train))
         resolved_sha256 = resolved_config_sha256(cfg)
         scientific_sha256 = resolved_config_sha256(cfg, scientific=True)
@@ -155,6 +253,13 @@ def main(argv=None):
         trust_root = dict(cfg.launch_contract.attestation_trust_roots.g0)
         if public_key_base64(args.signing_key) != trust_root["public_key"]:
             raise GoldPreregistrationError("G0 signing key does not match the trust root")
+        checkpoint = _deterministic_checkpoint_binding(
+            args.checkpoint.resolve(strict=True),
+            checkpoint_key=args.checkpoint_key,
+            checkpoint_seed=args.checkpoint_seed,
+            cfg=cfg,
+            bundle_root=selection_output.parent,
+        )
 
         samples_payload = _load_json(args.samples.resolve(strict=True), "G0 samples")
         if set(samples_payload) != {"samples"}:
@@ -171,6 +276,7 @@ def main(argv=None):
                     "episode_manifest_sha256",
                     "sampling_specs_sha256",
                 )},
+                "checkpoint": checkpoint,
                 "samples": samples_payload["samples"],
             },
             private_key_path=args.signing_key,

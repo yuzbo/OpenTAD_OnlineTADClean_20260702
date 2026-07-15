@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -13,6 +14,8 @@ from opentad.utils.crs_eps_gold_evidence import (
 )
 from opentad.utils.crs_eps_gold_gate import (
     AUDIT_SCHEMA_VERSION,
+    CHECKPOINT_GENERATION_METHOD,
+    CHECKPOINT_GENERATION_SCHEMA_VERSION,
     MARGIN_SCHEMA_VERSION,
     SELECTION_SCHEMA_VERSION,
     evaluate_gold_audit,
@@ -25,6 +28,7 @@ from opentad.utils.crs_eps_sampling import (
 from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_launch import FullPetalLaunchError
 from tools import run_crs_eps_gold_audit as gold_audit_runner
+from tools import preregister_crs_eps_gold_audit as gold_preregister
 from opentad.utils.full_petal_role_signing import (
     sign_crs_eps_g0_audit,
     sign_crs_eps_g0_margins,
@@ -91,7 +95,25 @@ def _trace(mode, *, fail=False):
     }
 
 
+def _checkpoint_binding(path, *, state_key="state_dict", seed=705):
+    payload = path.read_bytes()
+    return {
+        "path": path.name,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "byte_size": len(payload),
+        "state_key": state_key,
+        "generation": {
+            "schema_version": CHECKPOINT_GENERATION_SCHEMA_VERSION,
+            "method": CHECKPOINT_GENERATION_METHOD,
+            "seed": seed,
+            "parameter_count": 1,
+            "not_evidence_of_model_quality": True,
+        },
+    }
+
+
 def _g0_bundle(tmp_path, *, fail=False):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     private_key = tmp_path / "g0.pem"
     public_key = generate_private_key(private_key)
     trust_root = {"key_id": "g0-test", "public_key": public_key}
@@ -100,6 +122,9 @@ def _g0_bundle(tmp_path, *, fail=False):
         [spec], epoch=0, seed=705, draws_per_video=1, provenance={}
     )
     manifest_path = _write(tmp_path / "manifest.json", manifest)
+    checkpoint_path = tmp_path / "checkpoint.pth"
+    checkpoint_path.write_bytes(b"frozen-g0-checkpoint-fixture")
+    checkpoint = _checkpoint_binding(checkpoint_path)
     bindings = {
         "commit_sha": COMMIT,
         "resolved_config_sha256": RESOLVED,
@@ -115,6 +140,7 @@ def _g0_bundle(tmp_path, *, fail=False):
                 "schema_version": SELECTION_SCHEMA_VERSION,
                 "status": "PREREGISTERED_BEFORE_G0_EXECUTION",
                 **bindings,
+                "checkpoint": checkpoint,
                 "samples": [{"video_id": "video", "draw_index": 0}],
             },
             private_key_path=private_key,
@@ -166,11 +192,7 @@ def _g0_bundle(tmp_path, *, fail=False):
                 "scientific_config_sha256": SCIENTIFIC,
                 "data_identity_sha256": DATA,
                 "config": {"path": "config.py", "sha256": CONFIG},
-                "checkpoint": {
-                    "path": "checkpoint.pth",
-                    "sha256": "1" * 64,
-                    "state_key": "state_dict",
-                },
+                "checkpoint": checkpoint,
                 "episode_manifest": {
                     "path": manifest_path.name,
                     "file_sha256": _sha256(manifest_path),
@@ -196,6 +218,7 @@ def _g0_bundle(tmp_path, *, fail=False):
         "private_key": private_key,
         "trust_root": trust_root,
         "audit": audit_path,
+        "checkpoint": checkpoint_path,
         "margins": margins_path,
     }
 
@@ -247,26 +270,111 @@ def test_g0_manifest_seed_and_sampling_contract_are_launch_bound(tmp_path):
         _validate(bundle, runtime_seed=706)
 
 
-def test_g0_checkpoint_digest_is_from_the_exact_loaded_bytes(tmp_path):
+def test_g0_checkpoint_digest_is_from_the_exact_loaded_bytes(tmp_path, monkeypatch):
     checkpoint = tmp_path / "checkpoint.pth"
     source = torch.nn.Linear(2, 1, bias=False)
     with torch.no_grad():
         source.weight.fill_(3.0)
     torch.save({"state_dict": source.state_dict()}, checkpoint)
     loaded_bytes = checkpoint.read_bytes()
+    binding = _checkpoint_binding(checkpoint)
     target = torch.nn.Linear(2, 1, bias=False)
 
-    consumed_sha256 = gold_audit_runner._load_checkpoint(
-        target, checkpoint, "state_dict"
+    consumed = gold_audit_runner._read_bound_checkpoint(
+        checkpoint,
+        "state_dict",
+        binding,
+        bundle_root=tmp_path,
+        expected_seed=705,
     )
+    gold_audit_runner._load_checkpoint(target, consumed, "state_dict")
     replacement = torch.nn.Linear(2, 1, bias=False)
     with torch.no_grad():
         replacement.weight.fill_(777.0)
     torch.save({"state_dict": replacement.state_dict()}, checkpoint)
 
-    assert consumed_sha256 == hashlib.sha256(loaded_bytes).hexdigest()
-    assert consumed_sha256 != hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    assert hashlib.sha256(consumed).hexdigest() == hashlib.sha256(loaded_bytes).hexdigest()
+    assert hashlib.sha256(consumed).hexdigest() != hashlib.sha256(checkpoint.read_bytes()).hexdigest()
     assert torch.equal(target.weight, torch.full_like(target.weight, 3.0))
+    model_builds = []
+
+    def forbidden_build(_):
+        model_builds.append(True)
+        raise AssertionError("model construction must not run after checkpoint drift")
+
+    monkeypatch.setattr(gold_audit_runner, "build_detector", forbidden_build)
+    with pytest.raises(gold_audit_runner.GoldAuditRunnerError, match="hash mismatch"):
+        gold_audit_runner._build_bound_model(
+            SimpleNamespace(model={}),
+            checkpoint,
+            "state_dict",
+            binding,
+            bundle_root=tmp_path,
+            expected_seed=705,
+        )
+    assert model_builds == []
+    with pytest.raises(
+        gold_audit_runner.GoldAuditRunnerError,
+        match="state key differs from signed preregistration",
+    ):
+        gold_audit_runner._read_bound_checkpoint(
+            checkpoint,
+            "state_dict_ema",
+            binding,
+            bundle_root=tmp_path,
+            expected_seed=705,
+        )
+    seed_drift = json.loads(json.dumps(binding))
+    seed_drift["generation"]["seed"] = 706
+    with pytest.raises(
+        gold_audit_runner.GoldAuditRunnerError,
+        match="checkpoint seed differs from the immutable manifest",
+    ):
+        gold_audit_runner._read_bound_checkpoint(
+            checkpoint,
+            "state_dict",
+            seed_drift,
+            bundle_root=tmp_path,
+            expected_seed=705,
+        )
+
+
+def test_preregistration_reproduces_checkpoint_from_frozen_seed(tmp_path, monkeypatch):
+    def build_linear(_):
+        return torch.nn.Linear(2, 1, bias=False)
+
+    monkeypatch.setattr(gold_preregister, "build_detector", build_linear)
+    checkpoint = tmp_path / "deterministic.pth"
+    torch.manual_seed(705)
+    expected = build_linear({})
+    torch.save({"state_dict": expected.state_dict()}, checkpoint)
+
+    binding = gold_preregister._deterministic_checkpoint_binding(
+        checkpoint,
+        checkpoint_key="state_dict",
+        checkpoint_seed=705,
+        cfg=SimpleNamespace(model={}),
+        bundle_root=tmp_path,
+    )
+
+    assert binding["generation"]["seed"] == 705
+    assert binding["generation"]["parameter_count"] == 2
+    assert binding["sha256"] == hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+    torch.manual_seed(706)
+    replacement = build_linear({})
+    torch.save({"state_dict": replacement.state_dict()}, checkpoint)
+    with pytest.raises(
+        gold_preregister.GoldPreregistrationError,
+        match="differs from deterministic initialization",
+    ):
+        gold_preregister._deterministic_checkpoint_binding(
+            checkpoint,
+            checkpoint_key="state_dict",
+            checkpoint_seed=705,
+            cfg=SimpleNamespace(model={}),
+            bundle_root=tmp_path,
+        )
 
 
 def test_g0_kill_or_mismatched_launch_binding_cannot_authorize_profile(tmp_path):
@@ -283,6 +391,14 @@ def test_post_result_margin_file_substitution_breaks_the_signed_chain(tmp_path):
     payload = json.loads(bundle["margins"].read_text(encoding="utf-8"))
     payload["min_gradient_cosine"] = 0.0
     _write(bundle["margins"], payload)
+
+    with pytest.raises(FullPetalLaunchError, match="hash mismatch"):
+        _validate(bundle)
+
+
+def test_post_preregistration_checkpoint_substitution_breaks_the_signed_chain(tmp_path):
+    bundle = _g0_bundle(tmp_path)
+    bundle["checkpoint"].write_bytes(b"post-diagnostic-checkpoint-substitution")
 
     with pytest.raises(FullPetalLaunchError, match="hash mismatch"):
         _validate(bundle)

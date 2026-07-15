@@ -5,12 +5,19 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from pathlib import PurePosixPath
 
 
-SELECTION_SCHEMA_VERSION = "full-petal-crs-eps-g0-selection-v2"
-MARGIN_SCHEMA_VERSION = "full-petal-crs-eps-g0-margins-v2"
+SELECTION_SCHEMA_VERSION = "full-petal-crs-eps-g0-selection-v3"
+MARGIN_SCHEMA_VERSION = "full-petal-crs-eps-g0-margins-v3"
 GATE_SCHEMA_VERSION = "full-petal-crs-eps-g0-gate-v1"
-AUDIT_SCHEMA_VERSION = "full-petal-crs-eps-g0-audit-v2"
+AUDIT_SCHEMA_VERSION = "full-petal-crs-eps-g0-audit-v3"
+CHECKPOINT_GENERATION_SCHEMA_VERSION = (
+    "full-petal-crs-eps-g0-checkpoint-generation-v1"
+)
+CHECKPOINT_GENERATION_METHOD = (
+    "python_numpy_torch_seed_then_build_detector_state_dict_v1"
+)
 SELECTION_ATTESTATION_ROLE = "crs-eps-g0-selection"
 MARGIN_ATTESTATION_ROLE = "crs-eps-g0-margins"
 AUDIT_ATTESTATION_ROLE = "crs-eps-g0-audit"
@@ -27,7 +34,22 @@ _SELECTION_FIELDS = {
     "schema_version",
     "status",
     "samples",
+    "checkpoint",
     *_BINDING_FIELDS,
+}
+_CHECKPOINT_FIELDS = {
+    "path",
+    "sha256",
+    "byte_size",
+    "state_key",
+    "generation",
+}
+_CHECKPOINT_GENERATION_FIELDS = {
+    "schema_version",
+    "method",
+    "seed",
+    "parameter_count",
+    "not_evidence_of_model_quality",
 }
 _MARGIN_FIELDS = {
     "schema_version",
@@ -84,6 +106,55 @@ def _sha256_text(value, label, *, length=64):
     return value
 
 
+def validate_gold_checkpoint(checkpoint):
+    if not isinstance(checkpoint, Mapping) or set(checkpoint) != _CHECKPOINT_FIELDS:
+        raise CrsEpsGoldGateError("G0 checkpoint fields differ from the frozen schema")
+    normalized = dict(checkpoint)
+    path_value = normalized["path"]
+    if not isinstance(path_value, str) or not path_value or "\\" in path_value:
+        raise CrsEpsGoldGateError("G0 checkpoint path is not canonical relative text")
+    relative = PurePosixPath(path_value)
+    if (
+        relative.is_absolute()
+        or relative.as_posix() != path_value
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise CrsEpsGoldGateError("G0 checkpoint path is not canonical relative text")
+    _sha256_text(normalized["sha256"], "G0 checkpoint SHA256")
+    byte_size = normalized["byte_size"]
+    if isinstance(byte_size, bool) or not isinstance(byte_size, int) or byte_size <= 0:
+        raise CrsEpsGoldGateError("G0 checkpoint byte_size must be positive")
+    if normalized["state_key"] not in {"state_dict", "state_dict_ema"}:
+        raise CrsEpsGoldGateError("G0 checkpoint state key is unsupported")
+    generation = normalized["generation"]
+    if (
+        not isinstance(generation, Mapping)
+        or set(generation) != _CHECKPOINT_GENERATION_FIELDS
+    ):
+        raise CrsEpsGoldGateError("G0 checkpoint generation fields differ")
+    generation = dict(generation)
+    if generation["schema_version"] != CHECKPOINT_GENERATION_SCHEMA_VERSION:
+        raise CrsEpsGoldGateError("G0 checkpoint generation schema is unsupported")
+    if generation["method"] != CHECKPOINT_GENERATION_METHOD:
+        raise CrsEpsGoldGateError("G0 checkpoint generation method is unsupported")
+    for field in ("seed", "parameter_count"):
+        value = generation[field]
+        minimum = 0 if field == "seed" else 1
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < minimum
+            or (field == "seed" and value > 0xFFFFFFFF)
+        ):
+            raise CrsEpsGoldGateError(f"G0 checkpoint generation {field} is invalid")
+    if generation["not_evidence_of_model_quality"] is not True:
+        raise CrsEpsGoldGateError(
+            "G0 checkpoint must disclaim evidence of model quality"
+        )
+    normalized["generation"] = generation
+    return normalized
+
+
 def validate_gold_selection(selection):
     if not isinstance(selection, Mapping) or set(selection) != _SELECTION_FIELDS:
         raise CrsEpsGoldGateError("G0 selection fields differ from the frozen schema")
@@ -95,6 +166,7 @@ def validate_gold_selection(selection):
     _sha256_text(normalized["commit_sha"], "G0 selection commit", length=40)
     for field in _BINDING_FIELDS - {"commit_sha"}:
         _sha256_text(normalized[field], f"G0 selection {field}")
+    normalized["checkpoint"] = validate_gold_checkpoint(normalized["checkpoint"])
     samples = normalized["samples"]
     if not isinstance(samples, list) or not samples:
         raise CrsEpsGoldGateError("G0 selection requires at least one sample")
@@ -327,6 +399,8 @@ def evaluate_gold_audit(rows: Sequence[Mapping], margins):
 __all__ = [
     "AUDIT_ATTESTATION_ROLE",
     "AUDIT_SCHEMA_VERSION",
+    "CHECKPOINT_GENERATION_METHOD",
+    "CHECKPOINT_GENERATION_SCHEMA_VERSION",
     "CrsEpsGoldGateError",
     "GATE_SCHEMA_VERSION",
     "MARGIN_ATTESTATION_ROLE",
@@ -334,6 +408,7 @@ __all__ = [
     "SELECTION_ATTESTATION_ROLE",
     "SELECTION_SCHEMA_VERSION",
     "evaluate_gold_audit",
+    "validate_gold_checkpoint",
     "validate_gold_margins",
     "validate_gold_selection",
 ]

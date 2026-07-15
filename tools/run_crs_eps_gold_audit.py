@@ -4,7 +4,6 @@
 import argparse
 from copy import deepcopy
 import hashlib
-import io
 import json
 from pathlib import Path
 import subprocess
@@ -27,12 +26,14 @@ from opentad.utils.crs_eps_gold_gate import (  # noqa: E402
     MARGIN_ATTESTATION_ROLE,
     SELECTION_ATTESTATION_ROLE,
     evaluate_gold_audit,
+    validate_gold_checkpoint,
     validate_gold_margins,
     validate_gold_selection,
 )
 from opentad.utils.crs_eps_gold_evidence import (  # noqa: E402
     CrsEpsGoldEvidenceError,
     bind_manifest_to_loaded_dataset,
+    checkpoint_state_from_bytes,
 )
 from opentad.utils.crs_eps_sampling import (  # noqa: E402
     CrsEpsSamplingError,
@@ -41,7 +42,7 @@ from opentad.utils.crs_eps_sampling import (  # noqa: E402
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
     publish_exclusive_file,
-    read_stable_file_bytes,
+    read_verified_bundle_bytes,
     strict_json_from_bytes,
 )
 from opentad.utils.full_petal_attestation import (  # noqa: E402
@@ -135,33 +136,81 @@ def _verified_preregistration(payload, *, trust_root, role, bindings, label):
     return body
 
 
-def _load_checkpoint(model, checkpoint_path, checkpoint_key):
+def _read_bound_checkpoint(
+    checkpoint_path,
+    checkpoint_key,
+    checkpoint_binding,
+    *,
+    bundle_root,
+    expected_seed,
+):
     try:
-        _, checkpoint_bytes = read_stable_file_bytes(
-            checkpoint_path, "frozen G0 checkpoint"
+        checkpoint_binding = validate_gold_checkpoint(checkpoint_binding)
+        if checkpoint_binding["state_key"] != checkpoint_key:
+            raise GoldAuditRunnerError(
+                "runtime checkpoint state key differs from signed preregistration"
+            )
+        if checkpoint_binding["generation"]["seed"] != expected_seed:
+            raise GoldAuditRunnerError(
+                "signed checkpoint seed differs from the immutable manifest"
+            )
+        bound_path, checkpoint_bytes = read_verified_bundle_bytes(
+            {
+                "path": checkpoint_binding["path"],
+                "sha256": checkpoint_binding["sha256"],
+            },
+            bundle_root,
+            "preregistered G0 checkpoint",
         )
-        checkpoint_sha256 = hashlib.sha256(checkpoint_bytes).hexdigest()
-        checkpoint = torch.load(
-            io.BytesIO(checkpoint_bytes),
-            map_location="cpu",
-            weights_only=True,
-        )
-    except (EvidenceBundleError, OSError, RuntimeError, ValueError) as exc:
-        raise GoldAuditRunnerError(f"cannot load frozen G0 checkpoint: {exc}") from exc
-    if not isinstance(checkpoint, dict) or checkpoint_key not in checkpoint:
-        raise GoldAuditRunnerError(f"checkpoint lacks the explicit {checkpoint_key} state")
-    state = checkpoint[checkpoint_key]
-    if not isinstance(state, dict):
-        raise GoldAuditRunnerError("checkpoint model state is not a mapping")
-    normalized = {
-        (name[7:] if name.startswith("module.") else name): value
-        for name, value in state.items()
-    }
+        if checkpoint_path.resolve(strict=True) != bound_path:
+            raise GoldAuditRunnerError(
+                "runtime checkpoint path differs from signed preregistration"
+            )
+        if len(checkpoint_bytes) != checkpoint_binding["byte_size"]:
+            raise GoldAuditRunnerError(
+                "runtime checkpoint byte size differs from signed preregistration"
+            )
+        checkpoint_state_from_bytes(checkpoint_bytes, checkpoint_key)
+    except CrsEpsGoldGateError as exc:
+        raise GoldAuditRunnerError(
+            f"signed checkpoint preregistration is invalid: {exc}"
+        ) from exc
+    except (CrsEpsGoldEvidenceError, EvidenceBundleError, OSError) as exc:
+        raise GoldAuditRunnerError(
+            f"cannot verify preregistered G0 checkpoint: {exc}"
+        ) from exc
+    return checkpoint_bytes
+
+
+def _load_checkpoint(model, checkpoint_bytes, checkpoint_key):
     try:
+        normalized = checkpoint_state_from_bytes(
+            checkpoint_bytes, checkpoint_key
+        )
         model.load_state_dict(normalized, strict=True)
-    except RuntimeError as exc:
+    except (CrsEpsGoldEvidenceError, RuntimeError) as exc:
         raise GoldAuditRunnerError(f"checkpoint does not strictly match the G0 model: {exc}") from exc
-    return checkpoint_sha256
+
+
+def _build_bound_model(
+    cfg,
+    checkpoint_path,
+    checkpoint_key,
+    checkpoint_binding,
+    *,
+    bundle_root,
+    expected_seed,
+):
+    checkpoint_bytes = _read_bound_checkpoint(
+        checkpoint_path,
+        checkpoint_key,
+        checkpoint_binding,
+        bundle_root=bundle_root,
+        expected_seed=expected_seed,
+    )
+    model = build_detector(dict(cfg.model)).cpu().train()
+    _load_checkpoint(model, checkpoint_bytes, checkpoint_key)
+    return model
 
 
 def _episode_kwargs(sample):
@@ -255,9 +304,13 @@ def main(argv=None):
         )
         if margins["selection_artifact_sha256"] != _sha256_file(selection_path):
             raise GoldAuditRunnerError("G0 margins do not bind the signed selection artifact")
-        model = build_detector(dict(cfg.model)).cpu().train()
-        checkpoint_sha256 = _load_checkpoint(
-            model, checkpoint_path, args.checkpoint_key
+        model = _build_bound_model(
+            cfg,
+            checkpoint_path,
+            args.checkpoint_key,
+            selection["checkpoint"],
+            bundle_root=output.parent,
+            expected_seed=manifest["seed"],
         )
         videos = {video["video_id"]: video for video in manifest["videos"]}
         rows = []
@@ -308,11 +361,7 @@ def main(argv=None):
             "scientific_config_sha256": bindings["scientific_config_sha256"],
             "data_identity_sha256": bindings["data_identity_sha256"],
             "config": {"path": str(config_path), "sha256": _sha256_file(config_path)},
-            "checkpoint": {
-                "path": str(checkpoint_path),
-                "sha256": checkpoint_sha256,
-                "state_key": args.checkpoint_key,
-            },
+            "checkpoint": selection["checkpoint"],
             "episode_manifest": {
                 "path": manifest_path.name,
                 "file_sha256": _sha256_file(manifest_path),

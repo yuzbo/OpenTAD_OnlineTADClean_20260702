@@ -30,6 +30,7 @@ from .crs_eps_gold_gate import (
     MARGIN_SCHEMA_VERSION,
     SELECTION_ATTESTATION_ROLE,
     SELECTION_SCHEMA_VERSION,
+    validate_gold_checkpoint,
     validate_gold_margins,
     validate_gold_selection,
 )
@@ -99,6 +100,7 @@ def sign_crs_eps_g0_selection(payload, *, private_key_path, key_id):
             "data_identity_sha256",
             "episode_manifest_sha256",
             "sampling_specs_sha256",
+            "checkpoint",
             "samples",
         },
         schema=SELECTION_SCHEMA_VERSION,
@@ -169,6 +171,7 @@ def sign_crs_eps_g0_audit(payload, *, private_key_path, key_id):
     )
     if body["status"] not in {"PASS", "KILL"}:
         raise AttestationError("G0 audit signer requires a terminal PASS or KILL")
+    validate_gold_checkpoint(body["checkpoint"])
     if not isinstance(body["gate"], Mapping) or body["gate"].get("status") != body["status"]:
         raise AttestationError("G0 audit status differs from its gate")
     return _sign_body(
