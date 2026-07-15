@@ -15,13 +15,15 @@ from mmengine import Config
 
 from .evidence_bundle import (
     EvidenceBundleError,
-    bundle_file_reference,
     contained_file,
     publish_exclusive_pair,
+    read_stable_file_bytes,
     read_verified_bundle_bytes,
-    verify_bundle_reference,
+    relative_bundle_path,
+    resolve_bundle_path,
+    strict_json_from_bytes,
 )
-from .full_petal_attestation import AttestationError, _sign_payload, verify_payload
+from .full_petal_attestation import AttestationError, verify_payload
 from .full_petal_identity import (
     IdentityError,
     canonical_json_sha256,
@@ -35,14 +37,22 @@ from .full_petal_launch import (
     resolved_config_sha256,
     verify_launch_receipt,
 )
-from .immutable_event_ledger import LedgerError, load_verified_ledger
+from .full_petal_role_signing import sign_formal_run
+from .full_petal_runtime_attestation import (
+    RUNTIME_EVENT_FIELDS,
+    RUNTIME_GENESIS_HASH,
+    RuntimeAttestationError,
+    runtime_profile_trust_root,
+    verify_runtime_event,
+)
+from .immutable_event_ledger import LedgerError, load_verified_ledger_bytes
 
 
-TRAINING_TRACE_SCHEMA = "full-petal-training-trace-v1"
-TRAINING_COMMITMENT_SCHEMA = "full-petal-training-trace-commitment-v1"
-VISUAL_PARAMETER_TRACE_SCHEMA = "full-petal-visual-parameter-trace-v1"
-VISUAL_PARAMETER_COMMITMENT_SCHEMA = "full-petal-visual-parameter-commitment-v1"
-FORMAL_RUN_MANIFEST_SCHEMA = "full-petal-formal-run-manifest-v1"
+TRAINING_TRACE_SCHEMA = "full-petal-training-trace-v2"
+TRAINING_COMMITMENT_SCHEMA = "full-petal-training-trace-commitment-v2"
+VISUAL_PARAMETER_TRACE_SCHEMA = "full-petal-visual-parameter-trace-v2"
+VISUAL_PARAMETER_COMMITMENT_SCHEMA = "full-petal-visual-parameter-commitment-v2"
+FORMAL_RUN_MANIFEST_SCHEMA = "full-petal-formal-run-manifest-v2"
 FORMAL_RUN_ATTESTATION_ROLE = "formal-run"
 GENESIS_HASH = "0" * 64
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -52,8 +62,11 @@ _COMMON_FORMAL_ARTIFACT_ROLES = {
     "commitment",
     "ground_truth",
     "allowed_videos",
+    "fit_core",
+    "feature_cache_manifest",
     "evaluator_spec",
     "config",
+    "resolved_config",
     "checkpoint",
     "data_identity",
     "training_launch_ticket",
@@ -93,8 +106,9 @@ _LAUNCH_RECEIPT_FIELDS = {
     "world_size",
     "slurm_job_id",
     "slurm_allocation",
+    "execution_session",
 }
-_VISUAL_EVENT_FIELDS = {
+_VISUAL_EVENT_PAYLOAD_FIELDS = {
     "optimizer_event_id",
     "parameter_name",
     "requires_grad",
@@ -108,8 +122,9 @@ _VISUAL_EVENT_FIELDS = {
     "gradient_norm",
     "delta_norm",
 }
+_VISUAL_EVENT_FIELDS = _VISUAL_EVENT_PAYLOAD_FIELDS | RUNTIME_EVENT_FIELDS
 
-_TRACE_FIELDS = {
+_TRACE_PAYLOAD_FIELDS = {
     "event_id",
     "episode_id",
     "input_tokens",
@@ -124,6 +139,7 @@ _TRACE_FIELDS = {
     "loss_normalization_sha256",
     "skipped",
 }
+_TRACE_FIELDS = _TRACE_PAYLOAD_FIELDS | RUNTIME_EVENT_FIELDS
 _IDENTITY_FIELDS = (
     "precision",
     "optimizer_config_sha256",
@@ -152,8 +168,10 @@ class OptimizerEventTraceRecorder:
         scheduler_config_sha256,
         data_order_sha256,
         loss_normalization_sha256,
+        runtime_session,
         clock=None,
         peak_memory_reader=None,
+        synchronize=None,
     ):
         self.identity = {
             "precision": precision,
@@ -164,7 +182,12 @@ class OptimizerEventTraceRecorder:
             "data_order_sha256": data_order_sha256,
             "loss_normalization_sha256": loss_normalization_sha256,
         }
-        probe = {
+        if runtime_session is None or not callable(getattr(runtime_session, "sign_event", None)):
+            raise TrainingEvidenceError(
+                "optimizer event recorder requires a live runtime evidence session"
+            )
+        self._runtime_session = runtime_session
+        probe_payload = {
             "event_id": "validation-event",
             "episode_id": "validation-episode",
             "input_tokens": 1,
@@ -173,9 +196,11 @@ class OptimizerEventTraceRecorder:
             "skipped": False,
             **self.identity,
         }
-        _normalize_event(probe)
+        _normalize_event_payload(probe_payload)
         self._clock = clock or time.perf_counter
         self._peak_memory_reader = peak_memory_reader or (lambda: 0)
+        self._synchronize = synchronize or (lambda: None)
+        self._synchronize()
         self._started_at = float(self._clock())
         self._last_elapsed = 0.0
         self._events = []
@@ -189,6 +214,7 @@ class OptimizerEventTraceRecorder:
             "identity": json.loads(canonical_json(self.identity)),
             "last_elapsed": float(self._last_elapsed),
             "events": [json.loads(canonical_json(event)) for event in self._events],
+            "runtime_session": self._runtime_session.state_dict(),
         }
 
     def load_state_dict(self, state):
@@ -196,6 +222,7 @@ class OptimizerEventTraceRecorder:
             "identity",
             "last_elapsed",
             "events",
+            "runtime_session",
         }:
             raise TrainingEvidenceError("optimizer event recorder state fields differ")
         identity = json.loads(canonical_json(state["identity"]))
@@ -216,6 +243,10 @@ class OptimizerEventTraceRecorder:
             )
         self._events = events
         self._last_elapsed = last_elapsed
+        try:
+            self._runtime_session.load_state_dict(state["runtime_session"])
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
 
     def record(self, *, epoch, episode_id, input_tokens, skipped):
         if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
@@ -223,9 +254,10 @@ class OptimizerEventTraceRecorder:
         if not isinstance(episode_id, str) or not episode_id.strip():
             raise TrainingEvidenceError("optimizer event episode_id must be non-empty")
         sequence = len(self._events)
+        self._synchronize()
         elapsed = float(self._clock()) - self._started_at
         elapsed = max(elapsed, self._last_elapsed + 1e-9)
-        event = {
+        payload = {
             "event_id": f"optimizer-event-{sequence:08d}",
             "episode_id": f"epoch={epoch}|episode={episode_id}|sequence={sequence}",
             "input_tokens": input_tokens,
@@ -234,7 +266,14 @@ class OptimizerEventTraceRecorder:
             "skipped": skipped,
             **self.identity,
         }
-        normalized = _normalize_event(event)
+        normalized_payload = _normalize_event_payload(payload)
+        try:
+            envelope = self._runtime_session.sign_event(
+                "optimizer-event", normalized_payload
+            )
+        except RuntimeAttestationError as exc:
+            raise TrainingEvidenceError(str(exc)) from exc
+        normalized = _normalize_event({**normalized_payload, **envelope})
         self._events.append(normalized)
         self._last_elapsed = elapsed
         return normalized
@@ -256,17 +295,6 @@ def canonical_json(value):
         )
     except (TypeError, ValueError) as exc:
         raise TrainingEvidenceError(f"training evidence is not canonical JSON: {exc}") from exc
-
-
-def sha256_file(path):
-    path = Path(path)
-    if not path.is_file():
-        raise TrainingEvidenceError(f"training evidence file does not exist: {path}")
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _sha(value, label):
@@ -307,10 +335,25 @@ def _finite(value, label, *, positive=False):
     return value
 
 
-def _normalize_event(event):
-    if not isinstance(event, Mapping) or set(event) != _TRACE_FIELDS:
+def _normalize_runtime_envelope(envelope, label):
+    if not isinstance(envelope, Mapping) or set(envelope) != RUNTIME_EVENT_FIELDS:
+        raise TrainingEvidenceError(f"{label} runtime envelope fields differ")
+    result = dict(envelope)
+    _sha(result["runtime_session_id"], f"{label} runtime_session_id")
+    _nonnegative_int(result["runtime_sequence"], f"{label} runtime_sequence")
+    _sha(result["runtime_previous_hash"], f"{label} runtime_previous_hash")
+    _sha(result["runtime_event_hash"], f"{label} runtime_event_hash")
+    if not isinstance(result["runtime_signature"], str) or not result[
+        "runtime_signature"
+    ]:
+        raise TrainingEvidenceError(f"{label} runtime_signature is invalid")
+    return result
+
+
+def _normalize_event_payload(event):
+    if not isinstance(event, Mapping) or set(event) != _TRACE_PAYLOAD_FIELDS:
         raise TrainingEvidenceError(
-            f"training event fields differ; expected={sorted(_TRACE_FIELDS)}, "
+            f"training event fields differ; expected={sorted(_TRACE_PAYLOAD_FIELDS)}, "
             f"found={sorted(event) if isinstance(event, Mapping) else type(event).__name__}"
         )
     result = dict(event)
@@ -333,6 +376,22 @@ def _normalize_event(event):
     if not isinstance(result["skipped"], bool):
         raise TrainingEvidenceError("training event skipped must be boolean")
     return json.loads(canonical_json(result))
+
+
+def _normalize_event(event):
+    if not isinstance(event, Mapping) or set(event) != _TRACE_FIELDS:
+        raise TrainingEvidenceError(
+            f"training event fields differ; expected={sorted(_TRACE_FIELDS)}, "
+            f"found={sorted(event) if isinstance(event, Mapping) else type(event).__name__}"
+        )
+    payload = _normalize_event_payload(
+        {field: event[field] for field in _TRACE_PAYLOAD_FIELDS}
+    )
+    envelope = _normalize_runtime_envelope(
+        {field: event[field] for field in RUNTIME_EVENT_FIELDS},
+        "training event",
+    )
+    return json.loads(canonical_json({**payload, **envelope}))
 
 
 def _row_hash(row):
@@ -376,11 +435,13 @@ def build_training_rows(events):
     return tuple(rows)
 
 
-def verify_training_rows(rows):
+def verify_training_rows(rows, *, runtime_binding=None, require_contiguous_runtime=False):
     if isinstance(rows, (str, bytes, Mapping)) or not isinstance(rows, Iterable):
         raise TrainingEvidenceError("training rows must be a sequence")
     events = []
     previous = GENESIS_HASH
+    runtime_previous = RUNTIME_GENESIS_HASH
+    runtime_sequence = 0
     for sequence, raw in enumerate(rows):
         if not isinstance(raw, Mapping):
             raise TrainingEvidenceError("training row must be an object")
@@ -397,7 +458,29 @@ def verify_training_rows(rows):
             raise TrainingEvidenceError("training row schema or sequence differs")
         if row["previous_hash"] != previous or _row_hash(row) != row["row_hash"]:
             raise TrainingEvidenceError("training trace hash chain differs or is truncated")
-        events.append({field: row[field] for field in _TRACE_FIELDS})
+        event = {field: row[field] for field in _TRACE_FIELDS}
+        if runtime_binding is not None:
+            payload = {field: event[field] for field in _TRACE_PAYLOAD_FIELDS}
+            envelope = {field: event[field] for field in RUNTIME_EVENT_FIELDS}
+            try:
+                verified_hash = verify_runtime_event(
+                    payload,
+                    envelope,
+                    event_kind="optimizer-event",
+                    binding=runtime_binding,
+                )
+            except RuntimeAttestationError as exc:
+                raise TrainingEvidenceError(str(exc)) from exc
+            if require_contiguous_runtime and (
+                envelope["runtime_sequence"] != runtime_sequence
+                or envelope["runtime_previous_hash"] != runtime_previous
+            ):
+                raise TrainingEvidenceError(
+                    "optimizer runtime event chain is not contiguous"
+                )
+            runtime_sequence = envelope["runtime_sequence"] + 1
+            runtime_previous = verified_hash
+        events.append(event)
         previous = row["row_hash"]
     rebuilt = build_training_rows(events)
     if tuple(json.loads(canonical_json(row)) for row in rows) != rebuilt:
@@ -414,6 +497,10 @@ def persist_training_trace(trace_path, commitment_path, events):
         "trace_sha256": hashlib.sha256(encoded).hexdigest(),
         "count": len(rows),
         "final_hash": rows[-1]["row_hash"],
+        "runtime_session_id": rows[0]["runtime_session_id"],
+        "runtime_first_sequence": rows[0]["runtime_sequence"],
+        "runtime_final_sequence": rows[-1]["runtime_sequence"],
+        "runtime_final_hash": rows[-1]["runtime_event_hash"],
     }
     try:
         publish_exclusive_pair(
@@ -427,24 +514,48 @@ def persist_training_trace(trace_path, commitment_path, events):
     return commitment
 
 
-def _read_jsonl(path):
+def _read_jsonl_bytes(payload, label):
     try:
-        lines = Path(path).read_text(encoding="utf-8").splitlines()
-        rows = [json.loads(line) for line in lines]
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise TrainingEvidenceError(f"failed to read training trace: {exc}") from exc
+        text = payload.decode("utf-8")
+        lines = text.splitlines()
+        rows = [
+            strict_json_from_bytes(
+                line.encode("utf-8"), f"{label} line {index}", require_object=True
+            )
+            for index, line in enumerate(lines)
+        ]
+    except (EvidenceBundleError, UnicodeError) as exc:
+        raise TrainingEvidenceError(f"failed to read {label}: {exc}") from exc
     if any(canonical_json(row) != line for row, line in zip(rows, lines)):
-        raise TrainingEvidenceError("training trace does not use canonical JSONL")
+        raise TrainingEvidenceError(f"{label} does not use canonical JSONL")
     return rows
 
 
-def load_training_trace(trace_path, commitment_path):
+def load_training_trace(
+    trace_path,
+    commitment_path,
+    *,
+    trace_bytes=None,
+    commitment_bytes=None,
+    runtime_binding=None,
+    require_contiguous_runtime=False,
+):
     try:
-        raw_commitment = Path(commitment_path).read_text(encoding="utf-8")
+        if trace_bytes is None:
+            _, trace_bytes = read_stable_file_bytes(
+                trace_path, "training optimizer-event trace"
+            )
+        if commitment_bytes is None:
+            _, commitment_bytes = read_stable_file_bytes(
+                commitment_path, "training optimizer-event commitment"
+            )
+        raw_commitment = commitment_bytes.decode("utf-8")
         if not raw_commitment.endswith("\n") or raw_commitment.count("\n") != 1:
             raise TrainingEvidenceError("training commitment must be one canonical JSON line")
-        commitment = json.loads(raw_commitment)
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        commitment = strict_json_from_bytes(
+            commitment_bytes, "training commitment", require_object=True
+        )
+    except (EvidenceBundleError, UnicodeError) as exc:
         raise TrainingEvidenceError(f"failed to read training commitment: {exc}") from exc
     expected = {
         "schema_version",
@@ -452,6 +563,10 @@ def load_training_trace(trace_path, commitment_path):
         "trace_sha256",
         "count",
         "final_hash",
+        "runtime_session_id",
+        "runtime_first_sequence",
+        "runtime_final_sequence",
+        "runtime_final_hash",
     }
     if set(commitment) != expected or canonical_json(commitment) + "\n" != raw_commitment:
         raise TrainingEvidenceError("training commitment fields/encoding differ")
@@ -459,11 +574,26 @@ def load_training_trace(trace_path, commitment_path):
         raise TrainingEvidenceError("training commitment schema is unsupported")
     if commitment["trace_filename"] != Path(trace_path).name:
         raise TrainingEvidenceError("training commitment filename differs")
-    if sha256_file(trace_path) != commitment["trace_sha256"]:
+    if hashlib.sha256(trace_bytes).hexdigest() != commitment["trace_sha256"]:
         raise TrainingEvidenceError("training trace file hash differs from commitment")
-    rows = verify_training_rows(_read_jsonl(trace_path))
+    rows = verify_training_rows(
+        _read_jsonl_bytes(trace_bytes, "training trace"),
+        runtime_binding=runtime_binding,
+        require_contiguous_runtime=require_contiguous_runtime,
+    )
     if len(rows) != commitment["count"] or rows[-1]["row_hash"] != commitment["final_hash"]:
         raise TrainingEvidenceError("training trace tail differs from commitment")
+    if (
+        commitment["runtime_session_id"] != rows[0]["runtime_session_id"]
+        or commitment["runtime_first_sequence"] != rows[0]["runtime_sequence"]
+        or commitment["runtime_final_sequence"] != rows[-1]["runtime_sequence"]
+        or commitment["runtime_final_hash"] != rows[-1]["runtime_event_hash"]
+    ):
+        raise TrainingEvidenceError("training runtime commitment differs from trace")
+    if runtime_binding is not None and commitment["runtime_session_id"] != runtime_binding[
+        "session_id"
+    ]:
+        raise TrainingEvidenceError("training trace session differs from launch receipt")
     return rows
 
 
@@ -484,11 +614,11 @@ def tensor_sha256(tensor):
     return hashlib.sha256(metadata + b"\n" + raw).hexdigest()
 
 
-def _normalize_visual_event(event):
-    if not isinstance(event, Mapping) or set(event) != _VISUAL_EVENT_FIELDS:
+def _normalize_visual_event_payload(event):
+    if not isinstance(event, Mapping) or set(event) != _VISUAL_EVENT_PAYLOAD_FIELDS:
         raise TrainingEvidenceError(
             "visual parameter event fields differ; "
-            f"expected={sorted(_VISUAL_EVENT_FIELDS)}, "
+            f"expected={sorted(_VISUAL_EVENT_PAYLOAD_FIELDS)}, "
             f"found={sorted(event) if isinstance(event, Mapping) else type(event).__name__}"
         )
     result = dict(event)
@@ -522,6 +652,23 @@ def _normalize_visual_event(event):
             "frozen visual parameter cannot belong to optimizer or record a gradient"
         )
     return json.loads(canonical_json(result))
+
+
+def _normalize_visual_event(event):
+    if not isinstance(event, Mapping) or set(event) != _VISUAL_EVENT_FIELDS:
+        raise TrainingEvidenceError(
+            "visual parameter event fields differ; "
+            f"expected={sorted(_VISUAL_EVENT_FIELDS)}, "
+            f"found={sorted(event) if isinstance(event, Mapping) else type(event).__name__}"
+        )
+    payload = _normalize_visual_event_payload(
+        {field: event[field] for field in _VISUAL_EVENT_PAYLOAD_FIELDS}
+    )
+    envelope = _normalize_runtime_envelope(
+        {field: event[field] for field in RUNTIME_EVENT_FIELDS},
+        "visual parameter event",
+    )
+    return json.loads(canonical_json({**payload, **envelope}))
 
 
 def build_visual_parameter_rows(events):
@@ -559,6 +706,10 @@ def persist_visual_parameter_trace(trace_path, commitment_path, events):
         "trace_sha256": hashlib.sha256(encoded).hexdigest(),
         "count": len(rows),
         "final_hash": rows[-1]["row_hash"],
+        "runtime_session_id": rows[0]["runtime_session_id"],
+        "runtime_first_sequence": rows[0]["runtime_sequence"],
+        "runtime_final_sequence": rows[-1]["runtime_sequence"],
+        "runtime_final_hash": rows[-1]["runtime_event_hash"],
     }
     try:
         publish_exclusive_pair(
@@ -572,14 +723,40 @@ def persist_visual_parameter_trace(trace_path, commitment_path, events):
     return commitment
 
 
-def load_visual_parameter_trace(trace_path, commitment_path):
-    commitment = _load_json_object(commitment_path, "visual parameter commitment")
+def load_visual_parameter_trace(
+    trace_path,
+    commitment_path,
+    *,
+    trace_bytes=None,
+    commitment_bytes=None,
+    runtime_binding=None,
+):
+    try:
+        if trace_bytes is None:
+            _, trace_bytes = read_stable_file_bytes(
+                trace_path, "visual parameter trace"
+            )
+        if commitment_bytes is None:
+            _, commitment_bytes = read_stable_file_bytes(
+                commitment_path, "visual parameter commitment"
+            )
+        commitment = strict_json_from_bytes(
+            commitment_bytes,
+            "visual parameter commitment",
+            require_object=True,
+        )
+    except EvidenceBundleError as exc:
+        raise TrainingEvidenceError(str(exc)) from exc
     required = {
         "schema_version",
         "trace_filename",
         "trace_sha256",
         "count",
         "final_hash",
+        "runtime_session_id",
+        "runtime_first_sequence",
+        "runtime_final_sequence",
+        "runtime_final_hash",
     }
     if set(commitment) != required:
         raise TrainingEvidenceError("visual parameter commitment fields differ")
@@ -587,9 +764,9 @@ def load_visual_parameter_trace(trace_path, commitment_path):
         raise TrainingEvidenceError("visual parameter commitment schema is unsupported")
     if commitment["trace_filename"] != Path(trace_path).name:
         raise TrainingEvidenceError("visual parameter commitment filename differs")
-    if sha256_file(trace_path) != commitment["trace_sha256"]:
+    if hashlib.sha256(trace_bytes).hexdigest() != commitment["trace_sha256"]:
         raise TrainingEvidenceError("visual parameter trace hash differs from commitment")
-    raw_rows = _read_jsonl(trace_path)
+    raw_rows = _read_jsonl_bytes(trace_bytes, "visual parameter trace")
     rebuilt = build_visual_parameter_rows(
         [{field: row[field] for field in _VISUAL_EVENT_FIELDS} for row in raw_rows]
     )
@@ -597,6 +774,34 @@ def load_visual_parameter_trace(trace_path, commitment_path):
         raise TrainingEvidenceError("visual parameter trace chain or encoding differs")
     if len(rebuilt) != commitment["count"] or rebuilt[-1]["row_hash"] != commitment["final_hash"]:
         raise TrainingEvidenceError("visual parameter trace tail differs from commitment")
+    if (
+        commitment["runtime_session_id"] != rebuilt[0]["runtime_session_id"]
+        or commitment["runtime_first_sequence"] != rebuilt[0]["runtime_sequence"]
+        or commitment["runtime_final_sequence"] != rebuilt[-1]["runtime_sequence"]
+        or commitment["runtime_final_hash"] != rebuilt[-1]["runtime_event_hash"]
+    ):
+        raise TrainingEvidenceError(
+            "visual parameter runtime commitment differs from trace"
+        )
+    if runtime_binding is not None:
+        if commitment["runtime_session_id"] != runtime_binding["session_id"]:
+            raise TrainingEvidenceError(
+                "visual parameter session differs from launch receipt"
+            )
+        for row in rebuilt:
+            payload = {
+                field: row[field] for field in _VISUAL_EVENT_PAYLOAD_FIELDS
+            }
+            envelope = {field: row[field] for field in RUNTIME_EVENT_FIELDS}
+            try:
+                verify_runtime_event(
+                    payload,
+                    envelope,
+                    event_kind="visual-parameter-event",
+                    binding=runtime_binding,
+                )
+            except RuntimeAttestationError as exc:
+                raise TrainingEvidenceError(str(exc)) from exc
     return rebuilt
 
 
@@ -607,7 +812,7 @@ def _matches_parameter_prefix(name, prefixes):
 class VisualParameterEventRecorder:
     """Record complete per-event evidence for a configured visual parameter scope."""
 
-    def __init__(self, model, optimizer, *, parameter_prefixes):
+    def __init__(self, model, optimizer, *, parameter_prefixes, runtime_session):
         prefixes = tuple(parameter_prefixes)
         if not prefixes or not all(isinstance(value, str) and value for value in prefixes):
             raise TrainingEvidenceError(
@@ -630,6 +835,11 @@ class VisualParameterEventRecorder:
         self.parameter_prefixes = prefixes
         self.parameter_names = tuple(sorted(parameters))
         self._optimizer_parameter_ids = optimizer_parameter_ids
+        if runtime_session is None or not callable(getattr(runtime_session, "sign_event", None)):
+            raise TrainingEvidenceError(
+                "visual parameter recorder requires a live runtime evidence session"
+            )
+        self._runtime_session = runtime_session
         self._events = []
         self._staged = None
 
@@ -729,9 +939,8 @@ class VisualParameterEventRecorder:
             before = self._staged[name]
             after = parameter.detach().cpu().contiguous()
             delta_norm = float((after.float() - before["before"].float()).norm().item())
-            events.append(
-                _normalize_visual_event(
-                    {
+            payload = _normalize_visual_event_payload(
+                {
                         "optimizer_event_id": optimizer_event_id,
                         "parameter_name": name,
                         "requires_grad": before["requires_grad"],
@@ -744,9 +953,15 @@ class VisualParameterEventRecorder:
                         "gradient_finite": before["gradient_finite"],
                         "gradient_norm": before["gradient_norm"],
                         "delta_norm": delta_norm,
-                    }
-                )
+                }
             )
+            try:
+                envelope = self._runtime_session.sign_event(
+                    "visual-parameter-event", payload
+                )
+            except RuntimeAttestationError as exc:
+                raise TrainingEvidenceError(str(exc)) from exc
+            events.append(_normalize_visual_event({**payload, **envelope}))
         self._events.extend(events)
         self._staged = None
         return tuple(events)
@@ -815,6 +1030,11 @@ def derive_visual_parameter_evidence(
     visual_trace_path,
     visual_commitment_path,
     checkpoint_bytes=None,
+    training_trace_bytes=None,
+    training_commitment_bytes=None,
+    visual_trace_bytes=None,
+    visual_commitment_bytes=None,
+    runtime_binding=None,
 ):
     """Derive C2 update facts from complete parameter events and final checkpoint."""
 
@@ -846,15 +1066,42 @@ def derive_visual_parameter_evidence(
         raise TrainingEvidenceError(
             "visual parameter contract selects no adapted trainable parameters"
         )
-    training_rows = load_training_trace(training_trace_path, training_commitment_path)
+    if runtime_binding is None:
+        raise TrainingEvidenceError(
+            "C2 visual parameter evidence requires a launch-certified runtime session"
+        )
+    training_rows = load_training_trace(
+        training_trace_path,
+        training_commitment_path,
+        trace_bytes=training_trace_bytes,
+        commitment_bytes=training_commitment_bytes,
+        runtime_binding=runtime_binding,
+    )
     if any(row["skipped"] for row in training_rows):
         raise TrainingEvidenceError(
             "C2 visual parameter evidence does not permit skipped optimizer events"
         )
     event_ids = [row["event_id"] for row in training_rows]
     visual_rows = load_visual_parameter_trace(
-        visual_trace_path, visual_commitment_path
+        visual_trace_path,
+        visual_commitment_path,
+        trace_bytes=visual_trace_bytes,
+        commitment_bytes=visual_commitment_bytes,
+        runtime_binding=runtime_binding,
     )
+    combined_runtime = sorted(
+        [*training_rows, *visual_rows], key=lambda row: row["runtime_sequence"]
+    )
+    previous_runtime_hash = RUNTIME_GENESIS_HASH
+    for runtime_sequence, row in enumerate(combined_runtime):
+        if (
+            row["runtime_sequence"] != runtime_sequence
+            or row["runtime_previous_hash"] != previous_runtime_hash
+        ):
+            raise TrainingEvidenceError(
+                "C2 optimizer/parameter runtime chain is incomplete or reordered"
+            )
+        previous_runtime_hash = row["runtime_event_hash"]
     grouped = {event_id: {} for event_id in event_ids}
     for row in visual_rows:
         event_id = row["optimizer_event_id"]
@@ -937,8 +1184,27 @@ def derive_visual_parameter_evidence(
     }
 
 
-def derive_training_cost(trace_path, commitment_path):
-    rows = load_training_trace(trace_path, commitment_path)
+def derive_training_cost(
+    trace_path,
+    commitment_path,
+    *,
+    trace_bytes=None,
+    commitment_bytes=None,
+    runtime_binding=None,
+    require_contiguous_runtime=True,
+):
+    if runtime_binding is None:
+        raise TrainingEvidenceError(
+            "training cost requires a launch-certified runtime session"
+        )
+    rows = load_training_trace(
+        trace_path,
+        commitment_path,
+        trace_bytes=trace_bytes,
+        commitment_bytes=commitment_bytes,
+        runtime_binding=runtime_binding,
+        require_contiguous_runtime=require_contiguous_runtime,
+    )
     skipped = sum(int(row["skipped"]) for row in rows)
     elapsed = float(rows[-1]["elapsed_seconds"])
     identity = {field: rows[0][field] for field in _IDENTITY_FIELDS}
@@ -963,8 +1229,12 @@ def derive_fixed_step_profile_measurements(
     warmup_optimizer_events,
     measured_optimizer_events,
     expected_identity=None,
+    profiler_measurements,
+    trace_bytes=None,
+    commitment_bytes=None,
+    runtime_binding=None,
 ):
-    """Derive fixed-step cost only from the committed optimizer-event trace."""
+    """Validate synchronized profiler output against the authenticated event trace."""
 
     warmup = _nonnegative_int(
         warmup_optimizer_events, "profile warmup optimizer events"
@@ -974,7 +1244,18 @@ def derive_fixed_step_profile_measurements(
         "profile measured optimizer events",
         positive=True,
     )
-    rows = load_training_trace(trace_path, commitment_path)
+    if runtime_binding is None:
+        raise TrainingEvidenceError(
+            "profile evidence requires a launch-certified runtime session"
+        )
+    rows = load_training_trace(
+        trace_path,
+        commitment_path,
+        trace_bytes=trace_bytes,
+        commitment_bytes=commitment_bytes,
+        runtime_binding=runtime_binding,
+        require_contiguous_runtime=True,
+    )
     if len(rows) != warmup + measured:
         raise TrainingEvidenceError(
             "profile optimizer-event trace length differs from the fixed-step contract"
@@ -992,32 +1273,69 @@ def derive_fixed_step_profile_measurements(
             raise TrainingEvidenceError(
                 "profile optimizer-event trace identity differs from the launch config"
             )
-    start_elapsed = rows[warmup - 1]["elapsed_seconds"] if warmup else 0.0
-    elapsed = float(rows[-1]["elapsed_seconds"]) - float(start_elapsed)
-    if elapsed <= 0:
-        raise TrainingEvidenceError(
-            "profile measured optimizer-event interval must be positive"
-        )
-    measured_rows = rows[warmup:]
-    return {
+    required_measurements = {
         "warmup_optimizer_events": warmup,
         "measured_optimizer_events": measured,
         "total_optimizer_events": len(rows),
         "skipped_optimizer_events": 0,
-        "elapsed_seconds": elapsed,
-        "peak_memory_bytes": max(row["peak_memory_bytes"] for row in measured_rows),
-        "throughput_optimizer_events_per_second": measured / elapsed,
+        "measurement_start_after_event_id": (
+            rows[warmup - 1]["event_id"] if warmup else "runtime-genesis"
+        ),
+        "measurement_end_event_id": rows[-1]["event_id"],
     }
+    expected_fields = set(required_measurements) | {
+        "elapsed_seconds",
+        "peak_memory_bytes",
+        "throughput_optimizer_events_per_second",
+    }
+    if not isinstance(profiler_measurements, Mapping) or set(
+        profiler_measurements
+    ) != expected_fields:
+        raise TrainingEvidenceError("synchronized profile measurement fields differ")
+    normalized = dict(profiler_measurements)
+    for field, expected in required_measurements.items():
+        if normalized[field] != expected:
+            raise TrainingEvidenceError(
+                f"synchronized profile measurement {field} differs from event trace"
+            )
+    elapsed = _finite(
+        normalized["elapsed_seconds"], "profile elapsed_seconds", positive=True
+    )
+    peak = _nonnegative_int(
+        normalized["peak_memory_bytes"], "profile peak_memory_bytes"
+    )
+    throughput = _finite(
+        normalized["throughput_optimizer_events_per_second"],
+        "profile throughput",
+        positive=True,
+    )
+    expected_throughput = measured / elapsed
+    if not math.isclose(throughput, expected_throughput, rel_tol=1e-12, abs_tol=0.0):
+        raise TrainingEvidenceError(
+            "synchronized profile throughput is inconsistent with measured time"
+        )
+    normalized["elapsed_seconds"] = elapsed
+    normalized["peak_memory_bytes"] = peak
+    normalized["throughput_optimizer_events_per_second"] = throughput
+    return json.loads(canonical_json(normalized))
 
 
-def _load_json_object(path, label):
+def _load_json_object(path, label, *, raw=None):
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        if raw is None:
+            _, raw = read_stable_file_bytes(path, label)
+        payload = strict_json_from_bytes(raw, label, require_object=True)
+    except EvidenceBundleError as exc:
         raise TrainingEvidenceError(f"failed to load {label}: {exc}") from exc
-    if not isinstance(payload, Mapping):
-        raise TrainingEvidenceError(f"{label} must contain one JSON object")
     return dict(payload)
+
+
+def _load_resolved_config(raw, label):
+    try:
+        payload = strict_json_from_bytes(raw, label, require_object=True)
+        return Config(payload)
+    except (EvidenceBundleError, TypeError, ValueError) as exc:
+        raise TrainingEvidenceError(f"failed to load {label}: {exc}") from exc
 
 
 def _formal_artifact_paths(artifacts, claim, *, bundle_root):
@@ -1058,13 +1376,17 @@ def _profile_trust_root(cfg):
     return root
 
 
-def _validate_formal_ticket(path, *, entrypoint, seed, commit_sha, config_path):
-    ticket = _load_json_object(path, f"formal {entrypoint} launch ticket")
+def _validate_formal_ticket(
+    path, *, entrypoint, seed, commit_sha, ticket_bytes, config_sha256
+):
+    ticket = _load_json_object(
+        path, f"formal {entrypoint} launch ticket", raw=ticket_bytes
+    )
     if set(ticket) != _LAUNCH_TICKET_FIELDS or ticket.get("schema_version") != LAUNCH_TICKET_SCHEMA:
         raise TrainingEvidenceError(f"formal {entrypoint} launch ticket schema/fields differ")
     if ticket.get("mode") != "formal" or ticket.get("commit_sha") != commit_sha:
         raise TrainingEvidenceError(f"formal {entrypoint} launch ticket mode/commit differs")
-    if ticket.get("config_file_sha256") != sha256_file(config_path):
+    if ticket.get("config_file_sha256") != config_sha256:
         raise TrainingEvidenceError(f"formal {entrypoint} launch ticket config hash differs")
     runtime = ticket.get("runtime_identity")
     runtime_fields = {
@@ -1102,8 +1424,10 @@ def _validate_formal_receipt(
     ticket_path,
     trust_root,
     commit_sha,
+    receipt_bytes,
+    ticket_sha256,
 ):
-    signed = _load_json_object(path, "formal launch receipt")
+    signed = _load_json_object(path, "formal launch receipt", raw=receipt_bytes)
     try:
         receipt = verify_launch_receipt(signed, trust_root=trust_root)
     except FullPetalLaunchError as exc:
@@ -1120,7 +1444,7 @@ def _validate_formal_receipt(
         "scientific_config_sha256": ticket["scientific_config_sha256"],
         "launch_ticket": {
             "path": Path(ticket_path).name,
-            "sha256": sha256_file(ticket_path),
+            "sha256": ticket_sha256,
         },
         "b0_artifact_sha256": ticket["b0_evidence"].get("sha256"),
         "review_artifact_sha256": ticket["review_evidence"].get("sha256"),
@@ -1142,35 +1466,57 @@ def _validate_formal_receipt(
         or allocation.get("gpus") != 1
     ):
         raise TrainingEvidenceError("formal launch receipt lacks an active one-GPU allocation")
+    try:
+        runtime_profile_trust_root(receipt["execution_session"])
+    except RuntimeAttestationError as exc:
+        raise TrainingEvidenceError(
+            f"formal launch receipt runtime session is invalid: {exc}"
+        ) from exc
     return receipt
 
 
 def validate_formal_run_artifacts(
-    *, claim, variant, seed, commit_sha, artifacts, bundle_root
+    *,
+    claim,
+    variant,
+    seed,
+    commit_sha,
+    artifacts,
+    bundle_root,
+    return_verified_bytes=False,
 ):
     """Validate the execution-bound run bundle before a formal signature is issued."""
 
     paths = _formal_artifact_paths(artifacts, claim, bundle_root=bundle_root)
+    artifact_bytes = {}
+    try:
+        for role, path in paths.items():
+            _, artifact_bytes[role] = read_stable_file_bytes(
+                path, f"formal run artifact {role}"
+            )
+    except EvidenceBundleError as exc:
+        raise TrainingEvidenceError(str(exc)) from exc
     allowed_variants = {"C1": {"fixed", "rematch"}, "C2": {"frozen", "adapted"}}
     if variant not in allowed_variants[claim]:
         raise TrainingEvidenceError(f"formal {claim} variant is unsupported: {variant}")
-    try:
-        cfg = Config.fromfile(str(paths["config"]))
-    except Exception as exc:
-        raise TrainingEvidenceError(f"formal run config cannot be loaded: {exc}") from exc
+    cfg = _load_resolved_config(
+        artifact_bytes["resolved_config"], "formal resolved config"
+    )
     training_ticket = _validate_formal_ticket(
         paths["training_launch_ticket"],
         entrypoint="train",
         seed=seed,
         commit_sha=commit_sha,
-        config_path=paths["config"],
+        ticket_bytes=artifact_bytes["training_launch_ticket"],
+        config_sha256=hashlib.sha256(artifact_bytes["config"]).hexdigest(),
     )
     evaluation_ticket = _validate_formal_ticket(
         paths["evaluation_launch_ticket"],
         entrypoint="test",
         seed=seed,
         commit_sha=commit_sha,
-        config_path=paths["config"],
+        ticket_bytes=artifact_bytes["evaluation_launch_ticket"],
+        config_sha256=hashlib.sha256(artifact_bytes["config"]).hexdigest(),
     )
     shared = _LAUNCH_TICKET_FIELDS - {"runtime_identity"}
     for field in shared:
@@ -1190,30 +1536,39 @@ def validate_formal_run_artifacts(
             "formal evaluation ticket checkpoint fields differ"
         )
     try:
-        bound_checkpoint_path, checkpoint_bytes = read_verified_bundle_bytes(
-            {"path": checkpoint["path"], "sha256": checkpoint["sha256"]},
-            bundle_root,
-            "formal evaluation checkpoint",
+        bound_checkpoint_path = resolve_bundle_path(
+            checkpoint["path"], bundle_root, "formal evaluation checkpoint"
         )
     except EvidenceBundleError as exc:
         raise TrainingEvidenceError(str(exc)) from exc
-    if (
-        bound_checkpoint_path != paths["checkpoint"]
-        or len(checkpoint_bytes) != checkpoint["size_bytes"]
-    ):
+    checkpoint_bytes = artifact_bytes["checkpoint"]
+    checkpoint_sha256 = hashlib.sha256(checkpoint_bytes).hexdigest()
+    if bound_checkpoint_path != paths["checkpoint"]:
         raise TrainingEvidenceError(
             "formal evaluation ticket does not bind the supplied checkpoint"
         )
+    if checkpoint_sha256 != checkpoint["sha256"]:
+        raise TrainingEvidenceError("formal evaluation checkpoint hash mismatch")
+    if len(checkpoint_bytes) != checkpoint["size_bytes"]:
+        raise TrainingEvidenceError("formal evaluation checkpoint size mismatch")
     if training_ticket["resolved_config_sha256"] != resolved_config_sha256(cfg):
         raise TrainingEvidenceError("formal ticket resolved config digest differs")
     if training_ticket["scientific_config_sha256"] != resolved_config_sha256(
         cfg, scientific=True
     ):
         raise TrainingEvidenceError("formal ticket scientific config digest differs")
-    data_identity = _load_json_object(paths["data_identity"], "formal data identity")
+    data_identity = _load_json_object(
+        paths["data_identity"],
+        "formal data identity",
+        raw=artifact_bytes["data_identity"],
+    )
     if data_identity != training_ticket["data_identity"]:
         raise TrainingEvidenceError("formal data identity differs from the launch tickets")
-    evaluator_spec = _load_json_object(paths["evaluator_spec"], "formal evaluator spec")
+    evaluator_spec = _load_json_object(
+        paths["evaluator_spec"],
+        "formal evaluator spec",
+        raw=artifact_bytes["evaluator_spec"],
+    )
     try:
         validate_evaluation_artifact_bindings(
             cfg,
@@ -1221,18 +1576,61 @@ def validate_formal_run_artifacts(
             ground_truth_path=paths["ground_truth"],
             allowed_videos_path=paths["allowed_videos"],
             evaluator_spec=evaluator_spec,
+            ground_truth_bytes=artifact_bytes["ground_truth"],
+            allowed_videos_bytes=artifact_bytes["allowed_videos"],
         )
         expected_training_identity = derive_training_trace_identity(
-            cfg, data_identity, seed=seed, world_size=1
+            cfg,
+            data_identity,
+            seed=seed,
+            world_size=1,
+            annotation_bytes=artifact_bytes["ground_truth"],
+            allow_list_bytes=artifact_bytes["fit_core"],
+            cache_manifest_bytes=artifact_bytes["feature_cache_manifest"],
         )
     except IdentityError as exc:
         raise TrainingEvidenceError(f"formal config/data binding is invalid: {exc}") from exc
-    cost = derive_training_cost(paths["training_trace"], paths["training_commitment"])
+    trust_root = _profile_trust_root(cfg)
+    training_receipt = _validate_formal_receipt(
+        paths["training_launch_receipt"],
+        ticket=training_ticket,
+        ticket_path=paths["training_launch_ticket"],
+        trust_root=trust_root,
+        commit_sha=commit_sha,
+        receipt_bytes=artifact_bytes["training_launch_receipt"],
+        ticket_sha256=hashlib.sha256(
+            artifact_bytes["training_launch_ticket"]
+        ).hexdigest(),
+    )
+    _validate_formal_receipt(
+        paths["evaluation_launch_receipt"],
+        ticket=evaluation_ticket,
+        ticket_path=paths["evaluation_launch_ticket"],
+        trust_root=trust_root,
+        commit_sha=commit_sha,
+        receipt_bytes=artifact_bytes["evaluation_launch_receipt"],
+        ticket_sha256=hashlib.sha256(
+            artifact_bytes["evaluation_launch_ticket"]
+        ).hexdigest(),
+    )
+    training_trace_bytes = artifact_bytes["training_trace"]
+    training_commitment_bytes = artifact_bytes["training_commitment"]
+    runtime_binding = training_receipt["execution_session"]
+    cost = derive_training_cost(
+        paths["training_trace"],
+        paths["training_commitment"],
+        trace_bytes=training_trace_bytes,
+        commitment_bytes=training_commitment_bytes,
+        runtime_binding=runtime_binding,
+        require_contiguous_runtime=claim == "C1",
+    )
     if {field: cost[field] for field in expected_training_identity} != expected_training_identity:
         raise TrainingEvidenceError(
             "formal training trace identity differs from config/data-derived values"
         )
     if claim == "C2":
+        visual_trace_bytes = artifact_bytes["visual_parameter_trace"]
+        visual_commitment_bytes = artifact_bytes["visual_parameter_commitment"]
         derive_visual_parameter_evidence(
             cfg,
             variant=variant,
@@ -1242,26 +1640,22 @@ def validate_formal_run_artifacts(
             visual_trace_path=paths["visual_parameter_trace"],
             visual_commitment_path=paths["visual_parameter_commitment"],
             checkpoint_bytes=checkpoint_bytes,
+            training_trace_bytes=training_trace_bytes,
+            training_commitment_bytes=training_commitment_bytes,
+            visual_trace_bytes=visual_trace_bytes,
+            visual_commitment_bytes=visual_commitment_bytes,
+            runtime_binding=runtime_binding,
         )
     try:
-        load_verified_ledger(paths["ledger"], paths["commitment"])
+        load_verified_ledger_bytes(
+            artifact_bytes["ledger"],
+            artifact_bytes["commitment"],
+            ledger_filename=paths["ledger"].name,
+        )
     except LedgerError as exc:
         raise TrainingEvidenceError(f"formal emission ledger is invalid: {exc}") from exc
-    trust_root = _profile_trust_root(cfg)
-    _validate_formal_receipt(
-        paths["training_launch_receipt"],
-        ticket=training_ticket,
-        ticket_path=paths["training_launch_ticket"],
-        trust_root=trust_root,
-        commit_sha=commit_sha,
-    )
-    _validate_formal_receipt(
-        paths["evaluation_launch_receipt"],
-        ticket=evaluation_ticket,
-        ticket_path=paths["evaluation_launch_ticket"],
-        trust_root=trust_root,
-        commit_sha=commit_sha,
-    )
+    if return_verified_bytes:
+        return paths, artifact_bytes
     return paths
 
 
@@ -1281,25 +1675,31 @@ def build_formal_run_manifest(
     variant = _nonempty_string(variant, "formal run variant")
     seed = _nonnegative_int(seed, "formal run seed")
     commit_sha = _git_sha(commit_sha, "formal run commit_sha")
-    paths = validate_formal_run_artifacts(
+    paths, artifact_bytes = validate_formal_run_artifacts(
         claim=claim,
         variant=variant,
         seed=seed,
         commit_sha=commit_sha,
         artifacts=artifacts,
         bundle_root=bundle_root,
+        return_verified_bytes=True,
     )
     references = {}
     for role, path in sorted(paths.items()):
         role = _nonempty_string(role, "formal run artifact role")
         try:
-            references[role] = bundle_file_reference(
-                path, bundle_root, f"formal run artifact {role}"
-            )
+            references[role] = {
+                "path": relative_bundle_path(
+                    path, bundle_root, f"formal run artifact {role}"
+                ),
+                "sha256": hashlib.sha256(artifact_bytes[role]).hexdigest(),
+            }
         except EvidenceBundleError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
     evaluation_ticket = _load_json_object(
-        paths["evaluation_launch_ticket"], "formal evaluation launch ticket"
+        paths["evaluation_launch_ticket"],
+        "formal evaluation launch ticket",
+        raw=artifact_bytes["evaluation_launch_ticket"],
     )
     bound_checkpoint = evaluation_ticket["runtime_identity"]["resume_checkpoint"]
     if references["checkpoint"] != {
@@ -1319,17 +1719,18 @@ def build_formal_run_manifest(
         "artifacts": references,
     }
     try:
-        return _sign_payload(
+        return sign_formal_run(
             body,
             private_key_path=private_key_path,
             key_id=key_id,
-            role=FORMAL_RUN_ATTESTATION_ROLE,
         )
     except AttestationError as exc:
         raise TrainingEvidenceError(f"failed to attest formal run manifest: {exc}") from exc
 
 
-def verify_formal_run_manifest(payload, *, trust_root, base_dir):
+def verify_formal_run_manifest(
+    payload, *, trust_root, base_dir, verified_artifacts=None
+):
     try:
         body = verify_payload(
             payload,
@@ -1359,11 +1760,13 @@ def verify_formal_run_manifest(payload, *, trust_root, base_dir):
     for role, reference in body["artifacts"].items():
         _nonempty_string(role, "formal run artifact role")
         try:
-            verify_bundle_reference(
+            path, artifact_bytes = read_verified_bundle_bytes(
                 reference, base_dir, f"formal run artifact {role}"
             )
         except EvidenceBundleError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
+        if verified_artifacts is not None:
+            verified_artifacts[role] = (path, artifact_bytes)
     return body
 
 

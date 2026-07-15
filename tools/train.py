@@ -44,6 +44,7 @@ from opentad.utils.full_petal_launch import (
     build_fixed_step_profile_artifact,
     canonical_json_sha256,
     persist_launch_receipt,
+    runtime_evidence_session,
     validate_full_petal_launch,
 )
 from opentad.utils.full_petal_training_evidence import (
@@ -244,6 +245,7 @@ def main():
 
     optimizer_event_recorder = None
     if launch_authorization is not None:
+        execution_session = runtime_evidence_session(launch_authorization)
         expected_training_identity = derive_training_trace_identity(
             cfg,
             launch_authorization.data_identity,
@@ -257,7 +259,9 @@ def main():
             )
         optimizer_event_recorder = OptimizerEventTraceRecorder(
             **expected_training_identity,
+            runtime_session=execution_session,
             peak_memory_reader=torch.cuda.max_memory_allocated,
+            synchronize=torch.cuda.synchronize,
         )
 
     # build optimizer and scheduler
@@ -283,6 +287,7 @@ def main():
             model,
             optimizer,
             parameter_prefixes=visual_parameter_contract["parameter_prefixes"],
+            runtime_session=execution_session,
         )
 
     # override the max_epoch
@@ -352,8 +357,7 @@ def main():
                     gpu_name=torch.cuda.get_device_name(args.local_rank),
                     torch_version=torch.__version__,
                     cuda_version=torch.version.cuda,
-                    private_key_path=execution_signing_key,
-                    key_id=cfg.launch_contract.attestation_trust_roots.profile.key_id,
+                    profiler_measurements=fixed_step_profiler.measurements(),
                 )
                 output = profile_bundle_root / "fixed_step_profile.json"
                 publish_exclusive_file(

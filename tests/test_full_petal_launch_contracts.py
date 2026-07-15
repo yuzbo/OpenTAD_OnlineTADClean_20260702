@@ -58,6 +58,7 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     )
     assert set(cfg.launch_contract.attestation_trust_roots) == {
         "b0",
+        "formal",
         "review",
         "profile",
     }
@@ -157,7 +158,7 @@ def test_profile_path_exits_before_checkpoint_or_evaluation():
     assert "optimizer_event_recorder.persist(trace_path, commitment_path)" in source
     assert "optimizer_event_trace_path=trace_path" in source
     assert "optimizer_event_commitment_path=commitment_path" in source
-    assert "fixed_step_profiler.measurements()" not in source
+    assert "profiler_measurements=fixed_step_profiler.measurements()" in source
 
 
 def test_test_entrypoint_uses_resolved_amp_dtype():
@@ -226,4 +227,5 @@ def test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo():
     assert '"manifest_path": evidence_manifest_path.name' in source
     assert '"test_report_path": test_report_path.name' in source
     assert '"audit_report_path": audit_report_path.name' in source
-    assert "_sign_payload(" in source
+    assert "sign_b0_evidence(" in source
+    assert "_sign_payload(" not in source

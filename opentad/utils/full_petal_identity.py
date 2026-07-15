@@ -12,7 +12,12 @@ import re
 import subprocess
 from collections.abc import Mapping
 
-from .evidence_bundle import EvidenceBundleError, relative_bundle_path
+from .evidence_bundle import (
+    EvidenceBundleError,
+    read_stable_file_bytes,
+    relative_bundle_path,
+    strict_json_from_bytes,
+)
 
 
 DATA_IDENTITY_SCHEMA = "full-petal-data-identity-v1"
@@ -96,13 +101,15 @@ def _cfg_get(cfg, key, default=None):
     return getattr(cfg, key, default)
 
 
-def _load_json(path, label):
+def _load_json(path, label, *, content_bytes=None):
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        if content_bytes is None:
+            _, content_bytes = read_stable_file_bytes(path, label)
+        payload = strict_json_from_bytes(
+            content_bytes, label, require_object=True
+        )
+    except EvidenceBundleError as exc:
         raise IdentityError(f"failed to load {label}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise IdentityError(f"{label} must contain one JSON object")
     return payload
 
 
@@ -209,7 +216,7 @@ def _plain_mapping(value, label):
     return {key: item for key, item in value.items()}
 
 
-def _identity_file(identity, role):
+def _identity_file(identity, role, *, content_bytes=None):
     if not isinstance(identity, Mapping):
         raise IdentityError("data identity must be an object")
     files = identity.get("files")
@@ -221,19 +228,32 @@ def _identity_file(identity, role):
     resolved = Path(record["path"]).expanduser().resolve()
     if not resolved.is_file():
         raise IdentityError(f"data identity {role} file does not exist: {resolved}")
-    if sha256_file(resolved) != _require_sha(record["sha256"], f"{role}.sha256"):
+    actual_sha256 = (
+        hashlib.sha256(content_bytes).hexdigest()
+        if content_bytes is not None
+        else sha256_file(resolved)
+    )
+    if actual_sha256 != _require_sha(record["sha256"], f"{role}.sha256"):
         raise IdentityError(f"data identity {role} file hash differs")
-    if resolved.stat().st_size != record["size_bytes"]:
+    actual_size = len(content_bytes) if content_bytes is not None else resolved.stat().st_size
+    if actual_size != record["size_bytes"]:
         raise IdentityError(f"data identity {role} file size differs")
     return resolved, dict(record)
 
 
-def _require_same_identity_file(path, identity, role, label):
-    expected_path, record = _identity_file(identity, role)
+def _require_same_identity_file(path, identity, role, label, *, content_bytes=None):
+    expected_path, record = _identity_file(
+        identity, role, content_bytes=content_bytes
+    )
     actual_path = Path(path).expanduser().resolve()
     if actual_path != expected_path:
         raise IdentityError(f"{label} path differs from data identity {role}")
-    if sha256_file(actual_path) != record["sha256"]:
+    actual_sha256 = (
+        hashlib.sha256(content_bytes).hexdigest()
+        if content_bytes is not None
+        else sha256_file(actual_path)
+    )
+    if actual_sha256 != record["sha256"]:
         raise IdentityError(f"{label} content differs from data identity {role}")
     return actual_path
 
@@ -284,6 +304,8 @@ def validate_evaluation_artifact_bindings(
     ground_truth_path,
     allowed_videos_path,
     evaluator_spec,
+    ground_truth_bytes=None,
+    allowed_videos_bytes=None,
 ):
     """Bind evaluator inputs and thresholds to the launch data/config identity."""
 
@@ -293,12 +315,14 @@ def validate_evaluation_artifact_bindings(
         data_identity,
         "annotation",
         "ground-truth artifact",
+        content_bytes=ground_truth_bytes,
     )
     allowed_videos = _require_same_identity_file(
         allowed_videos_path,
         data_identity,
         "calibration",
         "allowed-videos artifact",
+        content_bytes=allowed_videos_bytes,
     )
     if Path(evaluation["ground_truth_filename"]).expanduser().resolve() != ground_truth:
         raise IdentityError("evaluation ground truth differs from the bound annotation")
@@ -310,23 +334,40 @@ def validate_evaluation_artifact_bindings(
     return expected_spec
 
 
-def derive_training_data_order_sha256(cfg, data_identity, *, seed):
+def derive_training_data_order_sha256(
+    cfg,
+    data_identity,
+    *,
+    seed,
+    annotation_bytes=None,
+    allow_list_bytes=None,
+    cache_manifest_bytes=None,
+):
     """Reconstruct the exact chronological packet order from bound data artifacts."""
 
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise IdentityError("training data-order seed must be a non-negative integer")
     train_cfg = _plain_mapping(_nested_cfg_get(cfg, "dataset", "train"), "training dataset")
     annotation_path = _require_same_identity_file(
-        train_cfg.get("ann_file"), data_identity, "annotation", "training annotation"
+        train_cfg.get("ann_file"),
+        data_identity,
+        "annotation",
+        "training annotation",
+        content_bytes=annotation_bytes,
     )
     allow_path = _require_same_identity_file(
-        train_cfg.get("allow_list"), data_identity, "fit_core", "training allow-list"
+        train_cfg.get("allow_list"),
+        data_identity,
+        "fit_core",
+        "training allow-list",
+        content_bytes=allow_list_bytes,
     )
     cache_path = _require_same_identity_file(
         train_cfg.get("cache_manifest"),
         data_identity,
         "feature_cache_manifest",
         "training cache manifest",
+        content_bytes=cache_manifest_bytes,
     )
     chunk_size = train_cfg.get("chunk_size")
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
@@ -336,14 +377,26 @@ def derive_training_data_order_sha256(cfg, data_identity, *, seed):
     if not subsets or not all(isinstance(item, str) and item for item in subsets):
         raise IdentityError("training subset_name is invalid")
     try:
-        annotation = _load_json(annotation_path, "training annotation")
-        cache_manifest = _load_json(cache_path, "training feature cache manifest")
+        annotation = _load_json(
+            annotation_path,
+            "training annotation",
+            content_bytes=annotation_bytes,
+        )
+        cache_manifest = _load_json(
+            cache_path,
+            "training feature cache manifest",
+            content_bytes=cache_manifest_bytes,
+        )
+        if allow_list_bytes is None:
+            _, allow_list_bytes = read_stable_file_bytes(
+                allow_path, "training allow-list"
+            )
         allowed_ids = [
             line.strip()
-            for line in allow_path.read_text(encoding="utf-8").splitlines()
+            for line in allow_list_bytes.decode("utf-8").splitlines()
             if line.strip()
         ]
-    except (OSError, UnicodeError) as exc:
+    except (EvidenceBundleError, UnicodeError) as exc:
         raise IdentityError(f"failed to load training order inputs: {exc}") from exc
     if len(allowed_ids) != len(set(allowed_ids)) or not allowed_ids:
         raise IdentityError("training allow-list must contain unique video IDs")
@@ -379,7 +432,16 @@ def derive_training_data_order_sha256(cfg, data_identity, *, seed):
     return canonical_json_sha256({"seed": seed, "episodes": episodes})
 
 
-def derive_training_trace_identity(cfg, data_identity, *, seed, world_size):
+def derive_training_trace_identity(
+    cfg,
+    data_identity,
+    *,
+    seed,
+    world_size,
+    annotation_bytes=None,
+    allow_list_bytes=None,
+    cache_manifest_bytes=None,
+):
     """Derive every immutable identity field expected in optimizer-event traces."""
 
     if isinstance(world_size, bool) or not isinstance(world_size, int) or world_size <= 0:
@@ -410,7 +472,12 @@ def derive_training_trace_identity(cfg, data_identity, *, seed, world_size):
         "optimizer_config_sha256": canonical_json_sha256(optimizer),
         "scheduler_config_sha256": canonical_json_sha256(scheduler),
         "data_order_sha256": derive_training_data_order_sha256(
-            cfg, data_identity, seed=seed
+            cfg,
+            data_identity,
+            seed=seed,
+            annotation_bytes=annotation_bytes,
+            allow_list_bytes=allow_list_bytes,
+            cache_manifest_bytes=cache_manifest_bytes,
         ),
         "loss_normalization_sha256": canonical_json_sha256(
             {"model": model, "solver": solver}

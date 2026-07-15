@@ -24,10 +24,11 @@ This route is fail-closed. The order below is mandatory.
 ## B0 Example
 
 ```powershell
-python tools/run_full_petal_b0.py `
+& C:\path\to\control-python.exe tools/run_full_petal_b0.py `
   --output-dir C:\path\outside\repo\full-petal-b0 `
   --torch-python C:\path\to\working-torch-python.exe `
-  --dependency-site C:\path\to\pytest-site-packages
+  --attestation-private-key C:\path\outside\repo\b0-runner.pem `
+  --attestation-key-id full-petal-b0-20260713
 ```
 
 The B0 runner refuses a dirty checkout and an output directory inside the
@@ -41,6 +42,21 @@ tickets. Each entrypoint writes a non-overwritable `.receipt.json` beside its
 ticket before CUDA/DDP initialization. The signed run manifest must include both
 tickets and both receipts; the evaluation ticket must bind the exact checkpoint
 path, size, and SHA-256. Build tickets and all evidence outside the repository.
+
+Before building a formal run manifest, export the fully merged config used by
+the run:
+
+```powershell
+python tools/export_full_petal_resolved_config.py `
+  --config configs/causaltad/thumos_pes_q2_persist_fixed.py `
+  --output C:\path\to\run-bundle\resolved-config.json
+```
+
+The formal manifest binds both `config` (the exact source config hashed by each
+launch ticket) and `resolved_config` (the standalone JSON snapshot checked
+against the ticket's resolved and scientific config digests). It must also bind
+`fit_core` and `feature_cache_manifest`; training-order identity is derived from
+their already verified bytes rather than reopening uncommitted data inputs.
 
 ## Prohibited Shortcuts
 

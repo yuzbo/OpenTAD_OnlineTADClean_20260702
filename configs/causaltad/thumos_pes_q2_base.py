@@ -81,6 +81,10 @@ launch_contract = dict(
             key_id="full-petal-profile-20260713",
             public_key="+3fu1yJFnAtE0U/wKdMw2X0sMKdfWcBqyUglXyAi6rE=",
         ),
+        formal=dict(
+            key_id="full-petal-formal-20260715",
+            public_key="89P0h2h+msjeoXdrvWWLa89DB63KOf99COW31Q/397w=",
+        ),
     ),
 )
 
@@ -90,6 +94,16 @@ reporting_contract = dict(
     canonical_expected_count=213,
     allow_during_training=False,
     disclosure="locked after prior project-level exposure; not untouched",
+    fineaction_trust_roots=dict(
+        license=dict(
+            key_id="full-petal-fineaction-license-20260715",
+            public_key="UNlvM0KrESOjzOCOC19bb14z1ZEL88+rULyyANnpyow=",
+        ),
+        execution=dict(
+            key_id="full-petal-fineaction-execution-20260715",
+            public_key="LAsJV8X230X8vSJd7nI23uaTuNVCfi0qwTb2/M5g0Ic=",
+        ),
+    ),
 )
 
 _dataset_common = dict(

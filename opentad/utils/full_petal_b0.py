@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import hmac
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -12,7 +11,13 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .full_petal_attestation import AttestationError, verify_payload
-from .evidence_bundle import EvidenceBundleError, resolve_bundle_path
+from .evidence_bundle import (
+    EvidenceBundleError,
+    read_stable_file_bytes,
+    read_verified_path_bytes,
+    resolve_bundle_path,
+    strict_json_from_bytes,
+)
 
 
 B0_SCHEMA = "full-petal-b0-v2"
@@ -30,14 +35,11 @@ class B0EvidenceError(ValueError):
 
 
 def sha256_file(path):
-    path = Path(path)
-    if not path.is_file():
-        raise B0EvidenceError(f"evidence file does not exist: {path}")
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    try:
+        _, payload = read_stable_file_bytes(path, f"B0 evidence file {path}")
+    except EvidenceBundleError as exc:
+        raise B0EvidenceError(str(exc)) from exc
+    return hashlib.sha256(payload).hexdigest()
 
 
 def canonical_json_sha256(value):
@@ -100,39 +102,35 @@ def _path(value, base_dir, label, *, require_relative=True):
         raise B0EvidenceError(str(exc)) from exc
 
 
-def _load_json(path, label):
-    path = Path(path)
+def _load_json_bytes(payload, label):
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise B0EvidenceError(f"failed to load {label} {path}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise B0EvidenceError(f"{label} must contain one JSON object")
-    return payload
+        return strict_json_from_bytes(payload, label, require_object=True)
+    except EvidenceBundleError as exc:
+        raise B0EvidenceError(str(exc)) from exc
 
 
-def _verified_path(
+def _verified_bytes(
     path_value, digest_value, base_dir, label, *, require_relative=True
 ):
     path = _path(
         path_value, base_dir, label, require_relative=require_relative
     )
     expected = _sha(digest_value, f"{label}.sha256")
-    actual = sha256_file(path)
-    if not hmac.compare_digest(actual, expected):
-        raise B0EvidenceError(
-            f"{label} hash mismatch: expected {expected}, found {actual}"
-        )
-    return path
+    try:
+        return read_verified_path_bytes(path, expected, label)
+    except EvidenceBundleError as exc:
+        raise B0EvidenceError(str(exc)) from exc
 
 
-def test_functions(path):
+def test_functions(path, *, source_bytes=None):
     """Return the exact top-level pytest function declarations in source order."""
 
     path = Path(path)
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, UnicodeError, SyntaxError) as exc:
+        if source_bytes is None:
+            _, source_bytes = read_stable_file_bytes(path, f"test source {path}")
+        tree = ast.parse(source_bytes.decode("utf-8"), filename=str(path))
+    except (EvidenceBundleError, UnicodeError, SyntaxError) as exc:
         raise B0EvidenceError(f"cannot parse test source {path}: {exc}") from exc
     return [
         node.name
@@ -142,13 +140,15 @@ def test_functions(path):
     ]
 
 
-def junit_cases(path):
+def junit_cases(path=None, *, junit_bytes=None):
     """Parse actual JUnit leaves, including parametrized testcase names."""
 
     try:
-        root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError) as exc:
-        raise B0EvidenceError(f"cannot parse JUnit report {path}: {exc}") from exc
+        if junit_bytes is None:
+            _, junit_bytes = read_stable_file_bytes(path, f"JUnit report {path}")
+        root = ET.fromstring(junit_bytes)
+    except (EvidenceBundleError, ET.ParseError) as exc:
+        raise B0EvidenceError(f"cannot parse JUnit report {path or '<bytes>'}: {exc}") from exc
     suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
     counts = {name: 0 for name in ("collected", "failed", "errors", "skipped")}
     cases = []
@@ -231,9 +231,15 @@ def validate_manifest(manifest, *, repository_root=None):
             suite_cases[module] = set(functions)
             if repository_root is not None:
                 absolute = Path(repository_root) / relative
-                if sha256_file(absolute) != source["sha256"]:
-                    raise B0EvidenceError(f"B0 test source hash differs: {relative}")
-                if test_functions(absolute) != functions:
+                try:
+                    _, source_bytes = read_verified_path_bytes(
+                        absolute,
+                        source["sha256"],
+                        f"B0 test source {relative}",
+                    )
+                except EvidenceBundleError as exc:
+                    raise B0EvidenceError(str(exc)) from exc
+                if test_functions(absolute, source_bytes=source_bytes) != functions:
                     raise B0EvidenceError(f"B0 testcase manifest differs: {relative}")
         declared_cases[suite["name"]] = suite_cases
 
@@ -244,8 +250,14 @@ def validate_manifest(manifest, *, repository_root=None):
         _exact(source, {"path", "sha256"}, "B0 runner source")
         _sha(source["sha256"], f"B0 runner source {source['path']}")
         if repository_root is not None:
-            if sha256_file(Path(repository_root) / source["path"]) != source["sha256"]:
-                raise B0EvidenceError(f"B0 runner source hash differs: {source['path']}")
+            try:
+                read_verified_path_bytes(
+                    Path(repository_root) / source["path"],
+                    source["sha256"],
+                    f"B0 runner source {source['path']}",
+                )
+            except EvidenceBundleError as exc:
+                raise B0EvidenceError(str(exc)) from exc
     if manifest["audit_checks"] != [
         "python_syntax",
         "git_diff_check",
@@ -277,14 +289,14 @@ def validate_b0_evidence(
     """Validate the complete signed B0 chain and return its unsigned root body."""
 
     _exact(reference, {"path", "sha256"}, "B0 evidence reference")
-    root_path = _verified_path(
+    root_path, root_bytes = _verified_bytes(
         reference["path"],
         reference["sha256"],
         base_dir,
         "B0 evidence",
         require_relative=False,
     )
-    signed_root = _load_json(root_path, "B0 evidence")
+    signed_root = _load_json_bytes(root_bytes, "B0 evidence")
     try:
         root = verify_payload(signed_root, trust_root=trust_root, role=B0_ATTESTATION_ROLE)
     except AttestationError as exc:
@@ -316,19 +328,19 @@ def validate_b0_evidence(
     blockers = _count(root["blocking_findings"], "B0.blocking_findings")
     violations = _count(root["protocol_violations"], "B0.protocol_violations")
 
-    manifest_path = _verified_path(
+    manifest_path, manifest_bytes = _verified_bytes(
         root["manifest_path"], root["manifest_sha256"], root_path.parent, "B0 manifest"
     )
-    manifest = _load_json(manifest_path, "B0 manifest")
+    manifest = _load_json_bytes(manifest_bytes, "B0 manifest")
     declared_cases = validate_manifest(manifest, repository_root=repository_root)
 
-    report_path = _verified_path(
+    report_path, report_bytes = _verified_bytes(
         root["test_report_path"],
         root["test_report_sha256"],
         root_path.parent,
         "B0 test report",
     )
-    report = _load_json(report_path, "B0 test report")
+    report = _load_json_bytes(report_bytes, "B0 test report")
     _exact(
         report,
         {
@@ -377,12 +389,13 @@ def validate_b0_evidence(
         manifest_suite = manifest["suites"][index]
         if suite["name"] != manifest_suite["name"] or suite["canonical_argv"] != manifest_suite["canonical_argv"]:
             raise B0EvidenceError(f"{label} command differs from the locked manifest")
-        log_path = _verified_path(suite["log_path"], suite["log_sha256"], root_path.parent, f"{label} log")
-        del log_path
-        junit_path = _verified_path(
+        _verified_bytes(
+            suite["log_path"], suite["log_sha256"], root_path.parent, f"{label} log"
+        )
+        junit_path, junit_bytes = _verified_bytes(
             suite["junit_path"], suite["junit_sha256"], root_path.parent, f"{label} JUnit"
         )
-        counts, cases = junit_cases(junit_path)
+        counts, cases = junit_cases(junit_path, junit_bytes=junit_bytes)
         for name in totals:
             declared = _count(suite[name], f"{label}.{name}")
             if declared != counts[name]:
@@ -416,13 +429,13 @@ def validate_b0_evidence(
     if report_totals != totals:
         raise B0EvidenceError("B0 test report totals differ from suite totals")
 
-    audit_path = _verified_path(
+    audit_path, audit_bytes = _verified_bytes(
         root["audit_report_path"],
         root["audit_report_sha256"],
         root_path.parent,
         "B0 audit report",
     )
-    audit = _load_json(audit_path, "B0 audit report")
+    audit = _load_json_bytes(audit_bytes, "B0 audit report")
     _exact(
         audit,
         {
@@ -445,7 +458,7 @@ def validate_b0_evidence(
     for index, check in enumerate(audit["checks"]):
         label = f"B0 audit check {index}"
         _exact(check, {"name", "status", "canonical_argv", "log_path", "log_sha256"}, label)
-        _verified_path(check["log_path"], check["log_sha256"], root_path.parent, f"{label} log")
+        _verified_bytes(check["log_path"], check["log_sha256"], root_path.parent, f"{label} log")
         if check["status"] != "PASS":
             raise B0EvidenceError(f"{label} has not reached PASS")
 
@@ -464,7 +477,7 @@ def validate_b0_evidence(
     return {
         **root,
         "artifact_path": str(root_path),
-        "artifact_sha256": sha256_file(root_path),
+        "artifact_sha256": hashlib.sha256(root_bytes).hexdigest(),
         "manifest": manifest,
     }
 

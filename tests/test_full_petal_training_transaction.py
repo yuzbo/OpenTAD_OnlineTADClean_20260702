@@ -16,6 +16,7 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     _stream_key,
 )
 from opentad.utils.fixed_step_profile import FixedStepProfiler
+from opentad.utils.full_petal_runtime_attestation import issue_runtime_session
 from opentad.utils.full_petal_training_evidence import (
     OptimizerEventTraceRecorder,
     VisualParameterEventRecorder,
@@ -439,7 +440,7 @@ class _StatefulEma(torch.nn.Module):
             raise RuntimeError("injected EMA failure")
 
 
-def _authenticated_optimizer_recorder():
+def _authenticated_optimizer_recorder(runtime_session):
     timestamps = iter((10.0, 11.0))
     return OptimizerEventTraceRecorder(
         precision="fp32",
@@ -449,6 +450,7 @@ def _authenticated_optimizer_recorder():
         scheduler_config_sha256="2" * 64,
         data_order_sha256="3" * 64,
         loss_normalization_sha256="4" * 64,
+        runtime_session=runtime_session,
         clock=lambda: next(timestamps),
         peak_memory_reader=lambda: 0,
     )
@@ -702,9 +704,13 @@ def test_training_produces_event_bound_visual_parameter_evidence():
     model = _TransactionalToy()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     scheduler = _Scheduler()
-    optimizer_recorder = _authenticated_optimizer_recorder()
+    runtime_session = issue_runtime_session()
+    optimizer_recorder = _authenticated_optimizer_recorder(runtime_session)
     visual_recorder = VisualParameterEventRecorder(
-        model, optimizer, parameter_prefixes=("weight",)
+        model,
+        optimizer,
+        parameter_prefixes=("weight",),
+        runtime_session=runtime_session,
     )
 
     train_one_epoch(
@@ -734,9 +740,13 @@ def test_visual_evidence_failure_rolls_back_optimizer_and_both_evidence_streams(
     model = _TransactionalToy()
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
     scheduler = _Scheduler()
-    optimizer_recorder = _authenticated_optimizer_recorder()
+    runtime_session = issue_runtime_session()
+    optimizer_recorder = _authenticated_optimizer_recorder(runtime_session)
     visual_recorder = _FaultingVisualRecorder(
-        model, optimizer, parameter_prefixes=("weight",)
+        model,
+        optimizer,
+        parameter_prefixes=("weight",),
+        runtime_session=runtime_session,
     )
     before = {
         "model": _state_digest(model.state_dict()),
@@ -780,6 +790,7 @@ def test_fixed_step_profile_stops_only_after_committed_episode_boundary():
         backend=backend,
         clock=lambda: next(timestamps),
     )
+    optimizer_recorder = _authenticated_optimizer_recorder(issue_runtime_session())
 
     stats = train_one_epoch(
         _two_episode_loader(),
@@ -790,6 +801,7 @@ def test_fixed_step_profile_stops_only_after_committed_episode_boundary():
         logger=_Logger(),
         logging_interval=10,
         fixed_step_profiler=profiler,
+        optimizer_event_recorder=optimizer_recorder,
     )
 
     assert stats == {

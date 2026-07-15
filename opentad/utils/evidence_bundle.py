@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import re
 import secrets
+import stat
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -14,6 +17,47 @@ _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 class EvidenceBundleError(ValueError):
     pass
+
+
+def _reject_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise EvidenceBundleError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_nonfinite(value):
+    raise EvidenceBundleError(f"non-finite JSON number is forbidden: {value}")
+
+
+def _parse_finite_float(value):
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite(value)
+    return parsed
+
+
+def strict_json_from_bytes(payload, label="JSON evidence", *, require_object=False):
+    """Parse one UTF-8 JSON value without duplicate keys or non-finite numbers."""
+
+    if not isinstance(payload, bytes):
+        raise EvidenceBundleError(f"{label} must be supplied as verified bytes")
+    try:
+        value = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_nonfinite,
+            parse_float=_parse_finite_float,
+        )
+    except EvidenceBundleError:
+        raise
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise EvidenceBundleError(f"failed to parse {label}: {exc}") from exc
+    if require_object and not isinstance(value, dict):
+        raise EvidenceBundleError(f"{label} must contain one JSON object")
+    return value
 
 
 def _root(path):
@@ -83,11 +127,66 @@ def resolve_bundle_path(value, bundle_root, label="evidence file"):
 
 
 def sha256_file(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    _, payload = read_stable_file_bytes(path)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def read_stable_file_bytes(path, label="evidence file"):
+    """Open a regular non-link file once and return the exact stable bytes read."""
+
+    path = Path(path)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise EvidenceBundleError(f"failed to open {label}: {exc}") from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise EvidenceBundleError(f"{label} is not a regular file")
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+    except OSError as exc:
+        raise EvidenceBundleError(f"failed to read {label}: {exc}") from exc
+    finally:
+        os.close(descriptor)
+    identity_before = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+    )
+    identity_after = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    )
+    if identity_before != identity_after:
+        raise EvidenceBundleError(f"{label} changed while it was being read")
+    payload = b"".join(chunks)
+    if len(payload) != before.st_size:
+        raise EvidenceBundleError(f"{label} changed size while it was being read")
+    return path.resolve(), payload
+
+
+def read_verified_path_bytes(path, expected_sha256, label="evidence file"):
+    """Read one path once and verify the digest over those exact bytes."""
+
+    if not isinstance(expected_sha256, str) or not _SHA256.fullmatch(expected_sha256):
+        raise EvidenceBundleError(f"{label} reference digest is invalid")
+    resolved, payload = read_stable_file_bytes(path, label)
+    actual = hashlib.sha256(payload).hexdigest()
+    if actual != expected_sha256:
+        raise EvidenceBundleError(
+            f"{label} hash mismatch: expected {expected_sha256}, found {actual}"
+        )
+    return resolved, payload
 
 
 def bundle_file_reference(path, bundle_root, label="evidence file"):
@@ -119,41 +218,22 @@ def read_verified_bundle_bytes(reference, bundle_root, label="evidence file"):
     if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
         raise EvidenceBundleError(f"{label} reference fields differ")
     path = resolve_bundle_path(reference["path"], bundle_root, label)
-    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
-    try:
-        before = os.fstat(descriptor)
-        chunks = []
-        while True:
-            chunk = os.read(descriptor, 1024 * 1024)
-            if not chunk:
-                break
-            chunks.append(chunk)
-        after = os.fstat(descriptor)
-    finally:
-        os.close(descriptor)
-    identity_before = (
-        before.st_dev,
-        before.st_ino,
-        before.st_size,
-        before.st_mtime_ns,
-    )
-    identity_after = (
-        after.st_dev,
-        after.st_ino,
-        after.st_size,
-        after.st_mtime_ns,
-    )
-    if identity_before != identity_after:
-        raise EvidenceBundleError(f"{label} changed while it was being read")
-    payload = b"".join(chunks)
     expected = reference.get("sha256")
-    if not isinstance(expected, str) or not _SHA256.fullmatch(expected):
-        raise EvidenceBundleError(f"{label} reference digest is invalid")
-    actual = hashlib.sha256(payload).hexdigest()
-    if actual != expected or len(payload) != before.st_size:
-        raise EvidenceBundleError(f"{label} bytes differ from the signed reference")
-    return path, payload
+    return read_verified_path_bytes(path, expected, label)
+
+
+def read_verified_bundle_json(
+    reference,
+    bundle_root,
+    label="JSON evidence",
+    *,
+    require_object=True,
+):
+    """Verify a bundle reference and parse JSON from the same immutable bytes."""
+
+    path, payload = read_verified_bundle_bytes(reference, bundle_root, label)
+    value = strict_json_from_bytes(payload, label, require_object=require_object)
+    return path, payload, value
 
 
 def _write_staged_file(final_path, payload):
@@ -274,8 +354,12 @@ __all__ = [
     "contained_file",
     "publish_exclusive_file",
     "publish_exclusive_pair",
+    "read_stable_file_bytes",
     "read_verified_bundle_bytes",
+    "read_verified_bundle_json",
+    "read_verified_path_bytes",
     "relative_bundle_path",
     "resolve_bundle_path",
+    "strict_json_from_bytes",
     "verify_bundle_reference",
 ]

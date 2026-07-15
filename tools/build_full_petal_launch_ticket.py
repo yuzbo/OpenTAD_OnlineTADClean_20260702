@@ -12,6 +12,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mmengine.config import Config, DictAction  # noqa: E402
+from opentad.utils.evidence_bundle import (  # noqa: E402
+    EvidenceBundleError,
+    publish_exclusive_file,
+)
 from opentad.utils.full_petal_launch import (  # noqa: E402
     FullPetalLaunchError,
     build_launch_ticket,
@@ -76,12 +80,12 @@ def main(argv=None):
             cfg_overrides=cfg_overrides,
             bundle_root=output.parent,
         )
-    except FullPetalLaunchError as exc:
+        encoded = (
+            json.dumps(ticket, allow_nan=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        publish_exclusive_file(output, encoded)
+    except (EvidenceBundleError, FullPetalLaunchError) as exc:
         parser.error(str(exc))
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("x", encoding="utf-8", newline="\n") as handle:
-        json.dump(ticket, handle, allow_nan=False, indent=2, sort_keys=True)
-        handle.write("\n")
     print(f"FULL_PETAL_LAUNCH_TICKET={output}")
     return 0
 

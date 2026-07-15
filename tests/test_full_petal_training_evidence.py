@@ -10,7 +10,9 @@ from opentad.utils.evidence_bundle import (
     read_verified_bundle_bytes,
     resolve_bundle_path,
 )
-from opentad.utils.full_petal_attestation import _sign_payload, generate_private_key
+from opentad.utils.full_petal_attestation import generate_private_key
+from opentad.utils.full_petal_role_signing import sign_formal_run
+from opentad.utils.full_petal_runtime_attestation import issue_runtime_session
 from opentad.utils.full_petal_training_evidence import (
     OptimizerEventTraceRecorder,
     TrainingEvidenceError,
@@ -21,8 +23,8 @@ from opentad.utils.full_petal_training_evidence import (
 )
 
 
-def _event(index, *, elapsed=None):
-    return {
+def _event(index, runtime_session, *, elapsed=None):
+    payload = {
         "event_id": f"event-{index}",
         "episode_id": f"video-{index}",
         "input_tokens": 64,
@@ -37,14 +39,25 @@ def _event(index, *, elapsed=None):
         "loss_normalization_sha256": "4" * 64,
         "skipped": False,
     }
+    return {
+        **payload,
+        **runtime_session.sign_event("optimizer-event", payload),
+    }
 
 
 def test_training_cost_is_derived_from_committed_optimizer_events(tmp_path):
     trace = tmp_path / "training.jsonl"
     commitment = tmp_path / "training.commitment.json"
-    persist_training_trace(trace, commitment, [_event(0), _event(1)])
+    runtime_session = issue_runtime_session()
+    persist_training_trace(
+        trace,
+        commitment,
+        [_event(0, runtime_session), _event(1, runtime_session)],
+    )
 
-    cost = derive_training_cost(trace, commitment)
+    cost = derive_training_cost(
+        trace, commitment, runtime_binding=runtime_session.binding
+    )
 
     assert cost["optimizer_events"] == 2
     assert cost["successful_optimizer_events"] == 2
@@ -66,6 +79,7 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
         scheduler_config_sha256="2" * 64,
         data_order_sha256="3" * 64,
         loss_normalization_sha256="4" * 64,
+        runtime_session=issue_runtime_session(),
         clock=lambda: next(timestamps),
         peak_memory_reader=lambda: next(peak_memory),
     )
@@ -94,8 +108,11 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
     trace = tmp_path / "formal_training_trace.jsonl"
     commitment = tmp_path / "formal_training_trace.commitment.json"
     recorder.persist(trace, commitment)
-    rows = load_training_trace(trace, commitment)
-    cost = derive_training_cost(trace, commitment)
+    binding = recorder._runtime_session.binding
+    rows = load_training_trace(
+        trace, commitment, runtime_binding=binding, require_contiguous_runtime=True
+    )
+    cost = derive_training_cost(trace, commitment, runtime_binding=binding)
 
     assert len(rows) == 2
     assert cost["optimizer_events"] == 2
@@ -116,6 +133,7 @@ def test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence(tmp_path
         scheduler_config_sha256="2" * 64,
         data_order_sha256="3" * 64,
         loss_normalization_sha256="4" * 64,
+        runtime_session=issue_runtime_session(),
         clock=lambda: next(timestamps),
     )
     trace = tmp_path / "trace.jsonl"
@@ -138,12 +156,35 @@ def test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence(tmp_path
 def test_training_tail_commitment_rejects_valid_prefix_truncation(tmp_path):
     trace = tmp_path / "training.jsonl"
     commitment = tmp_path / "training.commitment.json"
-    persist_training_trace(trace, commitment, [_event(0), _event(1)])
+    runtime_session = issue_runtime_session()
+    persist_training_trace(
+        trace,
+        commitment,
+        [_event(0, runtime_session), _event(1, runtime_session)],
+    )
     first = trace.read_text(encoding="utf-8").splitlines()[0]
     trace.write_text(first + "\n", encoding="utf-8")
 
     with pytest.raises(TrainingEvidenceError, match="hash|tail|truncated"):
-        load_training_trace(trace, commitment)
+        load_training_trace(
+            trace, commitment, runtime_binding=runtime_session.binding
+        )
+
+
+def test_self_consistent_trace_from_uncertified_runtime_session_is_rejected(tmp_path):
+    certified_session = issue_runtime_session()
+    synthetic_session = issue_runtime_session()
+    trace = tmp_path / "synthetic.jsonl"
+    commitment = tmp_path / "synthetic.commitment.json"
+    persist_training_trace(trace, commitment, [_event(0, synthetic_session)])
+
+    with pytest.raises(TrainingEvidenceError, match="session differs"):
+        load_training_trace(
+            trace,
+            commitment,
+            runtime_binding=certified_session.binding,
+            require_contiguous_runtime=True,
+        )
 
 
 def test_split_evidence_publication_rolls_back_before_commitment(monkeypatch, tmp_path):
@@ -160,8 +201,9 @@ def test_split_evidence_publication_rolls_back_before_commitment(monkeypatch, tm
         return real_link(source, destination)
 
     monkeypatch.setattr(evidence_bundle_module.os, "link", fail_commitment_link)
+    runtime_session = issue_runtime_session()
     with pytest.raises(TrainingEvidenceError, match="publish evidence pair"):
-        persist_training_trace(trace, commitment, [_event(0)])
+        persist_training_trace(trace, commitment, [_event(0, runtime_session)])
 
     assert not trace.exists()
     assert not commitment.exists()
@@ -173,9 +215,9 @@ def test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes(tmp_
     public_key = generate_private_key(private_key)
     artifact = tmp_path / "artifact.json"
     artifact.write_text('{"locked":true}\n', encoding="utf-8")
-    signed = _sign_payload(
+    signed = sign_formal_run(
         {
-            "schema_version": "full-petal-formal-run-manifest-v1",
+            "schema_version": "full-petal-formal-run-manifest-v2",
             "claim": "C1",
             "variant": "fixed",
             "seed": 705,
@@ -190,7 +232,6 @@ def test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes(tmp_
         },
         private_key_path=private_key,
         key_id="formal-test",
-        role="formal-run",
     )
     trust_root = {"key_id": "formal-test", "public_key": public_key}
 
@@ -239,5 +280,5 @@ def test_checkpoint_bytes_are_read_once_against_the_signed_reference(tmp_path):
 
     assert path == checkpoint.resolve()
     assert bound_bytes == b"checkpoint-v1"
-    with pytest.raises(EvidenceBundleError, match="bytes differ"):
+    with pytest.raises(EvidenceBundleError, match="hash mismatch"):
         read_verified_bundle_bytes(reference, tmp_path, "checkpoint")

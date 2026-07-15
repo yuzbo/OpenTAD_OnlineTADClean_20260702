@@ -102,33 +102,6 @@ def generate_private_key(path):
     return public_key_base64(path)
 
 
-def _sign_payload(payload, *, private_key_path, key_id, role):
-    """Internal primitive for dedicated, schema-validating evidence producers."""
-
-    if not isinstance(payload, Mapping):
-        raise AttestationError("attested payload must be an object")
-    if ATTESTATION_FIELD in payload:
-        raise AttestationError("payload is already attested")
-    if not isinstance(key_id, str) or not key_id.strip():
-        raise AttestationError("attestation key_id must be non-empty text")
-    body = copy.deepcopy(dict(payload))
-    key = _read_private_key(private_key_path)
-    raw_public = key.public_key().public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    )
-    signature = key.sign(_message(body, role))
-    body[ATTESTATION_FIELD] = {
-        "schema_version": ATTESTATION_SCHEMA,
-        "algorithm": ATTESTATION_ALGORITHM,
-        "role": role,
-        "key_id": key_id,
-        "public_key_sha256": hashlib.sha256(raw_public).hexdigest(),
-        "signature": base64.b64encode(signature).decode("ascii"),
-    }
-    return body
-
-
 def verify_payload(payload, *, trust_root, role):
     """Verify an attested object against a configured key, returning its body."""
 

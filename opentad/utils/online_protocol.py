@@ -206,6 +206,24 @@ def verified_emission_result_dict(ledger_path, commitment_path):
     return verified
 
 
+def verified_emission_result_dict_bytes(
+    ledger_bytes, commitment_bytes, *, ledger_filename
+):
+    """Load evaluator rows from already verified ledger/commitment bytes."""
+
+    from .immutable_event_ledger import load_verified_ledger_bytes
+
+    report = load_verified_ledger_bytes(
+        ledger_bytes,
+        commitment_bytes,
+        ledger_filename=ledger_filename,
+    )
+    verified = {}
+    for row in report.rows:
+        verified.setdefault(row["video_id"], []).append(dict(row))
+    return verified
+
+
 def _to_float(value, default=None):
     try:
         return float(value)

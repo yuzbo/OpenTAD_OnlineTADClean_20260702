@@ -7,7 +7,7 @@
   "runner_sources": [
     {
       "path": "tools/run_full_petal_b0.py",
-      "sha256": "09627a89eb7c398bf5a8db2c9b451dc5e70a4d47304cb557ead6d5e478cfcee0"
+      "sha256": "4693b04e055a8ee104d33b49519685c74389b172197448577d16c851e6c78318"
     },
     {
       "path": "tools/testing/run_isolated_torch_pytest.py",
@@ -15,27 +15,99 @@
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
-      "sha256": "d636b8d1c839d09634b4dc9f6415338cc6dcff4c1f642d2e6d37cec36815914c"
+      "sha256": "ad6b4e163811d445f76db1a6941e9944db44e6161c7a8cd9a32f94730e0be682"
+    },
+    {
+      "path": "tools/build_full_petal_launch_ticket.py",
+      "sha256": "da16eb6b5af117da6685f7c98c495d95f8d51fb7c74d5cc3a12b754ce4f797a0"
     },
     {
       "path": "tools/build_full_petal_run_manifest.py",
-      "sha256": "768941f1f6537f5d09a9c6c27259c1d1e6422be46de442374a6a87644d552e21"
+      "sha256": "aca45cec70857051f5c7b3dc0e1e07e3ecee2c289b73d987d58df54f2d6bc694"
+    },
+    {
+      "path": "tools/export_full_petal_resolved_config.py",
+      "sha256": "4f6f17c24f4936a4ada1eb2fcab7a4c770ac0555f9fe62ca85b90b7c50179eb6"
+    },
+    {
+      "path": "tools/build_full_petal_manifests.py",
+      "sha256": "d925c53a3ed182fa0b05cbafa2f0aab0ff6a55563fdc7cbd99fd93ad1b3fc65a"
+    },
+    {
+      "path": "tools/train.py",
+      "sha256": "cb8566a3c5ab1c1f7b389f7138641594e4a0bec45424e2140dcc5931fbc86572"
+    },
+    {
+      "path": "tools/test.py",
+      "sha256": "7ef481f66fc59fe56df871cd0bd64056f7f81c56f801a565ddd6bf8584765836"
+    },
+    {
+      "path": "tools/remote/submit_full_petal_q2_n16r4.sh",
+      "sha256": "4961f57800afcddd7039c59432f76f0968d173b3f0c5c4b13e1441a3fe535001"
+    },
+    {
+      "path": "tests/full_petal_attestation_fixture.py",
+      "sha256": "92f7585301215e173dc0fb182493cb9393a2c5c1bcef2b1c632a45c245e85b8a"
     },
     {
       "path": "opentad/utils/full_petal_b0.py",
-      "sha256": "e91a5905956a23a59298425fec1b737c9ad841ea645ad2b42a0b22dd952dbcf6"
+      "sha256": "56131a39b8cdf3a8798a16af15e388c5805a2d4ea6c26428ebfe047c66b2e236"
     },
     {
       "path": "opentad/utils/full_petal_attestation.py",
-      "sha256": "0d9355ee7fc835c4f786e85bb8d8c5f58dfa8ea14200d143633c80f1779b21b2"
+      "sha256": "9bf03e8e8ca27c6143df12ca2cc74b3bfd31d2d0e8a512e92a4ef6e51fc150b5"
+    },
+    {
+      "path": "opentad/utils/full_petal_role_signing.py",
+      "sha256": "320bd58803685b6497d2f12d5e7a2e4252754d230649ecc0a562c480e7a9a36f"
+    },
+    {
+      "path": "opentad/utils/full_petal_runtime_attestation.py",
+      "sha256": "e9ed44a38dbc7a87cb11e69b8a645ddddb64b64a6f51d160517f5cfc715b8132"
+    },
+    {
+      "path": "opentad/utils/evidence_bundle.py",
+      "sha256": "1387cb0c694517d44c5d9b42ab3944ae74c0f143cef882088b975e7bfb189b5b"
     },
     {
       "path": "opentad/utils/full_petal_launch.py",
-      "sha256": "5b1fae164d842ced14e88add6f4970a9581fced3b15640be6732ab0573883192"
+      "sha256": "d1d25c0366a230b935ee1bcf2adefece0c1804d1e82b86fdce2d1c4bded56c0c"
+    },
+    {
+      "path": "opentad/utils/full_petal_training_evidence.py",
+      "sha256": "8ec0b45c6f34803d4d62889a4905610e10d99f6a2f61cb768dfbd5ba84c68113"
+    },
+    {
+      "path": "opentad/utils/full_petal_data_contract.py",
+      "sha256": "38fb01abce0ce3a06fb4d6ddc0aa37c207eb11e5c215398a5ab666b695355e5c"
+    },
+    {
+      "path": "opentad/utils/full_petal_identity.py",
+      "sha256": "051880e892decdcc3d6eee7af177ae3246f4b185184ade8491cb5c7ac3c2fe00"
+    },
+    {
+      "path": "opentad/utils/fixed_step_profile.py",
+      "sha256": "4b523fe0e54fcdd37b0eedc44b67642f30284a17869f7ec0a306a33f0535a0f9"
+    },
+    {
+      "path": "opentad/utils/immutable_event_ledger.py",
+      "sha256": "2df812fec61bf409c3251176d7067ab4af46b9e09cbfcd291a585b4363a81db5"
+    },
+    {
+      "path": "opentad/utils/online_protocol.py",
+      "sha256": "2c27e10de880216d312b2dbc7552ed4588adfa1b7aa5f646f8a2a9e606bca9fe"
+    },
+    {
+      "path": "opentad/evaluations/online_budgeted_map.py",
+      "sha256": "4c9e85a55fdf7faaf52997e556fd7cee98cb0e8e77ecd46ede24fa19bcb0106a"
+    },
+    {
+      "path": "opentad/cores/train_engine.py",
+      "sha256": "097a6b09e24f7828675d7c4940c357119d3cb44848d1bc7809c5fd1720f2e80e"
     },
     {
       "path": "tools/check_full_petal_results.py",
-      "sha256": "b1fefa925607c6724bb6371ed4cc176cbf8ea63f3df92f20f62e2a92139c28b8"
+      "sha256": "d90a10a670646b9addc3b0f9ca332234081443c905ef20cd3a0f960023c5b5d9"
     }
   ],
   "schema_version": "full-petal-b0-manifest-v1",
@@ -66,8 +138,10 @@
         "tests/test_full_petal_identity.py",
         "tests/test_full_petal_launch_contracts.py",
         "tests/test_full_petal_launch_gate.py",
+        "tests/test_full_petal_launch_ticket_cli.py",
         "tests/test_full_petal_metrics.py",
         "tests/test_full_petal_registry_build.py",
+        "tests/test_full_petal_resolved_config.py",
         "tests/test_full_petal_result_gate.py",
         "tests/test_full_petal_run_manifest_cli.py",
         "tests/test_full_petal_training_cost_controls.py",
@@ -205,7 +279,7 @@
         },
         {
           "path": "tests/test_fixed_step_profile.py",
-          "sha256": "c2240dde3cfe8e9697cfcebe1d5fc1927d4a376f2c51e7c2854cf864a8369d0d",
+          "sha256": "b82add9729bf227c8fc4b37b269c8fcab4c1ded55744b8391c7de424c688a425",
           "test_functions": [
             "test_fixed_step_profile_measures_exact_events_after_warmup",
             "test_zero_warmup_starts_before_first_measured_event",
@@ -225,7 +299,7 @@
         },
         {
           "path": "tests/test_full_petal_data_contract.py",
-          "sha256": "cda9011e193c08f253456d1271c1c7ff293f6bb9a5e15bc247db55c8ec7636ff",
+          "sha256": "b0d3495f2ae5dca1f50ad1488cc7c7c58ac6b7bab20af580a4dca9b97cfd6c50",
           "test_functions": [
             "test_chunk_boundary_uses_exact_decimal_arithmetic",
             "test_strict_thumos_annotation_subsets_lock_canonical_160_40",
@@ -249,6 +323,9 @@
             "test_incomplete_fineaction_evidence_remains_unqualified",
             "test_fineaction_qualification_enforces_identity_sample_thresholds",
             "test_fineaction_qualification_rejects_forged_or_tampered_evidence",
+            "test_fineaction_rejects_legacy_self_authored_license_pass",
+            "test_fineaction_rejects_tampered_execution_leaf",
+            "test_fineaction_rejects_tampered_execution_attestation",
             "test_cli_builds_deterministic_thumos_json_from_explicit_splits",
             "test_cli_loads_and_saves_reporting_hardware_and_fineaction_json"
           ]
@@ -281,7 +358,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_contracts.py",
-          "sha256": "9f7de89d33655f5e737bd3aa1cfa9053697d036393ddc9e68b540b772f4f88ba",
+          "sha256": "4e41902a58f3680599ea8c3284af64c0ada28cf96c1341334b4464c90c2b348c",
           "test_functions": [
             "test_q2_bridge_configs_change_only_post_birth_loss_binding",
             "test_q2_bridge_freezes_scientific_and_cost_contracts",
@@ -299,20 +376,32 @@
         },
         {
           "path": "tests/test_full_petal_launch_gate.py",
-          "sha256": "0ba8130389d2830a8c0ba7d81561eb31e99e165f480b1941c16f8a2ac54a84ae",
+          "sha256": "77ad9ff8d00ef90a95ce3160386524bf8ad5451070415e9f8425a4ec83171891",
           "test_functions": [
             "test_non_full_petal_config_does_not_require_a_ticket",
+            "test_production_has_no_dictionary_to_launch_receipt_signer",
+            "test_manual_or_mutated_launch_authorization_is_rejected",
             "test_profile_requires_signed_b0_same_reviewer_and_bound_runtime",
             "test_launch_receipt_binds_ticket_runtime_and_slurm_without_overwrite",
             "test_unsigned_self_consistent_review_is_rejected",
             "test_tampered_b0_leaf_is_rejected_even_when_root_is_unchanged",
+            "test_b0_root_rejects_ambiguous_or_nonfinite_json",
             "test_b0_bundle_remains_verifiable_after_directory_relocation",
+            "test_b0_validation_consumes_the_same_bytes_after_verified_path_swap",
             "test_profile_rejects_runtime_slurm_dirty_and_signing_key_mismatch",
             "test_ticket_builder_uses_the_same_signed_prerequisites",
             "test_formal_ticket_rejects_resume_until_trace_continuation_exists",
             "test_profile_artifact_is_signed_and_binds_exact_authorization",
             "test_formal_launch_accepts_only_later_authorization_only_commit",
             "test_formal_profile_reuse_rejects_non_authorization_diff"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_launch_ticket_cli.py",
+          "sha256": "68784f9e60bfe7e275c09272ea7e2b78f3f3fbbfde7312992adad23e5528aab4",
+          "test_functions": [
+            "test_launch_ticket_cli_exclusively_publishes_validated_payload",
+            "test_launch_ticket_cli_rejects_repository_local_evidence"
           ]
         },
         {
@@ -338,8 +427,16 @@
           ]
         },
         {
+          "path": "tests/test_full_petal_resolved_config.py",
+          "sha256": "0b2f0b5d20a448bc554d33192cc0d5f9c81041e00f0f42429ca2a43b414d432c",
+          "test_functions": [
+            "test_exported_snapshot_resolves_inheritance_without_base_file",
+            "test_resolved_snapshot_must_stay_outside_repository"
+          ]
+        },
+        {
           "path": "tests/test_full_petal_result_gate.py",
-          "sha256": "31234f01441d96c74c1619583cc0f9de453d167bdbd653488cd4a159baa7ce07",
+          "sha256": "a3aab0a82c235d16e1ffc96c675dd72a107d8b17a1fe0decb2338151076496d0",
           "test_functions": [
             "test_signed_replay_can_pass_independent_claim_and_project_gates",
             "test_c1_and_c2_remain_independent",
@@ -349,6 +446,8 @@
             "test_gate_rejects_self_consistent_evaluation_ticket_for_wrong_checkpoint",
             "test_gate_rejects_signed_receipt_without_active_slurm_allocation",
             "test_formal_signer_rejects_data_artifact_substitution",
+            "test_formal_signer_rejects_training_order_artifact_content_substitution",
+            "test_formal_signer_rejects_resolved_config_not_bound_to_ticket",
             "test_formal_signer_rejects_evaluator_spec_substitution",
             "test_formal_signer_rejects_self_reported_training_identity",
             "test_gate_rejects_unsigned_prerequisite_after_all_outer_hashes_are_rebuilt",
@@ -359,7 +458,7 @@
         },
         {
           "path": "tests/test_full_petal_run_manifest_cli.py",
-          "sha256": "6adbfd99a2412d58c3e9818982f2228e6e0d865b196353bbef84a97132e4db33",
+          "sha256": "7e696de08fba151b4c36f5ed9d96835c1d1b50ca35399670b0c72f76a1070b0d",
           "test_functions": [
             "test_cli_wires_validated_manifest_builder_and_canonical_protocol",
             "test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch",
@@ -379,12 +478,13 @@
         },
         {
           "path": "tests/test_full_petal_training_evidence.py",
-          "sha256": "a79f21c6e6a02e9e765b7e383724b2b04508da307d41d148452e8acacec79d67",
+          "sha256": "a423e3f043d22f0a063a3008efb9a52ca951db515ddae6850e450e4f932c1d26",
           "test_functions": [
             "test_training_cost_is_derived_from_committed_optimizer_events",
             "test_optimizer_event_recorder_commits_exact_runtime_events",
             "test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence",
             "test_training_tail_commitment_rejects_valid_prefix_truncation",
+            "test_self_consistent_trace_from_uncertified_runtime_session_is_rejected",
             "test_split_evidence_publication_rolls_back_before_commitment",
             "test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes",
             "test_evidence_bundle_rejects_absolute_parent_and_symlink_escape",
@@ -393,7 +493,7 @@
         },
         {
           "path": "tests/test_full_petal_training_transaction.py",
-          "sha256": "259d7551a50d673654c14dd3a41f5d72abab6f79a7824b1d2fb4e95c23a79694",
+          "sha256": "2d2cda68052bfcb934be41ab6b030d4ebfbacac342308aefc2ba850b79b363c4",
           "test_functions": [
             "test_stream_key_uses_structured_identity_without_delimiter_collisions",
             "test_training_forward_stages_state_across_chunks_until_atomic_commit",

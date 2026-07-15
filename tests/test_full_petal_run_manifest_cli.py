@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from opentad.utils.full_petal_attestation import _sign_payload, generate_private_key
+from opentad.utils.full_petal_attestation import generate_private_key
+from opentad.utils.full_petal_role_signing import sign_formal_run
 from opentad.utils.full_petal_identity import canonical_json_sha256
 from opentad.utils.full_petal_training_evidence import (
     TrainingEvidenceError,
@@ -66,9 +67,9 @@ def test_cli_wires_validated_manifest_builder_and_canonical_protocol(tmp_path, m
             }
             for role, path in kwargs["artifacts"].items()
         }
-        return _sign_payload(
+        return sign_formal_run(
             {
-                "schema_version": "full-petal-formal-run-manifest-v1",
+                "schema_version": "full-petal-formal-run-manifest-v2",
                 "claim": kwargs["claim"],
                 "variant": kwargs["variant"],
                 "seed": kwargs["seed"],
@@ -78,7 +79,6 @@ def test_cli_wires_validated_manifest_builder_and_canonical_protocol(tmp_path, m
             },
             private_key_path=kwargs["private_key_path"],
             key_id=kwargs["key_id"],
-            role="formal-run",
         )
 
     monkeypatch.setattr(MODULE, "build_formal_run_manifest", validated_builder)

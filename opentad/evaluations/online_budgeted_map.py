@@ -15,7 +15,10 @@ import numpy as np
 
 from .builder import EVALUATORS
 from .full_petal_metrics import compute_full_petal_metrics
-from opentad.utils.online_protocol import verified_emission_result_dict
+from opentad.utils.online_protocol import (
+    verified_emission_result_dict,
+    verified_emission_result_dict_bytes,
+)
 
 
 def _number_key(value):
@@ -351,15 +354,23 @@ class OnlineAPBudgeted:
     def _load_predictions(self, filename):
         data = self._load_json_or_dict(filename)
         if self.require_ledger:
-            required = {"ledger_path", "commitment_path"}
-            if set(data) != required:
-                raise ValueError(
-                    "formal predictions require exactly ledger_path and "
-                    "commitment_path; in-memory rows cannot prove the tail"
+            path_fields = {"ledger_path", "commitment_path"}
+            byte_fields = {"ledger_bytes", "commitment_bytes", "ledger_filename"}
+            if set(data) == path_fields:
+                result_mapping = verified_emission_result_dict(
+                    data["ledger_path"], data["commitment_path"]
                 )
-            result_mapping = verified_emission_result_dict(
-                data["ledger_path"], data["commitment_path"]
-            )
+            elif set(data) == byte_fields:
+                result_mapping = verified_emission_result_dict_bytes(
+                    data["ledger_bytes"],
+                    data["commitment_bytes"],
+                    ledger_filename=data["ledger_filename"],
+                )
+            else:
+                raise ValueError(
+                    "formal predictions require ledger_path/commitment_path or "
+                    "ledger_bytes/commitment_bytes/ledger_filename"
+                )
         else:
             if "results" not in data:
                 raise IOError("predictions must contain a results field")

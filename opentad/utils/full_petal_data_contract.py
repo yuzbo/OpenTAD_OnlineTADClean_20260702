@@ -10,7 +10,15 @@ import math
 import os
 from pathlib import Path
 
-from .evidence_bundle import EvidenceBundleError, resolve_bundle_path
+from .evidence_bundle import (
+    EvidenceBundleError,
+    read_stable_file_bytes,
+    read_verified_bundle_bytes,
+    resolve_bundle_path,
+    strict_json_from_bytes,
+)
+from .full_petal_attestation import AttestationError, verify_payload
+from .full_petal_b0 import B0EvidenceError, junit_cases
 
 
 SCHEMA_VERSION = 1
@@ -54,6 +62,9 @@ FINEACTION_SOURCE_KEYS = (
     "preprocessing",
     "loader_smoke",
 )
+FINEACTION_LICENSE_ROLE = "fineaction-license-authorization"
+FINEACTION_PREPROCESSING_ROLE = "fineaction-causal-preprocessing-run"
+FINEACTION_LOADER_ROLE = "fineaction-loader-smoke-run"
 HARDWARE_REQUIRED_DIMENSIONS = (
     "batch_size",
     "chunk_size",
@@ -240,12 +251,20 @@ def _annotation_database(annotation):
     return database
 
 
-def _file_record(path, content=None):
+def _file_record(path, content=None, *, content_bytes=None):
     path = Path(path)
+    if content_bytes is not None and not isinstance(content_bytes, bytes):
+        raise ContractValidationError("file record content_bytes must be bytes")
     record = {
         "name": path.name,
-        "sha256": sha256_file(path),
-        "size_bytes": path.stat().st_size,
+        "sha256": (
+            hashlib.sha256(content_bytes).hexdigest()
+            if content_bytes is not None
+            else sha256_file(path)
+        ),
+        "size_bytes": (
+            len(content_bytes) if content_bytes is not None else path.stat().st_size
+        ),
     }
     if content is not None:
         record["content_sha256"] = canonical_json_sha256(content)
@@ -1497,8 +1516,7 @@ def _fineaction_annotation_stats(annotation):
     }
 
 
-def _fineaction_media_inventory(path):
-    inventory = load_json(path)
+def _fineaction_media_inventory(path, inventory):
     _require_exact_json_fields(
         inventory,
         {"schema", "schema_version", "dataset", "entries"},
@@ -1541,13 +1559,19 @@ def _fineaction_media_inventory(path):
             )
         except EvidenceBundleError as exc:
             raise ContractValidationError(str(exc)) from exc
-        actual_size = media_path.stat().st_size
+        try:
+            _, media_bytes = read_stable_file_bytes(
+                media_path, f"FineAction media {video_id}"
+            )
+        except EvidenceBundleError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        actual_size = len(media_bytes)
         if actual_size != entry["size_bytes"]:
             raise ContractValidationError(
                 f"FineAction media size differs for {video_id}: "
                 f"expected {entry['size_bytes']}, found {actual_size}"
             )
-        actual_sha256 = sha256_file(media_path)
+        actual_sha256 = hashlib.sha256(media_bytes).hexdigest()
         if actual_sha256 != entry["sha256"]:
             raise ContractValidationError(
                 f"FineAction media hash differs for {video_id}"
@@ -1570,57 +1594,160 @@ def _fineaction_media_inventory(path):
     }
 
 
-def _fineaction_license(path):
-    license_source = load_json(path)
+def _fineaction_trust_roots(trust_roots):
+    _require_exact_json_fields(
+        trust_roots, {"license", "execution"}, "FineAction trust roots"
+    )
+    normalized = {}
+    for role in ("license", "execution"):
+        root = _require_exact_json_fields(
+            trust_roots[role], {"key_id", "public_key"}, f"FineAction {role} trust root"
+        )
+        _require_nonempty_string(root["key_id"], f"FineAction {role} key_id")
+        _require_nonempty_string(root["public_key"], f"FineAction {role} public_key")
+        normalized[role] = dict(root)
+    return normalized
+
+
+def _fineaction_verified_leaf(reference, base_dir, label):
+    try:
+        return read_verified_bundle_bytes(reference, base_dir, label)
+    except EvidenceBundleError as exc:
+        raise ContractValidationError(str(exc)) from exc
+
+
+def _fineaction_execution_leaves(source, path, label, pass_marker):
+    command = source["command"]
+    if not isinstance(command, list) or not command or not all(
+        isinstance(item, str) and item for item in command
+    ):
+        raise ContractValidationError(f"{label} command is invalid")
+    source_path, source_bytes = _fineaction_verified_leaf(
+        source["source"], Path(path).parent, f"{label} source"
+    )
+    if source["source"]["path"] not in command and source_path.name not in command:
+        raise ContractValidationError(f"{label} command does not execute its bound source")
+    if source_path.suffix != ".py" or not source_bytes.strip():
+        raise ContractValidationError(f"{label} source is not a non-empty Python file")
+    try:
+        compile(source_bytes, str(source_path), "exec")
+    except (SyntaxError, ValueError) as exc:
+        raise ContractValidationError(f"{label} source is not valid Python: {exc}") from exc
+    _, junit_bytes = _fineaction_verified_leaf(
+        source["junit"], Path(path).parent, f"{label} JUnit"
+    )
+    try:
+        counts, cases = junit_cases(junit_bytes=junit_bytes)
+    except B0EvidenceError as exc:
+        raise ContractValidationError(f"{label} JUnit is invalid: {exc}") from exc
+    if (
+        counts["collected"] <= 0
+        or counts["passed"] != counts["collected"]
+        or counts["failed"]
+        or counts["errors"]
+        or counts["skipped"]
+    ):
+        raise ContractValidationError(f"{label} JUnit has not reached a clean PASS")
+    _, log_bytes = _fineaction_verified_leaf(
+        source["log"], Path(path).parent, f"{label} log"
+    )
+    try:
+        log_text = log_bytes.decode("utf-8")
+    except UnicodeError as exc:
+        raise ContractValidationError(f"{label} log is not UTF-8") from exc
+    if pass_marker not in log_text:
+        raise ContractValidationError(f"{label} log lacks its execution PASS marker")
+    return {
+        "command_sha256": canonical_json_sha256(command),
+        "source_sha256": source["source"]["sha256"],
+        "junit_sha256": source["junit"]["sha256"],
+        "log_sha256": source["log"]["sha256"],
+        "tests_collected": counts["collected"],
+        "tests_passed": counts["passed"],
+        "testcases_sha256": canonical_json_sha256(cases),
+    }
+
+
+def _fineaction_license(path, trust_root, signed):
+    try:
+        license_source = verify_payload(
+            signed,
+            trust_root=trust_root,
+            role=FINEACTION_LICENSE_ROLE,
+        )
+    except AttestationError as exc:
+        raise ContractValidationError(
+            f"FineAction license authorization is not trusted: {exc}"
+        ) from exc
     _require_exact_json_fields(
         license_source,
         {
-            "schema",
             "schema_version",
             "dataset",
             "license_id",
-            "access_authorized",
+            "subject",
+            "access_scope",
+            "authorized",
+            "issued_at",
             "terms",
         },
         "FineAction license source",
     )
     if (
-        license_source["schema"] != "full_petal.fineaction_license"
-        or license_source["schema_version"] != SCHEMA_VERSION
+        license_source["schema_version"]
+        != "full-petal-fineaction-license-authorization-v1"
         or license_source["dataset"] != "FineAction"
     ):
         raise ContractValidationError("FineAction license source identity is invalid")
     _require_nonempty_string(license_source["license_id"], "FineAction license_id")
-    if not isinstance(license_source["access_authorized"], bool):
-        raise ContractValidationError("FineAction access_authorized must be boolean")
+    _require_nonempty_string(license_source["subject"], "FineAction license subject")
+    _require_nonempty_string(
+        license_source["access_scope"], "FineAction license access scope"
+    )
+    _require_created_at(license_source["issued_at"])
+    if license_source["authorized"] is not True:
+        raise ContractValidationError("FineAction access is not authorized")
     terms = _require_exact_json_fields(
         license_source["terms"], {"path", "sha256"}, "FineAction license terms"
     )
     if not _valid_sha256(terms["sha256"]):
         raise ContractValidationError("FineAction license terms SHA-256 is invalid")
     try:
-        terms_path = resolve_bundle_path(
-            terms["path"], Path(path).parent, "FineAction license terms"
+        _, terms_bytes = read_verified_bundle_bytes(
+            terms, Path(path).parent, "FineAction license terms"
         )
     except EvidenceBundleError as exc:
         raise ContractValidationError(str(exc)) from exc
-    if sha256_file(terms_path) != terms["sha256"]:
-        raise ContractValidationError("FineAction license terms hash differs")
     return {
-        "access_authorized": license_source["access_authorized"],
+        "access_authorized": True,
+        "access_scope": license_source["access_scope"],
         "license_id": license_source["license_id"],
-        "terms_sha256": terms["sha256"],
+        "subject": license_source["subject"],
+        "terms_sha256": hashlib.sha256(terms_bytes).hexdigest(),
     }
 
 
-def _fineaction_preprocessing(path):
-    source = load_json(path)
+def _fineaction_preprocessing(path, trust_root, signed):
+    try:
+        source = verify_payload(
+            signed,
+            trust_root=trust_root,
+            role=FINEACTION_PREPROCESSING_ROLE,
+        )
+    except AttestationError as exc:
+        raise ContractValidationError(
+            f"FineAction preprocessing execution is not trusted: {exc}"
+        ) from exc
     _require_exact_json_fields(
         source,
         {
-            "schema",
             "schema_version",
             "dataset",
+            "status",
+            "command",
+            "source",
+            "junit",
+            "log",
             "future_frames_allowed",
             "timestamp_convention",
             "frame_stride",
@@ -1630,13 +1757,13 @@ def _fineaction_preprocessing(path):
         "FineAction preprocessing source",
     )
     if (
-        source["schema"] != "full_petal.fineaction_causal_preprocessing"
-        or source["schema_version"] != SCHEMA_VERSION
+        source["schema_version"] != "full-petal-fineaction-preprocessing-run-v1"
         or source["dataset"] != "FineAction"
+        or source["status"] != "PASS"
     ):
         raise ContractValidationError("FineAction preprocessing source identity is invalid")
-    if not isinstance(source["future_frames_allowed"], bool):
-        raise ContractValidationError("FineAction future_frames_allowed must be boolean")
+    if source["future_frames_allowed"] is not False:
+        raise ContractValidationError("FineAction preprocessing permits future frames")
     _require_nonempty_string(
         source["timestamp_convention"], "FineAction timestamp convention"
     )
@@ -1644,23 +1771,36 @@ def _fineaction_preprocessing(path):
     for field in ("annotation_sha256", "media_inventory_sha256"):
         if not _valid_sha256(source[field]):
             raise ContractValidationError(f"FineAction {field} is invalid")
-    return source
+    execution = _fineaction_execution_leaves(
+        source,
+        path,
+        "FineAction causal preprocessing",
+        "FINEACTION_CAUSAL_PREPROCESS_PASS",
+    )
+    return {**source, "execution": execution}
 
 
-def _fineaction_loader_smoke(path):
-    source = load_json(path)
+def _fineaction_loader_smoke(path, trust_root, signed):
+    try:
+        source = verify_payload(
+            signed,
+            trust_root=trust_root,
+            role=FINEACTION_LOADER_ROLE,
+        )
+    except AttestationError as exc:
+        raise ContractValidationError(
+            f"FineAction loader execution is not trusted: {exc}"
+        ) from exc
     _require_exact_json_fields(
         source,
         {
-            "schema",
             "schema_version",
             "dataset",
             "status",
             "command",
-            "exit_code",
-            "tests_passed",
-            "tests_failed",
-            "tests_skipped",
+            "source",
+            "junit",
+            "log",
             "annotation_sha256",
             "media_inventory_sha256",
             "preprocessing_sha256",
@@ -1668,18 +1808,11 @@ def _fineaction_loader_smoke(path):
         "FineAction loader smoke source",
     )
     if (
-        source["schema"] != "full_petal.fineaction_loader_smoke"
-        or source["schema_version"] != SCHEMA_VERSION
+        source["schema_version"] != "full-petal-fineaction-loader-run-v1"
         or source["dataset"] != "FineAction"
+        or source["status"] != "PASS"
     ):
         raise ContractValidationError("FineAction loader smoke source identity is invalid")
-    command = source["command"]
-    if not isinstance(command, list) or not command or not all(
-        isinstance(item, str) and item for item in command
-    ):
-        raise ContractValidationError("FineAction loader smoke command is invalid")
-    for field in ("exit_code", "tests_passed", "tests_failed", "tests_skipped"):
-        _require_nonnegative_int(source[field], f"FineAction loader smoke {field}")
     for field in (
         "annotation_sha256",
         "media_inventory_sha256",
@@ -1687,7 +1820,13 @@ def _fineaction_loader_smoke(path):
     ):
         if not _valid_sha256(source[field]):
             raise ContractValidationError(f"FineAction loader smoke {field} is invalid")
-    return source
+    execution = _fineaction_execution_leaves(
+        source,
+        path,
+        "FineAction loader smoke",
+        "FINEACTION_LOADER_SMOKE_PASS",
+    )
+    return {**source, "execution": execution}
 
 
 def _fineaction_check(passed, evidence, failure):
@@ -1734,19 +1873,65 @@ def _fineaction_overlap_stats(instances):
     return overlap_pairs, repeated_groups, repeated_instances
 
 
-def build_fineaction_qualification_report(sources, *, seed, created_at):
+def build_fineaction_qualification_report(
+    sources, *, seed, created_at, trust_roots, source_bytes=None
+):
     """Derive FineAction qualification by reopening and auditing source artifacts."""
 
+    trust_roots = _fineaction_trust_roots(trust_roots)
     paths = _fineaction_source_paths(sources)
-    annotation = load_json(paths["annotation"])
+    supplied_source_bytes = source_bytes
+    if supplied_source_bytes is not None:
+        _require_exact_json_fields(
+            supplied_source_bytes,
+            FINEACTION_SOURCE_KEYS,
+            "FineAction verified source bytes",
+        )
+        if not all(isinstance(value, bytes) for value in supplied_source_bytes.values()):
+            raise ContractValidationError(
+                "FineAction verified source bytes must contain exact byte strings"
+            )
+    source_bytes = {}
+    source_payloads = {}
+    for name, path in paths.items():
+        try:
+            if supplied_source_bytes is None:
+                _, payload = read_stable_file_bytes(
+                    path, f"FineAction {name} source"
+                )
+            else:
+                payload = supplied_source_bytes[name]
+            source_payloads[name] = strict_json_from_bytes(
+                payload, f"FineAction {name} source", require_object=True
+            )
+        except EvidenceBundleError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        source_bytes[name] = payload
+    annotation = source_payloads["annotation"]
     annotation_stats = _fineaction_annotation_stats(annotation)
-    media = _fineaction_media_inventory(paths["media_inventory"])
-    license_source = _fineaction_license(paths["license"])
-    preprocessing = _fineaction_preprocessing(paths["preprocessing"])
-    loader_smoke = _fineaction_loader_smoke(paths["loader_smoke"])
+    media = _fineaction_media_inventory(
+        paths["media_inventory"], source_payloads["media_inventory"]
+    )
+    license_source = _fineaction_license(
+        paths["license"], trust_roots["license"], source_payloads["license"]
+    )
+    preprocessing = _fineaction_preprocessing(
+        paths["preprocessing"],
+        trust_roots["execution"],
+        source_payloads["preprocessing"],
+    )
+    loader_smoke = _fineaction_loader_smoke(
+        paths["loader_smoke"],
+        trust_roots["execution"],
+        source_payloads["loader_smoke"],
+    )
 
     source_records = {
-        name: _file_record(path, content=load_json(path))
+        name: _file_record(
+            path,
+            content=source_payloads[name],
+            content_bytes=source_bytes[name],
+        )
         for name, path in paths.items()
     }
     annotation_sha256 = source_records["annotation"]["sha256"]
@@ -1776,16 +1961,15 @@ def build_fineaction_qualification_report(sources, *, seed, created_at):
     )
 
     preprocessing_bound = (
-        preprocessing["future_frames_allowed"] is False
+        preprocessing["status"] == "PASS"
+        and preprocessing["future_frames_allowed"] is False
         and preprocessing["annotation_sha256"] == annotation_sha256
         and preprocessing["media_inventory_sha256"] == inventory_sha256
+        and preprocessing["execution"]["tests_passed"] > 0
     )
     loader_smoke_bound = (
         loader_smoke["status"] == "PASS"
-        and loader_smoke["exit_code"] == 0
-        and loader_smoke["tests_passed"] > 0
-        and loader_smoke["tests_failed"] == 0
-        and loader_smoke["tests_skipped"] == 0
+        and loader_smoke["execution"]["tests_passed"] > 0
         and loader_smoke["annotation_sha256"] == annotation_sha256
         and loader_smoke["media_inventory_sha256"] == inventory_sha256
         and loader_smoke["preprocessing_sha256"] == preprocessing_sha256
@@ -1892,10 +2076,11 @@ def build_fineaction_qualification_report(sources, *, seed, created_at):
                     {
                         "status": loader_smoke["status"],
                         "command_sha256": canonical_json_sha256(loader_smoke["command"]),
-                        "tests_passed": loader_smoke["tests_passed"],
-                        "tests_failed": loader_smoke["tests_failed"],
-                        "tests_skipped": loader_smoke["tests_skipped"],
-                        "test_report_sha256": source_records["loader_smoke"]["sha256"],
+                        "tests_passed": loader_smoke["execution"]["tests_passed"],
+                        "junit_sha256": loader_smoke["execution"]["junit_sha256"],
+                        "log_sha256": loader_smoke["execution"]["log_sha256"],
+                        "source_sha256": loader_smoke["execution"]["source_sha256"],
+                        "attested_run_sha256": source_records["loader_smoke"]["sha256"],
                     },
                     "loader smoke did not pass cleanly against the exact bound sources",
                 ),
@@ -1937,7 +2122,9 @@ def build_fineaction_qualification_report(sources, *, seed, created_at):
     return _finalize_manifest(payload)
 
 
-def validate_fineaction_qualification_report(report, sources):
+def validate_fineaction_qualification_report(
+    report, sources, *, trust_roots, source_bytes=None
+):
     if not isinstance(report, dict):
         raise ContractValidationError("FineAction qualification report must be an object")
     if (
@@ -1950,6 +2137,8 @@ def validate_fineaction_qualification_report(report, sources):
         sources,
         seed=report.get("seed"),
         created_at=report.get("created_at"),
+        trust_roots=trust_roots,
+        source_bytes=source_bytes,
     )
     if rebuilt != report:
         raise ContractValidationError(

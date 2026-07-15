@@ -13,6 +13,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from opentad.utils.full_petal_identity import canonical_json_sha256  # noqa: E402
+from opentad.utils.evidence_bundle import (  # noqa: E402
+    EvidenceBundleError,
+    publish_exclusive_file,
+    read_stable_file_bytes,
+    strict_json_from_bytes,
+)
 from opentad.utils.full_petal_training_evidence import (  # noqa: E402
     TrainingEvidenceError,
     build_formal_run_manifest,
@@ -24,8 +30,11 @@ COMMON_ARTIFACT_ROLES = {
     "commitment",
     "ground_truth",
     "allowed_videos",
+    "fit_core",
+    "feature_cache_manifest",
     "evaluator_spec",
     "config",
+    "resolved_config",
     "checkpoint",
     "data_identity",
     "training_launch_ticket",
@@ -40,11 +49,10 @@ _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 def _load_json(path, label):
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        _, raw = read_stable_file_bytes(path, label)
+        payload = strict_json_from_bytes(raw, label, require_object=True)
+    except EvidenceBundleError as exc:
         raise TrainingEvidenceError(f"failed to read {label}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise TrainingEvidenceError(f"{label} must contain one JSON object")
     return payload
 
 
@@ -165,11 +173,11 @@ def main(argv=None):
             key_id=args.key_id,
             bundle_root=output.parent,
         )
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with output.open("x", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, allow_nan=False, indent=2, sort_keys=True)
-            handle.write("\n")
-    except (OSError, TrainingEvidenceError) as exc:
+        encoded = (
+            json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        publish_exclusive_file(output, encoded)
+    except (EvidenceBundleError, OSError, TrainingEvidenceError) as exc:
         parser.error(str(exc))
     print(f"FULL_PETAL_RUN_MANIFEST={output}")
     return 0

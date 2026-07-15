@@ -6,12 +6,19 @@ import pytest
 
 import opentad.utils.full_petal_launch as launch_module
 import opentad.utils.full_petal_identity as identity_module
-from opentad.utils.full_petal_attestation import _sign_payload, generate_private_key
+import opentad.utils.full_petal_role_signing as role_signing_module
+import opentad.utils.full_petal_b0 as b0_module
+from opentad.utils.full_petal_attestation import generate_private_key
+from opentad.utils.full_petal_role_signing import (
+    sign_b0_evidence,
+    sign_independent_review,
+)
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
     B0_SCHEMA,
     B0_TEST_REPORT_SCHEMA,
+    B0EvidenceError,
     canonical_json_sha256,
     validate_b0_evidence,
 )
@@ -26,10 +33,12 @@ from opentad.utils.full_petal_launch import (
     LAUNCH_TICKET_SCHEMA,
     REVIEW_SCHEMA,
     RepositoryState,
+    FullPetalLaunchAuthorization,
     build_fixed_step_profile_artifact,
     build_launch_receipt,
     build_launch_ticket,
     persist_launch_receipt,
+    runtime_evidence_session,
     resolved_config_sha256,
     sha256_file,
     validate_full_petal_launch,
@@ -77,14 +86,18 @@ def _reference(path, root):
     }
 
 
-def _profile_trace(root):
+def _profile_trace(root, runtime_session):
     trace = root / "profile-optimizer-events.jsonl"
     commitment = root / "profile-optimizer-events.commitment.json"
     persist_training_trace(
         trace,
         commitment,
         [
-            {
+            (lambda payload: {
+                **payload,
+                **runtime_session.sign_event("optimizer-event", payload),
+            })(
+                {
                 "event_id": f"optimizer-event-{index:08d}",
                 "episode_id": f"profile-episode-{index:08d}",
                 "input_tokens": 64,
@@ -92,24 +105,42 @@ def _profile_trace(root):
                 "peak_memory_bytes": 1024 + index,
                 "skipped": False,
                 **TRACE_IDENTITY,
-            }
+                }
+            )
             for index in range(250)
         ],
     )
     return trace, commitment
 
 
+def _profile_measurements():
+    return {
+        "warmup_optimizer_events": 50,
+        "measured_optimizer_events": 200,
+        "total_optimizer_events": 250,
+        "skipped_optimizer_events": 0,
+        "measurement_start_after_event_id": "optimizer-event-00000049",
+        "measurement_end_event_id": "optimizer-event-00000249",
+        "elapsed_seconds": 5.0,
+        "peak_memory_bytes": 123,
+        "throughput_optimizer_events_per_second": 40.0,
+    }
+
+
 def _keys(root):
     b0_private = root / "keys" / "b0.pem"
     review_private = root / "keys" / "review.pem"
     profile_private = root / "keys" / "profile.pem"
+    formal_private = root / "keys" / "formal.pem"
     b0_public = generate_private_key(b0_private)
     review_public = generate_private_key(review_private)
     profile_public = generate_private_key(profile_private)
+    formal_public = generate_private_key(formal_private)
     roots = {
         "b0": {"key_id": "b0-test", "public_key": b0_public},
         "review": {"key_id": REVIEWER, "public_key": review_public},
         "profile": {"key_id": "profile-test", "public_key": profile_public},
+        "formal": {"key_id": "formal-test", "public_key": formal_public},
     }
     return roots, b0_private, review_private, profile_private
 
@@ -253,7 +284,7 @@ def _b0(root, private_key, *, commit):
             "checks": checks,
         },
     )
-    signed = _sign_payload(
+    signed = sign_b0_evidence(
         {
             "schema_version": B0_SCHEMA,
             "status": "PASS",
@@ -270,13 +301,12 @@ def _b0(root, private_key, *, commit):
         },
         private_key_path=private_key,
         key_id="b0-test",
-        role="b0-runner",
     )
     return _write_json(evidence_dir / "b0.json", signed), log
 
 
 def _review(root, private_key, b0_path, *, commit, reviewer=REVIEWER, verdict="PASS"):
-    signed = _sign_payload(
+    signed = sign_independent_review(
         {
             "schema_version": REVIEW_SCHEMA,
             "reviewer_id": reviewer,
@@ -289,7 +319,6 @@ def _review(root, private_key, b0_path, *, commit, reviewer=REVIEWER, verdict="P
         },
         private_key_path=private_key,
         key_id=REVIEWER,
-        role="independent-reviewer",
     )
     return _write_json(root / f"review-{commit[:4]}.json", signed)
 
@@ -360,7 +389,9 @@ def _allocation(root):
     )
 
 
-def _patch_identities(monkeypatch, *, authorization_error=None):
+def _patch_identities(
+    monkeypatch, root, *, commit=COMMIT, authorization_error=None
+):
     monkeypatch.setattr(
         launch_module,
         "scientific_source_identity",
@@ -382,6 +413,16 @@ def _patch_identities(monkeypatch, *, authorization_error=None):
         identity_module,
         "derive_training_trace_identity",
         lambda cfg, data_identity, seed, world_size: dict(TRACE_IDENTITY),
+    )
+    monkeypatch.setattr(
+        launch_module,
+        "inspect_slurm_allocation",
+        lambda job_id, scontrol_path=None: _allocation(root),
+    )
+    monkeypatch.setattr(
+        launch_module,
+        "inspect_repository",
+        lambda repository_root: RepositoryState(commit, True),
     )
     if authorization_error is None:
         monkeypatch.setattr(
@@ -440,7 +481,7 @@ def _profile_setup(root, monkeypatch, *, commit=COMMIT):
     ticket_path = _ticket(
         root, cfg, config_path, b0_path, review_path, commit=commit
     )
-    _patch_identities(monkeypatch)
+    _patch_identities(monkeypatch, root, commit=commit)
     return {
         "roots": roots,
         "b0_private": b0_private,
@@ -459,6 +500,33 @@ def test_non_full_petal_config_does_not_require_a_ticket(tmp_path):
     assert validate_full_petal_launch(
         {"model": {"type": "OtherDetector"}}, tmp_path / "config.py"
     ) is None
+
+
+def test_production_has_no_dictionary_to_launch_receipt_signer():
+    assert not hasattr(role_signing_module, "sign_launch_receipt")
+    assert not hasattr(launch_module, "_issue_authorization")
+
+
+def test_manual_or_mutated_launch_authorization_is_rejected(tmp_path, monkeypatch):
+    with pytest.raises(FullPetalLaunchError, match="only be issued"):
+        FullPetalLaunchAuthorization()
+    forged = object.__new__(FullPetalLaunchAuthorization)
+    with pytest.raises(FullPetalLaunchError, match="active validator-issued"):
+        runtime_evidence_session(forged)
+
+    setup = _profile_setup(tmp_path, monkeypatch)
+    authorization = _authorize(
+        tmp_path,
+        setup["cfg"],
+        setup["config_path"],
+        setup["ticket"],
+        setup["profile_private"],
+    )
+    authorization.execution_session["session_id"] = "f" * 64
+    with pytest.raises(FullPetalLaunchError, match="changed after validation"):
+        build_launch_receipt(
+            authorization, private_key_path=setup["profile_private"]
+        )
 
 
 def test_profile_requires_signed_b0_same_reviewer_and_bound_runtime(tmp_path, monkeypatch):
@@ -514,7 +582,7 @@ def test_launch_receipt_binds_ticket_runtime_and_slurm_without_overwrite(tmp_pat
     ) == output.resolve()
     persisted = json.loads(output.read_text(encoding="utf-8"))
     assert persisted == signed_receipt
-    with pytest.raises(FullPetalLaunchError, match="overwrite"):
+    with pytest.raises(FullPetalLaunchError, match="already issued"):
         persist_launch_receipt(
             authorization,
             private_key_path=setup["profile_private"],
@@ -555,6 +623,36 @@ def test_tampered_b0_leaf_is_rejected_even_when_root_is_unchanged(tmp_path, monk
         )
 
 
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    (
+        ('"status": "FAIL", "status": "PASS",', "duplicate JSON key"),
+        ('"test_count": NaN,', "non-finite JSON number"),
+        ('"test_count": 1e309,', "non-finite JSON number"),
+    ),
+)
+def test_b0_root_rejects_ambiguous_or_nonfinite_json(
+    tmp_path, replacement, message
+):
+    roots, b0_private, _, _ = _keys(tmp_path)
+    b0_path, _ = _b0(tmp_path, b0_private, commit=COMMIT)
+    raw = b0_path.read_text(encoding="utf-8")
+    if "status" in replacement:
+        raw = raw.replace('"status": "PASS",', replacement, 1)
+    else:
+        raw = raw.replace('"test_count": 1,', replacement, 1)
+    b0_path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(B0EvidenceError, match=message):
+        validate_b0_evidence(
+            _reference(b0_path, b0_path.parent),
+            base_dir=b0_path.parent,
+            expected_commit=COMMIT,
+            trust_root=roots["b0"],
+            repository_root=tmp_path,
+        )
+
+
 def test_b0_bundle_remains_verifiable_after_directory_relocation(tmp_path):
     roots, b0_private, _, _ = _keys(tmp_path)
     b0_path, _ = _b0(tmp_path, b0_private, commit=COMMIT)
@@ -572,6 +670,39 @@ def test_b0_bundle_remains_verifiable_after_directory_relocation(tmp_path):
 
     assert artifact["status"] == "PASS"
     assert Path(artifact["artifact_path"]) == moved_b0.resolve()
+
+
+def test_b0_validation_consumes_the_same_bytes_after_verified_path_swap(
+    tmp_path, monkeypatch
+):
+    roots, b0_private, _, _ = _keys(tmp_path)
+    b0_path, _ = _b0(tmp_path, b0_private, commit=COMMIT)
+    reference = _reference(b0_path, b0_path.parent)
+    real_reader = b0_module.read_verified_path_bytes
+    swapped = False
+
+    def swap_after_verified_read(path, expected_sha256, label):
+        nonlocal swapped
+        resolved, payload = real_reader(path, expected_sha256, label)
+        if resolved == b0_path.resolve() and not swapped:
+            swapped = True
+            b0_path.write_text('{"forged":true}\n', encoding="utf-8")
+        return resolved, payload
+
+    monkeypatch.setattr(
+        b0_module, "read_verified_path_bytes", swap_after_verified_read
+    )
+    artifact = validate_b0_evidence(
+        reference,
+        base_dir=b0_path.parent,
+        expected_commit=COMMIT,
+        trust_root=roots["b0"],
+        repository_root=tmp_path,
+    )
+
+    assert swapped is True
+    assert artifact["status"] == "PASS"
+    assert b0_path.read_text(encoding="utf-8") == '{"forged":true}\n'
 
 
 def test_profile_rejects_runtime_slurm_dirty_and_signing_key_mismatch(tmp_path, monkeypatch):
@@ -677,7 +808,12 @@ def test_profile_artifact_is_signed_and_binds_exact_authorization(tmp_path, monk
         setup["ticket"],
         setup["profile_private"],
     )
-    trace, commitment = _profile_trace(tmp_path)
+    persist_launch_receipt(
+        authorization, private_key_path=setup["profile_private"]
+    )
+    trace, commitment = _profile_trace(
+        tmp_path, runtime_evidence_session(authorization)
+    )
     artifact = build_fixed_step_profile_artifact(
         authorization,
         setup["cfg"],
@@ -688,14 +824,15 @@ def test_profile_artifact_is_signed_and_binds_exact_authorization(tmp_path, monk
         gpu_name="Fixture GPU",
         torch_version="2.6.0",
         cuda_version="12.4",
-        private_key_path=setup["profile_private"],
-        key_id="profile-test",
+        profiler_measurements=_profile_measurements(),
     )
 
     assert artifact["attestation"]["role"] == "fixed-step-profile"
     assert artifact["source_tree_sha256"] == SOURCE_SHA
     assert artifact["runtime_identity_sha256"] == authorization.runtime_identity_sha256
     assert artifact["measurements"]["total_optimizer_events"] == 250
+    assert artifact["measurements"]["elapsed_seconds"] == 5.0
+    assert artifact["measurements"]["peak_memory_bytes"] == 123
 
 
 def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, monkeypatch):
@@ -714,7 +851,7 @@ def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, mo
         profile_review,
         commit=PROFILE_COMMIT,
     )
-    _patch_identities(monkeypatch)
+    _patch_identities(monkeypatch, tmp_path, commit=PROFILE_COMMIT)
     profile_authorization = _authorize(
         tmp_path,
         profile_cfg,
@@ -723,7 +860,12 @@ def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, mo
         profile_private,
         commit=PROFILE_COMMIT,
     )
-    trace, commitment = _profile_trace(tmp_path)
+    persist_launch_receipt(
+        profile_authorization, private_key_path=profile_private
+    )
+    trace, commitment = _profile_trace(
+        tmp_path, runtime_evidence_session(profile_authorization)
+    )
     profile_payload = build_fixed_step_profile_artifact(
         profile_authorization,
         profile_cfg,
@@ -734,8 +876,7 @@ def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, mo
         gpu_name="Fixture GPU",
         torch_version="2.6.0",
         cuda_version="12.4",
-        private_key_path=profile_private,
-        key_id="profile-test",
+        profiler_measurements=_profile_measurements(),
     )
     profile_path = _write_json(tmp_path / "profile.json", profile_payload)
 
@@ -800,6 +941,10 @@ def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, mo
 
 
 def test_formal_profile_reuse_rejects_non_authorization_diff(tmp_path, monkeypatch):
-    _patch_identities(monkeypatch, authorization_error="profile reuse diff is scientific")
+    _patch_identities(
+        monkeypatch,
+        tmp_path,
+        authorization_error="profile reuse diff is scientific",
+    )
     with pytest.raises(IdentityError, match="scientific"):
         launch_module.authorization_only_diff(tmp_path, PROFILE_COMMIT, COMMIT)

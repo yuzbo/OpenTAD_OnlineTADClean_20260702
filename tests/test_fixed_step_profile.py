@@ -29,12 +29,12 @@ def test_fixed_step_profile_measures_exact_events_after_warmup():
     profiler = FixedStepProfiler(2, 3, backend=backend, clock=_clock(10.0, 12.0))
 
     profiler.start()
-    assert profiler.record_optimizer_event() is False
-    assert profiler.record_optimizer_event() is False
+    assert profiler.record_optimizer_event("event-0") is False
+    assert profiler.record_optimizer_event("event-1") is False
     assert backend.resets == 1
-    assert profiler.record_optimizer_event() is False
-    assert profiler.record_optimizer_event() is False
-    assert profiler.record_optimizer_event() is True
+    assert profiler.record_optimizer_event("event-2") is False
+    assert profiler.record_optimizer_event("event-3") is False
+    assert profiler.record_optimizer_event("event-4") is True
 
     assert profiler.complete is True
     assert profiler.measurements() == {
@@ -42,6 +42,8 @@ def test_fixed_step_profile_measures_exact_events_after_warmup():
         "measured_optimizer_events": 3,
         "total_optimizer_events": 5,
         "skipped_optimizer_events": 0,
+        "measurement_start_after_event_id": "event-1",
+        "measurement_end_event_id": "event-4",
         "elapsed_seconds": 2.0,
         "peak_memory_bytes": 4096,
         "throughput_optimizer_events_per_second": 1.5,
@@ -54,7 +56,7 @@ def test_zero_warmup_starts_before_first_measured_event():
     profiler = FixedStepProfiler(0, 1, backend=backend, clock=_clock(5.0, 6.0))
 
     profiler.start()
-    assert profiler.record_optimizer_event() is True
+    assert profiler.record_optimizer_event("event-0") is True
     assert profiler.measurements()["total_optimizer_events"] == 1
 
 
@@ -62,11 +64,11 @@ def test_profile_state_can_span_multiple_epoch_calls():
     profiler = FixedStepProfiler(1, 2, backend=_Backend(), clock=_clock(1.0, 3.0))
 
     profiler.start()
-    profiler.record_optimizer_event()
+    profiler.record_optimizer_event("event-0")
     profiler.start()
-    profiler.record_optimizer_event()
+    profiler.record_optimizer_event("event-1")
     profiler.start()
-    assert profiler.record_optimizer_event() is True
+    assert profiler.record_optimizer_event("event-2") is True
 
 
 def test_any_skipped_optimizer_event_invalidates_profile():

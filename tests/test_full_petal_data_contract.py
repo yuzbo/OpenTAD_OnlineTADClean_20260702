@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_data_contract import (
     ContractValidationError,
     build_fineaction_qualification_report,
@@ -27,6 +28,11 @@ from opentad.utils.full_petal_data_contract import (
     validate_reporting_artifacts_from_sources,
     verify_content_hash,
     _crosses_chunk_boundary,
+)
+from opentad.utils.full_petal_role_signing import (
+    sign_fineaction_license_authorization,
+    sign_fineaction_loader_run,
+    sign_fineaction_preprocessing_run,
 )
 
 
@@ -712,7 +718,7 @@ def test_hardware_runtime_validation_rejects_invalid_required_fields(mutate, mes
         validate_hardware_runtime_manifest(invalid)
 
 
-def _fineaction_sources(tmp_path, *, overlapping=True, smoke_pass=True):
+def _fineaction_sources(tmp_path, *, overlapping=True):
     tmp_path.mkdir(parents=True, exist_ok=True)
     media_dir = tmp_path / "media"
     media_dir.mkdir()
@@ -759,64 +765,142 @@ def _fineaction_sources(tmp_path, *, overlapping=True, smoke_pass=True):
     )
     terms_path = tmp_path / "license-terms.txt"
     terms_path.write_text("FineAction research terms\n", encoding="utf-8")
+    license_private = tmp_path / "fineaction-license.pem"
+    execution_private = tmp_path / "fineaction-execution.pem"
+    license_public = generate_private_key(license_private)
+    execution_public = generate_private_key(execution_private)
+    trust_roots = {
+        "license": {
+            "key_id": "fineaction-license-test",
+            "public_key": license_public,
+        },
+        "execution": {
+            "key_id": "fineaction-execution-test",
+            "public_key": execution_public,
+        },
+    }
     license_path = tmp_path / "license.json"
     save_json(
         license_path,
-        {
-            "schema": "full_petal.fineaction_license",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "license_id": "FineAction-research",
-            "access_authorized": True,
-            "terms": {"path": terms_path.name, "sha256": sha256_file(terms_path)},
-        },
+        sign_fineaction_license_authorization(
+            {
+                "schema_version": "full-petal-fineaction-license-authorization-v1",
+                "dataset": "FineAction",
+                "license_id": "FineAction-research",
+                "subject": "full-petal-test",
+                "access_scope": "research-evaluation",
+                "authorized": True,
+                "issued_at": CREATED_AT,
+                "terms": {
+                    "path": terms_path.name,
+                    "sha256": sha256_file(terms_path),
+                },
+            },
+            private_key_path=license_private,
+            key_id="fineaction-license-test",
+        ),
+    )
+    preprocessing_source = tmp_path / "fineaction-preprocess.py"
+    preprocessing_source.write_text("print('causal preprocessing')\n", encoding="utf-8")
+    preprocessing_junit = tmp_path / "fineaction-preprocess.xml"
+    preprocessing_junit.write_text(
+        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="fineaction.preprocessing" name="test_causal" />'
+        "</testsuite></testsuites>\n",
+        encoding="utf-8",
+    )
+    preprocessing_log = tmp_path / "fineaction-preprocess.log"
+    preprocessing_log.write_text(
+        "FINEACTION_CAUSAL_PREPROCESS_PASS\n", encoding="utf-8"
     )
     preprocessing_path = tmp_path / "preprocessing.json"
     save_json(
         preprocessing_path,
-        {
-            "schema": "full_petal.fineaction_causal_preprocessing",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "future_frames_allowed": False,
-            "timestamp_convention": "zero_based_source_frame",
-            "frame_stride": 2,
-            "annotation_sha256": sha256_file(annotation_path),
-            "media_inventory_sha256": sha256_file(inventory_path),
-        },
+        sign_fineaction_preprocessing_run(
+            {
+                "schema_version": "full-petal-fineaction-preprocessing-run-v1",
+                "dataset": "FineAction",
+                "status": "PASS",
+                "command": ["python", preprocessing_source.name],
+                "source": {
+                    "path": preprocessing_source.name,
+                    "sha256": sha256_file(preprocessing_source),
+                },
+                "junit": {
+                    "path": preprocessing_junit.name,
+                    "sha256": sha256_file(preprocessing_junit),
+                },
+                "log": {
+                    "path": preprocessing_log.name,
+                    "sha256": sha256_file(preprocessing_log),
+                },
+                "future_frames_allowed": False,
+                "timestamp_convention": "zero_based_source_frame",
+                "frame_stride": 2,
+                "annotation_sha256": sha256_file(annotation_path),
+                "media_inventory_sha256": sha256_file(inventory_path),
+            },
+            private_key_path=execution_private,
+            key_id="fineaction-execution-test",
+        ),
     )
+    loader_source = tmp_path / "fineaction-loader-smoke.py"
+    loader_source.write_text("print('loader smoke')\n", encoding="utf-8")
+    loader_junit = tmp_path / "fineaction-loader-smoke.xml"
+    loader_junit.write_text(
+        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="fineaction.loader" name="test_loader" />'
+        "</testsuite></testsuites>\n",
+        encoding="utf-8",
+    )
+    loader_log = tmp_path / "fineaction-loader-smoke.log"
+    loader_log.write_text("FINEACTION_LOADER_SMOKE_PASS\n", encoding="utf-8")
     smoke_path = tmp_path / "loader-smoke.json"
     save_json(
         smoke_path,
-        {
-            "schema": "full_petal.fineaction_loader_smoke",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "status": "PASS" if smoke_pass else "FAIL",
-            "command": ["python", "-m", "pytest", "tests/test_fineaction_loader.py"],
-            "exit_code": 0 if smoke_pass else 1,
-            "tests_passed": 1 if smoke_pass else 0,
-            "tests_failed": 0 if smoke_pass else 1,
-            "tests_skipped": 0,
-            "annotation_sha256": sha256_file(annotation_path),
-            "media_inventory_sha256": sha256_file(inventory_path),
-            "preprocessing_sha256": sha256_file(preprocessing_path),
-        },
+        sign_fineaction_loader_run(
+            {
+                "schema_version": "full-petal-fineaction-loader-run-v1",
+                "dataset": "FineAction",
+                "status": "PASS",
+                "command": ["python", loader_source.name],
+                "source": {
+                    "path": loader_source.name,
+                    "sha256": sha256_file(loader_source),
+                },
+                "junit": {
+                    "path": loader_junit.name,
+                    "sha256": sha256_file(loader_junit),
+                },
+                "log": {
+                    "path": loader_log.name,
+                    "sha256": sha256_file(loader_log),
+                },
+                "annotation_sha256": sha256_file(annotation_path),
+                "media_inventory_sha256": sha256_file(inventory_path),
+                "preprocessing_sha256": sha256_file(preprocessing_path),
+            },
+            private_key_path=execution_private,
+            key_id="fineaction-execution-test",
+        ),
     )
-    return {
+    sources = {
         "annotation": annotation_path,
         "media_inventory": inventory_path,
         "license": license_path,
         "preprocessing": preprocessing_path,
         "loader_smoke": smoke_path,
     }
+    return sources, trust_roots
 
 
 def test_incomplete_fineaction_evidence_remains_unqualified(tmp_path):
+    sources, trust_roots = _fineaction_sources(tmp_path, overlapping=False)
     report = build_fineaction_qualification_report(
-        _fineaction_sources(tmp_path, overlapping=False),
+        sources,
         seed=29,
         created_at=CREATED_AT,
+        trust_roots=trust_roots,
     )
 
     assert report["schema"] == "full_petal.fineaction_qualification"
@@ -832,15 +916,23 @@ def test_incomplete_fineaction_evidence_remains_unqualified(tmp_path):
 
 
 def test_fineaction_qualification_enforces_identity_sample_thresholds(tmp_path):
+    failed_sources, failed_roots = _fineaction_sources(
+        tmp_path / "failed", overlapping=False
+    )
+    passed_sources, passed_roots = _fineaction_sources(
+        tmp_path / "passed", overlapping=True
+    )
     failed = build_fineaction_qualification_report(
-        _fineaction_sources(tmp_path / "failed", overlapping=False),
+        failed_sources,
         seed=29,
         created_at=CREATED_AT,
+        trust_roots=failed_roots,
     )
     passed = build_fineaction_qualification_report(
-        _fineaction_sources(tmp_path / "passed", overlapping=True),
+        passed_sources,
         seed=29,
         created_at=CREATED_AT,
+        trust_roots=passed_roots,
     )
 
     assert failed["status"] == "FAIL"
@@ -855,11 +947,12 @@ def test_fineaction_qualification_enforces_identity_sample_thresholds(tmp_path):
 
 
 def test_fineaction_qualification_rejects_forged_or_tampered_evidence(tmp_path):
-    sources = _fineaction_sources(tmp_path / "tampered")
+    sources, trust_roots = _fineaction_sources(tmp_path / "tampered")
     report = build_fineaction_qualification_report(
         sources,
         seed=29,
         created_at=CREATED_AT,
+        trust_roots=trust_roots,
     )
     forged = deepcopy(report)
     forged["gates"]["completeness"]["checks"]["qualified_ground_truth"][
@@ -868,7 +961,9 @@ def test_fineaction_qualification_rejects_forged_or_tampered_evidence(tmp_path):
     forged.pop("content_sha256")
     forged["content_sha256"] = canonical_json_sha256(forged)
     with pytest.raises(ContractValidationError, match="source-derived"):
-        validate_fineaction_qualification_report(forged, sources)
+        validate_fineaction_qualification_report(
+            forged, sources, trust_roots=trust_roots
+        )
 
     media_path = next((tmp_path / "tampered" / "media").iterdir())
     media_path.write_bytes(b"tampered")
@@ -877,6 +972,68 @@ def test_fineaction_qualification_rejects_forged_or_tampered_evidence(tmp_path):
             sources,
             seed=29,
             created_at=CREATED_AT,
+            trust_roots=trust_roots,
+        )
+
+
+def test_fineaction_rejects_legacy_self_authored_license_pass(tmp_path):
+    sources, trust_roots = _fineaction_sources(tmp_path)
+    save_json(
+        sources["license"],
+        {
+            "schema": "full_petal.fineaction_license",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "license_id": "self-reported",
+            "access_authorized": True,
+        },
+    )
+
+    with pytest.raises(ContractValidationError, match="not trusted|signed attestation"):
+        build_fineaction_qualification_report(
+            sources,
+            seed=29,
+            created_at=CREATED_AT,
+            trust_roots=trust_roots,
+        )
+
+
+@pytest.mark.parametrize(
+    "leaf_name",
+    (
+        "fineaction-preprocess.py",
+        "fineaction-preprocess.xml",
+        "fineaction-preprocess.log",
+        "fineaction-loader-smoke.py",
+        "fineaction-loader-smoke.xml",
+        "fineaction-loader-smoke.log",
+    ),
+)
+def test_fineaction_rejects_tampered_execution_leaf(tmp_path, leaf_name):
+    sources, trust_roots = _fineaction_sources(tmp_path)
+    (tmp_path / leaf_name).write_bytes(b"tampered execution evidence\n")
+
+    with pytest.raises(ContractValidationError, match="hash mismatch"):
+        build_fineaction_qualification_report(
+            sources,
+            seed=29,
+            created_at=CREATED_AT,
+            trust_roots=trust_roots,
+        )
+
+
+def test_fineaction_rejects_tampered_execution_attestation(tmp_path):
+    sources, trust_roots = _fineaction_sources(tmp_path)
+    signed = load_json(sources["preprocessing"])
+    signed["frame_stride"] = 4
+    save_json(sources["preprocessing"], signed)
+
+    with pytest.raises(ContractValidationError, match="not trusted|signature"):
+        build_fineaction_qualification_report(
+            sources,
+            seed=29,
+            created_at=CREATED_AT,
+            trust_roots=trust_roots,
         )
 
 
@@ -1011,7 +1168,7 @@ def test_cli_loads_and_saves_reporting_hardware_and_fineaction_json(tmp_path):
     )
     validate_hardware_runtime_manifest(load_json(hardware_manifest))
 
-    fineaction_sources = _fineaction_sources(
+    fineaction_sources, fineaction_roots = _fineaction_sources(
         tmp_path / "fineaction-sources", overlapping=False
     )
     fineaction_spec = tmp_path / "fineaction-spec.json"
@@ -1027,10 +1184,19 @@ def test_cli_loads_and_saves_reporting_hardware_and_fineaction_json(tmp_path):
         encoding="utf-8",
     )
     fineaction_report = tmp_path / "fineaction-report.json"
+    fineaction_trust_config = tmp_path / "fineaction-trust.py"
+    fineaction_trust_config.write_text(
+        "reporting_contract = "
+        + repr({"fineaction_trust_roots": fineaction_roots})
+        + "\n",
+        encoding="utf-8",
+    )
     _run_cli(
         "fineaction",
         "--input",
         fineaction_spec,
+        "--trust-config",
+        fineaction_trust_config,
         "--seed",
         "31",
         "--timestamp",

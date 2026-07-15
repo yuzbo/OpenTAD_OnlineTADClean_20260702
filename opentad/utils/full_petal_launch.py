@@ -2,28 +2,38 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import subprocess
+import weakref
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from .full_petal_attestation import (
+    ATTESTATION_ALGORITHM,
     ATTESTATION_FIELD,
+    ATTESTATION_SCHEMA,
     AttestationError,
+    _message,
     public_key_base64,
     public_key_sha256,
-    _sign_payload,
     verify_payload,
 )
 from .evidence_bundle import (
     EvidenceBundleError,
     bundle_file_reference,
+    publish_exclusive_file,
+    read_stable_file_bytes,
+    read_verified_bundle_bytes,
+    read_verified_bundle_json,
     relative_bundle_path,
-    verify_bundle_reference,
+    strict_json_from_bytes,
 )
 from .full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
@@ -45,13 +55,21 @@ from .full_petal_identity import (
     validate_data_identity,
     validate_slurm_allocation,
 )
+from .full_petal_role_signing import (
+    sign_fixed_step_profile,
+)
+from .full_petal_runtime_attestation import (
+    RuntimeAttestationError,
+    issue_runtime_session,
+    runtime_profile_trust_root,
+)
 
 
 LAUNCH_CONTRACT_SCHEMA = "full-petal-launch-contract-v2"
 LAUNCH_TICKET_SCHEMA = "full-petal-launch-ticket-v2"
 REVIEW_SCHEMA = "full-petal-independent-review-v2"
-PROFILE_SCHEMA = "full-petal-fixed-step-profile-v2"
-LAUNCH_RECEIPT_SCHEMA = "full-petal-launch-receipt-v1"
+PROFILE_SCHEMA = "full-petal-fixed-step-profile-v3"
+LAUNCH_RECEIPT_SCHEMA = "full-petal-launch-receipt-v2"
 PROFILE_MODE = "profile"
 FORMAL_MODE = "formal"
 REVIEW_ATTESTATION_ROLE = "independent-reviewer"
@@ -66,7 +84,7 @@ _SCIENTIFIC_DIGEST_EXCLUSIONS = {
     "work_dir",
 }
 _RESOLVED_DIGEST_EXCLUSIONS = {"work_dir"}
-_TRUST_ROLES = {"b0", "review", "profile"}
+_TRUST_ROLES = {"b0", "review", "profile", "formal"}
 
 
 class FullPetalLaunchError(RuntimeError):
@@ -80,7 +98,7 @@ class RepositoryState:
     status: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class FullPetalLaunchAuthorization:
     mode: str
     commit_sha: str
@@ -103,17 +121,61 @@ class FullPetalLaunchAuthorization:
     slurm_allocation: SlurmAllocation
     execution_attestation_key_id: str
     execution_attestation_public_key: str
+    execution_session: dict
+
+    def __init__(self, *args, **kwargs):
+        del args, kwargs
+        raise FullPetalLaunchError(
+            "launch authorizations can only be issued by validate_full_petal_launch"
+        )
 
     @property
     def total_optimizer_events(self):
         return self.warmup_optimizer_events + self.measured_optimizer_events
 
 
+@dataclass
+class _AuthorizationRuntimeState:
+    runtime_session: object
+    authorization_snapshot: str
+    repository_root: Path
+    expected_slurm_user: str | None
+    trusted_scontrol_path: str
+    receipt_path: Path | None = None
+    receipt_sha256: str | None = None
+
+
+_AUTHORIZATION_STATES = {}
+
+
+def _authorization_snapshot(authorization):
+    return identity_json_sha256(asdict(authorization))
+
+
+def _authorization_state(authorization):
+    if not isinstance(authorization, FullPetalLaunchAuthorization):
+        raise FullPetalLaunchError("operation requires validated launch authorization")
+    registration = _AUTHORIZATION_STATES.get(id(authorization))
+    if registration is None or registration[0]() is not authorization:
+        raise FullPetalLaunchError(
+            "launch authorization is not an active validator-issued capability"
+        )
+    state = registration[1]
+    if state.authorization_snapshot != _authorization_snapshot(authorization):
+        raise FullPetalLaunchError("launch authorization changed after validation")
+    return state
+
+
+def runtime_evidence_session(authorization):
+    """Return the in-memory signer bound to a validated live launch."""
+
+    return _authorization_state(authorization).runtime_session
+
+
 def _launch_receipt_body(authorization):
     """Capture the authenticated runtime and active Slurm allocation."""
 
-    if not isinstance(authorization, FullPetalLaunchAuthorization):
-        raise FullPetalLaunchError("launch receipt requires validated authorization")
+    _authorization_state(authorization)
     return {
         "schema_version": LAUNCH_RECEIPT_SCHEMA,
         "mode": authorization.mode,
@@ -133,29 +195,79 @@ def _launch_receipt_body(authorization):
         "world_size": authorization.world_size,
         "slurm_job_id": authorization.slurm_job_id,
         "slurm_allocation": asdict(authorization.slurm_allocation),
+        "execution_session": dict(authorization.execution_session),
     }
 
 
 def build_launch_receipt(authorization, *, private_key_path):
-    """Sign a receipt derived only from a validated launch authorization."""
+    """Revalidate live launch state, then sign a one-session receipt."""
 
+    state = _authorization_state(authorization)
+    if state.receipt_path is not None:
+        raise FullPetalLaunchError("launch authorization already issued a receipt")
+    try:
+        _, ticket_bytes = read_stable_file_bytes(
+            authorization.ticket_path, "validated launch ticket"
+        )
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
+    if hashlib.sha256(ticket_bytes).hexdigest() != authorization.ticket_sha256:
+        raise FullPetalLaunchError("launch ticket changed after authorization")
+    repository = inspect_repository(state.repository_root)
+    if not repository.clean or repository.commit_sha != authorization.commit_sha:
+        raise FullPetalLaunchError(
+            "repository changed after launch authorization"
+        )
+    try:
+        allocation = inspect_slurm_allocation(
+            authorization.slurm_job_id,
+            scontrol_path=state.trusted_scontrol_path,
+        )
+        validate_slurm_allocation(
+            allocation,
+            job_id=authorization.slurm_job_id,
+            world_size=authorization.world_size,
+            expected_user=state.expected_slurm_user,
+        )
+    except IdentityError as exc:
+        raise FullPetalLaunchError(
+            f"launch receipt Slurm revalidation failed: {exc}"
+        ) from exc
+    if allocation != authorization.slurm_allocation:
+        raise FullPetalLaunchError(
+            "Slurm allocation changed after launch authorization"
+        )
     body = _launch_receipt_body(authorization)
     try:
-        signer_public_key = public_key_base64(private_key_path)
-    except AttestationError as exc:
-        raise FullPetalLaunchError(f"execution signing key is invalid: {exc}") from exc
-    if signer_public_key != authorization.execution_attestation_public_key:
-        raise FullPetalLaunchError(
-            "execution signing key does not match the launch authorization"
+        key = serialization.load_pem_private_key(
+            Path(private_key_path).read_bytes(), password=None
         )
-    try:
-        return _sign_payload(
-            body,
-            private_key_path=private_key_path,
-            key_id=authorization.execution_attestation_key_id,
-            role=LAUNCH_RECEIPT_ATTESTATION_ROLE,
+        if not isinstance(key, Ed25519PrivateKey):
+            raise TypeError("execution signing key is not Ed25519")
+        raw_public_key = key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
         )
-    except AttestationError as exc:
+        signer_public_key = base64.b64encode(raw_public_key).decode("ascii")
+        if signer_public_key != authorization.execution_attestation_public_key:
+            raise FullPetalLaunchError(
+                "execution signing key does not match the launch authorization"
+            )
+        signed = dict(body)
+        signed[ATTESTATION_FIELD] = {
+            "schema_version": ATTESTATION_SCHEMA,
+            "algorithm": ATTESTATION_ALGORITHM,
+            "role": LAUNCH_RECEIPT_ATTESTATION_ROLE,
+            "key_id": authorization.execution_attestation_key_id,
+            "public_key_sha256": public_key_sha256(signer_public_key),
+            "signature": base64.b64encode(
+                key.sign(_message(body, LAUNCH_RECEIPT_ATTESTATION_ROLE))
+            ).decode("ascii"),
+        }
+        return signed
+    except FullPetalLaunchError:
+        raise
+    except (OSError, TypeError, ValueError, AttestationError) as exc:
         raise FullPetalLaunchError(f"failed to attest launch receipt: {exc}") from exc
 
 
@@ -173,8 +285,7 @@ def verify_launch_receipt(payload, *, trust_root):
 
 
 def default_launch_receipt_path(authorization):
-    if not isinstance(authorization, FullPetalLaunchAuthorization):
-        raise FullPetalLaunchError("launch receipt path requires validated authorization")
+    _authorization_state(authorization)
     return Path(f"{authorization.ticket_path}.receipt.json").resolve()
 
 
@@ -194,9 +305,6 @@ def persist_launch_receipt(authorization, *, private_key_path, output_path=None)
         raise FullPetalLaunchError(
             "launch receipt must remain beside its validated launch ticket"
         )
-    if output.exists():
-        raise FullPetalLaunchError(f"refusing to overwrite launch receipt: {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
     encoded = (
         json.dumps(
             payload,
@@ -207,71 +315,35 @@ def persist_launch_receipt(authorization, *, private_key_path, output_path=None)
         )
         + "\n"
     ).encode("utf-8")
-    descriptor = os.open(
-        output,
-        os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0),
-        0o600,
-    )
     try:
-        written = os.write(descriptor, encoded)
-        if written != len(encoded):
-            raise OSError("partial launch receipt write")
-        os.fsync(descriptor)
-    except OSError as exc:
+        publish_exclusive_file(output, encoded)
+    except EvidenceBundleError as exc:
         raise FullPetalLaunchError(f"failed to persist launch receipt: {exc}") from exc
-    finally:
-        os.close(descriptor)
+    state = _authorization_state(authorization)
+    state.receipt_path = output
+    state.receipt_sha256 = hashlib.sha256(encoded).hexdigest()
     return output
-
-
-def _reject_duplicate_keys(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise FullPetalLaunchError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_nonfinite(value):
-    raise FullPetalLaunchError(f"non-finite JSON number is forbidden: {value}")
 
 
 def load_strict_json(path):
     path = Path(path)
-    if not path.is_file():
-        raise FullPetalLaunchError(f"evidence file does not exist: {path}")
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            payload = json.load(
-                handle,
-                object_pairs_hook=_reject_duplicate_keys,
-                parse_constant=_reject_nonfinite,
-            )
-    except FullPetalLaunchError:
-        raise
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise FullPetalLaunchError(f"failed to load evidence file {path}: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise FullPetalLaunchError(f"evidence file must contain one JSON object: {path}")
-    return payload
+        _, payload = read_stable_file_bytes(path, f"evidence file {path}")
+        return strict_json_from_bytes(
+            payload,
+            f"evidence file {path}",
+            require_object=True,
+        )
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
 
 
 def sha256_file(path, chunk_size=1024 * 1024):
-    path = Path(path)
-    if not path.is_file():
-        raise FullPetalLaunchError(f"file does not exist: {path}")
-    digest = hashlib.sha256()
     try:
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(chunk_size)
-                if not chunk:
-                    break
-                digest.update(chunk)
-    except OSError as exc:
-        raise FullPetalLaunchError(f"failed to hash file {path}: {exc}") from exc
-    return digest.hexdigest()
+        _, payload = read_stable_file_bytes(path, f"file {path}")
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _json_value(value):
@@ -306,8 +378,14 @@ def canonical_json_sha256(value):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def resolved_config_payload(cfg):
+    """Return a standalone JSON representation of a fully merged config."""
+
+    return _json_value(cfg)
+
+
 def resolved_config_sha256(cfg, *, scientific=False):
-    payload = _json_value(cfg)
+    payload = resolved_config_payload(cfg)
     exclusions = _SCIENTIFIC_DIGEST_EXCLUSIONS if scientific else _RESOLVED_DIGEST_EXCLUSIONS
     for key in exclusions:
         payload.pop(key, None)
@@ -387,17 +465,17 @@ def _require_exact_fields(payload, expected, label):
         )
 
 
-def _verify_file_reference(reference, base_dir, label):
+def _load_reference(reference, base_dir, label):
     try:
-        path = verify_bundle_reference(reference, base_dir, label)
+        path, _, payload = read_verified_bundle_json(
+            reference,
+            base_dir,
+            label,
+            require_object=True,
+        )
     except EvidenceBundleError as exc:
         raise FullPetalLaunchError(str(exc)) from exc
-    return path, reference["sha256"]
-
-
-def _load_reference(reference, base_dir, label):
-    path, actual = _verify_file_reference(reference, base_dir, label)
-    return load_strict_json(path), path, actual
+    return payload, path, reference["sha256"]
 
 
 def _file_reference(path, bundle_root, label):
@@ -534,6 +612,8 @@ def _profile_measurement_fields():
         "measured_optimizer_events",
         "total_optimizer_events",
         "skipped_optimizer_events",
+        "measurement_start_after_event_id",
+        "measurement_end_event_id",
         "elapsed_seconds",
         "peak_memory_bytes",
         "throughput_optimizer_events_per_second",
@@ -552,6 +632,17 @@ def _validate_measurements(measurements, *, warmup, measured, label):
         measurements["skipped_optimizer_events"], f"{label} skipped events"
     ) != 0:
         raise FullPetalLaunchError(f"{label} contains skipped optimizer events")
+    expected_start = "runtime-genesis" if warmup == 0 else None
+    for field in (
+        "measurement_start_after_event_id",
+        "measurement_end_event_id",
+    ):
+        if not isinstance(measurements[field], str) or not measurements[field].strip():
+            raise FullPetalLaunchError(f"{label} {field} is invalid")
+    if expected_start is not None and measurements[
+        "measurement_start_after_event_id"
+    ] != expected_start:
+        raise FullPetalLaunchError(f"{label} zero-warmup boundary differs")
     _require_positive_number(measurements["elapsed_seconds"], f"{label} elapsed seconds")
     _require_nonnegative_int(measurements["peak_memory_bytes"], f"{label} peak memory")
     _require_positive_number(
@@ -597,13 +688,29 @@ def _validate_profile_artifact(
     signed, path, digest = _load_reference(
         reference, ticket_dir, "fixed-step profile evidence"
     )
+    untrusted_receipt_reference = {
+        "path": signed.get("launch_receipt_path"),
+        "sha256": signed.get("launch_receipt_sha256"),
+    }
     try:
+        signed_receipt, receipt_path, _ = _load_reference(
+            untrusted_receipt_reference,
+            path.parent,
+            "profile launch receipt",
+        )
+        receipt = verify_launch_receipt(
+            signed_receipt,
+            trust_root=trust_roots["profile"],
+        )
+        profile_trust_root = runtime_profile_trust_root(
+            receipt["execution_session"]
+        )
         profile = verify_payload(
             signed,
-            trust_root=trust_roots["profile"],
+            trust_root=profile_trust_root,
             role=PROFILE_ATTESTATION_ROLE,
         )
-    except AttestationError as exc:
+    except (AttestationError, RuntimeAttestationError, FullPetalLaunchError) as exc:
         raise FullPetalLaunchError(f"fixed-step profile attestation is invalid: {exc}") from exc
     _require_exact_fields(
         profile,
@@ -618,6 +725,8 @@ def _validate_profile_artifact(
             "scientific_config_sha256",
             "launch_ticket_path",
             "launch_ticket_sha256",
+            "launch_receipt_path",
+            "launch_receipt_sha256",
             "slurm_job_id",
             "slurm_allocation",
             "world_size",
@@ -671,6 +780,33 @@ def _validate_profile_artifact(
         raise FullPetalLaunchError("profile runtime identity differs from its launch ticket")
     if profile_ticket["profile_evidence"] is not None:
         raise FullPetalLaunchError("profile launch ticket cannot contain profile evidence")
+    expected_receipt = {
+        "schema_version": LAUNCH_RECEIPT_SCHEMA,
+        "mode": PROFILE_MODE,
+        "commit_sha": profile_commit,
+        "source_tree_sha256": source_tree_sha256,
+        "data_identity_sha256": data_identity_sha256,
+        "runtime_identity_sha256": profile["runtime_identity_sha256"],
+        "resolved_config_sha256": profile["resolved_config_sha256"],
+        "scientific_config_sha256": scientific_config_sha256,
+        "launch_ticket": {
+            "path": profile_ticket_path.name,
+            "sha256": profile["launch_ticket_sha256"],
+        },
+        "b0_artifact_sha256": profile_ticket["b0_evidence"]["sha256"],
+        "review_artifact_sha256": profile_ticket["review_evidence"]["sha256"],
+        "profile_artifact_sha256": None,
+        "world_size": world_size,
+        "slurm_job_id": profile["slurm_job_id"],
+        "slurm_allocation": profile["slurm_allocation"],
+        "execution_session": receipt["execution_session"],
+    }
+    if receipt != expected_receipt or receipt_path.name != Path(
+        profile["launch_receipt_path"]
+    ).name:
+        raise FullPetalLaunchError(
+            "fixed-step profile launch receipt binding differs"
+        )
     _, _, profile_b0_digest = _validate_b0_artifact(
         profile_ticket["b0_evidence"],
         profile_ticket_path.parent,
@@ -709,16 +845,19 @@ def _validate_profile_artifact(
         raise FullPetalLaunchError("fixed-step profile cuda_version is invalid")
     if profile["dimensions"] != dimensions:
         raise FullPetalLaunchError("fixed-step profile dimensions differ from the config")
-    trace_path, _ = _verify_file_reference(
-        profile["optimizer_event_trace"],
-        path.parent,
-        "fixed-step optimizer-event trace",
-    )
-    commitment_path, _ = _verify_file_reference(
-        profile["optimizer_event_commitment"],
-        path.parent,
-        "fixed-step optimizer-event commitment",
-    )
+    try:
+        trace_path, trace_bytes = read_verified_bundle_bytes(
+            profile["optimizer_event_trace"],
+            path.parent,
+            "fixed-step optimizer-event trace",
+        )
+        commitment_path, commitment_bytes = read_verified_bundle_bytes(
+            profile["optimizer_event_commitment"],
+            path.parent,
+            "fixed-step optimizer-event commitment",
+        )
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
     try:
         from .full_petal_training_evidence import (
             derive_fixed_step_profile_measurements,
@@ -737,6 +876,10 @@ def _validate_profile_artifact(
             warmup_optimizer_events=warmup_events,
             measured_optimizer_events=measured_events,
             expected_identity=expected_trace_identity,
+            profiler_measurements=profile["measurements"],
+            trace_bytes=trace_bytes,
+            commitment_bytes=commitment_bytes,
+            runtime_binding=receipt["execution_session"],
         )
     except (ImportError, ValueError) as exc:
         raise FullPetalLaunchError(
@@ -760,15 +903,17 @@ def build_fixed_step_profile_artifact(
     gpu_name,
     torch_version,
     cuda_version,
-    private_key_path,
-    key_id,
+    profiler_measurements,
 ):
     """Build and sign the only profile artifact accepted by the formal gate."""
 
-    if not isinstance(authorization, FullPetalLaunchAuthorization):
-        raise FullPetalLaunchError("profile artifact requires launch authorization")
+    state = _authorization_state(authorization)
     if authorization.mode != PROFILE_MODE:
         raise FullPetalLaunchError("profile artifact requires profile-mode authorization")
+    if state.receipt_path is None or state.receipt_sha256 is None:
+        raise FullPetalLaunchError(
+            "profile artifact requires a persisted launch receipt"
+        )
     if precision not in {"fp32", "fp16", "bf16"}:
         raise FullPetalLaunchError("profile precision must be fp32, fp16, or bf16")
     try:
@@ -777,21 +922,31 @@ def build_fixed_step_profile_artifact(
         )
         from .full_petal_identity import derive_training_trace_identity
 
-        profile_ticket = load_strict_json(authorization.ticket_path)
         expected_trace_identity = derive_training_trace_identity(
             cfg,
-            profile_ticket["data_identity"],
-            seed=profile_ticket["runtime_identity"]["seed"],
+            authorization.data_identity,
+            seed=authorization.runtime_identity["seed"],
             world_size=authorization.world_size,
         )
-        measurements = derive_fixed_step_profile_measurements(
-            optimizer_event_trace_path,
+        trace_path, trace_bytes = read_stable_file_bytes(
+            optimizer_event_trace_path, "profile optimizer-event trace"
+        )
+        commitment_path, commitment_bytes = read_stable_file_bytes(
             optimizer_event_commitment_path,
+            "profile optimizer-event commitment",
+        )
+        measurements = derive_fixed_step_profile_measurements(
+            trace_path,
+            commitment_path,
             warmup_optimizer_events=authorization.warmup_optimizer_events,
             measured_optimizer_events=authorization.measured_optimizer_events,
             expected_identity=expected_trace_identity,
+            profiler_measurements=profiler_measurements,
+            trace_bytes=trace_bytes,
+            commitment_bytes=commitment_bytes,
+            runtime_binding=authorization.execution_session,
         )
-    except (ImportError, ValueError) as exc:
+    except (ImportError, ValueError, EvidenceBundleError) as exc:
         raise FullPetalLaunchError(
             f"cannot derive fixed-step profile measurements: {exc}"
         ) from exc
@@ -818,6 +973,12 @@ def build_fixed_step_profile_artifact(
             "profile launch ticket",
         ),
         "launch_ticket_sha256": authorization.ticket_sha256,
+        "launch_receipt_path": relative_bundle_path(
+            state.receipt_path,
+            bundle_root,
+            "profile launch receipt",
+        ),
+        "launch_receipt_sha256": state.receipt_sha256,
         "slurm_job_id": authorization.slurm_job_id,
         "slurm_allocation": asdict(authorization.slurm_allocation),
         "world_size": authorization.world_size,
@@ -825,25 +986,26 @@ def build_fixed_step_profile_artifact(
         "hardware": hardware,
         "dimensions": _profile_dimensions(cfg),
         "measurements": dict(measurements),
-        "optimizer_event_trace": _file_reference(
-            optimizer_event_trace_path,
-            bundle_root,
-            "profile optimizer-event trace",
-        ),
-        "optimizer_event_commitment": _file_reference(
-            optimizer_event_commitment_path,
-            bundle_root,
-            "profile optimizer-event commitment",
-        ),
+        "optimizer_event_trace": {
+            "path": relative_bundle_path(
+                trace_path, bundle_root, "profile optimizer-event trace"
+            ),
+            "sha256": hashlib.sha256(trace_bytes).hexdigest(),
+        },
+        "optimizer_event_commitment": {
+            "path": relative_bundle_path(
+                commitment_path,
+                bundle_root,
+                "profile optimizer-event commitment",
+            ),
+            "sha256": hashlib.sha256(commitment_bytes).hexdigest(),
+        },
     }
     try:
-        return _sign_payload(
-            body,
-            private_key_path=private_key_path,
-            key_id=key_id,
-            role=PROFILE_ATTESTATION_ROLE,
+        return sign_fixed_step_profile(
+            body, runtime_session=state.runtime_session
         )
-    except AttestationError as exc:
+    except (AttestationError, RuntimeAttestationError) as exc:
         raise FullPetalLaunchError(f"failed to attest fixed-step profile: {exc}") from exc
 
 
@@ -1213,7 +1375,13 @@ def validate_full_petal_launch(
         )
     commit_sha = _require_git_sha(state.commit_sha, "repository commit")
 
-    ticket = load_strict_json(ticket_path)
+    try:
+        _, ticket_bytes = read_stable_file_bytes(ticket_path, "launch ticket")
+        ticket = strict_json_from_bytes(
+            ticket_bytes, "launch ticket", require_object=True
+        )
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
     _require_exact_fields(ticket, _ticket_fields(), "launch ticket")
     if ticket["schema_version"] != LAUNCH_TICKET_SCHEMA:
         raise FullPetalLaunchError("launch ticket schema is unsupported")
@@ -1280,29 +1448,54 @@ def validate_full_petal_launch(
             trust_roots=trust_roots,
         )
 
-    return FullPetalLaunchAuthorization(
-        mode=mode,
-        commit_sha=commit_sha,
-        source_tree_sha256=source_digest,
-        data_identity=dict(ticket["data_identity"]),
-        data_identity_sha256=ticket["data_identity"]["identity_sha256"],
-        runtime_identity_sha256=canonical_json_sha256(runtime_identity),
-        runtime_identity=dict(runtime_identity),
-        resolved_config_sha256=resolved_digest,
-        scientific_config_sha256=scientific_digest,
-        ticket_path=str(ticket_path),
-        ticket_sha256=sha256_file(ticket_path),
-        b0_artifact_sha256=b0_digest,
-        review_artifact_sha256=review_digest,
-        profile_artifact_sha256=profile_digest,
-        warmup_optimizer_events=warmup,
-        measured_optimizer_events=measured,
-        world_size=world_size,
-        slurm_job_id=slurm_job_id,
-        slurm_allocation=allocation,
-        execution_attestation_key_id=trust_roots["profile"]["key_id"],
-        execution_attestation_public_key=trust_roots["profile"]["public_key"],
+    runtime_session = issue_runtime_session()
+    values = {
+        "mode": mode,
+        "commit_sha": commit_sha,
+        "source_tree_sha256": source_digest,
+        "data_identity": dict(ticket["data_identity"]),
+        "data_identity_sha256": ticket["data_identity"]["identity_sha256"],
+        "runtime_identity_sha256": canonical_json_sha256(runtime_identity),
+        "runtime_identity": dict(runtime_identity),
+        "resolved_config_sha256": resolved_digest,
+        "scientific_config_sha256": scientific_digest,
+        "ticket_path": str(ticket_path),
+        "ticket_sha256": hashlib.sha256(ticket_bytes).hexdigest(),
+        "b0_artifact_sha256": b0_digest,
+        "review_artifact_sha256": review_digest,
+        "profile_artifact_sha256": profile_digest,
+        "warmup_optimizer_events": warmup,
+        "measured_optimizer_events": measured,
+        "world_size": world_size,
+        "slurm_job_id": slurm_job_id,
+        "slurm_allocation": allocation,
+        "execution_attestation_key_id": trust_roots["profile"]["key_id"],
+        "execution_attestation_public_key": trust_roots["profile"]["public_key"],
+        "execution_session": runtime_session.binding,
+    }
+    authorization = object.__new__(FullPetalLaunchAuthorization)
+    for field in FullPetalLaunchAuthorization.__dataclass_fields__:
+        object.__setattr__(authorization, field, values.pop(field))
+    if values:
+        raise FullPetalLaunchError(
+            f"internal launch authorization fields differ: {sorted(values)}"
+        )
+    state = _AuthorizationRuntimeState(
+        runtime_session=runtime_session,
+        authorization_snapshot=_authorization_snapshot(authorization),
+        repository_root=root,
+        expected_slurm_user=expected_slurm_user,
+        trusted_scontrol_path=contract["trusted_scontrol_path"],
     )
+    authorization_id = id(authorization)
+
+    def retire(reference):
+        current = _AUTHORIZATION_STATES.get(authorization_id)
+        if current is not None and current[0] is reference:
+            _AUTHORIZATION_STATES.pop(authorization_id, None)
+
+    _AUTHORIZATION_STATES[authorization_id] = (weakref.ref(authorization, retire), state)
+    return authorization
 
 
 __all__ = [
@@ -1331,7 +1524,9 @@ __all__ = [
     "load_strict_json",
     "persist_launch_receipt",
     "verify_launch_receipt",
+    "resolved_config_payload",
     "resolved_config_sha256",
+    "runtime_evidence_session",
     "sha256_file",
     "validate_full_petal_launch",
 ]

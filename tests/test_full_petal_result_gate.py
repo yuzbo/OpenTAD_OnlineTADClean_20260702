@@ -10,11 +10,8 @@ import pytest
 import torch
 from mmengine import Config
 
-from opentad.utils.full_petal_attestation import (
-    _sign_payload,
-    generate_private_key,
-    public_key_base64,
-)
+from opentad.utils.full_petal_attestation import generate_private_key, public_key_base64
+from tests.full_petal_attestation_fixture import attest_fixture as _sign_payload
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
@@ -43,6 +40,12 @@ from opentad.utils.full_petal_training_evidence import (
     tensor_sha256,
 )
 from opentad.utils.full_petal_launch import resolved_config_sha256
+from opentad.utils.full_petal_runtime_attestation import issue_runtime_session
+from opentad.utils.full_petal_role_signing import (
+    sign_fineaction_license_authorization,
+    sign_fineaction_loader_run,
+    sign_fineaction_preprocessing_run,
+)
 from opentad.utils.immutable_event_ledger import (
     ImmutableEventLedger,
     persist_verified_ledger,
@@ -100,14 +103,30 @@ def _protocol(claim):
 
 def _keys(tmp_path, monkeypatch):
     profile_private = tmp_path / "profile.pem"
-    formal_private = profile_private
+    formal_private = tmp_path / "formal.pem"
     b0_private = tmp_path / "b0.pem"
     review_private = tmp_path / "review.pem"
+    fineaction_license_private = tmp_path / "fineaction-license.pem"
+    fineaction_execution_private = tmp_path / "fineaction-execution.pem"
     profile_public = generate_private_key(profile_private)
+    formal_public = generate_private_key(formal_private)
     b0_public = generate_private_key(b0_private)
     review_public = generate_private_key(review_private)
+    fineaction_license_public = generate_private_key(fineaction_license_private)
+    fineaction_execution_public = generate_private_key(fineaction_execution_private)
+    fineaction_roots = {
+        "license": {
+            "key_id": "fineaction-license-test",
+            "public_key": fineaction_license_public,
+        },
+        "execution": {
+            "key_id": "fineaction-execution-test",
+            "public_key": fineaction_execution_public,
+        },
+    }
     roots = {
         "profile": {"key_id": "profile-test", "public_key": profile_public},
+        "formal": {"key_id": "formal-test", "public_key": formal_public},
         "b0": {"key_id": "b0-test", "public_key": b0_public},
         "review": {"key_id": "review-test", "public_key": review_public},
     }
@@ -127,6 +146,7 @@ def _keys(tmp_path, monkeypatch):
                 "memory_size": 192,
                 "slot_count": 4,
             },
+            "fineaction_trust_roots": fineaction_roots,
         },
     )
     monkeypatch.setattr(
@@ -134,7 +154,15 @@ def _keys(tmp_path, monkeypatch):
         "authorization_only_diff",
         lambda repository_root, profile_commit, formal_commit: "f" * 64,
     )
-    return formal_private, b0_private, review_private, profile_private
+    return (
+        formal_private,
+        b0_private,
+        review_private,
+        profile_private,
+        fineaction_license_private,
+        fineaction_execution_private,
+        fineaction_roots,
+    )
 
 
 def _b0_evidence(root, private_key, *, commit=COMMIT):
@@ -248,7 +276,9 @@ def _b0_evidence(root, private_key, *, commit=COMMIT):
     return _reference(_write_json(b0_dir / "b0.json", signed))
 
 
-def _fineaction_sources(root):
+def _fineaction_sources(
+    root, *, license_private, execution_private
+):
     media_dir = root / "media"
     media_dir.mkdir(parents=True)
     database = {}
@@ -288,44 +318,84 @@ def _fineaction_sources(root):
     terms.write_text("FineAction research terms\n", encoding="utf-8")
     license_path = _write_json(
         root / "license.json",
-        {
-            "schema": "full_petal.fineaction_license",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "license_id": "FineAction-research",
-            "access_authorized": True,
-            "terms": {"path": terms.name, "sha256": sha256_file(terms)},
-        },
+        sign_fineaction_license_authorization(
+            {
+                "schema_version": "full-petal-fineaction-license-authorization-v1",
+                "dataset": "FineAction",
+                "license_id": "FineAction-research",
+                "subject": "full-petal-test",
+                "access_scope": "research-evaluation",
+                "authorized": True,
+                "issued_at": "2026-07-13T08:00:00Z",
+                "terms": _reference(terms, root),
+            },
+            private_key_path=license_private,
+            key_id="fineaction-license-test",
+        ),
+    )
+    preprocessing_source = root / "fineaction-preprocess.py"
+    preprocessing_source.write_text("print('causal preprocessing')\n", encoding="utf-8")
+    preprocessing_junit = root / "fineaction-preprocess.xml"
+    preprocessing_junit.write_text(
+        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="fineaction.preprocessing" name="test_causal" />'
+        "</testsuite></testsuites>\n",
+        encoding="utf-8",
+    )
+    preprocessing_log = root / "fineaction-preprocess.log"
+    preprocessing_log.write_text(
+        "FINEACTION_CAUSAL_PREPROCESS_PASS\n", encoding="utf-8"
     )
     preprocessing = _write_json(
         root / "preprocessing.json",
-        {
-            "schema": "full_petal.fineaction_causal_preprocessing",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "future_frames_allowed": False,
-            "timestamp_convention": "zero_based_source_frame",
-            "frame_stride": 2,
-            "annotation_sha256": sha256_file(annotation),
-            "media_inventory_sha256": sha256_file(inventory),
-        },
+        sign_fineaction_preprocessing_run(
+            {
+                "schema_version": "full-petal-fineaction-preprocessing-run-v1",
+                "dataset": "FineAction",
+                "status": "PASS",
+                "command": ["python", preprocessing_source.name],
+                "source": _reference(preprocessing_source, root),
+                "junit": _reference(preprocessing_junit, root),
+                "log": _reference(preprocessing_log, root),
+                "future_frames_allowed": False,
+                "timestamp_convention": "zero_based_source_frame",
+                "frame_stride": 2,
+                "annotation_sha256": sha256_file(annotation),
+                "media_inventory_sha256": sha256_file(inventory),
+            },
+            private_key_path=execution_private,
+            key_id="fineaction-execution-test",
+        ),
     )
+    loader_source = root / "fineaction-loader-smoke.py"
+    loader_source.write_text("print('loader smoke')\n", encoding="utf-8")
+    loader_junit = root / "fineaction-loader-smoke.xml"
+    loader_junit.write_text(
+        '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="fineaction.loader" name="test_loader" />'
+        "</testsuite></testsuites>\n",
+        encoding="utf-8",
+    )
+    loader_log = root / "fineaction-loader-smoke.log"
+    loader_log.write_text("FINEACTION_LOADER_SMOKE_PASS\n", encoding="utf-8")
     smoke = _write_json(
         root / "loader-smoke.json",
-        {
-            "schema": "full_petal.fineaction_loader_smoke",
-            "schema_version": 1,
-            "dataset": "FineAction",
-            "status": "PASS",
-            "command": ["python", "-m", "pytest", "tests/test_fineaction_loader.py"],
-            "exit_code": 0,
-            "tests_passed": 1,
-            "tests_failed": 0,
-            "tests_skipped": 0,
-            "annotation_sha256": sha256_file(annotation),
-            "media_inventory_sha256": sha256_file(inventory),
-            "preprocessing_sha256": sha256_file(preprocessing),
-        },
+        sign_fineaction_loader_run(
+            {
+                "schema_version": "full-petal-fineaction-loader-run-v1",
+                "dataset": "FineAction",
+                "status": "PASS",
+                "command": ["python", loader_source.name],
+                "source": _reference(loader_source, root),
+                "junit": _reference(loader_junit, root),
+                "log": _reference(loader_log, root),
+                "annotation_sha256": sha256_file(annotation),
+                "media_inventory_sha256": sha256_file(inventory),
+                "preprocessing_sha256": sha256_file(preprocessing),
+            },
+            private_key_path=execution_private,
+            key_id="fineaction-execution-test",
+        ),
     )
     return {
         "annotation": annotation,
@@ -336,7 +406,9 @@ def _fineaction_sources(root):
     }
 
 
-def _reporting_evidence(root):
+def _reporting_evidence(
+    root, *, license_private, execution_private, trust_roots
+):
     reporting_dir = root / "reporting"
     reporting_dir.mkdir(parents=True)
     ids = [f"historical_{index:03d}" for index in range(211)]
@@ -364,11 +436,16 @@ def _reporting_evidence(root):
         seed=23,
         created_at="2026-07-13T08:00:00Z",
     )
-    fineaction_sources = _fineaction_sources(reporting_dir / "fineaction-sources")
+    fineaction_sources = _fineaction_sources(
+        reporting_dir / "fineaction-sources",
+        license_private=license_private,
+        execution_private=execution_private,
+    )
     qualification = build_fineaction_qualification_report(
         fineaction_sources,
         seed=29,
         created_at="2026-07-13T08:00:00Z",
+        trust_roots=trust_roots,
     )
     universe_path = _write_json(reporting_dir / "universe.json", universe)
     comparison_path = _write_json(reporting_dir / "comparison.json", comparison)
@@ -457,6 +534,13 @@ def _training_event(seed, training_identity=None):
     }
 
 
+def _signed_runtime_event(runtime_session, event_kind, payload):
+    return {
+        **payload,
+        **runtime_session.sign_event(event_kind, payload),
+    }
+
+
 def _run(
     root,
     claim,
@@ -507,10 +591,14 @@ def _run(
         run_dir / "cache-manifest.json",
         {"videos": {"video_1": {"source_frames": list(range(64))}}},
     )
+    (run_dir / "base.py").write_text(
+        "base_marker = 'resolved-from-base'\n", encoding="utf-8"
+    )
     config = run_dir / "config.py"
     config.write_text(
         "\n".join(
             (
+                "_base_ = ['./base.py']",
                 f"claim = {claim!r}",
                 f"variant = {variant!r}",
                 "optimizer = dict(type='AdamW', lr=0.0002)",
@@ -579,21 +667,30 @@ def _run(
         },
         fineaction_path,
     )
+    resolved_cfg = Config.fromfile(str(config))
     training_identity = derive_training_trace_identity(
-        Config.fromfile(str(config)),
+        resolved_cfg,
         data_identity,
         seed=seed,
         world_size=1,
     )
+    training_runtime_session = issue_runtime_session()
     trace = run_dir / "training.jsonl"
     trace_commitment = run_dir / "training.commitment.json"
+    training_event = _training_event(seed, training_identity)
     persist_training_trace(
         trace,
         trace_commitment,
-        [_training_event(seed, training_identity)],
+        [
+            _signed_runtime_event(
+                training_runtime_session, "optimizer-event", training_event
+            )
+        ],
     )
     data_identity_path = _write_json(run_dir / "data-identity.json", data_identity)
-    resolved_cfg = Config.fromfile(str(config))
+    resolved_config = _write_json(
+        run_dir / "resolved-config.json", resolved_cfg.to_dict()
+    )
     resolved_cfg_sha256 = resolved_config_sha256(resolved_cfg)
     scientific_cfg_sha256 = resolved_config_sha256(resolved_cfg, scientific=True)
     review = _write_json(
@@ -661,33 +758,89 @@ def _run(
             "profile_evidence": None,
         },
     )
+    profile_runtime_session = issue_runtime_session()
+    profile_job = f"{seed}-profile"
+    profile_receipt = _write_json(
+        run_dir / "profile-launch-receipt.json",
+        _sign_payload(
+            {
+                "schema_version": MODULE.LAUNCH_RECEIPT_SCHEMA,
+                "mode": "profile",
+                "commit_sha": PROFILE_COMMIT,
+                "source_tree_sha256": "9" * 64,
+                "data_identity_sha256": data_identity["identity_sha256"],
+                "runtime_identity_sha256": MODULE._sha256_json(
+                    profile_runtime, "profile runtime"
+                ),
+                "resolved_config_sha256": resolved_cfg_sha256,
+                "scientific_config_sha256": scientific_cfg_sha256,
+                "launch_ticket": _reference(profile_ticket, run_dir),
+                "b0_artifact_sha256": profile_b0["sha256"],
+                "review_artifact_sha256": profile_review_reference["sha256"],
+                "profile_artifact_sha256": None,
+                "world_size": 1,
+                "slurm_job_id": profile_job,
+                "slurm_allocation": {
+                    "job_id": profile_job,
+                    "state": "RUNNING",
+                    "user": "fixture-user",
+                    "nodes": 1,
+                    "tasks": 1,
+                    "gpus": 1,
+                    "command": "python tools/train.py",
+                    "work_dir": str(run_dir.resolve()),
+                },
+                "execution_session": profile_runtime_session.binding,
+            },
+            private_key_path=profile_private,
+            key_id="profile-test",
+            role=MODULE.LAUNCH_RECEIPT_ATTESTATION_ROLE,
+        ),
+    )
     profile_trace = run_dir / "profile-optimizer-events.jsonl"
     profile_commitment = run_dir / "profile-optimizer-events.commitment.json"
+    profile_events = []
+    for index in range(250):
+        profile_event = {
+            **_training_event(seed, training_identity),
+            "event_id": f"profile-optimizer-{index:08d}",
+            "episode_id": f"profile-episode-{index:08d}",
+            "elapsed_seconds": float(index + 1),
+            "peak_memory_bytes": 1024 + index,
+        }
+        profile_events.append(
+            _signed_runtime_event(
+                profile_runtime_session, "optimizer-event", profile_event
+            )
+        )
     persist_training_trace(
         profile_trace,
         profile_commitment,
-        [
-            {
-                **_training_event(seed, training_identity),
-                "event_id": f"profile-optimizer-{index:08d}",
-                "episode_id": f"profile-episode-{index:08d}",
-                "elapsed_seconds": float(index + 1),
-                "peak_memory_bytes": 1024 + index,
-            }
-            for index in range(250)
-        ],
+        profile_events,
     )
+    synchronized_profile_measurements = {
+        "warmup_optimizer_events": 50,
+        "measured_optimizer_events": 200,
+        "total_optimizer_events": 250,
+        "skipped_optimizer_events": 0,
+        "measurement_start_after_event_id": "profile-optimizer-00000049",
+        "measurement_end_event_id": "profile-optimizer-00000249",
+        "elapsed_seconds": 5.0,
+        "peak_memory_bytes": 4096,
+        "throughput_optimizer_events_per_second": 40.0,
+    }
     profile_measurements = derive_fixed_step_profile_measurements(
         profile_trace,
         profile_commitment,
         warmup_optimizer_events=50,
         measured_optimizer_events=200,
         expected_identity=training_identity,
+        profiler_measurements=synchronized_profile_measurements,
+        runtime_binding=profile_runtime_session.binding,
     )
-    profile_job = f"{seed}-profile"
     profile = _write_json(
         run_dir / "profile.json",
-        _sign_payload(
+        profile_runtime_session.sign_profile(
             {
                 "schema_version": MODULE.PROFILE_SCHEMA,
                 "status": "PASS",
@@ -701,6 +854,8 @@ def _run(
                 "scientific_config_sha256": scientific_cfg_sha256,
                 "launch_ticket_path": profile_ticket.name,
                 "launch_ticket_sha256": sha256_file(profile_ticket),
+                "launch_receipt_path": profile_receipt.name,
+                "launch_receipt_sha256": sha256_file(profile_receipt),
                 "slurm_job_id": profile_job,
                 "slurm_allocation": {
                     "job_id": profile_job,
@@ -729,14 +884,11 @@ def _run(
                 "optimizer_event_trace": _reference(profile_trace, run_dir),
                 "optimizer_event_commitment": _reference(profile_commitment, run_dir),
             },
-            private_key_path=profile_private,
-            key_id="profile-test",
-            role=MODULE.PROFILE_ATTESTATION_ROLE,
         ),
     )
     profile_reference = _reference(profile, run_dir)
 
-    def launch_evidence(stage, entrypoint, resume_checkpoint):
+    def launch_evidence(stage, entrypoint, resume_checkpoint, runtime_session):
         runtime = {
             "schema_version": "full-petal-runtime-identity-v1",
             "entrypoint": entrypoint,
@@ -789,6 +941,7 @@ def _run(
                     "command": f"python tools/{entrypoint}.py",
                     "work_dir": str(run_dir.resolve()),
                 },
+                "execution_session": runtime_session.binding,
             },
             private_key_path=profile_private,
             key_id="profile-test",
@@ -799,7 +952,9 @@ def _run(
         )
         return ticket_path, receipt_path
 
-    training_ticket, training_receipt = launch_evidence("training", "train", None)
+    training_ticket, training_receipt = launch_evidence(
+        "training", "train", None, training_runtime_session
+    )
     evaluation_ticket, evaluation_receipt = launch_evidence(
         "evaluation",
         "test",
@@ -808,14 +963,18 @@ def _run(
             "sha256": sha256_file(checkpoint),
             "size_bytes": checkpoint.stat().st_size,
         },
+        issue_runtime_session(),
     )
     artifacts = {
         "ledger": ledger_path,
         "commitment": commitment_path,
         "ground_truth": ground_truth,
         "allowed_videos": allowed,
+        "fit_core": fit_core,
+        "feature_cache_manifest": cache_manifest,
         "evaluator_spec": evaluator_spec,
         "config": config,
+        "resolved_config": resolved_config,
         "checkpoint": checkpoint,
         "data_identity": data_identity_path,
         "training_launch_ticket": training_ticket,
@@ -831,24 +990,29 @@ def _run(
         visual_commitment = run_dir / "visual-parameters.commitment.json"
         before = torch.zeros_like(checkpoint_parameter) if adapted else checkpoint_parameter
         gradient = torch.ones_like(checkpoint_parameter) if adapted else None
+        visual_event = {
+            "optimizer_event_id": f"optimizer-{seed}",
+            "parameter_name": "visual.encoder.weight",
+            "requires_grad": adapted,
+            "optimizer_member": adapted,
+            "numel": checkpoint_parameter.numel(),
+            "dtype": str(checkpoint_parameter.dtype),
+            "before_sha256": tensor_sha256(before),
+            "after_sha256": tensor_sha256(checkpoint_parameter),
+            "gradient_sha256": None if gradient is None else tensor_sha256(gradient),
+            "gradient_finite": adapted,
+            "gradient_norm": 1.0 if adapted else 0.0,
+            "delta_norm": float(checkpoint_parameter.norm().item()) if adapted else 0.0,
+        }
         persist_visual_parameter_trace(
             visual_trace,
             visual_commitment,
             [
-                {
-                    "optimizer_event_id": f"optimizer-{seed}",
-                    "parameter_name": "visual.encoder.weight",
-                    "requires_grad": adapted,
-                    "optimizer_member": adapted,
-                    "numel": checkpoint_parameter.numel(),
-                    "dtype": str(checkpoint_parameter.dtype),
-                    "before_sha256": tensor_sha256(before),
-                    "after_sha256": tensor_sha256(checkpoint_parameter),
-                    "gradient_sha256": None if gradient is None else tensor_sha256(gradient),
-                    "gradient_finite": adapted,
-                    "gradient_norm": 1.0 if adapted else 0.0,
-                    "delta_norm": float(checkpoint_parameter.norm().item()) if adapted else 0.0,
-                }
+                _signed_runtime_event(
+                    training_runtime_session,
+                    "visual-parameter-event",
+                    visual_event,
+                )
             ],
         )
         artifacts["visual_parameter_trace"] = visual_trace
@@ -869,7 +1033,7 @@ def _run(
         artifacts=artifacts,
         bundle_root=run_dir,
         private_key_path=formal_private,
-        key_id="profile-test",
+        key_id="formal-test",
     )
     manifest_path = _write_json(run_dir / "run-manifest.json", signed)
     return {
@@ -887,16 +1051,27 @@ def _run(
 def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True):
     root = tmp_path / "report"
     root.mkdir(parents=True)
-    formal_private, b0_private, review_private, profile_private = _keys(
-        root, monkeypatch
-    )
+    (
+        formal_private,
+        b0_private,
+        review_private,
+        profile_private,
+        fineaction_license_private,
+        fineaction_execution_private,
+        fineaction_roots,
+    ) = _keys(root, monkeypatch)
     b0 = _b0_evidence(root, b0_private)
     profile_b0 = _b0_evidence(
         root / "profile-prerequisites",
         b0_private,
         commit=PROFILE_COMMIT,
     )
-    reporting_evidence, fineaction_path = _reporting_evidence(root)
+    reporting_evidence, fineaction_path = _reporting_evidence(
+        root,
+        license_private=fineaction_license_private,
+        execution_private=fineaction_execution_private,
+        trust_roots=fineaction_roots,
+    )
     rows = []
     for seed in (11, 12):
         rows.extend(
@@ -1054,16 +1229,27 @@ def test_gate_rejects_rehashed_reporting_and_fineaction_semantic_forgery(
 def _semantic_run(tmp_path, monkeypatch, mutator):
     root = tmp_path / "semantic-run"
     root.mkdir(parents=True)
-    formal_private, b0_private, review_private, profile_private = _keys(
-        root, monkeypatch
-    )
+    (
+        formal_private,
+        b0_private,
+        review_private,
+        profile_private,
+        fineaction_license_private,
+        fineaction_execution_private,
+        fineaction_roots,
+    ) = _keys(root, monkeypatch)
     b0 = _b0_evidence(root, b0_private)
     profile_b0 = _b0_evidence(
         root / "profile-prerequisites",
         b0_private,
         commit=PROFILE_COMMIT,
     )
-    _, fineaction_path = _reporting_evidence(root)
+    _, fineaction_path = _reporting_evidence(
+        root,
+        license_private=fineaction_license_private,
+        execution_private=fineaction_execution_private,
+        trust_roots=fineaction_roots,
+    )
     return _run(
         root,
         "C1",
@@ -1096,7 +1282,7 @@ def test_gate_rejects_self_consistent_evaluation_ticket_for_wrong_checkpoint(
         )
         _write_json(receipt_path, receipt)
 
-    with pytest.raises(TrainingEvidenceError, match="checkpoint bytes"):
+    with pytest.raises(TrainingEvidenceError, match="checkpoint hash mismatch"):
         _semantic_run(tmp_path, monkeypatch, wrong_checkpoint)
 
 
@@ -1124,10 +1310,10 @@ def test_gate_rejects_signed_receipt_without_active_slurm_allocation(
 
 @pytest.mark.parametrize(
     ("role", "message"),
-    (
-        ("ground_truth", "ground-truth artifact path differs"),
-        ("allowed_videos", "allowed-videos artifact path differs"),
-    ),
+        (
+            ("ground_truth", "ground-truth artifact path differs"),
+            ("allowed_videos", "allowed-videos artifact path differs"),
+        ),
 )
 def test_formal_signer_rejects_data_artifact_substitution(
     tmp_path, monkeypatch, role, message
@@ -1139,6 +1325,30 @@ def test_formal_signer_rejects_data_artifact_substitution(
         artifacts[role] = replacement
 
     with pytest.raises(TrainingEvidenceError, match=message):
+        _semantic_run(tmp_path, monkeypatch, substitute)
+
+
+@pytest.mark.parametrize("role", ("fit_core", "feature_cache_manifest"))
+def test_formal_signer_rejects_training_order_artifact_content_substitution(
+    tmp_path, monkeypatch, role
+):
+    def substitute(artifacts):
+        artifacts[role].write_bytes(artifacts[role].read_bytes() + b" ")
+
+    with pytest.raises(TrainingEvidenceError, match=f"data identity {role} file hash differs"):
+        _semantic_run(tmp_path, monkeypatch, substitute)
+
+
+def test_formal_signer_rejects_resolved_config_not_bound_to_ticket(
+    tmp_path, monkeypatch
+):
+    def substitute(artifacts):
+        path = artifacts["resolved_config"]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["model"]["type"] = "SubstitutedDetector"
+        _write_json(path, payload)
+
+    with pytest.raises(TrainingEvidenceError, match="resolved config digest differs"):
         _semantic_run(tmp_path, monkeypatch, substitute)
 
 
@@ -1159,9 +1369,31 @@ def test_formal_signer_rejects_self_reported_training_identity(tmp_path, monkeyp
         commitment = artifacts["training_commitment"]
         trace.unlink()
         commitment.unlink()
+        runtime_session = issue_runtime_session()
         event = _training_event(11)
         event["optimizer_config_sha256"] = "f" * 64
-        persist_training_trace(trace, commitment, [event])
+        persist_training_trace(
+            trace,
+            commitment,
+            [_signed_runtime_event(runtime_session, "optimizer-event", event)],
+        )
+        receipt_path = artifacts["training_launch_receipt"]
+        signed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt = {
+            key: value
+            for key, value in signed_receipt.items()
+            if key != "attestation"
+        }
+        receipt["execution_session"] = runtime_session.binding
+        _write_json(
+            receipt_path,
+            _sign_payload(
+                receipt,
+                private_key_path=artifacts["_profile_private"],
+                key_id="profile-test",
+                role=MODULE.LAUNCH_RECEIPT_ATTESTATION_ROLE,
+            ),
+        )
 
     with pytest.raises(TrainingEvidenceError, match="training trace identity differs"):
         _semantic_run(tmp_path, monkeypatch, substitute)

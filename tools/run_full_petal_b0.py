@@ -2,11 +2,11 @@
 """Run the exhaustive Full PETAL CPU B0 matrix and sign its evidence root."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tokenize
@@ -17,18 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from opentad.utils.full_petal_attestation import (  # noqa: E402
-    AttestationError,
-    _sign_payload,
+from opentad.utils.full_petal_attestation import AttestationError  # noqa: E402
+from opentad.utils.evidence_bundle import (  # noqa: E402
+    EvidenceBundleError,
+    publish_exclusive_file,
+    read_stable_file_bytes,
+    strict_json_from_bytes,
 )
+from opentad.utils.full_petal_role_signing import sign_b0_evidence  # noqa: E402
 from opentad.utils.full_petal_b0 import (  # noqa: E402
-    B0_ATTESTATION_ROLE,
     B0_AUDIT_REPORT_SCHEMA,
     B0_SCHEMA,
     B0_TEST_REPORT_SCHEMA,
     canonical_json_sha256,
     junit_cases,
-    sha256_file,
     validate_manifest,
 )
 
@@ -46,11 +48,12 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def _write_json(path, payload):
-    Path(path).write_text(
-        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+def _publish_json(path, payload):
+    encoded = (
+        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    publish_exclusive_file(path, encoded)
+    return encoded
 
 
 def _git(*args, check=True):
@@ -82,11 +85,14 @@ def _is_relative_to(path, parent):
 
 def _load_manifest(path):
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        _, raw = read_stable_file_bytes(path, "B0 manifest")
+        payload = strict_json_from_bytes(
+            raw, "B0 manifest", require_object=True
+        )
+    except EvidenceBundleError as exc:
         raise SystemExit(f"failed to load B0 manifest {path}: {exc}") from exc
     validate_manifest(payload, repository_root=ROOT)
-    return payload
+    return payload, raw
 
 
 def _actual_command(canonical, *, torch_python, junit_path):
@@ -117,7 +123,7 @@ def _run_suite(suite, output_dir, torch_python, env):
         errors="replace",
         check=False,
     )
-    log_path.write_text(
+    log_bytes = (
         "CANONICAL_ARGV="
         + json.dumps(suite["canonical_argv"], separators=(",", ":"))
         + "\nACTUAL_ARGV="
@@ -127,12 +133,13 @@ def _run_suite(suite, output_dir, torch_python, env):
         + "\n\nSTDOUT\n"
         + result.stdout
         + "\nSTDERR\n"
-        + result.stderr,
-        encoding="utf-8",
-    )
+        + result.stderr
+    ).encode("utf-8")
+    publish_exclusive_file(log_path, log_bytes)
     if junit_path.is_file():
         try:
-            counts, cases = junit_cases(junit_path)
+            _, junit_bytes = read_stable_file_bytes(junit_path, f"{name} JUnit")
+            counts, cases = junit_cases(junit_bytes=junit_bytes)
         except Exception as exc:
             counts = {
                 "collected": 0,
@@ -143,7 +150,8 @@ def _run_suite(suite, output_dir, torch_python, env):
             }
             cases = [{"classname": "b0.runner", "name": f"junit_parse_error:{exc}"}]
     else:
-        junit_path.write_text("<testsuites/>\n", encoding="utf-8")
+        junit_bytes = b"<testsuites/>\n"
+        publish_exclusive_file(junit_path, junit_bytes)
         counts = {
             "collected": 0,
             "passed": 0,
@@ -166,22 +174,23 @@ def _run_suite(suite, output_dir, torch_python, env):
         "python_executable": str(torch_python),
         **counts,
         "log_path": log_path.name,
-        "log_sha256": sha256_file(log_path),
+        "log_sha256": hashlib.sha256(log_bytes).hexdigest(),
         "junit_path": junit_path.name,
-        "junit_sha256": sha256_file(junit_path),
+        "junit_sha256": hashlib.sha256(junit_bytes).hexdigest(),
         "testcase_manifest_sha256": canonical_json_sha256(cases),
     }
 
 
 def _write_check(output_dir, name, canonical_argv, status, content):
     log_path = output_dir / f"audit-{name}.log"
-    log_path.write_text(content, encoding="utf-8")
+    log_bytes = content.encode("utf-8")
+    publish_exclusive_file(log_path, log_bytes)
     return {
         "name": name,
         "status": status,
         "canonical_argv": list(canonical_argv),
         "log_path": log_path.name,
-        "log_sha256": sha256_file(log_path),
+        "log_sha256": hashlib.sha256(log_bytes).hexdigest(),
     }
 
 
@@ -238,9 +247,9 @@ def main(argv=None):
     manifest_path = args.manifest.resolve()
     if not manifest_path.is_file() or not _is_relative_to(manifest_path, ROOT.resolve()):
         raise SystemExit("B0 manifest must be a tracked repository file")
-    manifest = _load_manifest(manifest_path)
+    manifest, manifest_bytes = _load_manifest(manifest_path)
     evidence_manifest_path = output_dir / "b0-manifest.json"
-    shutil.copyfile(manifest_path, evidence_manifest_path)
+    publish_exclusive_file(evidence_manifest_path, manifest_bytes)
 
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -254,7 +263,7 @@ def main(argv=None):
         for field in ("collected", "passed", "failed", "errors", "skipped")
     }
     tests_pass = all(suite["status"] == "PASS" for suite in suites)
-    manifest_sha = sha256_file(evidence_manifest_path)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
     test_report = {
         "schema_version": B0_TEST_REPORT_SCHEMA,
         "status": "PASS" if tests_pass else "FAIL",
@@ -264,7 +273,7 @@ def main(argv=None):
         "suites": suites,
     }
     test_report_path = output_dir / "b0-test-report.json"
-    _write_json(test_report_path, test_report)
+    test_report_bytes = _publish_json(test_report_path, test_report)
 
     checks = [
         _syntax_check(output_dir),
@@ -299,7 +308,7 @@ def main(argv=None):
         "checks": checks,
     }
     audit_report_path = output_dir / "b0-audit-report.json"
-    _write_json(audit_report_path, audit_report)
+    audit_report_bytes = _publish_json(audit_report_path, audit_report)
 
     b0_pass = tests_pass and audit_pass
     unsigned_b0 = {
@@ -312,23 +321,22 @@ def main(argv=None):
         "manifest_path": evidence_manifest_path.name,
         "manifest_sha256": manifest_sha,
         "test_report_path": test_report_path.name,
-        "test_report_sha256": sha256_file(test_report_path),
+        "test_report_sha256": hashlib.sha256(test_report_bytes).hexdigest(),
         "audit_report_path": audit_report_path.name,
-        "audit_report_sha256": sha256_file(audit_report_path),
+        "audit_report_sha256": hashlib.sha256(audit_report_bytes).hexdigest(),
     }
     try:
-        b0 = _sign_payload(
+        b0 = sign_b0_evidence(
             unsigned_b0,
             private_key_path=args.attestation_private_key,
             key_id=args.attestation_key_id,
-            role=B0_ATTESTATION_ROLE,
         )
     except AttestationError as exc:
         raise SystemExit(f"failed to attest B0 evidence: {exc}") from exc
     b0_path = output_dir / "b0.json"
-    _write_json(b0_path, b0)
+    b0_bytes = _publish_json(b0_path, b0)
     print(f"FULL_PETAL_B0={b0_path}")
-    print(f"FULL_PETAL_B0_SHA256={sha256_file(b0_path)}")
+    print(f"FULL_PETAL_B0_SHA256={hashlib.sha256(b0_bytes).hexdigest()}")
     print(f"FULL_PETAL_B0_STATUS={unsigned_b0['status']}")
     return 0 if b0_pass else 1
 

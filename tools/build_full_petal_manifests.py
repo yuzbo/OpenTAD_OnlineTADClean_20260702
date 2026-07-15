@@ -5,6 +5,8 @@ import argparse
 from pathlib import Path
 import sys
 
+from mmengine import Config
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -168,6 +170,11 @@ def parse_args(argv=None):
         help="Build a FineAction qualification report from gate evidence JSON",
     )
     fineaction.add_argument("--input", type=Path, required=True)
+    fineaction.add_argument(
+        "--trust-config",
+        type=Path,
+        default=ROOT / "configs" / "causaltad" / "thumos_pes_q2_base.py",
+    )
     _add_common_output_arguments(fineaction)
     return parser, parser.parse_args(argv)
 
@@ -278,10 +285,18 @@ def _build_fineaction(args):
             )
         path = Path(raw_path).expanduser()
         sources[name] = path if path.is_absolute() else args.input.parent / path
+    try:
+        cfg = Config.fromfile(str(args.trust_config))
+        trust_roots = dict(cfg.reporting_contract.fineaction_trust_roots)
+    except Exception as exc:
+        raise ContractValidationError(
+            f"cannot load pinned FineAction trust roots: {exc}"
+        ) from exc
     return build_fineaction_qualification_report(
         sources,
         seed=args.seed,
         created_at=args.created_at,
+        trust_roots=trust_roots,
     )
 
 

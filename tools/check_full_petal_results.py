@@ -19,9 +19,10 @@ if str(REPO_ROOT) not in sys.path:
 from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
 from opentad.utils.evidence_bundle import (
     EvidenceBundleError,
+    read_stable_file_bytes,
     read_verified_bundle_bytes,
-    resolve_bundle_path,
-    verify_bundle_reference,
+    read_verified_path_bytes,
+    strict_json_from_bytes,
 )
 from opentad.utils.full_petal_attestation import (
     AttestationError,
@@ -65,6 +66,10 @@ from opentad.utils.full_petal_training_evidence import (
     derive_training_cost,
     derive_visual_parameter_evidence,
     verify_formal_run_manifest,
+)
+from opentad.utils.full_petal_runtime_attestation import (
+    RuntimeAttestationError,
+    runtime_profile_trust_root,
 )
 
 
@@ -115,8 +120,11 @@ COMMON_RUN_ARTIFACTS = {
     "commitment",
     "ground_truth",
     "allowed_videos",
+    "fit_core",
+    "feature_cache_manifest",
     "evaluator_spec",
     "config",
+    "resolved_config",
     "checkpoint",
     "data_identity",
     "training_launch_ticket",
@@ -173,6 +181,25 @@ class ResultGateProtocolError(ResultGateError):
     """Raised when an artifact records a protocol violation or mismatch."""
 
 
+_VERIFIED_BYTES = {}
+
+
+def _cache_verified_bytes(path, payload):
+    _VERIFIED_BYTES[str(Path(path).resolve())] = bytes(payload)
+
+
+def _cached_bytes(path, label):
+    key = str(Path(path).resolve())
+    payload = _VERIFIED_BYTES.get(key)
+    if payload is None:
+        try:
+            _, payload = read_stable_file_bytes(path, label)
+        except EvidenceBundleError as exc:
+            raise ResultGateInputError(str(exc)) from exc
+        _cache_verified_bytes(path, payload)
+    return payload
+
+
 def _attestation_trust_roots():
     try:
         namespace = runpy.run_path(str(TRUST_CONFIG))
@@ -181,7 +208,12 @@ def _attestation_trust_roots():
         raise ResultGateInputError(
             f"cannot load the repository trust roots from {TRUST_CONFIG}: {exc}"
         ) from exc
-    if not isinstance(roots, dict) or set(roots) != {"b0", "review", "profile"}:
+    if not isinstance(roots, dict) or set(roots) != {
+        "b0",
+        "review",
+        "profile",
+        "formal",
+    }:
         raise ResultGateInputError("repository attestation trust roots are incomplete")
     return roots
 
@@ -203,6 +235,9 @@ def _route_launch_requirements():
                 "memory_size": namespace["memory_size"],
                 "slot_count": namespace["num_slots"],
             },
+            "fineaction_trust_roots": namespace["reporting_contract"][
+                "fineaction_trust_roots"
+            ],
         }
     except (OSError, KeyError, TypeError) as exc:
         raise ResultGateInputError(
@@ -229,20 +264,6 @@ def _sha256_bytes(value):
 
 def _sha256_json(value, label):
     return _sha256_bytes(_canonical_json(value, label).encode("utf-8"))
-
-
-def _sha256_file(path):
-    digest = hashlib.sha256()
-    try:
-        with Path(path).open("rb") as handle:
-            while True:
-                chunk = handle.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-    except OSError as exc:
-        raise ResultGateInputError(f"failed to hash evidence file {path}: {exc}") from exc
-    return digest.hexdigest()
 
 
 def _required_sha256(value, label):
@@ -276,22 +297,23 @@ def _evidence_file(evidence, prefix, label):
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise ResultGateInputError(f"{label}.{path_key} must be a non-empty path")
     path = Path(raw_path).expanduser()
-    if not path.is_file():
-        raise ResultGateInputError(f"{label}.{path_key} is not a file: {path}")
     expected = _required_sha256(evidence[hash_key], f"{label}.{hash_key}")
-    actual = _sha256_file(path)
-    if actual != expected:
-        raise ResultGateInputError(
-            f"{label}.{prefix} evidence hash mismatch: expected {expected}, found {actual}"
+    try:
+        path, payload = read_verified_path_bytes(
+            path, expected, f"{label}.{prefix} evidence"
         )
-    return path, actual
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
+    _cache_verified_bytes(path, payload)
+    return path, expected
 
 
 def _bundle_reference_file(reference, base_dir, label):
     try:
-        path = verify_bundle_reference(reference, base_dir, label)
+        path, payload = read_verified_bundle_bytes(reference, base_dir, label)
     except EvidenceBundleError as exc:
         raise ResultGateInputError(str(exc)) from exc
+    _cache_verified_bytes(path, payload)
     return path, reference["sha256"]
 
 
@@ -507,10 +529,12 @@ def _normalized_cost(row, label):
 
 
 def _load_evidence_json(path, label):
-    payload = _load_json(Path(path))
-    if not isinstance(payload, dict):
-        raise ResultGateInputError(f"{label} must be a JSON object")
-    return payload
+    try:
+        return strict_json_from_bytes(
+            _cached_bytes(path, label), label, require_object=True
+        )
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
 
 
 def _validate_data_identity_artifact(path, ticket_identity, label):
@@ -542,7 +566,9 @@ def _validate_data_identity_artifact(path, ticket_identity, label):
             raise ResultGateInputError(f"{label} data record {name} fields differ")
         reference = {f"{name}_path": record["path"], f"{name}_sha256": record["sha256"]}
         record_path, _ = _evidence_file(reference, name, f"{label}.data_identity")
-        if record_path.stat().st_size != record["size_bytes"]:
+        if len(_cached_bytes(record_path, f"{label}.data_identity.{name}")) != record[
+            "size_bytes"
+        ]:
             raise ResultGateInputError(f"{label} data record {name} size differs")
     return identity
 
@@ -593,12 +619,30 @@ def _validate_signed_review(path, *, commit_sha, b0_sha256, label):
 def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
     signed = _load_evidence_json(path, f"{label}.signed_profile")
     try:
+        profile_receipt_path, _ = _bundle_reference_file(
+            {
+                "path": signed.get("launch_receipt_path"),
+                "sha256": signed.get("launch_receipt_sha256"),
+            },
+            Path(path).parent,
+            f"{label}.profile_launch_receipt",
+        )
+        profile_signed_receipt = _load_evidence_json(
+            profile_receipt_path, f"{label}.profile_launch_receipt"
+        )
+        profile_receipt = verify_launch_receipt(
+            profile_signed_receipt,
+            trust_root=_attestation_trust_roots()["profile"],
+        )
+        dynamic_profile_root = runtime_profile_trust_root(
+            profile_receipt["execution_session"]
+        )
         profile = verify_payload(
             signed,
-            trust_root=_attestation_trust_roots()["profile"],
+            trust_root=dynamic_profile_root,
             role=PROFILE_ATTESTATION_ROLE,
         )
-    except AttestationError as exc:
+    except (AttestationError, FullPetalLaunchError, RuntimeAttestationError) as exc:
         raise ResultGateInputError(
             f"{label} fixed-step profile attestation is invalid: {exc}"
         ) from exc
@@ -613,6 +657,8 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         "scientific_config_sha256",
         "launch_ticket_path",
         "launch_ticket_sha256",
+        "launch_receipt_path",
+        "launch_receipt_sha256",
         "slurm_job_id",
         "slurm_allocation",
         "world_size",
@@ -678,6 +724,8 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         "measured_optimizer_events",
         "total_optimizer_events",
         "skipped_optimizer_events",
+        "measurement_start_after_event_id",
+        "measurement_end_event_id",
         "elapsed_seconds",
         "peak_memory_bytes",
         "throughput_optimizer_events_per_second",
@@ -693,6 +741,14 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         or measurements["skipped_optimizer_events"] != 0
     ):
         raise ResultGateProtocolError(f"{label} fixed-step profile event counts differ")
+    for field in (
+        "measurement_start_after_event_id",
+        "measurement_end_event_id",
+    ):
+        if not isinstance(measurements[field], str) or not measurements[field].strip():
+            raise ResultGateInputError(
+                f"{label} fixed-step profile {field} is invalid"
+            )
     _finite_number(
         measurements["elapsed_seconds"],
         f"{label}.fixed_step_profile.elapsed_seconds",
@@ -785,6 +841,31 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         raise ResultGateProtocolError(
             f"{label} profile runtime identity is not a fresh deterministic train run"
         )
+    expected_profile_receipt = {
+        "schema_version": LAUNCH_RECEIPT_SCHEMA,
+        "mode": "profile",
+        "commit_sha": profile_commit,
+        "source_tree_sha256": profile["source_tree_sha256"],
+        "data_identity_sha256": profile["data_identity_sha256"],
+        "runtime_identity_sha256": profile["runtime_identity_sha256"],
+        "resolved_config_sha256": profile["resolved_config_sha256"],
+        "scientific_config_sha256": profile["scientific_config_sha256"],
+        "launch_ticket": {
+            "path": profile_ticket_path.name,
+            "sha256": profile["launch_ticket_sha256"],
+        },
+        "b0_artifact_sha256": profile_ticket["b0_evidence"]["sha256"],
+        "review_artifact_sha256": profile_ticket["review_evidence"]["sha256"],
+        "profile_artifact_sha256": None,
+        "world_size": profile["world_size"],
+        "slurm_job_id": profile["slurm_job_id"],
+        "slurm_allocation": profile["slurm_allocation"],
+        "execution_session": profile_receipt["execution_session"],
+    }
+    if profile_receipt != expected_profile_receipt:
+        raise ResultGateInputError(
+            f"{label} profile launch receipt binding differs"
+        )
 
     profile_b0_reference = profile_ticket["b0_evidence"]
     profile_review_reference = profile_ticket["review_evidence"]
@@ -829,7 +910,7 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         f"{label}.profile_commitment",
     )
     try:
-        profile_cfg = Config.fromfile(str(config_path))
+        profile_cfg = _resolved_run_config(config_path, f"{label}.profile")
         expected_trace_identity = derive_training_trace_identity(
             profile_cfg,
             profile_ticket["data_identity"],
@@ -842,6 +923,12 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
             warmup_optimizer_events=warmup,
             measured_optimizer_events=measured,
             expected_identity=expected_trace_identity,
+            profiler_measurements=profile["measurements"],
+            trace_bytes=_cached_bytes(trace_path, f"{label}.profile_trace"),
+            commitment_bytes=_cached_bytes(
+                commitment_path, f"{label}.profile_commitment"
+            ),
+            runtime_binding=profile_receipt["execution_session"],
         )
     except (OSError, ValueError, TrainingEvidenceError, IdentityError) as exc:
         raise ResultGateInputError(
@@ -925,7 +1012,9 @@ def _validate_launch_ticket(
             .relative_to(Path(path).resolve().parent)
             .as_posix(),
             "sha256": hashes["checkpoint"],
-            "size_bytes": paths["checkpoint"].stat().st_size,
+            "size_bytes": len(
+                _cached_bytes(paths["checkpoint"], f"{label}.checkpoint")
+            ),
         }
         if checkpoint != expected_checkpoint:
             raise ResultGateInputError(
@@ -955,7 +1044,7 @@ def _validate_launch_ticket(
         prerequisite_paths["profile"],
         ticket=ticket,
         manifest=manifest,
-        config_path=paths["config"],
+        config_path=paths["resolved_config"],
         label=label,
     )
 
@@ -985,6 +1074,7 @@ def _validate_launch_ticket(
         "world_size",
         "slurm_job_id",
         "slurm_allocation",
+        "execution_session",
     }
     if set(receipt) != receipt_fields or receipt["schema_version"] != LAUNCH_RECEIPT_SCHEMA:
         raise ResultGateInputError(f"{label} launch receipt schema/fields differ")
@@ -1041,6 +1131,12 @@ def _validate_launch_ticket(
     for field in ("user", "command", "work_dir"):
         if not isinstance(allocation[field], str) or not allocation[field].strip():
             raise ResultGateInputError(f"{label} Slurm allocation lacks {field}")
+    try:
+        runtime_profile_trust_root(receipt["execution_session"])
+    except RuntimeAttestationError as exc:
+        raise ResultGateInputError(
+            f"{label} launch receipt runtime session is invalid: {exc}"
+        ) from exc
     return ticket, receipt
 
 
@@ -1061,13 +1157,38 @@ def _evaluate_signed_run(paths, claim, label):
     if spec["type"] != "OnlineAPBudgeted":
         raise ResultGateInputError(f"{label} evaluator type is unsupported")
     try:
+        ground_truth = strict_json_from_bytes(
+            _cached_bytes(paths["ground_truth"], f"{label}.ground_truth"),
+            f"{label}.ground_truth",
+            require_object=True,
+        )
+        allowed_video_bytes = _cached_bytes(
+            paths["allowed_videos"], f"{label}.allowed_videos"
+        )
+        if paths["allowed_videos"].suffix.lower() == ".json":
+            allowed_videos = strict_json_from_bytes(
+                allowed_video_bytes, f"{label}.allowed_videos"
+            )
+        else:
+            allowed_videos = [
+                line.strip()
+                for line in allowed_video_bytes.decode("utf-8").splitlines()
+                if line.strip()
+            ]
+        if not isinstance(allowed_videos, list):
+            raise ResultGateInputError(
+                f"{label}.allowed_videos must be a JSON list"
+            )
         evaluator = OnlineAPBudgeted(
-            ground_truth_filename=str(paths["ground_truth"]),
+            ground_truth_filename=ground_truth,
             prediction_filename={
-                "ledger_path": str(paths["ledger"]),
-                "commitment_path": str(paths["commitment"]),
+                "ledger_bytes": _cached_bytes(paths["ledger"], f"{label}.ledger"),
+                "commitment_bytes": _cached_bytes(
+                    paths["commitment"], f"{label}.commitment"
+                ),
+                "ledger_filename": paths["ledger"].name,
             },
-            allowed_videos=str(paths["allowed_videos"]),
+            allowed_videos=allowed_videos,
             subset=spec["subset"],
             tiou_thresholds=spec["tiou_thresholds"],
             latency_budgets_sec=spec["latency_budgets_sec"],
@@ -1079,15 +1200,21 @@ def _evaluate_signed_run(paths, claim, label):
             identity_latency_budget_sec=spec["identity_latency_budget_sec"],
         )
         computed = evaluator.evaluate()
-    except (OSError, TypeError, ValueError) as exc:
+    except (EvidenceBundleError, OSError, TypeError, ValueError) as exc:
         raise ResultGateProtocolError(f"{label} evaluator replay failed: {exc}") from exc
     return _normalized_metrics({"metrics": computed}, claim, f"{label}.recomputed_metrics")
 
 
 def _resolved_run_config(path, label):
     try:
-        return Config.fromfile(str(path))
-    except Exception as exc:
+        return Config(
+            strict_json_from_bytes(
+                _cached_bytes(path, f"{label}.resolved_config"),
+                f"{label}.resolved_config",
+                require_object=True,
+            )
+        )
+    except (EvidenceBundleError, TypeError, ValueError) as exc:
         raise ResultGateInputError(
             f"{label} resolved config cannot be loaded: {exc}"
         ) from exc
@@ -1102,11 +1229,13 @@ def _validate_run_evidence(row, claim, variant, seed, label):
         )
     manifest_path, manifest_hash = _evidence_file(evidence, "run_manifest", label)
     signed_manifest = _load_evidence_json(manifest_path, f"{label}.run_manifest")
+    verified_artifacts = {}
     try:
         manifest = verify_formal_run_manifest(
             signed_manifest,
-            trust_root=_attestation_trust_roots()["profile"],
+            trust_root=_attestation_trust_roots()["formal"],
             base_dir=manifest_path.parent,
+            verified_artifacts=verified_artifacts,
         )
     except TrainingEvidenceError as exc:
         raise ResultGateInputError(f"{label} formal run manifest is invalid: {exc}") from exc
@@ -1131,31 +1260,20 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             f"missing={sorted(expected_artifacts - set(manifest['artifacts']))}, "
             f"extra={sorted(set(manifest['artifacts']) - expected_artifacts)}"
         )
+    paths = {}
+    artifact_bytes = {}
     try:
-        paths = {
-            role: resolve_bundle_path(
-                reference["path"],
-                manifest_path.parent,
-                f"{label} formal run artifact {role}",
-            )
-            for role, reference in manifest["artifacts"].items()
-        }
+        for role, (path, payload) in verified_artifacts.items():
+            paths[role] = path
+            artifact_bytes[role] = payload
+            _cache_verified_bytes(path, payload)
     except EvidenceBundleError as exc:
         raise ResultGateInputError(str(exc)) from exc
-    try:
-        checkpoint_path, checkpoint_bytes = read_verified_bundle_bytes(
-            manifest["artifacts"]["checkpoint"],
-            manifest_path.parent,
-            f"{label} formal checkpoint",
-        )
-    except EvidenceBundleError as exc:
-        raise ResultGateInputError(str(exc)) from exc
-    if checkpoint_path != paths["checkpoint"]:
-        raise ResultGateInputError(f"{label} checkpoint path identity differs")
+    checkpoint_bytes = artifact_bytes["checkpoint"]
     hashes = {
         role: reference["sha256"] for role, reference in manifest["artifacts"].items()
     }
-    training_ticket, _ = _validate_launch_ticket(
+    training_ticket, training_receipt = _validate_launch_ticket(
         paths["training_launch_ticket"],
         paths["training_launch_receipt"],
         manifest,
@@ -1191,7 +1309,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             raise ResultGateInputError(
                 f"{label} training/evaluation launch tickets disagree on {field}"
             )
-    cfg = _resolved_run_config(paths["config"], label)
+    cfg = _resolved_run_config(paths["resolved_config"], label)
     if training_ticket["resolved_config_sha256"] != resolved_config_sha256(cfg):
         raise ResultGateInputError(
             f"{label} launch ticket resolved config hash differs from the config artifact"
@@ -1212,12 +1330,17 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             ground_truth_path=paths["ground_truth"],
             allowed_videos_path=paths["allowed_videos"],
             evaluator_spec=evaluator_spec,
+            ground_truth_bytes=artifact_bytes["ground_truth"],
+            allowed_videos_bytes=artifact_bytes["allowed_videos"],
         )
         expected_training_identity = derive_training_trace_identity(
             cfg,
             training_ticket["data_identity"],
             seed=seed,
             world_size=1,
+            annotation_bytes=artifact_bytes["ground_truth"],
+            allow_list_bytes=artifact_bytes["fit_core"],
+            cache_manifest_bytes=artifact_bytes["feature_cache_manifest"],
         )
     except IdentityError as exc:
         raise ResultGateInputError(
@@ -1226,7 +1349,12 @@ def _validate_run_evidence(row, claim, variant, seed, label):
     metrics = _evaluate_signed_run(paths, claim, label)
     try:
         cost = derive_training_cost(
-            paths["training_trace"], paths["training_commitment"]
+            paths["training_trace"],
+            paths["training_commitment"],
+            trace_bytes=artifact_bytes["training_trace"],
+            commitment_bytes=artifact_bytes["training_commitment"],
+            runtime_binding=training_receipt["execution_session"],
+            require_contiguous_runtime=claim == "C1",
         )
     except TrainingEvidenceError as exc:
         raise ResultGateInputError(f"{label} training trace is invalid: {exc}") from exc
@@ -1251,6 +1379,13 @@ def _validate_run_evidence(row, claim, variant, seed, label):
                 visual_trace_path=paths["visual_parameter_trace"],
                 visual_commitment_path=paths["visual_parameter_commitment"],
                 checkpoint_bytes=checkpoint_bytes,
+                training_trace_bytes=artifact_bytes["training_trace"],
+                training_commitment_bytes=artifact_bytes["training_commitment"],
+                visual_trace_bytes=artifact_bytes["visual_parameter_trace"],
+                visual_commitment_bytes=artifact_bytes[
+                    "visual_parameter_commitment"
+                ],
+                runtime_binding=training_receipt["execution_session"],
             )
         except TrainingEvidenceError as exc:
             raise ResultGateInputError(
@@ -1455,14 +1590,25 @@ def _validate_reporting_evidence(containers, *, require_fineaction):
             or fineaction.get("status") != "PASS"
         ):
             raise ResultGateInputError("FineAction qualification has not reached PASS")
-        source_paths = {
-            name: _load_source_reference(
+        source_paths = {}
+        source_bytes = {}
+        for name in FINEACTION_SOURCE_KEYS:
+            source_path, _ = _load_source_reference(
                 source_references[name], f"fineaction_{name}"
-            )[0]
-            for name in FINEACTION_SOURCE_KEYS
-        }
+            )
+            source_paths[name] = source_path
+            source_bytes[name] = _cached_bytes(
+                source_path, f"fineaction_{name}"
+            )
         try:
-            validate_fineaction_qualification_report(fineaction, source_paths)
+            validate_fineaction_qualification_report(
+                fineaction,
+                source_paths,
+                trust_roots=_route_launch_requirements()[
+                    "fineaction_trust_roots"
+                ],
+                source_bytes=source_bytes,
+            )
         except ContractValidationError as exc:
             raise ResultGateInputError(
                 f"FineAction qualification is not source-derived: {exc}"
@@ -1930,6 +2076,7 @@ def evaluate_result_gates(
 ):
     """Return independent claim decisions; never collapse them into one pass flag."""
 
+    _VERIFIED_BYTES.clear()
     thresholds = {
         "c1_map_gain_points": c1_map_gain_points,
         "c1_error_reduction": c1_error_reduction,
@@ -2004,31 +2151,12 @@ def evaluate_result_gates(
     }
 
 
-def _reject_duplicate_keys(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ResultGateInputError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_nonfinite(value):
-    raise ResultGateInputError(f"non-finite JSON number is not allowed: {value}")
-
-
 def _load_json(path):
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(
-                handle,
-                object_pairs_hook=_reject_duplicate_keys,
-                parse_constant=_reject_nonfinite,
-            )
-    except ResultGateError:
-        raise
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ResultGateInputError(f"failed to read {path}: {exc}") from exc
+        payload = _cached_bytes(path, f"JSON input {path}")
+        return strict_json_from_bytes(payload, f"JSON input {path}")
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
 
 
 def _serialize(payload):

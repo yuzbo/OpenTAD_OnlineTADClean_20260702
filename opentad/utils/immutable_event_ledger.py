@@ -705,6 +705,18 @@ def read_ledger(path) -> tuple:
     except (OSError, UnicodeError) as exc:
         raise LedgerVerificationError(f"unable to read ledger {ledger_path}: {exc}") from exc
 
+    return read_ledger_bytes("".join(lines).encode("utf-8"))
+
+
+def read_ledger_bytes(payload) -> tuple:
+    """Parse canonical ledger rows from already verified bytes."""
+
+    if not isinstance(payload, bytes):
+        raise LedgerVerificationError("ledger payload must be verified bytes")
+    try:
+        lines = payload.decode("utf-8").splitlines(keepends=True)
+    except UnicodeError as exc:
+        raise LedgerVerificationError("ledger payload is not UTF-8") from exc
     rows = []
     for line_number, raw_line in enumerate(lines, start=1):
         encoded = raw_line[:-1] if raw_line.endswith("\n") else raw_line
@@ -746,6 +758,54 @@ def verify_ledger(
         read_ledger(path),
         expected_count=expected_count,
         expected_final_hash=expected_final_hash,
+    )
+
+
+def load_verified_ledger_bytes(ledger_bytes, commitment_bytes, *, ledger_filename):
+    """Verify a committed ledger without reopening either referenced file."""
+
+    if not isinstance(commitment_bytes, bytes):
+        raise LedgerVerificationError("ledger commitment must be verified bytes")
+    try:
+        encoded = commitment_bytes.decode("utf-8")
+    except UnicodeError as exc:
+        raise LedgerVerificationError("ledger commitment is not UTF-8") from exc
+    if not encoded.endswith("\n") or encoded.count("\n") != 1:
+        raise LedgerVerificationError("ledger commitment must be one canonical JSON line")
+    raw = encoded[:-1]
+    try:
+        commitment = json.loads(
+            raw,
+            object_pairs_hook=_strict_json_object,
+            parse_constant=_reject_json_constant,
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise LedgerVerificationError(f"invalid ledger commitment: {exc}") from exc
+    required = {
+        "schema",
+        "version",
+        "ledger_filename",
+        "ledger_sha256",
+        "count",
+        "stream_counts",
+        "final_hashes",
+    }
+    if not isinstance(commitment, dict) or set(commitment) != required:
+        raise LedgerVerificationError("ledger commitment fields differ")
+    if canonical_json(commitment) != raw:
+        raise LedgerVerificationError("ledger commitment is not canonical JSON")
+    if (
+        commitment["schema"] != LEDGER_COMMITMENT_SCHEMA
+        or commitment["version"] != LEDGER_COMMITMENT_VERSION
+        or commitment["ledger_filename"] != Path(ledger_filename).name
+    ):
+        raise LedgerVerificationError("ledger commitment identity differs")
+    if hashlib.sha256(ledger_bytes).hexdigest() != commitment["ledger_sha256"]:
+        raise LedgerVerificationError("ledger bytes do not match commitment")
+    return verify_rows(
+        read_ledger_bytes(ledger_bytes),
+        expected_count=commitment["count"],
+        expected_final_hash=commitment["final_hashes"],
     )
 
 
@@ -1135,8 +1195,10 @@ __all__ = [
     "canonical_json",
     "compute_row_hash",
     "load_verified_ledger",
+    "load_verified_ledger_bytes",
     "persist_verified_ledger",
     "read_ledger",
+    "read_ledger_bytes",
     "verify_ledger",
     "verify_rows",
 ]

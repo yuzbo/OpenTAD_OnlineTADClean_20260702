@@ -525,10 +525,15 @@ def train_one_epoch(
         successful_optimizer_events += 1
         episode_input_tokens = 0
         optimizer.zero_grad(set_to_none=True)
-        if fixed_step_profiler is not None and fixed_step_profiler.record_optimizer_event():
-            episode_weight = 0.0
-            episode_loss_records.clear()
-            break
+        if fixed_step_profiler is not None:
+            if not isinstance(optimizer_event, Mapping):
+                raise RuntimeError(
+                    "fixed-step profiling requires an authenticated optimizer event"
+                )
+            if fixed_step_profiler.record_optimizer_event(optimizer_event["event_id"]):
+                episode_weight = 0.0
+                episode_loss_records.clear()
+                break
 
         for loss_record in episode_loss_records:
             reduced = reduce_loss(loss_record)
