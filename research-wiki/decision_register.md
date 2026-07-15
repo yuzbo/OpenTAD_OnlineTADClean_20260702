@@ -892,3 +892,67 @@ Sources:
 Reversibility:
 
 - Reversible after the Pro identifiability verdict and author discussion. Any revised pilot must remain within the 10 GPU-hour Stage-1 ceiling and preserve the fixed fully supervised On-TAD boundary.
+
+## DR-028: Revoke Profile Permission and Fix the Q2 Launch Identity Before GPU Work
+
+Status: active procedural gate; supersedes every earlier `PROFILE=ALLOW` for
+commit `6d88610da34a695e07d29c5e08b50fb57d2aa5e9`.
+
+Decision:
+
+> Block fixed-step profile and formal training until the launch ticket and the
+> real Slurm argv derive `work_dir` from one immutable source and a real
+> submit-shell integration test proves exact identity closure.
+
+Reason:
+
+- the ticket builder records exact `cfg_overrides` before submission;
+- the submit helper subsequently creates a timestamped `RUN_DIR` and injects a
+  new `work_dir` override;
+- the pre-CUDA launch validator requires exact equality between ticket and live
+  runtime identity;
+- unit-level builder/validator tests and the 508-test B0 did not execute this
+  cross-script value-generation order;
+- a profile that fails the validator is useless, while bypassing the validator
+  destroys the evidence chain.
+
+Scientific qualifications accepted with this decision:
+
+- Q2 is cached-feature truncated temporal training, not raw-video end-to-end;
+- strict video-level causality requires immutable extractor provenance and a
+  raw-future prefix-invariance test;
+- chunk/source time and actual availability time must be separated;
+- fixed versus rematch requires a complete paired supervision trace;
+- formal reporting must explain and bind the 211-versus-213 population.
+
+Explicit non-requirements for the current gate:
+
+- multi-rank DDP consensus is not required because the registered route is
+  locked to one process and one GPU;
+- resume continuation is not required because formal resume is fail-closed;
+- the full paper-stage baseline and ablation inventory is not required before a
+  minimal mechanism kill test.
+
+Required order:
+
+1. repair the launch-workdir identity and add a deterministic fake-`sbatch`
+   integration test;
+2. make route status, feature provenance, packet clocks, one-factor trace, and
+   reporting population explicit;
+3. keep multi-rank and resume unsupported;
+4. freeze a new clean commit and regenerate complete B0 evidence;
+5. obtain a new independent `PASS / PROFILE=ALLOW`;
+6. only then run the bounded fixed-step profile;
+7. keep formal training blocked behind profile and scientific gates.
+
+Sources:
+
+- `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`;
+- `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md`;
+- `FULL_PETAL_EXECUTION_GATES.md`;
+- `FULL_PETAL_TRUST_MODEL.md`.
+
+Reversibility:
+
+- The implementation details are reversible after a new audited commit. The
+  ban on profiling a ticket/runtime identity mismatch is not reversible.

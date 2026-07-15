@@ -1,6 +1,6 @@
 ---
 type: source_map
-updated: 2026-07-11
+updated: 2026-07-15
 status: active
 scope: Mapping from source records, reviews, attachments, online notes, and code snapshots to wiki nodes.
 ---
@@ -31,6 +31,8 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md` | Full PIVOT design | Formal task, interval clocks, population annotation, ordered multi-state observer, metrics, claims, experiments, cost, and kill criteria. | [ideas/three-clock-event-observability.md](ideas/three-clock-event-observability.md), [gap_map.md#G10-physical-transition-visual-verifiability-and-model-decision-are-different-measurement-objects](gap_map.md) |
 | `THREE_CLOCK_COMPETITION_REVIEW_20260711.md` | Fresh novelty audit | Finds no exact match but dense compositional overlap; scores task novelty conditional, method novelty low; identifies data-release blockers. | [papers/pasbench2026-proactive-warning.md](papers/pasbench2026-proactive-warning.md), [papers/apt2026-atomic-physical-transitions.md](papers/apt2026-atomic-physical-transitions.md), [papers/touchanything2026-egotouch.md](papers/touchanything2026-egotouch.md) |
 | `PRO_THREE_CLOCK_DEEP_REVIEW_PROMPT_20260711.md` | Pro review prompt | Forces repository audit, ontology, identifiability, fresh search, kill round, route comparison, claim map, data protocol, experiments, cost, and GO/HOLD/NO-GO. | [decision_register.md#DR-023-refine-three-clock-observability-into-pivot-and-gate-it-on-measurement](decision_register.md) |
+| `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md` | Immutable-commit Pro code/science audit | `REVISE`; cached-feature scope; package-level reconstruction concern; launch-workdir P0; provenance, packet-clock, one-factor, population, and transaction questions; profile/formal block. Source SHA-256 `C256F68ADD9B3316D90D76557357550054C9B9B75D8BF85F91D11471E422CA49`. | [ideas/petal-ontad.md](ideas/petal-ontad.md), [experiments/formal-training-none.md](experiments/formal-training-none.md), [decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work](decision_register.md) |
+| `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md` | Independent decision layer | Accepts the launch P0 and central scope correction; qualifies four scientific P1s; rejects DDP/resume as current Q2 blockers; stages baselines and rejects arbitrary effect thresholds. | [discussion_timeline.md#T21-full-q2-line-audit-finds-a-real-launch-p0-and-revokes-profile-permission](discussion_timeline.md), [decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work](decision_register.md) |
 
 ## Other Research Notes
 
@@ -63,6 +65,7 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260710.md` | `PRO_REVIEW_20260710.md`, `PRO_REVIEW_ABSORPTION_20260710.md` | Strict On-TAD definition, 51.2s latency, PCEH route, baselines/gates. |
 | Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260711.md` | `PRO_REVIEW_20260711.md`, `PRO_REVIEW_ABSORPTION_20260711.md` | PCEH target invalidity, CRS-EPS, formal training HOLD. |
 | Private Codex attachment, source archived byte-identically as `PRO_DIVERGENT_IDEA_REVIEW_20260711.md` | `PRO_DIVERGENT_IDEA_REVIEW_20260711.md`, `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md` | Full divergent review, 36 ideas, Top 5, route recommendation, independent partial rejection and revised gates. |
+| Private Codex attachment `8713e1a2-f9af-4f39-bcd2-908ba6ff41af/pasted-text.txt` | `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`, `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md` | Full 1,379-line review archived byte-identically; exact commit `6d88610`; launch-workdir P0; independent accept/qualify/reject decision. |
 
 ## Current Code State Sources
 
@@ -73,6 +76,8 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | `configs/causaltad/` | Contains current PCEH/frozen/finetune candidate configs; formal training remains not proven. | [experiments/formal-training-none.md](experiments/formal-training-none.md), [ideas/lora-stage2.md](ideas/lora-stage2.md) |
 | `tools/smoke_pceh_stream.py` | Smoke/audit entrypoint exists for protocol checks. | [experiments/pceh-smoke-20260710.md](experiments/pceh-smoke-20260710.md) |
 | `tests/` touched by PCEH implementation | Local test suite can validate contracts, but contract tests are not formal results. | [claims/c1-strict-online-protocol.md](claims/c1-strict-online-protocol.md) |
+| `tools/build_full_petal_launch_ticket.py`, `tools/remote/submit_full_petal_q2_n16r4.sh`, `opentad/utils/full_petal_launch.py` at `6d88610` | Exact override identity is built before a later dynamic `work_dir` is injected; the real submit composition cannot satisfy the strict comparator without a single source of truth. | [decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work](decision_register.md) |
+| `opentad/cores/train_engine.py` and `tests/test_full_petal_training_transaction.py` at `6d88610` | Single-rank finite-gradient and mutation rollback paths are implemented and fault-tested; DDP and resume remain unsupported rather than current P1 requirements. | [experiments/formal-training-none.md](experiments/formal-training-none.md), [decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work](decision_register.md) |
 
 ## Scope Correction and On-TAD Audit: 2026-07-12
 

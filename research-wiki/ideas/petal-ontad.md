@@ -2,15 +2,41 @@
 type: idea
 node_id: idea:petal-ontad
 title: "Persistent Event-Set On-TAD (former PETAL-OnTAD)"
-stage: revise-feature-kill-gate
+stage: blocked-pre-profile-q2-binding
 outcome: full-route-demoted
-updated: 2026-07-12
+updated: 2026-07-15
 target_gaps: ["G4", "G5", "G6", "G8", "G15"]
 ---
 
 # Persistent Event-Set On-TAD
 
 `PETAL` is retained only in this node ID for history. The acronym is retired because it is already used by Prior-enhanced Temporal Action Localization.
+
+## 2026-07-15 Q2 Audit Revision
+
+The current executable route is a narrower Q2 binding study on fixed cached
+features: compare `fixed_birth_slot` with `prefix_rematch_active_pool` while
+sharing first-crossing birth, lifecycle, slot capacity, head, inference, and
+candidate semantics. This is not a revival of Full PETAL as a paper method.
+
+The immutable-commit Pro audit returned `REVISE` and found a real
+`P0-LAUNCH-WORKDIR`: the launch ticket freezes runtime overrides before the
+Slurm helper creates and injects its dynamic `work_dir`. The previous profile
+permission is revoked until that cross-script identity is fixed and audited.
+
+Independent absorption accepts the central block and these claim boundaries:
+
+- Q2 is `CACHED_FEATURE_TEMPORAL`, with cross-chunk detached state;
+- raw-video causality is unproven without extractor provenance;
+- a 64-token test packet cannot be reported as low wall-clock latency using
+  source-frame time alone;
+- fixed binding remains an unproven marginal mechanism hypothesis;
+- the full package remains demoted and provisionally reconstructible.
+
+DDP consensus and resume continuation are not current prerequisites: Q2 is
+single-process/single-GPU and resume is forbidden. See
+[`PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md`](../../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md)
+and [DR-028](../decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work).
 
 ## 2026-07-12 Revision
 
@@ -133,6 +159,8 @@ Kill or demote the route if:
 
 ## Status
 
-`REVISE`. Full PETAL is demoted. `GO` only for the registered Stage-1 feature-level falsification experiment. Raw-video formal training remains `HOLD`; no effectiveness or novelty claim is active.
+`REVISE`. Full PETAL is demoted. Q2 is blocked before profile by the launch
+identity P0. Raw-video and formal training remain `HOLD`; no effectiveness or
+novelty claim is active.
 
 Deep-review prompt: [`../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md`](../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md).

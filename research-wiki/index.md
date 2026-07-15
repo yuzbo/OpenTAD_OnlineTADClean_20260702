@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-11
+updated: 2026-07-15
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -22,7 +22,16 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 
 The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted after a Pro `REVISE` and independent verification of the TrackFormer/On-TAD/causal-backbone reconstruction attack.
 
-The only approved current experiment is **Persistent Event-Set Stage 1**: compare FRESH, Temporal TrackFormer, and PES on identical frozen causal features under a 10 GPU-hour budget. This is a mechanism kill test, not a paper claim. Raw-video adaptation, LoRA, extra lifecycle heads, and formal full-model training remain blocked.
+The current executable experiment is the narrower **Q2 Persistent Binding Study**:
+fixed post-birth supervision versus per-prefix rematching on identical cached
+features. It is blocked before profile by `P0-LAUNCH-WORKDIR`; the previous
+profile permission is revoked. Raw-video adaptation, LoRA, paper-method claims,
+and formal training remain blocked.
+
+Read [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
+its [independent absorption](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md),
+and [DR-028](decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work)
+before any GPU action.
 
 PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remains rejected because it leaves the task. Anytime-valid alarms remain archived outside the current fixed On-TAD route.
 

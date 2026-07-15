@@ -641,3 +641,53 @@ Artifact:
 Current decision:
 
 > Use the public review anchor plus the complete Prompt for a two-round Pro audit. Keep raw-video training blocked and do not treat any smoke evidence as a paper result.
+
+### T21: Full Q2 Line Audit Finds a Real Launch P0 and Revokes Profile Permission
+
+User provided a 1,379-line Pro review of immutable commit
+`6d88610da34a695e07d29c5e08b50fb57d2aa5e9` and requested complete
+archival, absorption, and an independent decision on whether every recommendation
+should be accepted.
+
+Pro verdict:
+
+- `RESEARCH_VERDICT=REVISE`;
+- `GENUINE_ONTAD=UNPROVEN`;
+- `END_TO_END_SCOPE=CACHED_FEATURE_TEMPORAL`;
+- `NOVELTY_VERDICT=RECONSTRUCTION`;
+- `PROFILE=BLOCK`, `FORMAL_TRAINING=BLOCK`;
+- next step `FIX_BEFORE_PROFILE`.
+
+New blocking evidence:
+
+- the launch ticket freezes exact runtime overrides before the submit helper
+  creates its timestamped run directory;
+- the helper later injects `work_dir=${RUN_DIR}/work`;
+- the pre-CUDA validator requires exact ticket/runtime identity equality;
+- the real submit-shell composition is not covered by the passing B0 matrix.
+
+Independent disposition:
+
+- accepted `P0-LAUNCH-WORKDIR` and revoked the previous profile permission;
+- accepted raw-feature provenance, packet-clock, reporting-population, and
+  complete one-factor trace as scientific/formal gates, with narrower scope;
+- rejected DDP consensus and resume continuation as current P1 requirements
+  because Q2 is locked to one process/one GPU and formal resume is prohibited;
+- retained the package-level reconstruction concern, while treating fixed
+  post-birth binding as an unproven marginal hypothesis rather than a settled
+  negative result;
+- rejected running the review's entire baseline/ablation inventory before a
+  minimal matched kill test and rejected arbitrary effect thresholds without a
+  power or minimum-meaningful-effect analysis.
+
+Artifacts:
+
+- [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md), SHA-256
+  `C256F68ADD9B3316D90D76557357550054C9B9B75D8BF85F91D11471E422CA49`;
+- [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md).
+
+Current decision:
+
+> Do not profile or train. First close the launch-workdir P0 with a real
+> submit-shell integration test, then close the scientific evidence contracts,
+> freeze a new commit, regenerate B0, and obtain a fresh independent PASS.

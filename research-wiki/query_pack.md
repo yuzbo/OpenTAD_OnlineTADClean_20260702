@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-12
+updated: 2026-07-15
 status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
@@ -13,7 +13,7 @@ The task is fixed to standard fully supervised Online Temporal Action Detection/
 
 PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
 
-The only active route is a **matched frozen-feature mechanism kill test**, not an accepted paper method: FRESH versus Temporal TrackFormer versus Persistent Event-Set. Raw-video training remains blocked.
+The executable route is a **Q2 cached-feature binding study**, not a paper method: fixed post-birth supervision versus per-prefix rematching in one shared detector. A 2026-07-15 audit found `P0-LAUNCH-WORKDIR`; profile and training are blocked until a new commit passes fresh B0 and review.
 
 ## Top Gaps
 
@@ -35,11 +35,11 @@ The only active route is a **matched frozen-feature mechanism kill test**, not a
 - **PIVOT/T01/T03/P01/L01:** rejected as current main task or held outside the fixed On-TAD scope.
 - **Cache/LoRA/ETAD-style gradient sampling:** cost-control tools, not standalone novelty.
 
-## Stage-1 Exact Question
+## Current Q2 Exact Question
 
 Defensible sentence:
 
-> Under identical causal features and capacity, does prefix-observable persistent instance state improve standard completion-triggered On-TAD beyond both fresh queries and a Temporal TrackFormer reconstruction because it reduces identity-linked localization errors?
+> Under identical cached features, detector weights, lifecycle, birth rule, capacity, optimizer, and evaluator, does fixed post-birth slot-instance supervision outperform per-prefix active-pool rematching because it preserves identity-linked localization rather than changing masks, normalization, or negative semantics?
 
 No raw-video, end-to-end, or novelty claim is currently active. Persistent tracks are internal state; standard immutable On-TAD outputs and metrics remain unchanged.
 
@@ -86,4 +86,4 @@ Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more 
 
 ## Current Final Goal
 
-Do not start raw-video formal training. The frozen SigLIP2 cache and bounded GPU smoke have passed, but no scientific pilot has been submitted. First obtain a Pro verdict on whether the registered FRESH/TTF/PES comparison identifies persistent-state value or needs a minimal controlled bridge set; then run only the approved Stage-1 falsification design. Even a pass authorizes only five-seed confirmation, paired error analysis, and renewed novelty review; raw-video PEFT requires a separate explicit decision.
+Do not start profile or training. Fix the dynamic `work_dir` mismatch with a real submit-shell test; then close extractor provenance, packet clocks, the paired one-factor trace, and 211/213 evidence. Freeze a new commit, regenerate B0, and require a fresh `PASS / PROFILE=ALLOW`. DDP and resume remain out of scope. A Q2 pass permits only a minimal matched kill test and renewed novelty review; raw-video PEFT needs a separate decision.
