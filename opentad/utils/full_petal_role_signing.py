@@ -195,8 +195,10 @@ def sign_b0_evidence(payload, *, private_key_path, key_id):
             "test_report_sha256",
             "audit_report_path",
             "audit_report_sha256",
+            "posix_leaf_path",
+            "posix_leaf_sha256",
         },
-        schema="full-petal-b0-v2",
+        schema="full-petal-b0-v3",
     )
     if body["status"] != "PASS":
         raise AttestationError("B0 signer only attests a PASS root")
@@ -212,6 +214,36 @@ def sign_b0_evidence(payload, *, private_key_path, key_id):
         "signature": base64.b64encode(key.sign(_message(payload, role))).decode("ascii"),
     }
     return body
+
+
+def sign_posix_b0_leaf(payload, *, private_key_path, key_id):
+    body = _validated_body(
+        payload,
+        fields={
+            "schema_version",
+            "status",
+            "commit_sha",
+            "manifest_sha256",
+            "platform",
+            "repository_clean_before",
+            "repository_clean_after",
+            "collected",
+            "passed",
+            "failed",
+            "errors",
+            "skipped",
+            "suites",
+        },
+        schema="full-petal-b0-posix-leaf-v1",
+    )
+    if body["status"] != "PASS":
+        raise AttestationError("POSIX B0 signer only attests a PASS leaf")
+    return _sign_body(
+        body,
+        private_key_path=private_key_path,
+        key_id=key_id,
+        role="b0-posix-runner",
+    )
 
 
 def sign_independent_review(payload, *, private_key_path, key_id):
@@ -344,6 +376,7 @@ __all__ = [
     "sign_crs_eps_g0_margins",
     "sign_crs_eps_g0_selection",
     "sign_b0_evidence",
+    "sign_posix_b0_leaf",
     "sign_fixed_step_profile",
     "sign_fineaction_license_authorization",
     "sign_formal_run",

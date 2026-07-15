@@ -35,6 +35,7 @@ from .full_petal_launch import (
     LAUNCH_RECEIPT_SCHEMA,
     LAUNCH_TICKET_SCHEMA,
     resolved_config_sha256,
+    _validate_g0_artifact,
     verify_launch_receipt,
 )
 from .full_petal_role_signing import sign_formal_run
@@ -1544,6 +1545,18 @@ def _profile_trust_root(cfg):
     return root
 
 
+def _g0_trust_root(cfg):
+    try:
+        root = dict(cfg.launch_contract.attestation_trust_roots.g0)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise TrainingEvidenceError(
+            "formal run config lacks the G0 attestation trust root"
+        ) from exc
+    if set(root) != {"key_id", "public_key"}:
+        raise TrainingEvidenceError("formal run G0 trust root fields differ")
+    return root
+
+
 def _validate_formal_ticket(
     path, *, entrypoint, seed, commit_sha, ticket_bytes, config_sha256
 ):
@@ -1752,6 +1765,29 @@ def validate_formal_run_artifacts(
             ground_truth_bytes=artifact_bytes["ground_truth"],
             allowed_videos_bytes=artifact_bytes["allowed_videos"],
         )
+        crs_eps_manifest = None
+        if cfg.get("crs_eps_contract") is not None:
+            if training_ticket["g0_evidence"] is None:
+                raise TrainingEvidenceError(
+                    "formal CRS-EPS training ticket lacks G0 evidence"
+                )
+            _, _, _, crs_eps_manifest = _validate_g0_artifact(
+                training_ticket["g0_evidence"],
+                paths["training_launch_ticket"].parent,
+                commit_sha=training_ticket["commit_sha"],
+                source_tree_sha256=training_ticket["source_tree_sha256"],
+                config_file_sha256=training_ticket["config_file_sha256"],
+                resolved_config_sha256=training_ticket["resolved_config_sha256"],
+                scientific_config_sha256=training_ticket[
+                    "scientific_config_sha256"
+                ],
+                data_identity_sha256=training_ticket["data_identity"][
+                    "identity_sha256"
+                ],
+                crs_eps_contract=cfg.get("crs_eps_contract"),
+                runtime_seed=seed,
+                trust_root=_g0_trust_root(cfg),
+            )
         expected_training_identity = derive_training_trace_identity(
             cfg,
             data_identity,
@@ -1760,8 +1796,9 @@ def validate_formal_run_artifacts(
             annotation_bytes=artifact_bytes["ground_truth"],
             allow_list_bytes=artifact_bytes["fit_core"],
             cache_manifest_bytes=artifact_bytes["feature_cache_manifest"],
+            crs_eps_manifest=crs_eps_manifest,
         )
-    except IdentityError as exc:
+    except (IdentityError, FullPetalLaunchError) as exc:
         raise TrainingEvidenceError(f"formal config/data binding is invalid: {exc}") from exc
     trust_root = _profile_trust_root(cfg)
     training_receipt = _validate_formal_receipt(

@@ -831,3 +831,37 @@ Current decision:
 Source:
 
 - [`../PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md`](../PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md).
+
+### T26: Second Exact-Commit Review Finds Six Remaining Evidence Gaps
+
+The corrected commit `cd601ce95fdd16ecfdd17f9a5d93b33578691133` passed the
+locked local and N16R4 matrix at `561/561`, but the same reviewer again returned
+`REVISE / PROFILE=BLOCK / FORMAL=BLOCK`. The review found no protocol
+violation, but identified six enforceability gaps:
+
+- a self-consistent replacement M-draw group was not compared with the
+  published epoch manifest;
+- second-draw loader/control exceptions could bypass group rollback;
+- training trace identity still described chronological packets rather than
+  CRS-EPS draws;
+- feature and G0 checkpoint hashes could be computed from bytes different from
+  the bytes later consumed;
+- Slurm resource fields and `job.sbatch` publication admitted injection or
+  replacement races;
+- the claimed Linux/N16R4 matrix was not a signed leaf of B0.
+
+The accepted correction binds every draw to a deep-copied, reproduced epoch
+manifest; wraps data loading and control parsing in the group transaction;
+derives a stable CRS order identity from the manifest sampling contract;
+verifies and consumes feature/checkpoint bytes through one stable read; submits
+the exact exclusively published in-memory Slurm bytes through fixed
+`/usr/bin/sbatch`; and makes a signed Linux leaf mandatory in B0 v3. The
+pre-freeze isolated local matrix passes `578/578`. This remains engineering
+evidence only: the target Linux leaf, signed root B0, and same-reviewer PASS do
+not yet exist for the correction commit.
+
+Current decision:
+
+> Freeze the correction, generate the signed N16R4/Linux B0 leaf, build the
+> local signed B0 root, and return both to the same reviewer. Do not issue G0,
+> profile, or formal-training permission before exact `PASS / PROFILE=ALLOW`.

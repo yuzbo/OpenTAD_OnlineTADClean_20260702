@@ -157,6 +157,7 @@ class FullPetalLaunchAuthorization:
     b0_artifact_sha256: str
     review_artifact_sha256: str
     g0_artifact_sha256: str | None
+    crs_eps_manifest: dict | None
     profile_artifact_sha256: str | None
     warmup_optimizer_events: int
     measured_optimizer_events: int
@@ -652,6 +653,8 @@ def _validate_g0_artifact(
     resolved_config_sha256,
     scientific_config_sha256,
     data_identity_sha256,
+    crs_eps_contract,
+    runtime_seed,
     trust_root,
 ):
     signed, path, digest = _load_reference(
@@ -732,6 +735,22 @@ def _validate_g0_artifact(
         != audit["episode_manifest"]["sampling_specs_sha256"]
     ):
         raise FullPetalLaunchError("CRS-EPS G0 manifest identity differs from its audit")
+    expected_sampling_contract = {
+        "seed": int(runtime_seed),
+        "epoch": 0,
+        "draws_per_video": crs_eps_contract["draws_per_video"],
+        "suffix_bins": crs_eps_contract["suffix_bins"],
+        "context_bins": crs_eps_contract["context_bins"],
+        "detach_interval": crs_eps_contract["detach_interval"],
+        "mixture": dict(crs_eps_contract["mixture"]),
+    }
+    actual_sampling_contract = {
+        field: manifest[field] for field in expected_sampling_contract
+    }
+    if actual_sampling_contract != expected_sampling_contract:
+        raise FullPetalLaunchError(
+            "CRS-EPS G0 manifest seed/epoch/sampling contract differs from launch"
+        )
 
     preregistrations = {}
     for field, role, validator in (
@@ -795,7 +814,7 @@ def _validate_g0_artifact(
         for video_id, draw_index in selected
     ):
         raise FullPetalLaunchError("CRS-EPS G0 selection escapes the bound manifest")
-    return audit, path, digest
+    return audit, path, digest, manifest
 
 
 def _profile_dimensions(cfg):
@@ -1029,10 +1048,11 @@ def _validate_profile_artifact(
         required_scope=required_scope,
         trust_root=trust_roots["review"],
     )
+    profile_crs_eps_manifest = None
     if _cfg_get(cfg, "crs_eps_contract") is not None:
         if profile_ticket["g0_evidence"] is None:
             raise FullPetalLaunchError("CRS-EPS profile ticket lacks G0 PASS evidence")
-        _validate_g0_artifact(
+        _, _, _, profile_crs_eps_manifest = _validate_g0_artifact(
             profile_ticket["g0_evidence"],
             profile_ticket_path.parent,
             commit_sha=profile_commit,
@@ -1041,6 +1061,8 @@ def _validate_profile_artifact(
             resolved_config_sha256=profile_ticket["resolved_config_sha256"],
             scientific_config_sha256=scientific_config_sha256,
             data_identity_sha256=data_identity_sha256,
+            crs_eps_contract=_cfg_get(cfg, "crs_eps_contract"),
+            runtime_seed=profile_ticket["runtime_identity"]["seed"],
             trust_root=trust_roots["g0"],
         )
     elif profile_ticket["g0_evidence"] is not None:
@@ -1092,6 +1114,7 @@ def _validate_profile_artifact(
             profile_ticket["data_identity"],
             seed=profile_ticket["runtime_identity"]["seed"],
             world_size=world_size,
+            crs_eps_manifest=profile_crs_eps_manifest,
         )
         derived_measurements = derive_fixed_step_profile_measurements(
             trace_path,
@@ -1155,6 +1178,7 @@ def build_fixed_step_profile_artifact(
             authorization.data_identity,
             seed=authorization.runtime_identity["seed"],
             world_size=authorization.world_size,
+            crs_eps_manifest=authorization.crs_eps_manifest,
         )
         trace_path, trace_bytes = read_stable_file_bytes(
             optimizer_event_trace_path, "profile optimizer-event trace"
@@ -1552,6 +1576,8 @@ def build_launch_ticket(
             resolved_config_sha256=resolved_digest,
             scientific_config_sha256=scientific_digest,
             data_identity_sha256=data_identity["identity_sha256"],
+            crs_eps_contract=_cfg_get(cfg, "crs_eps_contract"),
+            runtime_seed=runtime_identity["seed"],
             trust_root=trust_roots["g0"],
         )
     elif g0_path is not None:
@@ -1750,10 +1776,11 @@ def validate_full_petal_launch(
     )
 
     g0_digest = None
+    crs_eps_manifest = None
     if _cfg_get(cfg, "crs_eps_contract") is not None:
         if ticket["g0_evidence"] is None:
             raise FullPetalLaunchError("CRS-EPS launch ticket lacks G0 PASS evidence")
-        _, _, g0_digest = _validate_g0_artifact(
+        _, _, g0_digest, crs_eps_manifest = _validate_g0_artifact(
             ticket["g0_evidence"],
             ticket_path.parent,
             commit_sha=commit_sha,
@@ -1762,6 +1789,8 @@ def validate_full_petal_launch(
             resolved_config_sha256=resolved_digest,
             scientific_config_sha256=scientific_digest,
             data_identity_sha256=ticket["data_identity"]["identity_sha256"],
+            crs_eps_contract=_cfg_get(cfg, "crs_eps_contract"),
+            runtime_seed=runtime_identity["seed"],
             trust_root=trust_roots["g0"],
         )
     elif ticket["g0_evidence"] is not None:
@@ -1808,6 +1837,7 @@ def validate_full_petal_launch(
         "b0_artifact_sha256": b0_digest,
         "review_artifact_sha256": review_digest,
         "g0_artifact_sha256": g0_digest,
+        "crs_eps_manifest": crs_eps_manifest,
         "profile_artifact_sha256": profile_digest,
         "warmup_optimizer_events": warmup,
         "measured_optimizer_events": measured,

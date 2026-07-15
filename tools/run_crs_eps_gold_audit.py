@@ -4,6 +4,7 @@
 import argparse
 from copy import deepcopy
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -40,6 +41,7 @@ from opentad.utils.crs_eps_sampling import (  # noqa: E402
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
     publish_exclusive_file,
+    read_stable_file_bytes,
     strict_json_from_bytes,
 )
 from opentad.utils.full_petal_attestation import (  # noqa: E402
@@ -135,8 +137,16 @@ def _verified_preregistration(payload, *, trust_root, role, bindings, label):
 
 def _load_checkpoint(model, checkpoint_path, checkpoint_key):
     try:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    except (OSError, RuntimeError, ValueError) as exc:
+        _, checkpoint_bytes = read_stable_file_bytes(
+            checkpoint_path, "frozen G0 checkpoint"
+        )
+        checkpoint_sha256 = hashlib.sha256(checkpoint_bytes).hexdigest()
+        checkpoint = torch.load(
+            io.BytesIO(checkpoint_bytes),
+            map_location="cpu",
+            weights_only=True,
+        )
+    except (EvidenceBundleError, OSError, RuntimeError, ValueError) as exc:
         raise GoldAuditRunnerError(f"cannot load frozen G0 checkpoint: {exc}") from exc
     if not isinstance(checkpoint, dict) or checkpoint_key not in checkpoint:
         raise GoldAuditRunnerError(f"checkpoint lacks the explicit {checkpoint_key} state")
@@ -151,6 +161,7 @@ def _load_checkpoint(model, checkpoint_path, checkpoint_key):
         model.load_state_dict(normalized, strict=True)
     except RuntimeError as exc:
         raise GoldAuditRunnerError(f"checkpoint does not strictly match the G0 model: {exc}") from exc
+    return checkpoint_sha256
 
 
 def _episode_kwargs(sample):
@@ -245,7 +256,9 @@ def main(argv=None):
         if margins["selection_artifact_sha256"] != _sha256_file(selection_path):
             raise GoldAuditRunnerError("G0 margins do not bind the signed selection artifact")
         model = build_detector(dict(cfg.model)).cpu().train()
-        _load_checkpoint(model, checkpoint_path, args.checkpoint_key)
+        checkpoint_sha256 = _load_checkpoint(
+            model, checkpoint_path, args.checkpoint_key
+        )
         videos = {video["video_id"]: video for video in manifest["videos"]}
         rows = []
         for video_id, draw_index in selected:
@@ -297,7 +310,7 @@ def main(argv=None):
             "config": {"path": str(config_path), "sha256": _sha256_file(config_path)},
             "checkpoint": {
                 "path": str(checkpoint_path),
-                "sha256": _sha256_file(checkpoint_path),
+                "sha256": checkpoint_sha256,
                 "state_key": args.checkpoint_key,
             },
             "episode_manifest": {

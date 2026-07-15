@@ -919,11 +919,35 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
     )
     try:
         profile_cfg = _resolved_run_config(config_path, f"{label}.profile")
+        profile_crs_eps_manifest = None
+        if profile_cfg.get("crs_eps_contract") is not None:
+            if profile_ticket["g0_evidence"] is None:
+                raise FullPetalLaunchError(
+                    "CRS-EPS profile ticket lacks G0 evidence"
+                )
+            _, _, _, profile_crs_eps_manifest = _validate_g0_artifact(
+                profile_ticket["g0_evidence"],
+                profile_ticket_path.parent,
+                commit_sha=profile_commit,
+                source_tree_sha256=profile_ticket["source_tree_sha256"],
+                config_file_sha256=profile_ticket["config_file_sha256"],
+                resolved_config_sha256=profile_ticket["resolved_config_sha256"],
+                scientific_config_sha256=profile_ticket[
+                    "scientific_config_sha256"
+                ],
+                data_identity_sha256=profile_ticket["data_identity"][
+                    "identity_sha256"
+                ],
+                crs_eps_contract=profile_cfg.get("crs_eps_contract"),
+                runtime_seed=profile_runtime["seed"],
+                trust_root=_attestation_trust_roots()["g0"],
+            )
         expected_trace_identity = derive_training_trace_identity(
             profile_cfg,
             profile_ticket["data_identity"],
             seed=profile_runtime["seed"],
             world_size=requirements["world_size"],
+            crs_eps_manifest=profile_crs_eps_manifest,
         )
         derived_measurements = derive_fixed_step_profile_measurements(
             trace_path,
@@ -938,7 +962,13 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
             ),
             runtime_binding=profile_receipt["execution_session"],
         )
-    except (OSError, ValueError, TrainingEvidenceError, IdentityError) as exc:
+    except (
+        OSError,
+        ValueError,
+        TrainingEvidenceError,
+        IdentityError,
+        FullPetalLaunchError,
+    ) as exc:
         raise ResultGateInputError(
             f"{label} profile optimizer-event evidence is invalid: {exc}"
         ) from exc
@@ -1043,11 +1073,12 @@ def _validate_launch_ticket(
             f"{label}.launch_ticket.{role}",
         )
     resolved_cfg = _resolved_run_config(paths["resolved_config"], label)
+    crs_eps_manifest = None
     if resolved_cfg.get("crs_eps_contract") is not None:
         if ticket["g0_evidence"] is None:
             raise ResultGateInputError(f"{label} CRS-EPS launch ticket lacks G0 evidence")
         try:
-            _validate_g0_artifact(
+            _, _, _, crs_eps_manifest = _validate_g0_artifact(
                 ticket["g0_evidence"],
                 Path(path).parent,
                 commit_sha=manifest["commit_sha"],
@@ -1056,6 +1087,8 @@ def _validate_launch_ticket(
                 resolved_config_sha256=ticket["resolved_config_sha256"],
                 scientific_config_sha256=ticket["scientific_config_sha256"],
                 data_identity_sha256=ticket["data_identity"]["identity_sha256"],
+                crs_eps_contract=resolved_cfg.get("crs_eps_contract"),
+                runtime_seed=runtime["seed"],
                 trust_root=_attestation_trust_roots()["g0"],
             )
         except FullPetalLaunchError as exc:
@@ -1172,7 +1205,7 @@ def _validate_launch_ticket(
         raise ResultGateInputError(
             f"{label} launch receipt runtime session is invalid: {exc}"
         ) from exc
-    return ticket, receipt
+    return ticket, receipt, crs_eps_manifest
 
 
 def _evaluate_signed_run(paths, claim, label):
@@ -1308,7 +1341,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
     hashes = {
         role: reference["sha256"] for role, reference in manifest["artifacts"].items()
     }
-    training_ticket, training_receipt = _validate_launch_ticket(
+    training_ticket, training_receipt, training_crs_eps_manifest = _validate_launch_ticket(
         paths["training_launch_ticket"],
         paths["training_launch_receipt"],
         manifest,
@@ -1318,7 +1351,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
         f"{label}.training",
         entrypoint="train",
     )
-    evaluation_ticket, _ = _validate_launch_ticket(
+    evaluation_ticket, _, evaluation_crs_eps_manifest = _validate_launch_ticket(
         paths["evaluation_launch_ticket"],
         paths["evaluation_launch_receipt"],
         manifest,
@@ -1377,6 +1410,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             annotation_bytes=artifact_bytes["ground_truth"],
             allow_list_bytes=artifact_bytes["fit_core"],
             cache_manifest_bytes=artifact_bytes["feature_cache_manifest"],
+            crs_eps_manifest=training_crs_eps_manifest,
         )
     except IdentityError as exc:
         raise ResultGateInputError(

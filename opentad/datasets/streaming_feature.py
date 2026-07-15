@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import numbers
 from pathlib import Path
@@ -14,6 +15,10 @@ from opentad.utils.full_petal_data_contract import (
 )
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
 from opentad.utils.crs_eps_sampling import video_sampling_spec_from_schedule
+from opentad.utils.evidence_bundle import (
+    EvidenceBundleError,
+    read_verified_path_bytes,
+)
 
 
 _FORBIDDEN_MODEL_META = {
@@ -98,6 +103,7 @@ class StreamingFeatureDataset:
             split_seed,
         )
         self._manifest = self._load_manifest()
+        self._verified_feature_cache = None
         self.data_list = []
         self.packet_manifests = {}
         self.crs_eps_sampling_specs = {}
@@ -302,9 +308,11 @@ class StreamingFeatureDataset:
         expected_feature_hash = video_manifest.get("sha256")
         if not isinstance(expected_feature_hash, str) or len(expected_feature_hash) != 64:
             raise ValueError(f"cache manifest is missing feature hash for {video_name}")
-        if _sha256_file(feature_path) != expected_feature_hash:
-            raise ValueError(f"cached feature hash mismatch for {video_name}")
-        features = np.load(feature_path, mmap_mode="r")
+        features = self._load_verified_feature_array(
+            feature_path,
+            expected_feature_hash,
+            video_name,
+        )
         if features.ndim != 2:
             raise ValueError(f"cached features for {video_name} must have shape [T,C]")
         num_tokens, feature_dim = map(int, features.shape)
@@ -324,7 +332,31 @@ class StreamingFeatureDataset:
             raise ValueError(f"cache source_frames must be strictly increasing for {video_name}")
         if source_frames and source_frames[-1] >= int(video_info["frame"]):
             raise ValueError(f"cache source frame exceeds video length for {video_name}")
-        return feature_path, source_frames, feature_dim
+        return feature_path, source_frames, feature_dim, expected_feature_hash
+
+    def _load_verified_feature_array(self, feature_path, expected_sha256, video_name):
+        cache_key = (str(Path(feature_path).resolve()), expected_sha256)
+        if (
+            self._verified_feature_cache is not None
+            and self._verified_feature_cache[0] == cache_key
+        ):
+            return self._verified_feature_cache[1]
+        try:
+            _, payload = read_verified_path_bytes(
+                feature_path,
+                expected_sha256,
+                f"cached feature {video_name}",
+            )
+            features = np.load(io.BytesIO(payload), allow_pickle=False)
+        except (EvidenceBundleError, OSError, ValueError) as exc:
+            raise ValueError(
+                f"cached feature hash/content mismatch for {video_name}: {exc}"
+            ) from exc
+        if not isinstance(features, np.ndarray):
+            raise ValueError(f"cached features for {video_name} must be one NPY array")
+        features.setflags(write=False)
+        self._verified_feature_cache = (cache_key, features)
+        return features
 
     def _build_index(self):
         database = load_json(self.ann_file)["database"]
@@ -340,7 +372,12 @@ class StreamingFeatureDataset:
             if video_name not in manifest_videos:
                 raise ValueError(f"cache manifest is missing video {video_name}")
 
-            feature_path, source_frames, feature_dim = self._validate_video_cache(
+            (
+                feature_path,
+                source_frames,
+                feature_dim,
+                feature_sha256,
+            ) = self._validate_video_cache(
                 video_name,
                 manifest_videos[video_name],
                 video_info,
@@ -374,6 +411,7 @@ class StreamingFeatureDataset:
                 video_name=video_name,
                 feature_path=feature_path,
                 feature_dim=feature_dim,
+                feature_sha256=feature_sha256,
                 fps=float(video_info["frame"])
                 / max(float(video_info["duration"]), 1e-6),
                 source_frames=source_frames,
@@ -390,6 +428,7 @@ class StreamingFeatureDataset:
                         video_name=video_name,
                         feature_path=feature_path,
                         feature_dim=feature_dim,
+                        feature_sha256=feature_sha256,
                         fps=float(video_info["frame"]) / max(float(video_info["duration"]), 1e-6),
                         source_frames=source_frames,
                         chunk_index=chunk_index,
@@ -422,7 +461,11 @@ class StreamingFeatureDataset:
         start = item["start_token"]
         end = item["end_token"]
         source_frames = tuple(item["source_frames"][start:end])
-        features = np.load(item["feature_path"], mmap_mode="r")[start:end]
+        features = self._load_verified_feature_array(
+            item["feature_path"],
+            item["feature_sha256"],
+            item["video_name"],
+        )[start:end]
         inputs = np.asarray(features, dtype=np.float32).T.copy()
         masks = np.ones(end - start, dtype=np.bool_)
 

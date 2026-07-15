@@ -7,6 +7,7 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import copy
 import json
 from pathlib import Path
 import torch
@@ -52,6 +53,7 @@ from opentad.utils.full_petal_training_evidence import (
     VisualParameterEventRecorder,
 )
 from opentad.utils.full_petal_identity import derive_training_trace_identity
+from opentad.utils.crs_eps_sampling import epoch_manifest_data_order_sha256
 
 
 def parse_args():
@@ -93,6 +95,11 @@ def _precision_name(amp_dtype):
 
 
 def _data_order_identity(dataset, seed):
+    crs_eps_manifest = getattr(dataset, "current_episode_manifest", None)
+    if crs_eps_manifest is not None:
+        if int(crs_eps_manifest["seed"]) != int(seed):
+            raise RuntimeError("runtime CRS-EPS manifest seed differs")
+        return epoch_manifest_data_order_sha256(crs_eps_manifest)
     manifests = getattr(dataset, "packet_manifests", None)
     if not isinstance(manifests, dict) or not manifests:
         raise RuntimeError("formal training requires an explicit packet manifest order")
@@ -266,6 +273,9 @@ def main():
             launch_authorization.data_identity,
             seed=args.seed,
             world_size=args.world_size,
+            crs_eps_manifest=getattr(
+                train_dataset, "current_episode_manifest", None
+            ),
         )
         runtime_data_order_sha256 = _data_order_identity(train_dataset, args.seed)
         if runtime_data_order_sha256 != expected_training_identity["data_order_sha256"]:
@@ -332,6 +342,17 @@ def main():
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     for epoch in range(resume_epoch + 1, max_epoch):
         _set_dataloader_epoch(train_loader, epoch)
+        crs_eps_manifest = copy.deepcopy(
+            getattr(train_dataset, "current_episode_manifest", None)
+        )
+        if (
+            crs_eps_manifest is not None
+            and _data_order_identity(train_dataset, args.seed)
+            != expected_training_identity["data_order_sha256"]
+        ):
+            raise RuntimeError(
+                "runtime CRS-EPS epoch manifest changed the training-order identity"
+            )
         if hasattr(train_dataset, "persist_current_manifest"):
             if args.rank == 0:
                 manifest_path = train_dataset.persist_current_manifest(
@@ -357,6 +378,7 @@ def main():
             fixed_step_profiler=fixed_step_profiler,
             optimizer_event_recorder=optimizer_event_recorder,
             visual_parameter_event_recorder=visual_parameter_event_recorder,
+            crs_eps_manifest=crs_eps_manifest,
         )
 
         if fixed_step_profiler is not None and train_stats["fixed_step_profile_complete"]:

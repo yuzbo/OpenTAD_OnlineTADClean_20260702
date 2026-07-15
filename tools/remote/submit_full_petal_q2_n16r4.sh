@@ -10,8 +10,7 @@ PROFILE_TIME=${PROFILE_TIME:-01:00:00}
 FORMAL_TIME=${FORMAL_TIME:-04:00:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 ALLOW_FORMAL=${ALLOW_FORMAL:-0}
-PYTHON_BIN=${PYTHON_BIN:-python3}
-SBATCH_BIN=${SBATCH_BIN:-/usr/bin/sbatch}
+PYTHON_BIN=/usr/bin/python3
 
 case "$MODE" in
     profile)
@@ -29,6 +28,15 @@ case "$MODE" in
         exit 2
         ;;
 esac
+
+[[ "$TIME" =~ ^[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]$ ]] || {
+    echo "Selected Slurm time must use HHH:MM:SS with bounded minutes/seconds" >&2
+    exit 2
+}
+[[ "$CPUS_PER_TASK" =~ ^[1-9][0-9]*$ && "$CPUS_PER_TASK" -le 64 ]] || {
+    echo "CPUS_PER_TASK must be an integer in [1,64]" >&2
+    exit 2
+}
 
 case "$CONFIG" in
     configs/causaltad/thumos_pes_q2_persist_fixed.py|configs/causaltad/thumos_pes_q2_persist_rematch.py|configs/causaltad/thumos_pes_q2_crs_eps_fixed.py|configs/causaltad/thumos_pes_q2_crs_eps_rematch.py)
@@ -86,10 +94,6 @@ RUN_ID=${TICKET_FIELDS[run_id]:-}
     exit 2
 }
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
-[[ ! -e "$SCRIPT_PATH" ]] || {
-    echo "Refusing to overwrite the ticket-bound Slurm script" >&2
-    exit 2
-}
 
 printf -v Q_MODE '%q' "$MODE"
 printf -v Q_CONFIG '%q' "$CONFIG"
@@ -101,7 +105,8 @@ printf -v Q_CPUS_PER_TASK '%q' "$CPUS_PER_TASK"
 printf -v Q_SEED '%q' "$SEED"
 printf -v Q_RUN_ID '%q' "$RUN_ID"
 
-cat >"$SCRIPT_PATH" <<SBATCH
+{
+cat <<SBATCH
 #!/usr/bin/env bash
 #SBATCH -J full_petal_${MODE}
 #SBATCH --nodes=1
@@ -124,7 +129,7 @@ SEED=$Q_SEED
 RUN_ID=$Q_RUN_ID
 SBATCH
 
-cat >>"$SCRIPT_PATH" <<'SBATCH'
+cat <<'SBATCH'
 set -euo pipefail
 
 cd "$BASE_DIR"
@@ -164,6 +169,8 @@ if [[ "$MODE" == "profile" ]]; then
     fi
 fi
 SBATCH
+} | "$PYTHON_BIN" "$BASE_DIR/tools/submit_full_petal_slurm_script.py" \
+    --output "$SCRIPT_PATH" \
+    --submission-cwd "$BASE_DIR"
 
 echo "FULL_PETAL_RUN_DIR=$RUN_DIR"
-"$SBATCH_BIN" "$SCRIPT_PATH"

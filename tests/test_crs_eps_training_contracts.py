@@ -14,8 +14,12 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
 )
 from opentad.utils.evidence_bundle import EvidenceBundleError
 from opentad.utils.crs_eps_sampling import (
+    VideoSamplingSpec,
+    build_epoch_manifest,
     canonical_json_sha256,
     episode_payload_sha256,
+    epoch_manifest_data_order_sha256,
+    epoch_manifest_runtime_control,
 )
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
@@ -277,74 +281,75 @@ class _CrsToy(torch.nn.Module):
         }
 
 
-def _engine_crs_control(draw_index, group_size=2):
-    def payload(index):
-        return {
-            "draw_index": index,
-            "episode_id": f"episode-{index}",
-            "proposal_component": "uniform",
-            "component_fallback_to_uniform": False,
-            "anchor_bin": 0,
-            "supervised_range": [0, 1],
-            "replay_range": [0, 1],
-            "gradient_ranges": [[0, 1]],
-            "true_left_censored": False,
-            "left_censored_instance_ids": [],
-            "dynamic_extension_instance_ids": [],
-            "video_start_fallback": True,
-            "q_component": 0.4,
-            "q_anchor_given_component": 1.0,
-            "q_anchor_marginal": 1.0,
-            "rho_by_supervised_bin": [1.0],
-            "union_pi_by_supervised_bin": [1.0],
-            "raw_weight_by_bin": [1.0],
-            "final_weight_by_bin": [1.0],
-            "rng_key": f"rng-{index}",
-        }
-
-    current = payload(draw_index)
-    current["episode_payload_sha256"] = episode_payload_sha256(current)
-    return {
-        **current,
-        "video_id": "video",
-        "video_group_index": 0,
-        "video_group_size": group_size,
-        "is_video_group_start": draw_index == 0,
-        "is_video_group_end": draw_index + 1 == group_size,
-        "episode_manifest_sha256": "c" * 64,
-        "episode_sequence_sha256": canonical_json_sha256(
-            [episode_payload_sha256(payload(index)) for index in range(group_size)]
-        ),
-        "video_covered_unique_bins": 1,
-        "video_effective_sample_size": 2.0,
-        "video_ipw_weight_sum": 2.0,
-        "video_ipw_weight_squared_sum": 2.0,
-    }
+def _engine_manifest(group_size=2, *, seed=705):
+    return build_epoch_manifest(
+        [VideoSamplingSpec(video_id="video", num_bins=1, instances=())],
+        epoch=0,
+        seed=seed,
+        draws_per_video=group_size,
+        suffix_bins=1,
+        context_bins=1,
+        detach_interval=1,
+    )
 
 
-def _crs_loader():
+def _engine_crs_control(draw_index, group_size=2, *, manifest=None):
+    manifest = _engine_manifest(group_size) if manifest is None else manifest
+    return epoch_manifest_runtime_control(manifest, 0, draw_index)
+
+
+def test_crs_data_order_identity_is_manifest_derived_and_epoch_stable():
+    epoch_zero = _engine_manifest(4, seed=705)
+    epoch_one = build_epoch_manifest(
+        [VideoSamplingSpec(video_id="video", num_bins=1, instances=())],
+        epoch=1,
+        seed=705,
+        draws_per_video=4,
+        suffix_bins=1,
+        context_bins=1,
+        detach_interval=1,
+    )
+
+    assert epoch_manifest_data_order_sha256(
+        epoch_zero
+    ) == epoch_manifest_data_order_sha256(epoch_one)
+    assert epoch_manifest_data_order_sha256(
+        epoch_zero
+    ) != epoch_manifest_data_order_sha256(_engine_manifest(4, seed=706))
+    assert epoch_manifest_data_order_sha256(
+        epoch_zero
+    ) != epoch_manifest_data_order_sha256(_engine_manifest(3, seed=705))
+
+
+def _crs_loader(*, manifest=None):
+    manifest = _engine_manifest() if manifest is None else manifest
     return [
         {
             "inputs": torch.tensor([1.0]),
             "stream_control": [
                 {"video_id": "video", "is_video_start": True, "is_video_end": True}
             ],
-            "crs_eps": [_engine_crs_control(0)],
+            "crs_eps": [_engine_crs_control(0, manifest=manifest)],
         },
         {
             "inputs": torch.tensor([3.0]),
             "stream_control": [
                 {"video_id": "video", "is_video_start": True, "is_video_end": True}
             ],
-            "crs_eps": [_engine_crs_control(1)],
+            "crs_eps": [_engine_crs_control(1, manifest=manifest)],
         },
     ]
 
 
-def _crs_loader_with_indices(indices, *, group_size=4, cross_manifest_at=None):
+def _crs_loader_with_indices(
+    indices, *, group_size=4, cross_manifest_at=None, manifest=None
+):
+    manifest = _engine_manifest(group_size) if manifest is None else manifest
     rows = []
     for position, draw_index in enumerate(indices):
-        control = _engine_crs_control(draw_index, group_size=group_size)
+        control = _engine_crs_control(
+            draw_index, group_size=group_size, manifest=manifest
+        )
         if position == cross_manifest_at:
             control["episode_manifest_sha256"] = "d" * 64
         rows.append(
@@ -376,6 +381,7 @@ def test_engine_applies_one_hh_update_per_video_group_without_double_division():
         curr_epoch=0,
         logger=_Logger(),
         logging_interval=100,
+        crs_eps_manifest=_engine_manifest(),
     )
 
     assert model.weight.item() == pytest.approx(0.4)
@@ -397,6 +403,7 @@ def test_engine_fails_closed_on_mutable_buffer_leak_and_rolls_back_group():
             curr_epoch=0,
             logger=_Logger(),
             logging_interval=100,
+            crs_eps_manifest=_engine_manifest(),
         )
 
     assert model.rollbacks == 1
@@ -417,6 +424,7 @@ def test_engine_treats_slot_exhaustion_as_scientific_failure():
             curr_epoch=0,
             logger=_Logger(),
             logging_interval=100,
+            crs_eps_manifest=_engine_manifest(),
         )
 
     assert model.rollbacks == 1
@@ -436,6 +444,7 @@ def test_engine_rejects_duplicate_or_reordered_manifest_draws(indices):
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.rollbacks == 1
@@ -454,6 +463,7 @@ def test_engine_rejects_missing_manifest_draw_and_rolls_back_at_epoch_end():
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.rollbacks == 1
@@ -472,6 +482,7 @@ def test_engine_rejects_cross_manifest_draw_before_optimizer_boundary():
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.rollbacks == 1
@@ -486,7 +497,7 @@ def test_engine_rejects_tampered_episode_membership_digest_at_boundary():
         loader[2]["crs_eps"][0]
     )
 
-    with pytest.raises(RuntimeError, match="episode sequence differs"):
+    with pytest.raises(RuntimeError, match="draw payload differs"):
         train_one_epoch(
             loader,
             model,
@@ -494,6 +505,7 @@ def test_engine_rejects_tampered_episode_membership_digest_at_boundary():
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.rollbacks == 1
@@ -514,10 +526,116 @@ def test_engine_rejects_substituted_draw_payload_even_with_expected_episode_id()
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.rollbacks == 1
     assert model.weight.item() == 0.0
+
+
+def test_engine_rejects_whole_rehashed_group_not_owned_by_trusted_manifest():
+    trusted_manifest = _engine_manifest(4, seed=705)
+    substituted_manifest = _engine_manifest(4, seed=706)
+    loader = _crs_loader_with_indices(
+        [0, 1, 2, 3], manifest=substituted_manifest
+    )
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="immutable manifest"):
+        train_one_epoch(
+            loader,
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+            crs_eps_manifest=trusted_manifest,
+        )
+
+    assert model.commits == 0
+    assert model.weight.item() == 0.0
+
+
+def test_second_draw_control_parse_failure_rolls_back_group():
+    manifest = _engine_manifest(4)
+    loader = _crs_loader_with_indices([0, 1, 2, 3], manifest=manifest)
+    loader[1]["crs_eps"][0].pop("episode_payload_sha256")
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="lacks video-group fields"):
+        train_one_epoch(
+            loader,
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+            crs_eps_manifest=manifest,
+        )
+
+    assert model.pending is False
+    assert model.rollbacks == 1
+    assert model.weight.grad is None
+
+
+class _InterruptedCrsLoader:
+    def __init__(self, first_row, *, exception):
+        self.first_row = first_row
+        self.exception = exception
+
+    def __len__(self):
+        return 2
+
+    def __iter__(self):
+        return _InterruptedCrsIterator(self.first_row, self.exception)
+
+
+class _InterruptedCrsIterator:
+    def __init__(self, first_row, exception):
+        self.first_row = first_row
+        self.exception = exception
+        self.position = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.position == 0:
+            self.position += 1
+            return self.first_row
+        raise self.exception
+
+
+@pytest.mark.parametrize(
+    "exception, match",
+    ((RuntimeError("loader failed"), "loader failed"), (StopIteration(), "")),
+)
+def test_mid_group_loader_failure_rolls_back_staged_state(exception, match):
+    manifest = _engine_manifest(4)
+    first_row = _crs_loader_with_indices([0], manifest=manifest)[0]
+    loader = _InterruptedCrsLoader(first_row, exception=exception)
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    expected = pytest.raises(type(exception), match=match) if match else pytest.raises(
+        type(exception)
+    )
+    with expected:
+        train_one_epoch(
+            loader,
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+            crs_eps_manifest=manifest,
+        )
+
+    assert model.pending is False
+    assert model.rollbacks == 1
+    assert model.weight.grad is None
 
 
 def test_interior_forward_exception_restores_group_buffers_and_staged_state():
@@ -532,6 +650,7 @@ def test_interior_forward_exception_restores_group_buffers_and_staged_state():
             _Scheduler(),
             curr_epoch=0,
             logger=_Logger(),
+            crs_eps_manifest=_engine_manifest(4),
         )
 
     assert model.audit_buffer.item() == 0
@@ -551,6 +670,7 @@ def test_interior_nonfinite_loss_rolls_back_before_skipping_to_group_end():
         _Scheduler(),
         curr_epoch=0,
         logger=_Logger(),
+        crs_eps_manifest=_engine_manifest(4),
     )
 
     assert stats["successful_optimizer_events"] == 0
@@ -638,6 +758,28 @@ def test_crs_dataset_rebuilds_epoch_manifest_and_keeps_gt_out_of_model_meta(tmp_
         dataset.persist_current_manifest(output_dir)
 
 
+def test_crs_dataset_uses_verified_feature_bytes_after_path_replacement(tmp_path):
+    ann_file, class_map, feature_dir, manifest_file = _dataset_fixture(tmp_path)
+    dataset = CrsEpsFeatureDataset(
+        ann_file=ann_file,
+        subset_name="training",
+        class_map=class_map,
+        data_path=feature_dir,
+        cache_manifest=manifest_file,
+        chunk_size=64,
+        feature_stride=8,
+        sampling_seed=705,
+        draws_per_video=2,
+    )
+    np.save(
+        feature_dir / "video.npy",
+        np.full((12, 4), 777.0, dtype=np.float32),
+    )
+
+    sample = dataset[0]
+    assert float(sample["inputs"].max()) < 777.0
+
+
 def test_dataset_dataloader_detector_optimizer_cpu_closure(tmp_path):
     ann_file, class_map, feature_dir, manifest_file = _dataset_fixture(tmp_path)
     dataset = CrsEpsFeatureDataset(
@@ -672,6 +814,7 @@ def test_dataset_dataloader_detector_optimizer_cpu_closure(tmp_path):
         curr_epoch=0,
         logger=_Logger(),
         logging_interval=100,
+        crs_eps_manifest=dataset.current_episode_manifest,
     )
 
     assert len(loader) == 2

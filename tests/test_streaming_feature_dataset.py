@@ -323,6 +323,51 @@ def test_dataset_rejects_feature_bytes_that_do_not_match_manifest(tmp_path):
         )
 
 
+def test_dataset_rejects_feature_replaced_after_index_before_first_use(tmp_path):
+    ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)
+    dataset = _dataset_class()(
+        ann_file=ann_file,
+        subset_name="training",
+        class_map=class_map,
+        data_path=feature_dir,
+        cache_manifest=manifest_file,
+        chunk_size=2,
+        feature_stride=8,
+    )
+    np.save(
+        feature_dir / "train_a.npy",
+        np.full((5, 4), 777.0, dtype=np.float32),
+    )
+
+    with pytest.raises(ValueError, match="feature hash/content mismatch"):
+        dataset[0]
+
+
+def test_dataset_reuses_only_previously_verified_feature_bytes(tmp_path):
+    ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)
+    dataset = _dataset_class()(
+        ann_file=ann_file,
+        subset_name="training",
+        class_map=class_map,
+        data_path=feature_dir,
+        cache_manifest=manifest_file,
+        chunk_size=2,
+        feature_stride=8,
+    )
+    first = dataset[0]
+    np.save(
+        feature_dir / "train_a.npy",
+        np.full((5, 4), 777.0, dtype=np.float32),
+    )
+    second = dataset[1]
+
+    assert float(first["inputs"].max()) < 777.0
+    assert np.array_equal(
+        second["inputs"],
+        np.arange(20, dtype=np.float32).reshape(5, 4)[2:4].T,
+    )
+
+
 def test_dataset_consumes_hashed_split_role_and_binds_it_to_provenance(tmp_path):
     ann_file, class_map, feature_dir, cache_manifest = _fixture(tmp_path)
     split_manifest, fit_path, _ = _split_contract(tmp_path, ann_file)

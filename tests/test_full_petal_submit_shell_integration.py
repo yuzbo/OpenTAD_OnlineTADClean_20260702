@@ -1,23 +1,29 @@
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
-import stat
 import subprocess
-import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from opentad.utils.evidence_bundle import EvidenceBundleError
 
 
 ROOT = Path(__file__).resolve().parents[1]
 READER_SCRIPT = ROOT / "tools" / "read_full_petal_launch_ticket.py"
+SUBMITTER_SCRIPT = ROOT / "tools" / "submit_full_petal_slurm_script.py"
 SUBMIT_SCRIPT = ROOT / "tools" / "remote" / "submit_full_petal_q2_n16r4.sh"
 SPEC = importlib.util.spec_from_file_location(
     "read_full_petal_launch_ticket", READER_SCRIPT
 )
 READER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(READER)
+SUBMITTER_SPEC = importlib.util.spec_from_file_location(
+    "submit_full_petal_slurm_script", SUBMITTER_SCRIPT
+)
+SUBMITTER = importlib.util.module_from_spec(SUBMITTER_SPEC)
+SUBMITTER_SPEC.loader.exec_module(SUBMITTER)
 
 
 def _ticket(path, *, work_dir=None, overrides=None, resume=None):
@@ -85,94 +91,136 @@ def _run(command, cwd, **kwargs):
     )
 
 
-def test_submit_shell_consumes_ticket_identity_and_calls_fake_sbatch(tmp_path):
+def _bash_executable():
+    candidates = []
     if os.name == "nt":
-        source = SUBMIT_SCRIPT.read_text(encoding="utf-8")
-        assert 'TICKET_FIELDS[work_dir]' in source
-        assert 'SCRIPT_PATH="$RUN_DIR/job.sbatch"' in source
-        assert "CFG_WORK_DIR_ARG=work_dir=$Q_WORK_DIR" in source
-        assert '--cfg-options "$CFG_WORK_DIR_ARG"' in source
-        assert '"$SBATCH_BIN" "$SCRIPT_PATH"' in source
-        assert "$(date" not in source
-        git_bash = next(
+        candidates.extend(
             (
-                candidate
-                for candidate in (
-                    Path("C:/Program Files/Git/bin/bash.exe"),
-                    Path("C:/Program Files/Git/usr/bin/bash.exe"),
-                )
-                if candidate.is_file()
-            ),
-            None,
+                Path("C:/Program Files/Git/bin/bash.exe"),
+                Path("C:/Program Files/Git/usr/bin/bash.exe"),
+            )
         )
-        if git_bash is not None:
-            _run([str(git_bash), "-n", str(SUBMIT_SCRIPT)], ROOT)
-        return
+    else:
+        candidates.extend((Path("/usr/bin/bash"), Path("/bin/bash")))
+    return next((str(path) for path in candidates if path.is_file()), None)
 
-    bash = shutil.which("bash")
-    assert bash is not None, "the production POSIX launcher requires bash"
-    deployment = tmp_path / "deployment"
-    tools = deployment / "tools"
-    tools.mkdir(parents=True)
-    shutil.copy2(READER_SCRIPT, tools / READER_SCRIPT.name)
-    _run(["git", "init"], deployment)
-    _run(["git", "config", "user.email", "test@example.invalid"], deployment)
-    _run(["git", "config", "user.name", "Full PETAL Test"], deployment)
-    _run(["git", "add", "."], deployment)
-    _run(["git", "commit", "-m", "test deployment"], deployment)
 
-    artifact_root = tmp_path / "evidence" / "profile-run"
-    ticket = _ticket(artifact_root / "launch_ticket.json")
-    capture = tmp_path / "sbatch.capture"
-    fake_sbatch = tmp_path / "fake-sbatch"
-    fake_sbatch.write_text(
-        '#!/usr/bin/env bash\nprintf "%s\\n" "$1" >"$SBATCH_CAPTURE"\n',
-        encoding="utf-8",
-    )
-    fake_sbatch.chmod(fake_sbatch.stat().st_mode | stat.S_IXUSR)
-    env = os.environ.copy()
-    env.update(
-        {
-            "BASE_DIR": str(deployment),
-            "PYTHON_BIN": sys.executable,
-            "SBATCH_BIN": str(fake_sbatch),
-            "SBATCH_CAPTURE": str(capture),
-        }
-    )
-
-    result = _run(
-        [
-            bash,
-            str(SUBMIT_SCRIPT),
-            "profile",
-            "configs/causaltad/thumos_pes_q2_persist_fixed.py",
-            str(ticket),
-        ],
-        ROOT,
-        env=env,
-    )
-
-    script = artifact_root / "job.sbatch"
-    source = script.read_text(encoding="utf-8")
-    assert f"FULL_PETAL_RUN_DIR={artifact_root}" in result.stdout
-    assert capture.read_text(encoding="utf-8").strip() == str(script)
-    assert f"work_dir={artifact_root / 'work'}" in source
-    assert "SEED=705" in source
-    assert "RUN_ID=9" in source
+def test_submit_shell_uses_validated_atomic_byte_submission():
+    source = SUBMIT_SCRIPT.read_text(encoding="utf-8")
+    assert 'TICKET_FIELDS[work_dir]' in source
+    assert 'SCRIPT_PATH="$RUN_DIR/job.sbatch"' in source
+    assert "CFG_WORK_DIR_ARG=work_dir=$Q_WORK_DIR" in source
+    assert '--cfg-options "$CFG_WORK_DIR_ARG"' in source
+    assert "submit_full_petal_slurm_script.py" in source
+    assert "SBATCH_BIN" not in source
+    assert 'cat >"$SCRIPT_PATH"' not in source
     assert "$(date" not in source
+    bash = _bash_executable()
+    if bash is not None:
+        _run([bash, "-n", str(SUBMIT_SCRIPT)], ROOT)
 
-    failed = subprocess.run(
+
+@pytest.mark.parametrize(
+    "variable,value,message",
+    (
+        ("PROFILE_TIME", "01:00:00\n#SBATCH --gres=gpu:8", "Slurm time"),
+        ("CPUS_PER_TASK", "4\nid", "CPUS_PER_TASK"),
+        ("CPUS_PER_TASK", "65", "CPUS_PER_TASK"),
+    ),
+)
+def test_submit_shell_rejects_resource_injection_before_ticket_access(
+    variable, value, message
+):
+    bash = _bash_executable()
+    if bash is None:
+        pytest.skip("Bash is unavailable")
+    env = os.environ.copy()
+    env[variable] = value
+    result = subprocess.run(
         [
             bash,
             str(SUBMIT_SCRIPT),
             "profile",
             "configs/causaltad/thumos_pes_q2_persist_fixed.py",
-            str(ticket),
+            "/missing/ticket.json",
         ],
         cwd=ROOT,
         env=env,
         capture_output=True,
         text=True,
     )
-    assert failed.returncode == 2
-    assert "Refusing to overwrite" in failed.stderr
+    assert result.returncode == 2
+    assert message in result.stderr
+
+
+def _completed_submission():
+    return subprocess.CompletedProcess(["/usr/bin/sbatch"], 0, b"Submitted\n", b"")
+
+
+def test_submitter_publishes_and_submits_identical_in_memory_bytes(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    script = run_dir / "job.sbatch"
+    payload = b"#!/usr/bin/env bash\necho exact\n"
+    captured = {}
+
+    def submitter(submitted, cwd):
+        captured["payload"] = submitted
+        captured["cwd"] = cwd
+        script.write_bytes(b"#!/usr/bin/env bash\necho replaced\n")
+        return _completed_submission()
+
+    _, digest = SUBMITTER.publish_and_submit(
+        script,
+        payload,
+        submission_cwd=tmp_path,
+        submitter=submitter,
+    )
+
+    assert captured == {"payload": payload, "cwd": tmp_path.resolve()}
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert script.read_bytes() != captured["payload"]
+
+
+def test_submitter_exclusive_publication_has_one_concurrent_winner(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    script = run_dir / "job.sbatch"
+
+    def attempt(index):
+        payload = f"#!/usr/bin/env bash\necho {index}\n".encode("ascii")
+        return SUBMITTER.publish_and_submit(
+            script,
+            payload,
+            submission_cwd=tmp_path,
+            submitter=lambda submitted, cwd: _completed_submission(),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(attempt, index) for index in range(2)]
+    outcomes = []
+    for future in futures:
+        try:
+            future.result()
+            outcomes.append("submitted")
+        except Exception as exc:
+            outcomes.append(type(exc).__name__)
+
+    assert outcomes.count("submitted") == 1
+    assert outcomes.count("EvidenceBundleError") == 1
+    assert len(outcomes) == 2
+
+
+def test_submitter_refuses_preexisting_script(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    script = run_dir / "job.sbatch"
+    script.write_text("occupied\n", encoding="utf-8")
+
+    with pytest.raises(EvidenceBundleError, match="overwrite"):
+        SUBMITTER.publish_and_submit(
+            script,
+            b"#!/usr/bin/env bash\necho exact\n",
+            submission_cwd=tmp_path,
+            submitter=lambda submitted, cwd: _completed_submission(),
+        )

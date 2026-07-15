@@ -20,11 +20,13 @@ from .evidence_bundle import (
 )
 
 
-B0_SCHEMA = "full-petal-b0-v2"
+B0_SCHEMA = "full-petal-b0-v3"
 B0_TEST_REPORT_SCHEMA = "full-petal-b0-test-report-v2"
 B0_AUDIT_REPORT_SCHEMA = "full-petal-b0-audit-report-v2"
 B0_MANIFEST_SCHEMA = "full-petal-b0-manifest-v1"
 B0_ATTESTATION_ROLE = "b0-runner"
+B0_POSIX_LEAF_SCHEMA = "full-petal-b0-posix-leaf-v1"
+B0_POSIX_ATTESTATION_ROLE = "b0-posix-runner"
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -316,6 +318,8 @@ def validate_b0_evidence(
             "test_report_sha256",
             "audit_report_path",
             "audit_report_sha256",
+            "posix_leaf_path",
+            "posix_leaf_sha256",
         },
         "B0 artifact",
     )
@@ -333,6 +337,19 @@ def validate_b0_evidence(
     )
     manifest = _load_json_bytes(manifest_bytes, "B0 manifest")
     declared_cases = validate_manifest(manifest, repository_root=repository_root)
+
+    posix_leaf = validate_posix_b0_leaf(
+        {
+            "path": root["posix_leaf_path"],
+            "sha256": root["posix_leaf_sha256"],
+        },
+        base_dir=root_path.parent,
+        expected_commit=commit,
+        expected_manifest_sha256=root["manifest_sha256"],
+        manifest=manifest,
+        declared_cases=declared_cases,
+        trust_root=trust_root,
+    )
 
     report_path, report_bytes = _verified_bytes(
         root["test_report_path"],
@@ -467,6 +484,7 @@ def validate_b0_evidence(
         and report["status"] == "PASS"
         and audit["status"] == "PASS"
         and totals["collected"] == totals["passed"] == test_count
+        and posix_leaf["collected"] == posix_leaf["passed"] == test_count
         and totals["failed"] == totals["errors"] == totals["skipped"] == 0
         and blockers == violations == 0
         and _count(audit["blocking_findings"], "B0 audit blockers") == 0
@@ -482,10 +500,178 @@ def validate_b0_evidence(
     }
 
 
+def validate_posix_b0_leaf(
+    reference,
+    *,
+    base_dir,
+    expected_commit,
+    expected_manifest_sha256,
+    manifest,
+    declared_cases,
+    trust_root,
+):
+    """Verify a target-Linux B0 leaf and every JUnit/log byte it commits."""
+
+    _exact(reference, {"path", "sha256"}, "POSIX B0 leaf reference")
+    leaf_path, leaf_bytes = _verified_bytes(
+        reference["path"],
+        reference["sha256"],
+        base_dir,
+        "POSIX B0 leaf",
+        require_relative=False,
+    )
+    signed_leaf = _load_json_bytes(leaf_bytes, "POSIX B0 leaf")
+    try:
+        leaf = verify_payload(
+            signed_leaf,
+            trust_root=trust_root,
+            role=B0_POSIX_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise B0EvidenceError(str(exc)) from exc
+    _exact(
+        leaf,
+        {
+            "schema_version",
+            "status",
+            "commit_sha",
+            "manifest_sha256",
+            "platform",
+            "repository_clean_before",
+            "repository_clean_after",
+            "collected",
+            "passed",
+            "failed",
+            "errors",
+            "skipped",
+            "suites",
+        },
+        "POSIX B0 leaf",
+    )
+    if leaf["schema_version"] != B0_POSIX_LEAF_SCHEMA:
+        raise B0EvidenceError("POSIX B0 leaf schema is unsupported")
+    if leaf["commit_sha"] != expected_commit:
+        raise B0EvidenceError("POSIX B0 leaf commit differs")
+    if leaf["manifest_sha256"] != expected_manifest_sha256:
+        raise B0EvidenceError("POSIX B0 leaf manifest differs")
+    platform = leaf["platform"]
+    _exact(
+        platform,
+        {"os_name", "sys_platform", "machine", "python_version", "torch_version"},
+        "POSIX B0 platform",
+    )
+    if platform["os_name"] != "posix" or platform["sys_platform"] != "linux":
+        raise B0EvidenceError("POSIX B0 leaf was not produced on Linux")
+    if not all(
+        isinstance(platform[field], str) and platform[field].strip()
+        for field in ("machine", "python_version", "torch_version")
+    ):
+        raise B0EvidenceError("POSIX B0 platform identity is incomplete")
+    if (
+        leaf["status"] != "PASS"
+        or leaf["repository_clean_before"] is not True
+        or leaf["repository_clean_after"] is not True
+    ):
+        raise B0EvidenceError("POSIX B0 leaf has not reached clean PASS")
+    if [suite.get("name") for suite in leaf["suites"]] != manifest["suite_order"]:
+        raise B0EvidenceError("POSIX B0 suite order differs from the manifest")
+
+    totals = {name: 0 for name in ("collected", "passed", "failed", "errors", "skipped")}
+    for index, suite in enumerate(leaf["suites"]):
+        label = f"POSIX B0 suite {index}"
+        _exact(
+            suite,
+            {
+                "name",
+                "status",
+                "canonical_argv",
+                "python_executable",
+                "collected",
+                "passed",
+                "failed",
+                "errors",
+                "skipped",
+                "log_path",
+                "log_sha256",
+                "junit_path",
+                "junit_sha256",
+                "testcase_manifest_sha256",
+            },
+            label,
+        )
+        manifest_suite = manifest["suites"][index]
+        if (
+            suite["name"] != manifest_suite["name"]
+            or suite["canonical_argv"] != manifest_suite["canonical_argv"]
+        ):
+            raise B0EvidenceError(f"{label} command differs from the manifest")
+        if not isinstance(suite["python_executable"], str) or not suite[
+            "python_executable"
+        ].strip():
+            raise B0EvidenceError(f"{label} Python executable is invalid")
+        _verified_bytes(
+            suite["log_path"], suite["log_sha256"], leaf_path.parent, f"{label} log"
+        )
+        junit_path, junit_bytes = _verified_bytes(
+            suite["junit_path"],
+            suite["junit_sha256"],
+            leaf_path.parent,
+            f"{label} JUnit",
+        )
+        counts, cases = junit_cases(junit_path, junit_bytes=junit_bytes)
+        for name in totals:
+            declared = _count(suite[name], f"{label}.{name}")
+            if declared != counts[name]:
+                raise B0EvidenceError(f"{label} counts differ from parsed JUnit")
+            totals[name] += declared
+        if canonical_json_sha256(cases) != suite["testcase_manifest_sha256"]:
+            raise B0EvidenceError(f"{label} testcase digest differs")
+        seen_functions = {
+            module: set() for module in declared_cases[suite["name"]]
+        }
+        for case in cases:
+            module = case["classname"]
+            function = case["name"].split("[", 1)[0]
+            if (
+                module not in seen_functions
+                or function not in declared_cases[suite["name"]][module]
+            ):
+                raise B0EvidenceError(
+                    f"{label} contains an unclassified testcase: {module}::{function}"
+                )
+            seen_functions[module].add(function)
+        missing = {
+            f"{module}::{name}"
+            for module, names in declared_cases[suite["name"]].items()
+            for name in names - seen_functions[module]
+        }
+        if missing:
+            raise B0EvidenceError(
+                f"{label} did not execute declared testcases: {sorted(missing)}"
+            )
+        if (
+            suite["status"] != "PASS"
+            or counts["failed"]
+            or counts["errors"]
+            or counts["skipped"]
+        ):
+            raise B0EvidenceError(f"{label} has not reached PASS")
+    leaf_totals = {name: _count(leaf[name], f"POSIX B0.{name}") for name in totals}
+    if leaf_totals != totals or totals["collected"] <= 0:
+        raise B0EvidenceError("POSIX B0 totals differ from suite totals")
+    return {
+        **leaf,
+        "artifact_path": str(leaf_path),
+        "artifact_sha256": hashlib.sha256(leaf_bytes).hexdigest(),
+    }
+
+
 __all__ = [
     "B0_ATTESTATION_ROLE",
     "B0_AUDIT_REPORT_SCHEMA",
     "B0_MANIFEST_SCHEMA",
+    "B0_POSIX_ATTESTATION_ROLE",
+    "B0_POSIX_LEAF_SCHEMA",
     "B0_SCHEMA",
     "B0_TEST_REPORT_SCHEMA",
     "B0EvidenceError",
@@ -495,4 +681,5 @@ __all__ = [
     "test_functions",
     "validate_b0_evidence",
     "validate_manifest",
+    "validate_posix_b0_leaf",
 ]

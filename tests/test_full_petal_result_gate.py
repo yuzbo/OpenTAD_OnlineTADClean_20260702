@@ -18,6 +18,7 @@ from tests.full_petal_attestation_fixture import (
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
+    B0_POSIX_LEAF_SCHEMA,
     B0_SCHEMA,
     B0_TEST_REPORT_SCHEMA,
     canonical_json_sha256,
@@ -262,6 +263,50 @@ def _b0_evidence(root, private_key, *, commit=COMMIT):
             "checks": checks,
         },
     )
+    posix_dir = b0_dir / "posix"
+    posix_dir.mkdir()
+    posix_log = posix_dir / log.name
+    posix_log.write_bytes(log.read_bytes())
+    posix_junit = posix_dir / junit.name
+    posix_junit.write_bytes(junit.read_bytes())
+    posix_leaf = _write_json(
+        posix_dir / "posix-b0.json",
+        _sign_payload(
+            {
+                "schema_version": B0_POSIX_LEAF_SCHEMA,
+                "status": "PASS",
+                "commit_sha": commit,
+                "manifest_sha256": sha256_file(manifest_path),
+                "platform": {
+                    "os_name": "posix",
+                    "sys_platform": "linux",
+                    "machine": "x86_64",
+                    "python_version": "3.11.0",
+                    "torch_version": "2.6.0",
+                },
+                "repository_clean_before": True,
+                "repository_clean_after": True,
+                "collected": 1,
+                "passed": 1,
+                "failed": 0,
+                "errors": 0,
+                "skipped": 0,
+                "suites": [
+                    {
+                        **test_report["suites"][0],
+                        "python_executable": "/usr/bin/python3",
+                        "log_path": posix_log.name,
+                        "log_sha256": sha256_file(posix_log),
+                        "junit_path": posix_junit.name,
+                        "junit_sha256": sha256_file(posix_junit),
+                    }
+                ],
+            },
+            private_key_path=private_key,
+            key_id="b0-test",
+            role="b0-posix-runner",
+        ),
+    )
     signed = _sign_payload(
         {
             "schema_version": B0_SCHEMA,
@@ -276,6 +321,8 @@ def _b0_evidence(root, private_key, *, commit=COMMIT):
             "test_report_sha256": sha256_file(test_report_path),
             "audit_report_path": audit_report_path.name,
             "audit_report_sha256": sha256_file(audit_report_path),
+            "posix_leaf_path": posix_leaf.relative_to(b0_dir).as_posix(),
+            "posix_leaf_sha256": sha256_file(posix_leaf),
         },
         private_key_path=private_key,
         key_id="b0-test",

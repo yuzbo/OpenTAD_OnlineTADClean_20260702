@@ -17,11 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from opentad.utils.full_petal_attestation import AttestationError  # noqa: E402
+from opentad.utils.full_petal_attestation import (  # noqa: E402
+    AttestationError,
+    public_key_base64,
+)
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
     publish_exclusive_file,
     read_stable_file_bytes,
+    read_verified_path_bytes,
     strict_json_from_bytes,
 )
 from opentad.utils.full_petal_role_signing import sign_b0_evidence  # noqa: E402
@@ -31,6 +35,7 @@ from opentad.utils.full_petal_b0 import (  # noqa: E402
     B0_TEST_REPORT_SCHEMA,
     canonical_json_sha256,
     junit_cases,
+    validate_posix_b0_leaf,
     validate_manifest,
 )
 
@@ -45,6 +50,7 @@ def parse_args(argv=None):
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--attestation-private-key", type=Path, required=True)
     parser.add_argument("--attestation-key-id", required=True)
+    parser.add_argument("--posix-leaf", type=Path, required=True)
     return parser.parse_args(argv)
 
 
@@ -226,6 +232,73 @@ def _git_check(output_dir, name, canonical_argv, *args):
     )
 
 
+def _ingest_posix_leaf(
+    leaf_path,
+    *,
+    output_dir,
+    commit,
+    manifest,
+    manifest_sha256,
+    private_key_path,
+    key_id,
+):
+    leaf_path = Path(leaf_path).resolve(strict=True)
+    trust_root = {
+        "key_id": key_id,
+        "public_key": public_key_base64(private_key_path),
+    }
+    reference = {
+        "path": str(leaf_path),
+        "sha256": hashlib.sha256(leaf_path.read_bytes()).hexdigest(),
+    }
+    declared_cases = validate_manifest(manifest, repository_root=ROOT)
+    leaf = validate_posix_b0_leaf(
+        reference,
+        base_dir=leaf_path.parent,
+        expected_commit=commit,
+        expected_manifest_sha256=manifest_sha256,
+        manifest=manifest,
+        declared_cases=declared_cases,
+        trust_root=trust_root,
+    )
+    target_dir = output_dir / "posix"
+    target_dir.mkdir()
+    copied_names = set()
+    references = [(leaf_path.name, reference["sha256"], "POSIX B0 leaf")]
+    for suite in leaf["suites"]:
+        references.extend(
+            (
+                (suite["log_path"], suite["log_sha256"], "POSIX B0 log"),
+                (suite["junit_path"], suite["junit_sha256"], "POSIX B0 JUnit"),
+            )
+        )
+    for name, digest, label in references:
+        if Path(name).name != name or name in copied_names:
+            raise SystemExit(f"{label} path is not a unique sibling filename")
+        copied_names.add(name)
+        source = leaf_path.parent / name
+        try:
+            _, payload = read_verified_path_bytes(source, digest, label)
+            publish_exclusive_file(target_dir / name, payload)
+        except EvidenceBundleError as exc:
+            raise SystemExit(f"cannot ingest {label}: {exc}") from exc
+    copied_leaf = target_dir / leaf_path.name
+    copied_reference = {
+        "path": copied_leaf.relative_to(output_dir).as_posix(),
+        "sha256": reference["sha256"],
+    }
+    validate_posix_b0_leaf(
+        copied_reference,
+        base_dir=output_dir,
+        expected_commit=commit,
+        expected_manifest_sha256=manifest_sha256,
+        manifest=manifest,
+        declared_cases=declared_cases,
+        trust_root=trust_root,
+    )
+    return copied_reference
+
+
 def main(argv=None):
     args = parse_args(argv)
     commit, initial_status = _repository_state()
@@ -250,6 +323,16 @@ def main(argv=None):
     manifest, manifest_bytes = _load_manifest(manifest_path)
     evidence_manifest_path = output_dir / "b0-manifest.json"
     publish_exclusive_file(evidence_manifest_path, manifest_bytes)
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+    posix_reference = _ingest_posix_leaf(
+        args.posix_leaf,
+        output_dir=output_dir,
+        commit=commit,
+        manifest=manifest,
+        manifest_sha256=manifest_sha,
+        private_key_path=args.attestation_private_key.resolve(),
+        key_id=args.attestation_key_id,
+    )
 
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -263,7 +346,6 @@ def main(argv=None):
         for field in ("collected", "passed", "failed", "errors", "skipped")
     }
     tests_pass = all(suite["status"] == "PASS" for suite in suites)
-    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
     test_report = {
         "schema_version": B0_TEST_REPORT_SCHEMA,
         "status": "PASS" if tests_pass else "FAIL",
@@ -324,6 +406,8 @@ def main(argv=None):
         "test_report_sha256": hashlib.sha256(test_report_bytes).hexdigest(),
         "audit_report_path": audit_report_path.name,
         "audit_report_sha256": hashlib.sha256(audit_report_bytes).hexdigest(),
+        "posix_leaf_path": posix_reference["path"],
+        "posix_leaf_sha256": posix_reference["sha256"],
     }
     try:
         b0 = sign_b0_evidence(

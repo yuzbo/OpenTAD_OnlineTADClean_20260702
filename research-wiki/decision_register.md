@@ -1166,3 +1166,47 @@ Reversibility:
 
 - Schema details may receive a new version, but no weaker chain may authorize a
   CRS-EPS profile. Every correction requires a new clean commit, B0, and review.
+
+## DR-033: Bind Training and B0 to the Exact Manifest, Bytes, and Target OS
+
+Status: correction implemented locally; clean-commit Linux leaf, B0 root, and
+same-reviewer acceptance pending.
+
+Decision:
+
+> Accept all six blocking findings on commit `cd601ce`. A CRS optimizer event
+> must consume the exact ordered payloads in a trusted epoch manifest; every
+> group-interior loader/control failure must roll back; provenance must hash the
+> same bytes consumed; Slurm must submit the same bytes published exclusively;
+> and B0 PASS must include a signed target-Linux leaf for the same commit and
+> manifest.
+
+Reasons:
+
+- internal hashes prove only self-consistency, not ownership by the published
+  sampling population;
+- rollback that starts after parsing is not a transaction around data intake;
+- chronological packet identity is false for an M-draw CRS-EPS runtime;
+- path re-opening permits a verified file to be replaced before consumption;
+- a writable path passed to `sbatch` is not an immutable submitted script;
+- an unsigned remote test claim cannot authorize a target-specific launch.
+
+Rejected alternatives:
+
+- trust recomputed episode hashes without comparing the manifest payload;
+- catch only model-forward and optimizer failures;
+- keep chronological packet identity as a convenient proxy;
+- hash once at dataset construction and reopen `.npy` or `.pth` later;
+- retain a caller-selected `SBATCH_BIN` or check-then-write shell script;
+- cite an N16R4 terminal transcript outside the signed B0 chain.
+
+Source:
+
+- same-reviewer exact-commit audit of `cd601ce95fdd16ecfdd17f9a5d93b33578691133`;
+- [discussion_timeline.md#T26-second-exact-commit-review-finds-six-remaining-evidence-gaps](discussion_timeline.md).
+
+Reversibility:
+
+- Implementation details can change only through a new commit and evidence
+  cycle. Manifest ownership, same-byte consumption, exact submitted bytes, and
+  a signed target-OS leaf are irreversible requirements for this route.

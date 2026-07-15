@@ -644,6 +644,60 @@ def validate_epoch_manifest(manifest):
     return manifest
 
 
+def epoch_manifest_runtime_control(
+    manifest, video_group_index, draw_index, *, validate=True
+):
+    """Return the exact runtime control committed by one manifest draw."""
+
+    if validate:
+        validate_epoch_manifest(manifest)
+    try:
+        video = manifest["videos"][int(video_group_index)]
+        draw = video["draws"][int(draw_index)]
+    except (IndexError, KeyError, TypeError, ValueError) as exc:
+        raise CrsEpsSamplingError(
+            "CRS-EPS runtime draw escapes the immutable epoch manifest"
+        ) from exc
+    if int(draw["draw_index"]) != int(draw_index):
+        raise CrsEpsSamplingError("CRS-EPS manifest draw indices are not contiguous")
+    group_size = int(video["draws_per_video"])
+    return {
+        **draw,
+        "video_id": video["video_id"],
+        "video_group_index": int(video_group_index),
+        "video_group_size": group_size,
+        "is_video_group_start": int(draw_index) == 0,
+        "is_video_group_end": int(draw_index) + 1 == group_size,
+        "episode_manifest_sha256": manifest["manifest_sha256"],
+        "episode_sequence_sha256": video["episode_sequence_sha256"],
+        "video_covered_unique_bins": video["covered_unique_bins"],
+        "video_effective_sample_size": video["effective_sample_size"],
+        "video_ipw_weight_sum": video["ipw_weight_sum"],
+        "video_ipw_weight_squared_sum": video["ipw_weight_squared_sum"],
+    }
+
+
+def epoch_manifest_data_order_sha256(manifest):
+    """Bind the deterministic CRS-EPS order generator shared by every epoch."""
+
+    validate_epoch_manifest(manifest)
+    return canonical_json_sha256(
+        {
+            "schema_version": manifest["schema_version"],
+            "seed": manifest["seed"],
+            "draws_per_video": manifest["draws_per_video"],
+            "suffix_bins": manifest["suffix_bins"],
+            "context_bins": manifest["context_bins"],
+            "detach_interval": manifest["detach_interval"],
+            "mixture": manifest["mixture"],
+            "sampling_specs_sha256": manifest["sampling_specs_sha256"],
+            "ordered_video_ids": [
+                video["video_id"] for video in manifest["videos"]
+            ],
+        }
+    )
+
+
 __all__ = [
     "COMPONENTS",
     "DEFAULT_CONTEXT_BINS",
@@ -659,6 +713,8 @@ __all__ = [
     "component_candidates",
     "episode_geometry",
     "episode_payload_sha256",
+    "epoch_manifest_data_order_sha256",
+    "epoch_manifest_runtime_control",
     "probability_table",
     "sampling_specs_sha256",
     "supervised_window",

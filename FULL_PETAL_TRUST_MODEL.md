@@ -12,7 +12,8 @@ detectable. It is not a hostile-process remote-attestation system.
 The evidence chain trusts these components while producing prerequisites and
 during a validated launch:
 
-1. `launch_validator`: validates B0, independent review, launch identity, and
+1. `launch_validator`: validates the B0 root plus its signed target-Linux leaf,
+   independent review, launch identity, and
    the applicable profile or formal-training authorization before CUDA/DDP.
 2. `train_engine`: owns the optimizer and online-state transaction lifecycle.
 3. `runtime_evidence_session`: executes and signs the optimizer-step and

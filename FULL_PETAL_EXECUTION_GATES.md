@@ -6,38 +6,56 @@ This route is fail-closed. The order below is mandatory.
 
 1. Freeze a clean git commit containing the P0, lifecycle, data/metric, optimizer,
    and launch-gate implementation.
-2. Run the complete CPU B0 matrix with `tools/run_full_petal_b0.py`. Store the
-   output outside the repository.
-3. Give the exact commit and the generated `b0.json` to reviewer
+2. On the clean target Linux/N16R4 checkout, run
+   `tools/run_full_petal_posix_b0.py` and store its signed leaf outside the
+   repository. The leaf must bind the same commit and locked B0 manifest.
+3. Run the complete local CPU B0 matrix with `tools/run_full_petal_b0.py`, pass
+   it the signed Linux leaf with `--posix-leaf`, and store the root bundle
+   outside the repository.
+4. Give the exact commit and the generated `b0.json` to reviewer
    `019f5abd-5104-79b3-882e-354ca796f2c1` for the ordered scope recorded in
    `launch_contract.required_review_scope`.
-4. Continue only when that reviewer returns `PASS` with zero blocking findings
+5. Continue only when that reviewer returns `PASS` with zero blocking findings
    and zero protocol violations.
-5. For CRS-EPS, run the preregistered CPU-only four-arm G0 audit with
+6. For CRS-EPS, run the preregistered CPU-only four-arm G0 audit with
    `tools/run_crs_eps_gold_audit.py`. The signed selection and margins must be
    created first by `tools/preregister_crs_eps_gold_audit.py`; both bind the
    exact commit, resolved/scientific config, data identity, sampling population,
    episode manifest, and one another.
-6. Build a profile ticket with `tools/build_full_petal_launch_ticket.py`.
-7. Submit exactly one fixed-step profile through
+7. Build a profile ticket with `tools/build_full_petal_launch_ticket.py`.
+8. Submit exactly one fixed-step profile through
    `tools/remote/submit_full_petal_q2_n16r4.sh profile ...`.
-8. Do not save checkpoints, evaluate results, or continue training from the
+9. Do not save checkpoints, evaluate results, or continue training from the
    profile process. Its only accepted output is `fixed_step_profile.json`.
-9. Formal training requires a later authorization-only commit, a fresh B0 and
+10. Formal training requires a later authorization-only commit, a fresh B0 and
    same-reviewer PASS for that commit, and the hash-bound profile artifact.
 
 ## B0 Example
+
+First issue the Linux leaf from the exact clean target checkout:
+
+```bash
+python tools/run_full_petal_posix_b0.py \
+  --output-dir /path/outside/repo/full-petal-posix-b0 \
+  --torch-python /path/to/working-torch-python \
+  --attestation-private-key /path/outside/repo/b0-runner.pem \
+  --attestation-key-id full-petal-b0-20260713
+```
+
+Then build the signed root locally:
 
 ```powershell
 & C:\path\to\control-python.exe tools/run_full_petal_b0.py `
   --output-dir C:\path\outside\repo\full-petal-b0 `
   --torch-python C:\path\to\working-torch-python.exe `
+  --posix-leaf C:\path\to\copied-posix-b0\posix-b0.json `
   --attestation-private-key C:\path\outside\repo\b0-runner.pem `
   --attestation-key-id full-petal-b0-20260713
 ```
 
 The B0 runner refuses a dirty checkout and an output directory inside the
-repository. It executes every discovered test through the locked Torch runner,
+repository. It first verifies and embeds the signed Linux leaf, then executes
+every discovered test through the locked Torch runner,
 records JUnit and raw logs, hashes every test and runner source, checks every
 tracked Python source, runs `git diff --check`, and verifies that the checkout
 remains clean.

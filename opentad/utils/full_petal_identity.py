@@ -18,6 +18,11 @@ from .evidence_bundle import (
     relative_bundle_path,
     strict_json_from_bytes,
 )
+from .crs_eps_sampling import (
+    CrsEpsSamplingError,
+    epoch_manifest_data_order_sha256,
+    validate_epoch_manifest,
+)
 
 
 DATA_IDENTITY_SCHEMA = "full-petal-data-identity-v1"
@@ -348,8 +353,9 @@ def derive_training_data_order_sha256(
     annotation_bytes=None,
     allow_list_bytes=None,
     cache_manifest_bytes=None,
+    crs_eps_manifest=None,
 ):
-    """Reconstruct the exact chronological packet order from bound data artifacts."""
+    """Reconstruct the configured training order from bound data artifacts."""
 
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise IdentityError("training data-order seed must be a non-negative integer")
@@ -411,6 +417,57 @@ def derive_training_data_order_sha256(
     if not isinstance(database, Mapping) or not isinstance(videos, Mapping):
         raise IdentityError("training annotation/cache inventory is malformed")
     allowed = set(allowed_ids)
+    crs_contract = _cfg_get(cfg, "crs_eps_contract")
+    if crs_contract is not None:
+        if crs_eps_manifest is None:
+            raise IdentityError(
+                "CRS-EPS training identity requires an immutable epoch manifest"
+            )
+        try:
+            validate_epoch_manifest(crs_eps_manifest)
+        except CrsEpsSamplingError as exc:
+            raise IdentityError(f"CRS-EPS training manifest is invalid: {exc}") from exc
+        contract = _plain_mapping(crs_contract, "CRS-EPS contract")
+        expected_manifest_contract = {
+            "seed": seed,
+            "draws_per_video": contract.get("draws_per_video"),
+            "suffix_bins": contract.get("suffix_bins"),
+            "context_bins": contract.get("context_bins"),
+            "detach_interval": contract.get("detach_interval"),
+            "mixture": _plain_mapping(
+                contract.get("mixture"), "CRS-EPS proposal mixture"
+            ),
+        }
+        actual_manifest_contract = {
+            field: crs_eps_manifest[field] for field in expected_manifest_contract
+        }
+        if actual_manifest_contract != expected_manifest_contract:
+            raise IdentityError(
+                "CRS-EPS manifest seed/sampling contract differs from the config"
+            )
+        manifest_video_ids = [
+            video["video_id"] for video in crs_eps_manifest["videos"]
+        ]
+        if (
+            len(manifest_video_ids) != len(set(manifest_video_ids))
+            or set(manifest_video_ids) != allowed
+        ):
+            raise IdentityError(
+                "CRS-EPS manifest videos differ from the exact fit-core allow-list"
+            )
+        for video_id in manifest_video_ids:
+            video_info = database.get(video_id)
+            if (
+                not isinstance(video_info, Mapping)
+                or video_info.get("subset") not in subsets
+                or not isinstance(videos.get(video_id), Mapping)
+            ):
+                raise IdentityError(
+                    f"CRS-EPS manifest video {video_id} escapes bound training data"
+                )
+        return epoch_manifest_data_order_sha256(crs_eps_manifest)
+    if crs_eps_manifest is not None:
+        raise IdentityError("non-CRS training cannot bind a CRS-EPS manifest")
     selected = []
     episodes = []
     packet_offset = 0
@@ -447,6 +504,7 @@ def derive_training_trace_identity(
     annotation_bytes=None,
     allow_list_bytes=None,
     cache_manifest_bytes=None,
+    crs_eps_manifest=None,
 ):
     """Derive every immutable identity field expected in optimizer-event traces."""
 
@@ -484,6 +542,7 @@ def derive_training_trace_identity(
             annotation_bytes=annotation_bytes,
             allow_list_bytes=allow_list_bytes,
             cache_manifest_bytes=cache_manifest_bytes,
+            crs_eps_manifest=crs_eps_manifest,
         ),
         "loss_normalization_sha256": canonical_json_sha256(
             {"model": model, "solver": solver}

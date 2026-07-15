@@ -9,6 +9,8 @@ from opentad.utils.device import get_model_device, move_data_to_device
 from opentad.utils.crs_eps_sampling import (
     canonical_json_sha256,
     episode_payload_sha256,
+    epoch_manifest_runtime_control,
+    validate_epoch_manifest,
 )
 
 
@@ -161,6 +163,10 @@ def _crs_eps_control(data_dict):
         "replay_range",
         "supervised_range",
         "gradient_ranges",
+        "video_covered_unique_bins",
+        "video_effective_sample_size",
+        "video_ipw_weight_sum",
+        "video_ipw_weight_squared_sum",
     }
     if not required.issubset(control):
         raise RuntimeError("CRS-EPS episode control lacks video-group fields")
@@ -432,6 +438,7 @@ def train_one_epoch(
     fixed_step_profiler=None,
     optimizer_event_recorder=None,
     visual_parameter_event_recorder=None,
+    crs_eps_manifest=None,
 ):
     """Training the model for one epoch"""
 
@@ -464,6 +471,13 @@ def train_one_epoch(
     crs_expected_draw_index = None
     crs_episode_payload_sha256s = None
     crs_expected_sequence_sha256 = None
+    crs_expected_group_index = 0
+    trusted_crs_manifest = None
+    if crs_eps_manifest is not None:
+        trusted_crs_manifest = copy.deepcopy(crs_eps_manifest)
+        validate_epoch_manifest(trusted_crs_manifest)
+        if int(trusted_crs_manifest["epoch"]) != int(curr_epoch):
+            raise RuntimeError("CRS-EPS manifest epoch differs from the training epoch")
     group_workload = None
     group_started_at = None
     if fixed_step_profiler is not None:
@@ -479,13 +493,28 @@ def train_one_epoch(
 
     loader_iterator = iter(train_loader)
     for iter_idx in range(num_iters):
-        data_wait_started_at = time.perf_counter()
-        raw_data_dict = next(loader_iterator)
-        data_wait_seconds = time.perf_counter() - data_wait_started_at
-        control = _transaction_control(raw_data_dict) if transaction is not None else None
-        crs_control = _crs_eps_control(raw_data_dict)
+        try:
+            data_wait_started_at = time.perf_counter()
+            raw_data_dict = next(loader_iterator)
+            data_wait_seconds = time.perf_counter() - data_wait_started_at
+            control = (
+                _transaction_control(raw_data_dict)
+                if transaction is not None
+                else None
+            )
+            crs_control = _crs_eps_control(raw_data_dict)
+        except Exception:
+            if active_crs_group is not None:
+                _rollback_crs_group(
+                    model, transaction, optimizer, crs_buffer_snapshot
+                )
+            raise
         if crs_control is not None:
             try:
+                if trusted_crs_manifest is None:
+                    raise RuntimeError(
+                        "CRS-EPS batches require a trusted immutable epoch manifest"
+                    )
                 group_size = int(crs_control["video_group_size"])
                 draw_index = int(crs_control["draw_index"])
                 starts_group = bool(crs_control["is_video_group_start"])
@@ -523,6 +552,10 @@ def train_one_epoch(
                 if starts_group:
                     if active_crs_group is not None:
                         raise RuntimeError("CRS-EPS video groups overlap")
+                    if int(crs_control["video_group_index"]) != crs_expected_group_index:
+                        raise RuntimeError(
+                            "CRS-EPS video-group order differs from immutable manifest"
+                        )
                     active_crs_group = group_identity
                     crs_buffer_snapshot = _buffer_snapshot(model)
                     crs_expected_draw_index = 0
@@ -534,9 +567,44 @@ def train_one_epoch(
                     raise RuntimeError(
                         "CRS-EPS draw membership/order differs from immutable manifest"
                     )
-                if episode_payload_sha256(crs_control) != payload_sha256:
+                expected_control = epoch_manifest_runtime_control(
+                    trusted_crs_manifest,
+                    crs_expected_group_index,
+                    crs_expected_draw_index,
+                    validate=False,
+                )
+                runtime_payload_sha256 = episode_payload_sha256(crs_control)
+                if (
+                    runtime_payload_sha256 != payload_sha256
+                    or payload_sha256 != expected_control["episode_payload_sha256"]
+                ):
                     raise RuntimeError(
                         "CRS-EPS draw payload differs from immutable manifest"
+                    )
+                runtime_binding = {
+                    field: crs_control[field]
+                    for field in (
+                        "video_id",
+                        "video_group_index",
+                        "video_group_size",
+                        "is_video_group_start",
+                        "is_video_group_end",
+                        "episode_manifest_sha256",
+                        "episode_sequence_sha256",
+                        "video_covered_unique_bins",
+                        "video_effective_sample_size",
+                        "video_ipw_weight_sum",
+                        "video_ipw_weight_squared_sum",
+                    )
+                }
+                expected_binding = {
+                    field: expected_control[field] for field in runtime_binding
+                }
+                if canonical_json_sha256(runtime_binding) != canonical_json_sha256(
+                    expected_binding
+                ):
+                    raise RuntimeError(
+                        "CRS-EPS runtime binding differs from immutable manifest"
                     )
                 crs_episode_payload_sha256s.append(payload_sha256)
                 crs_expected_draw_index += 1
@@ -592,6 +660,8 @@ def train_one_epoch(
                 raise RuntimeError("a new CRS-EPS group started before the failed boundary")
             if boundary:
                 skip_until_boundary = False
+                if crs_control is not None:
+                    crs_expected_group_index += 1
                 active_crs_group = None
                 crs_buffer_snapshot = None
                 crs_expected_draw_index = None
@@ -708,6 +778,8 @@ def train_one_epoch(
             episode_input_tokens = 0
             skip_until_boundary = not boundary
             if boundary:
+                if crs_control is not None:
+                    crs_expected_group_index += 1
                 active_crs_group = None
                 crs_buffer_snapshot = None
                 crs_expected_draw_index = None
@@ -906,6 +978,8 @@ def train_one_epoch(
         crs_expected_draw_index = None
         crs_episode_payload_sha256s = None
         crs_expected_sequence_sha256 = None
+        if crs_control is not None:
+            crs_expected_group_index += 1
         episode_input_tokens = 0
         optimizer.zero_grad(set_to_none=True)
         if fixed_step_profiler is not None:
@@ -983,6 +1057,12 @@ def train_one_epoch(
     if active_crs_group is not None or crs_buffer_snapshot is not None:
         _rollback_crs_group(model, transaction, optimizer, crs_buffer_snapshot)
         raise RuntimeError("CRS-EPS epoch ended inside a video group")
+    if (
+        trusted_crs_manifest is not None
+        and not (fixed_step_profiler is not None and fixed_step_profiler.complete)
+        and crs_expected_group_index != len(trusted_crs_manifest["videos"])
+    ):
+        raise RuntimeError("CRS-EPS epoch did not consume the immutable manifest exactly")
     if group_workload is not None or group_started_at is not None:
         raise RuntimeError("training epoch ended inside an optimizer workload group")
     if episode_weight or (

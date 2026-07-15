@@ -184,9 +184,11 @@ class CrsEpsFeatureDataset(StreamingFeatureDataset):
         record = self.video_records[video["video_id"]]
         replay_start, replay_end = draw["replay_range"]
         source_frames = tuple(record["source_frames"][replay_start:replay_end])
-        features = np.load(record["feature_path"], mmap_mode="r")[
-            replay_start:replay_end
-        ]
+        features = self._load_verified_feature_array(
+            record["feature_path"],
+            record["feature_sha256"],
+            video["video_id"],
+        )[replay_start:replay_end]
         inputs = np.asarray(features, dtype=np.float32).T.copy()
         masks = np.ones(replay_end - replay_start, dtype=np.bool_)
         previous_frame = (

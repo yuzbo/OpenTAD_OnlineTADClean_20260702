@@ -13,10 +13,12 @@ from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_role_signing import (
     sign_b0_evidence,
     sign_independent_review,
+    sign_posix_b0_leaf,
 )
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
+    B0_POSIX_LEAF_SCHEMA,
     B0_SCHEMA,
     B0_TEST_REPORT_SCHEMA,
     B0EvidenceError,
@@ -328,6 +330,57 @@ def _b0(root, private_key, *, commit):
             "checks": checks,
         },
     )
+    posix_dir = evidence_dir / "posix"
+    posix_dir.mkdir()
+    posix_log = posix_dir / log.name
+    posix_log.write_bytes(log.read_bytes())
+    posix_junit = posix_dir / junit.name
+    posix_junit.write_bytes(junit.read_bytes())
+    posix_leaf = _write_json(
+        posix_dir / "posix-b0.json",
+        sign_posix_b0_leaf(
+            {
+                "schema_version": B0_POSIX_LEAF_SCHEMA,
+                "status": "PASS",
+                "commit_sha": commit,
+                "manifest_sha256": sha256_file(manifest_path),
+                "platform": {
+                    "os_name": "posix",
+                    "sys_platform": "linux",
+                    "machine": "x86_64",
+                    "python_version": "3.11.0",
+                    "torch_version": "2.6.0",
+                },
+                "repository_clean_before": True,
+                "repository_clean_after": True,
+                "collected": 1,
+                "passed": 1,
+                "failed": 0,
+                "errors": 0,
+                "skipped": 0,
+                "suites": [
+                    {
+                        "name": "all_contracts",
+                        "status": "PASS",
+                        "canonical_argv": argv,
+                        "python_executable": "/usr/bin/python3",
+                        "collected": 1,
+                        "passed": 1,
+                        "failed": 0,
+                        "errors": 0,
+                        "skipped": 0,
+                        "log_path": posix_log.name,
+                        "log_sha256": sha256_file(posix_log),
+                        "junit_path": posix_junit.name,
+                        "junit_sha256": sha256_file(posix_junit),
+                        "testcase_manifest_sha256": canonical_json_sha256(cases),
+                    }
+                ],
+            },
+            private_key_path=private_key,
+            key_id="b0-test",
+        ),
+    )
     signed = sign_b0_evidence(
         {
             "schema_version": B0_SCHEMA,
@@ -342,6 +395,8 @@ def _b0(root, private_key, *, commit):
             "test_report_sha256": sha256_file(report_path),
             "audit_report_path": audit_path.name,
             "audit_report_sha256": sha256_file(audit_path),
+            "posix_leaf_path": posix_leaf.relative_to(evidence_dir).as_posix(),
+            "posix_leaf_sha256": sha256_file(posix_leaf),
         },
         private_key_path=private_key,
         key_id="b0-test",
@@ -457,7 +512,7 @@ def _patch_identities(
     monkeypatch.setattr(
         identity_module,
         "derive_training_trace_identity",
-        lambda cfg, data_identity, seed, world_size: dict(TRACE_IDENTITY),
+        lambda cfg, data_identity, seed, world_size, **kwargs: dict(TRACE_IDENTITY),
     )
     monkeypatch.setattr(
         launch_module,
@@ -665,6 +720,23 @@ def test_tampered_b0_leaf_is_rejected_even_when_root_is_unchanged(tmp_path, monk
             setup["config_path"],
             setup["ticket"],
             setup["profile_private"],
+        )
+
+
+def test_tampered_posix_b0_leaf_is_rejected_even_when_root_is_unchanged(tmp_path):
+    roots, b0_private, _, _ = _keys(tmp_path)
+    b0_path, _ = _b0(tmp_path, b0_private, commit=COMMIT)
+    (b0_path.parent / "posix" / "suite.log").write_text(
+        "forged Linux PASS\n", encoding="utf-8"
+    )
+
+    with pytest.raises(B0EvidenceError, match="hash mismatch"):
+        validate_b0_evidence(
+            _reference(b0_path, b0_path.parent),
+            base_dir=b0_path.parent,
+            expected_commit=COMMIT,
+            trust_root=roots["b0"],
+            repository_root=tmp_path,
         )
 
 

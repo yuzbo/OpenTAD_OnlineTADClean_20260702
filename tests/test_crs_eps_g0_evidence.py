@@ -1,7 +1,9 @@
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
+import torch
 
 import opentad.utils.crs_eps_gold_evidence as gold_evidence_module
 import opentad.utils.full_petal_launch as launch_module
@@ -22,6 +24,7 @@ from opentad.utils.crs_eps_sampling import (
 )
 from opentad.utils.full_petal_attestation import generate_private_key
 from opentad.utils.full_petal_launch import FullPetalLaunchError
+from tools import run_crs_eps_gold_audit as gold_audit_runner
 from opentad.utils.full_petal_role_signing import (
     sign_crs_eps_g0_audit,
     sign_crs_eps_g0_margins,
@@ -205,6 +208,20 @@ def _validate(bundle, **overrides):
         "resolved_config_sha256": RESOLVED,
         "scientific_config_sha256": SCIENTIFIC,
         "data_identity_sha256": DATA,
+        "crs_eps_contract": {
+            "draws_per_video": 1,
+            "suffix_bins": 8,
+            "context_bins": 192,
+            "detach_interval": 64,
+            "mixture": {
+                "uniform": 0.40,
+                "start": 0.15,
+                "end": 0.20,
+                "ongoing": 0.10,
+                "hardbg": 0.15,
+            },
+        },
+        "runtime_seed": 705,
     }
     values.update(overrides)
     return launch_module._validate_g0_artifact(
@@ -216,11 +233,40 @@ def _validate(bundle, **overrides):
 
 
 def test_signed_g0_pass_reproduces_and_binds_exact_launch(tmp_path):
-    audit, path, digest = _validate(_g0_bundle(tmp_path))
+    audit, path, digest, manifest = _validate(_g0_bundle(tmp_path))
 
     assert audit["status"] == "PASS"
     assert path.name == "audit.json"
     assert digest == _sha256(path)
+    assert manifest["seed"] == 705
+
+
+def test_g0_manifest_seed_and_sampling_contract_are_launch_bound(tmp_path):
+    bundle = _g0_bundle(tmp_path)
+    with pytest.raises(FullPetalLaunchError, match="sampling contract differs"):
+        _validate(bundle, runtime_seed=706)
+
+
+def test_g0_checkpoint_digest_is_from_the_exact_loaded_bytes(tmp_path):
+    checkpoint = tmp_path / "checkpoint.pth"
+    source = torch.nn.Linear(2, 1, bias=False)
+    with torch.no_grad():
+        source.weight.fill_(3.0)
+    torch.save({"state_dict": source.state_dict()}, checkpoint)
+    loaded_bytes = checkpoint.read_bytes()
+    target = torch.nn.Linear(2, 1, bias=False)
+
+    consumed_sha256 = gold_audit_runner._load_checkpoint(
+        target, checkpoint, "state_dict"
+    )
+    replacement = torch.nn.Linear(2, 1, bias=False)
+    with torch.no_grad():
+        replacement.weight.fill_(777.0)
+    torch.save({"state_dict": replacement.state_dict()}, checkpoint)
+
+    assert consumed_sha256 == hashlib.sha256(loaded_bytes).hexdigest()
+    assert consumed_sha256 != hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    assert torch.equal(target.weight, torch.full_like(target.weight, 3.0))
 
 
 def test_g0_kill_or_mismatched_launch_binding_cannot_authorize_profile(tmp_path):
