@@ -70,6 +70,8 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | Private Codex attachment, SHA256 recorded in `PRO_REVIEW_ABSORPTION_20260711.md` | `PRO_REVIEW_20260711.md`, `PRO_REVIEW_ABSORPTION_20260711.md` | PCEH target invalidity, CRS-EPS, formal training HOLD. |
 | Private Codex attachment, source archived byte-identically as `PRO_DIVERGENT_IDEA_REVIEW_20260711.md` | `PRO_DIVERGENT_IDEA_REVIEW_20260711.md`, `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md` | Full divergent review, 36 ideas, Top 5, route recommendation, independent partial rejection and revised gates. |
 | Private Codex attachment `8713e1a2-f9af-4f39-bcd2-908ba6ff41af/pasted-text.txt` | `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`, `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md` | Full 1,379-line review archived byte-identically; exact commit `6d88610`; launch-workdir P0; independent accept/qualify/reject decision. |
+| Private Codex attachment `c238c5ad-5124-4b4c-bd3b-0511d2778956/pasted-text.txt` | `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md` | Round 1 proved current Q2 is complete-video cached truncated-BPTT rather than CRS-EPS and froze Q1-Q12 for Round 2. |
+| Private Codex attachment `d7a3bf31-eaee-4d75-a994-33a6be466079/pasted-text.txt` | `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md` | Full 2,947-line Round-2 response archived byte-identically; `GO-HYBRID-PROTOCOL`; target-risk mathematics, replay/gold audit, profile replacement, competition matrix, implementation plan, kill rules, and independent amendments. |
 
 ## Current Code State Sources
 
@@ -115,6 +117,7 @@ If these become active again, create dedicated pages before using them as claims
 | Source | Main Imported Conclusions | Wiki Nodes |
 |---|---|---|
 | CAG-QIL, ICCV 2021 | Decision history, MDP, and start/end state transitions are prior art. | [papers/cagaqil2021-decision-context.md](papers/cagaqil2021-decision-context.md) |
+| OAT, ECCV 2022 official ECVA paper and DOI | Resolves the previously missing primary artifact; anchor-based early proposals, boundary refinement, and online suppression are verified prior art. | [papers/oat2022-online-tal.md](papers/oat2022-online-tal.md) |
 | SimOn, 2022 | Lightweight sequential On-TAL and recurrent prediction context are prior art; training can be inexpensive on frozen features. | [papers/simon2022-sequential-ontal.md](papers/simon2022-sequential-ontal.md) |
 | ProTAS, CVPR 2024 | Ongoing action progress used to refine causal online predictions is prior adjacent work. | [papers/protas2024-progress-aware.md](papers/protas2024-progress-aware.md) |
 | OpenHOUSE, ICCV 2025 | Hierarchical streaming action semantics and On-TAL plus free-form descriptions are occupied territory. | [papers/openhouse2025-hierarchical-streaming.md](papers/openhouse2025-hierarchical-streaming.md) |

@@ -1010,3 +1010,75 @@ Reversibility:
 - The proposed choices may be revised by the author after Round 2 and before
   sampler implementation. Once an experiment manifest is frozen, changes
   require a new protocol version, B0, review, and authorization.
+
+## DR-030: Adopt the Amended Round-2 Hybrid Protocol
+
+Status: active implementation contract; supersedes DR-029's pending Round-2
+decision while preserving DR-028's GPU block.
+
+Decision:
+
+> Implement and falsify a hybrid CRS-EPS protocol, but first close the launch
+> identity P0. The first post-P0 implementation is CPU-only immutable episode
+> manifests and exhaustive probability tests. Profile, effectiveness training,
+> raw-video Stage 2, and Full PETAL claims remain blocked.
+
+Frozen core:
+
+- primary target risk remains video-uniform per-video decision-time mean;
+- candidate training uses fixed `H=8`, frozen event/uniform mixture,
+  repeated-exposure HH/IPW, exact support, and ESS;
+- dynamic earliest-birth replay is a causal surrogate; video-start replay is
+  the gold reference;
+- sampled gradients preserve original global 64-token detach boundaries;
+- Q2 separates local direct binding effects from longitudinal policy effects;
+- sampled episodes independently reset/replay from the same parameter and
+  mutable-buffer snapshot; only gradients accumulate within a video group;
+- validation/test is complete chronological one-token streaming with immutable
+  emissions and no offline NMS;
+- cost uses physical token/frame/time/memory denominators and statistical ESS;
+- fixed binding, CRS efficiency, raw-video causality, and package novelty are
+  all unproven.
+
+Independent amendments:
+
+1. require matched stochasticity but choose token-addressed RNG only if a less
+   invasive audited mechanism is insufficient;
+2. freeze exact identity metric and matching definitions before results;
+3. record model-caused slot exhaustion as scientific failure and route kill;
+4. do not require positive LoRA-by-binding interaction when independent main
+   effects and fixed-effect persistence are demonstrated;
+5. label one-seed stopping as a resource kill rather than a population-level
+   scientific conclusion;
+6. report the full tIoU 0.3:0.7 vector plus its average;
+7. audit FineAction/MultiTHUMOS identity suitability before generalization;
+8. fail closed on cross-episode runtime-state or mutable-buffer leakage;
+9. treat OAT as verified ECCV 2022 prior art and reject the source review's
+   unresolved-artifact finding.
+
+Required order:
+
+1. repair `P0-LAUNCH-WORKDIR` and add deterministic fake-`sbatch` shell
+   integration coverage;
+2. implement and CPU-audit manifest construction, `q`, `rho`, union `pi`,
+   weights, multiplicities, coverage, and ESS;
+3. freeze exact identity metrics and the least invasive matched-stochasticity
+   audit;
+4. implement replay, denominator/lifecycle traces, and G0 gold controls;
+5. implement the replacement profile contract;
+6. freeze a clean commit, regenerate B0, and obtain independent PASS;
+7. only then request the first bounded G0/profile GPU-hour.
+
+Sources:
+
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md`;
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md`;
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md`;
+- [ideas/crs-eps-training.md](ideas/crs-eps-training.md).
+
+Reversibility:
+
+- The protocol may be killed by CPU probability closure, G0 state/gradient
+  fidelity, cost, or Q2 identity evidence. Changes after manifest freeze require
+  a new version and review. The prohibition on treating a protocol GO as an
+  effectiveness or novelty result is not reversible.

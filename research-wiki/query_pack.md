@@ -13,14 +13,14 @@ The task is fixed to standard fully supervised Online Temporal Action Detection/
 
 PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
 
-Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all tokens with chunk-detached state and steps once/video. Round 1 returned `REVISE-BEFORE-IMPLEMENTATION`; hybrid is provisional; P0, profile, and training remain blocked.
+Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all tokens with chunk-detached state and steps once/video. Round 2 conditionally accepts an amended hybrid for implementation and falsification only. `P0-LAUNCH-WORKDIR`, profile, effectiveness training, and raw-video Stage 2 remain blocked.
 
 ## Top Gaps
 
 1. **Raw-video instance-level joint training is missing.** Current On-TAD leaders use frozen/pre-extracted TSN, I3D, SlowFast, or pickle features; raw-video online methods predominantly solve frame-level OAD.
 2. **Window rediscovery is a structural failure.** Independent windows repeatedly rediscover one action, causing fragmentation, duplicates, same-class merging, and online-NMS dependence.
 3. **Current PCEH is scientifically blocked.** End/emit coupling, repeated late positives, class-level targets, end=emit decode, detached state, and GT proximity remain core concerns.
-4. **Full-packet training is unaffordable.** About 152,670 packet-level optimizer events and 7h/epoch are dominated by fine-grained I/O, preprocessing, dispatch, and repeated cache projection.
+4. **The current full reference is still expensive.** It uses only one optimizer event per video, but still runs every cached token through sequential Python `head.step`, loss construction, and truncated backward. Old 152,670 packet-event estimates describe the superseded PCEH route, not current Q2.
 5. **Generic streaming pretraining is occupied.** StreamFormer blocks the claim that a causal streaming backbone alone is new; BSP and offline E2E-TAD block generic boundary pretraining or PEFT claims.
 6. **The required intersection remains open.** Strict causal raw-video adaptation, persistent action-instance identity, standard immutable On-TAD emission, and prefix-equivalent efficient training must all hold together.
 7. **Same-class repetition and overlap remain direct risks.** ActionSwitch is the closest baseline and must be matched fairly.
@@ -28,7 +28,7 @@ Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all token
 
 ## Candidate Portfolio
 
-- **Q2 fixed/rematch:** treatment is partially identifiable, but no training protocol is approved. Round 2 must freeze target risk, active-at-entry replay, paired traces, and multi-denominator cost accounting.
+- **Q2 fixed/rematch:** treatment is partially identifiable. Round 2 freezes an amended hybrid protocol for implementation/falsification, while profile and effectiveness remain blocked behind P0, CPU probability closure, replay fidelity, paired traces, exact identity metrics, and multi-denominator cost accounting.
 - **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
 - **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
 - **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
@@ -86,4 +86,4 @@ Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more 
 
 ## Current Final Goal
 
-Do not start profile or training. Answer Round-1 Q1-Q12 and obtain the Round-2 protocol verdict while independently fixing dynamic `work_dir` with a real submit-shell test. Current author-response draft selects video-uniform risk, CRS-EPS main plus tiny full-stream gold audit, dynamic replay to earliest observable birth, a 10 GPU-hour future cap, and one-token formal serving; these remain protocol decisions, not evidence. Then implement, freeze a new commit, regenerate B0, and require `PASS / PROFILE=ALLOW`.
+Do not start profile or training. Round 2 has conditionally accepted an amended hybrid protocol for implementation and falsification only: CRS-EPS HH/IPW training, a tiny video-start full-stream state/loss/gradient gold audit, and complete chronological one-token evaluation. First close `P0-LAUNCH-WORKDIR` with a real deterministic fake-`sbatch` test; then implement only the CPU manifest/probability path (`q`, `rho`, union `pi`, weights, multiplicity, coverage, ESS). Exact identity metrics and matched stochasticity must be frozen before effectiveness work. Token-addressed RNG is a candidate implementation, not the only acceptable mechanism; slot exhaustion remains a scientific failure; a positive LoRA-by-binding interaction is not required. Freeze a clean commit, regenerate B0, and obtain a fresh independent `PASS / PROFILE=ALLOW` before the next GPU-hour.

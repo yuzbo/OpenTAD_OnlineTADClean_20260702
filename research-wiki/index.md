@@ -24,17 +24,20 @@ The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted aft
 
 The current implementation is the narrower **Q2 Persistent Binding reference**:
 fixed post-birth supervision versus per-prefix rematching on complete-video
-chronological cached features. Round 1 verified that it is not CRS-EPS: every
-token is scanned, state is detached across chunks, and one optimizer event is
-issued per video. A CRS-EPS-main/full-stream-gold hybrid is only provisional.
-`P0-LAUNCH-WORKDIR`, profile, raw-video adaptation, paper-method claims, and
-formal training remain blocked.
+chronological cached features. It is not CRS-EPS: every token is scanned,
+state is detached across chunks, and one optimizer event is issued per video.
+Round 2 grants a conditional protocol-level `GO` to a CRS-EPS-main plus
+full-stream-gold hybrid for implementation and falsification only. It does not
+grant profile, training, effectiveness, novelty, or raw-video permission.
+`P0-LAUNCH-WORKDIR` remains the exact first blocker.
 
 Read [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
 its [independent absorption](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md),
 the [CRS-EPS/Q2 Round-1 review](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md),
 its [absorption](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md),
-and [DR-028](decision_register.md#DR-028-revoke-profile-permission-and-fix-the-q2-launch-identity-before-gpu-work)
+the [Round-2 review](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md),
+its [independent absorption](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md),
+and [DR-030](decision_register.md#DR-030-adopt-the-amended-round-2-hybrid-protocol)
 before any GPU action.
 
 PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remains rejected because it leaves the task. Anytime-valid alarms remain archived outside the current fixed On-TAD route.
@@ -71,7 +74,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 
 | Node | Why It Matters |
 |---|---|
-| [paper:oat2022-online-tal](papers/oat2022-online-tal.md) | Early online proposals and boundary refinement; closest to "early hypothesis" risk. |
+| [paper:oat2022-online-tal](papers/oat2022-online-tal.md) | Verified ECCV 2022 OAT: early anchor proposals, boundary refinement, and online suppression. |
 | [paper:matr2024-memory](papers/matr2024-memory.md) | Strong memory-based On-TAL span baseline. |
 | [paper:actionswitch2024-state](papers/actionswitch2024-state.md) | State-change boundary and same-class/concurrent actions; direct threat to "state transition" novelty. |
 | [paper:hat2024-history-anchor](papers/hat2024-history-anchor.md) | History-enhanced anchors; shows history memory itself is not enough. |

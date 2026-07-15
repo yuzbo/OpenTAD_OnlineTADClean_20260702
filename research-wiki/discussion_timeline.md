@@ -731,3 +731,54 @@ Current decision:
 > Send Q1-Q12 for Round 2, fix the launch P0 without GPU work, and do not
 > implement CRS-EPS until target risk, state replay, weighting, gold audit,
 > profile, metrics, and kill contracts are frozen.
+
+### T23: Round 2 Freezes an Amended Hybrid Protocol
+
+The 2,947-line Round-2 response returned `GO-HYBRID-PROTOCOL`. This is a
+protocol-level permission to implement and falsify CRS-EPS, not permission to
+profile, train, enter raw-video Stage 2, or claim Full PETAL novelty.
+
+Accepted core:
+
+- current Q2 remains complete-video cached-feature truncated-BPTT and is not
+  CRS-EPS;
+- preserve video-uniform per-video decision-time target risk;
+- use uncapped HH/IPW over repeated episode exposures with a 0.40 uniform floor
+  and derived `w <= 2.5` invariant;
+- treat dynamic earliest-birth replay as a causal surrogate and video-start
+  replay as gold;
+- preserve global 64-token gradient boundaries;
+- separate local binding direct effects from longitudinal policy-mediated
+  divergence;
+- replace optimizer-event throughput with multi-denominator cost and ESS;
+- require feature provenance, five clocks, one-token formal evaluation, and
+  staged reconstruction baselines;
+- keep every GPU stage blocked behind P0, B0, and fresh independent review.
+
+Independent amendments:
+
+- matched stochasticity is mandatory, but token-addressed RNG is not the only
+  acceptable implementation;
+- exact duplicate/fragmentation evaluator definitions become a new P1;
+- model-caused slot exhaustion is a scientific kill rather than a rerunnable
+  invalid run;
+- zero LoRA-by-binding interaction is not itself a falsifier if both main
+  effects survive;
+- one seed is only a resource gate;
+- FineAction requires a same-class identity audit;
+- episodes within a video group share one gradient update but never residual
+  runtime state or untracked mutable buffers;
+- the review's `OAT_PRIMARY_ARTIFACT=UNRESOLVED` statement is rejected: OAT is
+  a verified ECCV 2022 paper with an official ECVA PDF and DOI.
+
+Artifacts:
+
+- [`../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md`](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md), SHA-256
+  `C7FBBC573D18DA7234CE787167AD1F07438101C3DC07D90899B09BE71CA7CEB3`;
+- [`../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md`](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md).
+
+Current decision:
+
+> Fix `P0-LAUNCH-WORKDIR` and its deterministic fake-`sbatch` integration
+> test, then implement only the CPU CRS-EPS manifest/probability path. Do not
+> spend another GPU-hour before a clean commit, complete B0, and fresh PASS.

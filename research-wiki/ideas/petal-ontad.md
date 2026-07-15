@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:petal-ontad
 title: "Persistent Event-Set On-TAD (former PETAL-OnTAD)"
-stage: blocked-pre-profile-q2-binding
+stage: hybrid-protocol-go-p0-blocked
 outcome: full-route-demoted
 updated: 2026-07-15
 target_gaps: ["G4", "G5", "G6", "G8", "G15"]
@@ -11,6 +11,25 @@ target_gaps: ["G4", "G5", "G6", "G8", "G15"]
 # Persistent Event-Set On-TAD
 
 `PETAL` is retained only in this node ID for history. The acronym is retired because it is already used by Prior-enhanced Temporal Action Localization.
+
+## 2026-07-15 Round-2 Final Protocol
+
+The package-level Full PETAL claim remains demoted and reconstructible. Round 2
+does not revive it. It conditionally authorizes implementation of a hybrid
+training protocol to test the narrower fixed post-birth supervision hypothesis:
+
+- CRS-EPS HH/IPW as candidate training;
+- a tiny video-start full-stream state/loss/gradient gold audit;
+- complete chronological one-token evaluation;
+- no profile, formal training, raw-video Stage 2, or novelty claim yet.
+
+The exact next step is still `P0-LAUNCH-WORKDIR`, followed only by the CPU
+episode-manifest and probability path. Independent review accepts the central
+hybrid verdict but makes matched stochasticity implementation-agnostic, adds an
+exact identity-evaluator contract, keeps slot exhaustion as scientific failure,
+and rejects a mandatory positive LoRA-by-binding interaction. See
+[the Round-2 absorption](../../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md)
+and [DR-030](../decision_register.md#DR-030-adopt-the-amended-round-2-hybrid-protocol).
 
 ## 2026-07-15 Q2 Audit Revision
 
@@ -159,8 +178,8 @@ Kill or demote the route if:
 
 ## Status
 
-`REVISE`. Full PETAL is demoted. Q2 is blocked before profile by the launch
-identity P0. Raw-video and formal training remain `HOLD`; no effectiveness or
-novelty claim is active.
+`GO-HYBRID-PROTOCOL` for implementation and falsification only. Full PETAL is
+demoted. Q2 is blocked before profile by the launch identity P0. Raw-video and
+formal training remain `HOLD`; no effectiveness or novelty claim is active.
 
 Deep-review prompt: [`../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md`](../../PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md).
