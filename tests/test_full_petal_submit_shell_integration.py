@@ -90,6 +90,8 @@ def test_submit_shell_consumes_ticket_identity_and_calls_fake_sbatch(tmp_path):
         source = SUBMIT_SCRIPT.read_text(encoding="utf-8")
         assert 'TICKET_FIELDS[work_dir]' in source
         assert 'SCRIPT_PATH="$RUN_DIR/job.sbatch"' in source
+        assert "CFG_WORK_DIR_ARG=work_dir=$Q_WORK_DIR" in source
+        assert '--cfg-options "$CFG_WORK_DIR_ARG"' in source
         assert '"$SBATCH_BIN" "$SCRIPT_PATH"' in source
         assert "$(date" not in source
         git_bash = next(

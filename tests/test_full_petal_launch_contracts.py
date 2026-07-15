@@ -212,7 +212,8 @@ def test_ticket_builder_and_slurm_launcher_use_the_locked_gate():
     assert 'set(overrides) != {"work_dir"}' in reader
     assert '--launch-mode "${MODE}"' in launcher
     assert '--launch-ticket "${TICKET}"' in launcher
-    assert '--cfg-options work_dir="${WORK_DIR}"' in launcher
+    assert "CFG_WORK_DIR_ARG=work_dir=$Q_WORK_DIR" in launcher
+    assert '--cfg-options "$CFG_WORK_DIR_ARG"' in launcher
     assert "STAMP=" not in launcher
     assert "RUNS_ROOT=" not in launcher
     assert "--nproc_per_node=1" in launcher
@@ -238,6 +239,7 @@ def test_isolated_torch_runner_bypasses_only_package_level_registration():
     assert "_install_b0_opentad" in source
     assert 'Registry("full_petal_b0_models")' in source
     assert 'sys.path.insert(0, str(repo_root))' in source
+    assert '_namespace("tests", repo_root / "tests")' in source
     assert "pytest.main(args.pytest_args)" in source
     assert "_ensure_cpu_nms_module" in source
     assert 'if exc.name != "nms_1d_cpu"' in source

@@ -35,7 +35,7 @@
     },
     {
       "path": "tools/testing/run_isolated_torch_pytest.py",
-      "sha256": "eef6e35a9fa90816e034bbbc7be18875b6dc54f8f38a871adde8b5248ba8e086"
+      "sha256": "2a2f93daa497597997b578c45f87e17ae6b22d7d4b6faee797973e2bf01cc8f3"
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
@@ -87,7 +87,7 @@
     },
     {
       "path": "tools/remote/submit_full_petal_q2_n16r4.sh",
-      "sha256": "1fa38b601f45e0e84bb5a9de61fc19c0f95eeb354560ba9f8b92b5b7d32a5129"
+      "sha256": "358e332b87b6c56204bf44c90225365c0f4ed78bdecb184b26c90a0ce35c6a1c"
     },
     {
       "path": "tests/full_petal_attestation_fixture.py",
@@ -548,7 +548,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_contracts.py",
-          "sha256": "3c7941a7dd69ba3e43d7373293e4b689cf781af5d4549b4028fb98c57c08f922",
+          "sha256": "ed7209b29c55a07190af078021cf6669ab35f82f450849b6077d2716567894cb",
           "test_functions": [
             "test_q2_bridge_configs_change_only_post_birth_loss_binding",
             "test_q2_bridge_freezes_scientific_and_cost_contracts",
@@ -662,7 +662,7 @@
         },
         {
           "path": "tests/test_full_petal_submit_shell_integration.py",
-          "sha256": "08aebde66625f2937c685f985e714400f6c0931a6e201fe1729a7f3f563ca8eb",
+          "sha256": "039228290ce59e029672dfe99faab09c92da5a366f7233d298e3c39f1f6d1a48",
           "test_functions": [
             "test_ticket_reader_accepts_only_ticket_root_work_dir",
             "test_ticket_reader_rejects_runtime_identity_drift",

@@ -118,6 +118,7 @@ TICKET=$Q_TICKET
 BASE_DIR=$Q_BASE_DIR
 RUN_DIR=$Q_RUN_DIR
 WORK_DIR=$Q_WORK_DIR
+CFG_WORK_DIR_ARG=work_dir=$Q_WORK_DIR
 CPUS_PER_TASK=$Q_CPUS_PER_TASK
 SEED=$Q_SEED
 RUN_ID=$Q_RUN_ID
@@ -147,7 +148,7 @@ torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
     --id "$RUN_ID" \
     --launch-mode "${MODE}" \
     --launch-ticket "${TICKET}" \
-    --cfg-options work_dir="${WORK_DIR}"
+    --cfg-options "$CFG_WORK_DIR_ARG"
 
 if [[ "$MODE" == "profile" ]]; then
     PROFILE_BUNDLE=$(dirname "$TICKET")

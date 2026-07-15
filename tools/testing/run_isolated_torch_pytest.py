@@ -207,6 +207,7 @@ def main(argv=None):
         ) from exc
 
     sys.path.insert(0, str(repo_root))
+    _namespace("tests", repo_root / "tests")
     _install_b0_opentad(repo_root)
     print(
         "FULL_PETAL_ISOLATED_TORCH="
