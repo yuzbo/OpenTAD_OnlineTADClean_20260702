@@ -151,7 +151,7 @@
     },
     {
       "path": "opentad/utils/crs_eps_audit.py",
-      "sha256": "fa6b1b105d2d76c52d398dce0ffbc337cf0fbc6162d5ee6ee0eb098ef956672f"
+      "sha256": "b359e2c361441b423cfdff2021048c910f8c58211bcaba6dd9e8734eecf2c29e"
     },
     {
       "path": "opentad/utils/crs_eps_gold_gate.py",
@@ -409,10 +409,14 @@
         },
         {
           "path": "tests/test_crs_eps_paired_audit.py",
-          "sha256": "3fc73426d810e26ccd1c9e8c4157ba698e514de88b6e9bf0723aa23d7e654e14",
+          "sha256": "50a17587daef067542c6a25c7acce541e8fa0bcd1ff758866f48b228bd39e9a3",
           "test_functions": [
             "test_binding_twin_restores_rng_and_closes_identical_single_instance_trace",
             "test_pair_vector_metrics_are_stable_for_large_values_and_reject_nonfinite",
+            "test_runtime_record_accepts_only_lifecycle_consistent_start_sentinels",
+            "test_runtime_record_rejects_start_state_lifecycle_mismatch",
+            "test_runtime_record_rejects_invalid_slot_status_and_shape",
+            "test_matched_pair_rejects_illegal_runtime_before_emitting_trace",
             "test_matched_pair_rejects_parameter_drift_before_forward",
             "test_replay_fidelity_pair_reports_state_shape_mismatch_without_false_cosine"
           ]

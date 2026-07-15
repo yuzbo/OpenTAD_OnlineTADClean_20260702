@@ -1342,3 +1342,48 @@ Reversibility:
 - Alternative formally specified runtime metrics would require a new schema
   and preregistration. The current selection and margins remain frozen for
   this route's next terminal G0 run.
+
+## DR-037: Prove Sentinel Lifecycle Legality Before Canonicalization
+
+Status: correction implemented; replacement B0 and same-reviewer acceptance
+pending.
+
+Decision:
+
+> Canonicalize a start-state NaN only after proving that its slot is not
+> ACTIVE. Require the exact invariant
+> `isnan(start_state) == (slot_status != ACTIVE)`, legal integer lifecycle
+> values, and shape alignment. Any violation aborts the paired audit before a
+> trace or G0 gate result can be produced.
+
+Reasons:
+
+- the previous discrete NaN mask preserved location but did not prove that the
+  location was legal under the model lifecycle;
+- two identically corrupt arms could otherwise receive cosine one and exact
+  discrete equality;
+- ACTIVE slots acquire finite starts at birth, while FREE and REFRACTORY slots
+  intentionally carry NaN;
+- G0 must fail closed on invalid runtime state rather than measure similarity
+  between invalid states.
+
+Rejected alternatives:
+
+- accept any matching NaN masks as sufficient fidelity evidence;
+- silently repair ACTIVE NaNs or inactive finite starts inside the audit;
+- weaken G0 margins or remove stress samples;
+- reuse the `5d27fca` B0/review chain after changing source code;
+- proceed to G0 on the basis that all 580 prior tests passed.
+
+Source:
+
+- same-reviewer exact-commit audit of `5d27fcad36062a6496f8c330ed15fba623a9667f`;
+- `opentad/utils/crs_eps_audit.py`;
+- `tests/test_crs_eps_paired_audit.py`;
+- [discussion_timeline.md#T30-same-reviewer-audit-rejects-unconstrained-sentinel-canonicalization](discussion_timeline.md).
+
+Reversibility:
+
+- Alternative lifecycle encodings require a schema change, but every accepted
+  runtime metric must continue to prove that its sentinel representation is
+  valid before canonicalization.

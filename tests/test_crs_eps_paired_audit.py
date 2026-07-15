@@ -1,14 +1,22 @@
 from copy import deepcopy
+from dataclasses import replace
+from types import MethodType, SimpleNamespace
 
 import pytest
 import torch
 
-from opentad.models.dense_heads.persistent_event_set_head import PersistentEventSetHead
+from opentad.models.dense_heads.persistent_event_set_head import (
+    SLOT_ACTIVE,
+    SLOT_FREE,
+    SLOT_REFRACTORY,
+    PersistentEventSetHead,
+)
 from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
 )
 from opentad.utils.crs_eps_audit import (
     _pair_vector_metrics,
+    _runtime_record,
     CrsEpsAuditError,
     capture_rng_snapshot,
     rng_snapshot_digest,
@@ -102,6 +110,21 @@ def _episode(stream_id="audit"):
     }
 
 
+def _runtime(slot_status, start_state):
+    num_slots = len(slot_status)
+    return SimpleNamespace(
+        queries=torch.zeros(1, num_slots, 2),
+        feature_memory=torch.zeros(1, 0, 2),
+        slot_status=torch.tensor(slot_status, dtype=torch.long),
+        refractory=torch.zeros(num_slots, dtype=torch.long),
+        start_state=torch.tensor(start_state, dtype=torch.float32),
+        score_state=torch.zeros(num_slots),
+        label_state=torch.full((num_slots,), -1, dtype=torch.long),
+        source_frames=(),
+        last_decision_frame=-1,
+    )
+
+
 def test_binding_twin_restores_rng_and_closes_identical_single_instance_trace():
     torch.manual_seed(17)
     fixed = _model("fixed_birth_slot")
@@ -143,6 +166,82 @@ def test_pair_vector_metrics_are_stable_for_large_values_and_reject_nonfinite():
         "norm_ratio": None,
         "sign_agreement": None,
     }
+
+
+def test_runtime_record_accepts_only_lifecycle_consistent_start_sentinels():
+    runtime = _runtime(
+        [SLOT_FREE, SLOT_REFRACTORY, SLOT_ACTIVE],
+        [float("nan"), float("nan"), 2.0],
+    )
+
+    record = _runtime_record(runtime)
+
+    assert record["discrete"]["start_state_nan_mask"] == [True, True, False]
+    assert record["continuous_norm"] >= 0.0
+
+
+@pytest.mark.parametrize(
+    ("slot_status", "start_state", "active_nan", "inactive_finite"),
+    [
+        ([SLOT_ACTIVE], [float("nan")], 1, 0),
+        ([SLOT_FREE], [1.0], 0, 1),
+        ([SLOT_REFRACTORY], [1.0], 0, 1),
+    ],
+)
+def test_runtime_record_rejects_start_state_lifecycle_mismatch(
+    slot_status, start_state, active_nan, inactive_finite
+):
+    with pytest.raises(
+        CrsEpsAuditError,
+        match=(
+            rf"start_state violates slot lifecycle: active_nan={active_nan}, "
+            rf"inactive_finite={inactive_finite}"
+        ),
+    ):
+        _runtime_record(_runtime(slot_status, start_state))
+
+
+def test_runtime_record_rejects_invalid_slot_status_and_shape():
+    with pytest.raises(CrsEpsAuditError, match="invalid lifecycle values"):
+        _runtime_record(_runtime([3], [float("nan")]))
+
+    malformed = _runtime([SLOT_FREE], [float("nan")])
+    malformed.start_state = torch.tensor([float("nan"), float("nan")])
+    with pytest.raises(CrsEpsAuditError, match="share one-dimensional shape"):
+        _runtime_record(malformed)
+
+
+def test_matched_pair_rejects_illegal_runtime_before_emitting_trace():
+    torch.manual_seed(29)
+    left = _model("fixed_birth_slot")
+    right = _model("fixed_birth_slot")
+    right.load_state_dict(left.state_dict())
+    original = left.train_crs_eps_episode
+
+    def corrupt_runtime(self, **kwargs):
+        output = original(**kwargs)
+        slot_status = output.runtime_state.slot_status.clone()
+        start_state = output.runtime_state.start_state.clone()
+        slot_status[0] = SLOT_ACTIVE
+        start_state[0] = float("nan")
+        return replace(
+            output,
+            runtime_state=replace(
+                output.runtime_state,
+                slot_status=slot_status,
+                start_state=start_state,
+            ),
+        )
+
+    left.train_crs_eps_episode = MethodType(corrupt_runtime, left)
+
+    with pytest.raises(CrsEpsAuditError, match="start_state violates slot lifecycle"):
+        run_matched_crs_eps_pair(
+            left,
+            right,
+            _episode(),
+            comparison_type="replay_fidelity",
+        )
 
 
 def test_matched_pair_rejects_parameter_drift_before_forward():

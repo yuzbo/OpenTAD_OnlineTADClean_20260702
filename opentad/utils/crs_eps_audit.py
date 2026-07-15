@@ -8,6 +8,12 @@ from pathlib import Path
 
 import torch
 
+from opentad.models.dense_heads.persistent_event_set_head import (
+    SLOT_ACTIVE,
+    SLOT_FREE,
+    SLOT_REFRACTORY,
+)
+
 from .evidence_bundle import publish_exclusive_file
 
 
@@ -127,6 +133,41 @@ def _pair_vector_metrics(left, right):
 
 
 def _runtime_record(runtime):
+    if not torch.is_tensor(runtime.slot_status) or not torch.is_tensor(
+        runtime.start_state
+    ):
+        raise CrsEpsAuditError("runtime lifecycle state must be tensor-valued")
+    if (
+        runtime.slot_status.ndim != 1
+        or runtime.start_state.ndim != 1
+        or runtime.slot_status.shape != runtime.start_state.shape
+    ):
+        raise CrsEpsAuditError(
+            "runtime slot_status and start_state must share one-dimensional shape"
+        )
+    if runtime.slot_status.device != runtime.start_state.device:
+        raise CrsEpsAuditError(
+            "runtime slot_status and start_state must share one device"
+        )
+    integer_dtypes = {
+        torch.uint8,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    }
+    if runtime.slot_status.dtype not in integer_dtypes:
+        raise CrsEpsAuditError("runtime slot_status must use an integer dtype")
+    valid_slot_status = (
+        (runtime.slot_status == SLOT_FREE)
+        | (runtime.slot_status == SLOT_ACTIVE)
+        | (runtime.slot_status == SLOT_REFRACTORY)
+    )
+    if not bool(valid_slot_status.all()):
+        raise CrsEpsAuditError("runtime slot_status contains invalid lifecycle values")
+    if not torch.is_floating_point(runtime.start_state):
+        raise CrsEpsAuditError("runtime start_state must use a floating dtype")
+
     finite_fields = {
         "queries": runtime.queries,
         "feature_memory": runtime.feature_memory,
@@ -144,6 +185,14 @@ def _runtime_record(runtime):
             + ", ".join([*invalid, *(["start_state"] if start_has_infinity else [])])
         )
     start_state_nan_mask = torch.isnan(runtime.start_state)
+    expected_nan_mask = runtime.slot_status != SLOT_ACTIVE
+    if not torch.equal(start_state_nan_mask, expected_nan_mask):
+        active_nan = int((start_state_nan_mask & ~expected_nan_mask).sum().item())
+        inactive_finite = int((~start_state_nan_mask & expected_nan_mask).sum().item())
+        raise CrsEpsAuditError(
+            "runtime start_state violates slot lifecycle: "
+            f"active_nan={active_nan}, inactive_finite={inactive_finite}"
+        )
     continuous = torch.cat(
         [
             runtime.queries.detach().float().reshape(-1).cpu(),

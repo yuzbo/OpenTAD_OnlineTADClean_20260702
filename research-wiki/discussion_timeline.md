@@ -951,3 +951,32 @@ Current decision:
 > Treat sentinel handling and numerical precision as audit-measurement fixes,
 > not method tuning. Freeze them, restart B0/review, and rerun the unchanged G0
 > contract to a signed PASS or KILL. A KILL blocks profile.
+
+### T30: Same-Reviewer Audit Rejects Unconstrained Sentinel Canonicalization
+
+Commit `5d27fcad36062a6496f8c330ed15fba623a9667f` passed the complete local and
+N16R4/Linux B0 matrix at `580/580`, and both signed roots were independently
+revalidated. The same locked reviewer nevertheless returned
+`REVISE / SENTINEL_AWARE_METRIC=FAIL / PROFILE=BLOCK / NEXT_GATE=FIX`.
+
+The reviewer reproduced a lifecycle-invalid runtime in which an ACTIVE slot
+carried `start_state=NaN`. The audit recorded the NaN mask, canonicalized the
+value to zero, and reported perfect runtime agreement because it never checked
+whether sentinel placement was legal. The converse FREE or REFRACTORY slot
+with a finite start was also accepted. This could let two equally corrupt arms
+produce a false G0 fidelity PASS.
+
+The correction now requires one-dimensional, shape-aligned lifecycle tensors,
+an integer slot status drawn from FREE, ACTIVE, and REFRACTORY, and the exact
+invariant `isnan(start_state) == (slot_status != ACTIVE)` before any
+canonicalization. ACTIVE starts must therefore be finite; FREE and REFRACTORY
+starts must be NaN. Focused tests cover all legal states, each mismatch, an
+invalid status, shape drift, and rejection at the paired-audit entry point.
+
+Current decision:
+
+> Treat NaN canonicalization as conditional on a proven lifecycle invariant.
+> Freeze the fail-closed correction, regenerate the exhaustive manifest, and
+> restart Linux B0, signed root B0, and same-reviewer acceptance. G0 samples,
+> margins, checkpoint, and model method remain unchanged; profile and formal
+> training stay blocked.
