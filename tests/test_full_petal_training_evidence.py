@@ -65,12 +65,13 @@ class _CommittedTransaction:
 
 
 def _record_committed(recorder, **kwargs):
-    proof = recorder.begin_optimizer_boundary()
     parameter = torch.nn.Parameter(torch.tensor(1.0))
     parameter.grad = torch.tensor(1.0)
     optimizer = torch.optim.SGD([parameter], lr=0.1)
+    transaction = _CommittedTransaction()
+    proof = recorder.begin_optimizer_boundary(optimizer, transaction)
     recorder.execute_optimizer_step(proof, optimizer)
-    recorder.commit_online_transaction(proof, _CommittedTransaction())
+    recorder.commit_online_transaction(proof, transaction)
     return recorder.record(boundary_proof=proof, skipped=False, **kwargs)
 
 
@@ -177,13 +178,20 @@ def test_optimizer_event_requires_step_and_transaction_commit():
     parameter = torch.nn.Parameter(torch.tensor(1.0))
     parameter.grad = torch.tensor(1.0)
     optimizer = torch.optim.SGD([parameter], lr=0.1)
-    proof = recorder.begin_optimizer_boundary()
+    transaction = _CommittedTransaction()
+    proof = recorder.begin_optimizer_boundary(optimizer, transaction)
     with pytest.raises(TrainingEvidenceError, match="completed optimizer step"):
         recorder.record(boundary_proof=proof, **kwargs)
+    other_optimizer = torch.optim.SGD(
+        [torch.nn.Parameter(torch.tensor(2.0))], lr=0.1
+    )
+    with pytest.raises(TrainingEvidenceError, match="different optimizer"):
+        recorder.execute_optimizer_step(proof, other_optimizer)
     recorder.execute_optimizer_step(proof, optimizer)
     with pytest.raises(TrainingEvidenceError, match="committed online transaction"):
         recorder.record(boundary_proof=proof, **kwargs)
-    transaction = _CommittedTransaction()
+    with pytest.raises(TrainingEvidenceError, match="different transaction"):
+        recorder.commit_online_transaction(proof, _CommittedTransaction())
     recorder.commit_online_transaction(proof, transaction)
     event = recorder.record(boundary_proof=proof, **kwargs)
 
@@ -212,7 +220,8 @@ def test_optimizer_event_rejects_a_scaler_skipped_optimizer_step():
         runtime_session=issue_runtime_session(),
     )
     optimizer = torch.optim.SGD([torch.nn.Parameter(torch.tensor(1.0))], lr=0.1)
-    proof = recorder.begin_optimizer_boundary()
+    transaction = _CommittedTransaction()
+    proof = recorder.begin_optimizer_boundary(optimizer, transaction)
 
     with pytest.raises(TrainingEvidenceError, match="optimizer.step was not executed"):
         recorder.execute_optimizer_step(proof, optimizer, scaler=SkippingScaler())
@@ -228,6 +237,15 @@ def test_runtime_session_state_rejects_unsigned_mutation():
 
     with pytest.raises(RuntimeAttestationError, match="state signature is invalid"):
         session.load_state_dict(state)
+
+
+def test_runtime_session_has_no_direct_boundary_confirmation_shortcut():
+    session = issue_runtime_session()
+
+    assert not hasattr(session, "mark_optimizer_step_completed")
+    assert not hasattr(session, "mark_transaction_commit_completed")
+    assert not hasattr(session, "_confirm_optimizer_step_completed")
+    assert not hasattr(session, "_confirm_transaction_commit_completed")
 
 
 def test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence(tmp_path):

@@ -51,7 +51,7 @@
     },
     {
       "path": "tests/full_petal_attestation_fixture.py",
-      "sha256": "e064c0b1d99a64fcbabbd0047fd6f321a3fd1231bf4e7306ef36ca36b41e387b"
+      "sha256": "5c994a378a7c76f4a7453bcad9a6e80db1ad0c60d9b3ac0963536617beb1f94c"
     },
     {
       "path": "opentad/utils/full_petal_b0.py",
@@ -71,7 +71,7 @@
     },
     {
       "path": "opentad/utils/full_petal_runtime_attestation.py",
-      "sha256": "88c7cc29b8f59bf2cde4f4b7d286b6871f66dcc1f5fe1185b758768ed74b7aa4"
+      "sha256": "abdfb28a94f89001a68cab63d0ea20357a4f5960d10f781ff4b85662a8018bb9"
     },
     {
       "path": "opentad/utils/evidence_bundle.py",
@@ -83,7 +83,7 @@
     },
     {
       "path": "opentad/utils/full_petal_training_evidence.py",
-      "sha256": "ac6b23eedae8e229d4d1cd69040005df4a491aa4b661b740d24a89cea77d349a"
+      "sha256": "a8b5561048545fc7e33e4f949e250d7c475b52d9991ec8c214d8a659a101d85a"
     },
     {
       "path": "opentad/utils/full_petal_data_contract.py",
@@ -111,7 +111,7 @@
     },
     {
       "path": "opentad/cores/train_engine.py",
-      "sha256": "9fa7612d2afb1f73e013f8d041b59bef570e919b174f64e47a8cb5710548cff2"
+      "sha256": "db3b64db0d20366ad5a2df1e1190a3e7cdcddcb04d4444b7bf1b96f530b49064"
     },
     {
       "path": "tools/check_full_petal_results.py",
@@ -489,13 +489,14 @@
         },
         {
           "path": "tests/test_full_petal_training_evidence.py",
-          "sha256": "434078704c8de32ac493efafd7041b4f7dd9630080b2cbfea172fd14c98f29ab",
+          "sha256": "01d9c12c7dba2c5c6fcbcb8df3802d4d5e7613be3b06d9170af4c2a9677f6505",
           "test_functions": [
             "test_training_cost_is_derived_from_committed_optimizer_events",
             "test_optimizer_event_recorder_commits_exact_runtime_events",
             "test_optimizer_event_requires_step_and_transaction_commit",
             "test_optimizer_event_rejects_a_scaler_skipped_optimizer_step",
             "test_runtime_session_state_rejects_unsigned_mutation",
+            "test_runtime_session_has_no_direct_boundary_confirmation_shortcut",
             "test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence",
             "test_training_tail_commitment_rejects_valid_prefix_truncation",
             "test_self_consistent_trace_from_uncertified_runtime_session_is_rejected",
@@ -507,7 +508,7 @@
         },
         {
           "path": "tests/test_full_petal_training_transaction.py",
-          "sha256": "891ff57d54acac40d07358733b98033208bfe425741bce2413d2ee3ae150a6bf",
+          "sha256": "660d100e321d7b82778b3d5ef166529173f27cf1442c1414f86cd282ee6614f4",
           "test_functions": [
             "test_stream_key_uses_structured_identity_without_delimiter_collisions",
             "test_training_forward_stages_state_across_chunks_until_atomic_commit",

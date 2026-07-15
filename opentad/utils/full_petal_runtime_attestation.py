@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+import torch
 
 from .full_petal_attestation import (
     ATTESTATION_ALGORITHM,
@@ -87,6 +88,16 @@ def _public_key_record(key, session_id):
 
 class RuntimeEvidenceSession:
     """Ephemeral signer whose private key never leaves the live launch process."""
+
+    __slots__ = (
+        "__active_boundary",
+        "__head",
+        "__key",
+        "__profile_issued",
+        "__sequence",
+        "__session_id",
+        "__visual_optimizer_event_id",
+    )
 
     def __init__(self, *, _key, _session_id):
         if not isinstance(_key, Ed25519PrivateKey):
@@ -173,15 +184,27 @@ class RuntimeEvidenceSession:
         self.__active_boundary = None
         self.__visual_optimizer_event_id = visual_optimizer_event_id
 
-    def begin_optimizer_boundary(self):
+    def begin_optimizer_boundary(self, optimizer, transaction):
         if self.__active_boundary is not None:
             raise RuntimeAttestationError("an optimizer boundary is already active")
+        if not isinstance(optimizer, torch.optim.Optimizer):
+            raise RuntimeAttestationError(
+                "authenticated optimizer evidence requires a PyTorch optimizer"
+            )
+        has_pending = getattr(transaction, "has_pending_online_update", None)
+        commit = getattr(transaction, "commit_online_update", None)
+        if not callable(has_pending) or not callable(commit) or not has_pending():
+            raise RuntimeAttestationError(
+                "authenticated optimizer evidence requires a pending online transaction"
+            )
         proof = object.__new__(_OptimizerBoundaryProof)
         proof.session_id = self.__session_id
         proof.nonce = secrets.token_hex(32)
         self.__active_boundary = {
             "proof": proof,
+            "optimizer": optimizer,
             "optimizer_step_completed": False,
+            "transaction": transaction,
             "transaction_commit_completed": False,
         }
         self.__visual_optimizer_event_id = None
@@ -200,13 +223,46 @@ class RuntimeEvidenceSession:
             )
         return active
 
-    def _confirm_optimizer_step_completed(self, proof):
+    def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
         active = self._boundary(proof)
         if active["optimizer_step_completed"]:
             raise RuntimeAttestationError("optimizer step was already confirmed")
+        if active["optimizer"] is not optimizer:
+            raise RuntimeAttestationError(
+                "optimizer boundary proof is bound to a different optimizer"
+            )
+        register_hook = getattr(optimizer, "register_step_post_hook", None)
+        if not callable(register_hook):
+            raise RuntimeAttestationError(
+                "authenticated optimizer evidence requires an optimizer step hook"
+            )
+        optimizer_step_completed = False
+
+        def confirm_step(observed_optimizer, *args, **kwargs):
+            del args, kwargs
+            nonlocal optimizer_step_completed
+            if observed_optimizer is not optimizer:
+                raise RuntimeAttestationError(
+                    "optimizer step hook observed a different optimizer"
+                )
+            optimizer_step_completed = True
+
+        hook = register_hook(confirm_step)
+        try:
+            if scaler is None:
+                optimizer.step()
+            else:
+                scaler.step(optimizer)
+                scaler.update()
+        finally:
+            hook.remove()
+        if not optimizer_step_completed:
+            raise RuntimeAttestationError(
+                "optimizer.step was not executed at the authenticated boundary"
+            )
         active["optimizer_step_completed"] = True
 
-    def _confirm_transaction_commit_completed(self, proof):
+    def commit_online_transaction(self, proof, transaction):
         active = self._boundary(proof)
         if not active["optimizer_step_completed"]:
             raise RuntimeAttestationError(
@@ -214,6 +270,25 @@ class RuntimeEvidenceSession:
             )
         if active["transaction_commit_completed"]:
             raise RuntimeAttestationError("transaction commit was already confirmed")
+        if active["transaction"] is not transaction:
+            raise RuntimeAttestationError(
+                "optimizer boundary proof is bound to a different transaction"
+            )
+        has_pending = getattr(transaction, "has_pending_online_update", None)
+        commit = getattr(transaction, "commit_online_update", None)
+        if not callable(has_pending) or not callable(commit):
+            raise RuntimeAttestationError(
+                "authenticated optimizer evidence requires an online transaction"
+            )
+        if not has_pending():
+            raise RuntimeAttestationError(
+                "authenticated optimizer boundary has no pending online transaction"
+            )
+        commit()
+        if has_pending():
+            raise RuntimeAttestationError(
+                "online transaction remained pending after commit"
+            )
         active["transaction_commit_completed"] = True
 
     def abort_optimizer_boundary(self, proof):

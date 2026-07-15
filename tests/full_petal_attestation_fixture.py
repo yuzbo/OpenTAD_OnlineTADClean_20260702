@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import torch
 
 from opentad.utils.full_petal_attestation import (
     ATTESTATION_ALGORITHM,
@@ -38,7 +39,22 @@ def attest_fixture(payload, *, private_key_path, key_id, role):
 
 
 def committed_optimizer_envelope(runtime_session, payload):
-    proof = runtime_session.begin_optimizer_boundary()
-    runtime_session._confirm_optimizer_step_completed(proof)
-    runtime_session._confirm_transaction_commit_completed(proof)
+    class Transaction:
+        def __init__(self):
+            self.pending = True
+
+        def has_pending_online_update(self):
+            return self.pending
+
+        def commit_online_update(self):
+            assert self.pending
+            self.pending = False
+
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    parameter.grad = torch.tensor(1.0)
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    transaction = Transaction()
+    proof = runtime_session.begin_optimizer_boundary(optimizer, transaction)
+    runtime_session.execute_optimizer_step(proof, optimizer)
+    runtime_session.commit_online_transaction(proof, transaction)
     return runtime_session.sign_committed_optimizer_event(payload, proof)

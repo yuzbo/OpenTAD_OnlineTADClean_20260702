@@ -465,7 +465,9 @@ def train_one_epoch(
                     transaction=transaction,
                 )
             if optimizer_event_recorder is not None:
-                boundary_proof = optimizer_event_recorder.begin_optimizer_boundary()
+                boundary_proof = optimizer_event_recorder.begin_optimizer_boundary(
+                    optimizer, transaction
+                )
             if scaler is not None:
                 scaler.unscale_(optimizer)
             _normalize_accumulated_gradients(model, episode_weight)

@@ -184,8 +184,8 @@ class OptimizerEventTraceRecorder:
         }
         required_runtime_methods = {
             "begin_optimizer_boundary",
-            "_confirm_optimizer_step_completed",
-            "_confirm_transaction_commit_completed",
+            "execute_optimizer_step",
+            "commit_online_transaction",
             "abort_optimizer_boundary",
             "sign_committed_optimizer_event",
         }
@@ -258,61 +258,25 @@ class OptimizerEventTraceRecorder:
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
 
-    def begin_optimizer_boundary(self):
+    def begin_optimizer_boundary(self, optimizer, transaction):
         try:
-            return self._runtime_session.begin_optimizer_boundary()
+            return self._runtime_session.begin_optimizer_boundary(
+                optimizer, transaction
+            )
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
 
     def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
-        register_hook = getattr(optimizer, "register_step_post_hook", None)
-        if not callable(register_hook):
-            raise TrainingEvidenceError(
-                "authenticated optimizer evidence requires an optimizer step hook"
-            )
-        optimizer_step_completed = False
-
-        def confirm_step(*args, **kwargs):
-            del args, kwargs
-            nonlocal optimizer_step_completed
-            optimizer_step_completed = True
-
-        hook = register_hook(confirm_step)
         try:
-            if scaler is None:
-                optimizer.step()
-            else:
-                scaler.step(optimizer)
-                scaler.update()
-        finally:
-            hook.remove()
-        if not optimizer_step_completed:
-            raise TrainingEvidenceError(
-                "optimizer.step was not executed at the authenticated boundary"
+            self._runtime_session.execute_optimizer_step(
+                proof, optimizer, scaler=scaler
             )
-        try:
-            self._runtime_session._confirm_optimizer_step_completed(proof)
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
 
     def commit_online_transaction(self, proof, transaction):
-        has_pending = getattr(transaction, "has_pending_online_update", None)
-        commit = getattr(transaction, "commit_online_update", None)
-        if not callable(has_pending) or not callable(commit):
-            raise TrainingEvidenceError(
-                "authenticated optimizer evidence requires an online transaction"
-            )
-        if not has_pending():
-            raise TrainingEvidenceError(
-                "authenticated optimizer boundary has no pending online transaction"
-            )
-        commit()
-        if has_pending():
-            raise TrainingEvidenceError(
-                "online transaction remained pending after commit"
-            )
         try:
-            self._runtime_session._confirm_transaction_commit_completed(proof)
+            self._runtime_session.commit_online_transaction(proof, transaction)
         except RuntimeAttestationError as exc:
             raise TrainingEvidenceError(str(exc)) from exc
 

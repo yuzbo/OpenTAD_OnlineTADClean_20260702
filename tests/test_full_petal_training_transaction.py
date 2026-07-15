@@ -411,16 +411,19 @@ class _OptimizerEventRecorder:
         self.fail_record = fail_record
         self.active_boundary = None
 
-    def begin_optimizer_boundary(self):
+    def begin_optimizer_boundary(self, optimizer, transaction):
         assert self.active_boundary is None
         self.active_boundary = {
+            "optimizer": optimizer,
             "optimizer_step_completed": False,
+            "transaction": transaction,
             "transaction_commit_completed": False,
         }
         return self.active_boundary
 
     def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
         assert proof is self.active_boundary
+        assert proof["optimizer"] is optimizer
         if scaler is None:
             optimizer.step()
         else:
@@ -431,6 +434,7 @@ class _OptimizerEventRecorder:
     def commit_online_transaction(self, proof, transaction):
         assert proof is self.active_boundary
         assert proof["optimizer_step_completed"] is True
+        assert proof["transaction"] is transaction
         transaction.commit_online_update()
         proof["transaction_commit_completed"] = True
 
@@ -442,10 +446,8 @@ class _OptimizerEventRecorder:
     def record(self, **event):
         proof = event.pop("boundary_proof")
         assert proof is self.active_boundary
-        assert proof == {
-            "optimizer_step_completed": True,
-            "transaction_commit_completed": True,
-        }
+        assert proof["optimizer_step_completed"] is True
+        assert proof["transaction_commit_completed"] is True
         self.calls.append(dict(event))
         self.active_boundary = None
         if self.fail_record:
