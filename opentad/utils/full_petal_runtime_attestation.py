@@ -8,6 +8,7 @@ import hashlib
 import json
 import secrets
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -31,6 +32,21 @@ RUNTIME_EVENT_SCHEMA = "full-petal-runtime-event-v1"
 RUNTIME_PROFILE_ROLE = "fixed-step-profile"
 RUNTIME_GENESIS_HASH = "0" * 64
 RUNTIME_STATE_DOMAIN = b"full-petal-runtime-state-v1\n"
+RUNTIME_STEP_RECEIPT_DOMAIN = b"full-petal-optimizer-step-receipt-v1\n"
+RUNTIME_COMMIT_RECEIPT_DOMAIN = b"full-petal-transaction-commit-receipt-v1\n"
+RUNTIME_STEP_RECEIPT_SCHEMA = "full-petal-optimizer-step-receipt-v1"
+RUNTIME_COMMIT_RECEIPT_SCHEMA = "full-petal-transaction-commit-receipt-v1"
+RUNTIME_RECEIPT_GENESIS_HASH = "0" * 64
+_BOUNDARY_STATE_FIELDS = {
+    "boundary_nonce",
+    "commit_receipt",
+    "optimizer",
+    "proof",
+    "runtime_head",
+    "runtime_sequence",
+    "step_receipt",
+    "transaction",
+}
 RUNTIME_EVENT_FIELDS = {
     "runtime_session_id",
     "runtime_sequence",
@@ -54,6 +70,18 @@ class _OptimizerBoundaryProof:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _OptimizerStepReceipt:
+    payload: bytes
+    signature: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class _TransactionCommitReceipt:
+    payload: bytes
+    signature: bytes
+
+
 def _canonical_bytes(value):
     try:
         return json.dumps(
@@ -71,6 +99,31 @@ def _canonical_bytes(value):
 
 def _event_message(envelope):
     return (RUNTIME_EVENT_SCHEMA + "\n").encode("ascii") + _canonical_bytes(envelope)
+
+
+def _object_identity(value):
+    value_type = type(value)
+    return {
+        "python_id": id(value),
+        "python_type": f"{value_type.__module__}.{value_type.__qualname__}",
+    }
+
+
+def _verified_receipt(receipt, expected_type, domain, public_key, label):
+    if not isinstance(receipt, expected_type):
+        raise RuntimeAttestationError(f"{label} is missing or has the wrong type")
+    try:
+        public_key.verify(receipt.signature, domain + receipt.payload)
+        body = json.loads(receipt.payload.decode("utf-8"))
+    except (InvalidSignature, UnicodeError, ValueError, TypeError) as exc:
+        raise RuntimeAttestationError(f"{label} signature is invalid") from exc
+    if not isinstance(body, dict) or _canonical_bytes(body) != receipt.payload:
+        raise RuntimeAttestationError(f"{label} payload is not canonical")
+    return body
+
+
+def _receipt_sha256(domain, receipt):
+    return hashlib.sha256(domain + receipt.payload + receipt.signature).hexdigest()
 
 
 def _public_key_record(key, session_id):
@@ -201,11 +254,14 @@ class RuntimeEvidenceSession:
         proof.session_id = self.__session_id
         proof.nonce = secrets.token_hex(32)
         self.__active_boundary = {
+            "boundary_nonce": proof.nonce,
+            "commit_receipt": None,
             "proof": proof,
             "optimizer": optimizer,
-            "optimizer_step_completed": False,
+            "runtime_head": self.__head,
+            "runtime_sequence": self.__sequence,
+            "step_receipt": None,
             "transaction": transaction,
-            "transaction_commit_completed": False,
         }
         self.__visual_optimizer_event_id = None
         return proof
@@ -214,19 +270,93 @@ class RuntimeEvidenceSession:
         active = self.__active_boundary
         if (
             active is None
+            or not isinstance(active, dict)
+            or set(active) != _BOUNDARY_STATE_FIELDS
             or not isinstance(proof, _OptimizerBoundaryProof)
             or active["proof"] is not proof
             or proof.session_id != self.__session_id
+            or proof.nonce != active["boundary_nonce"]
+            or active["runtime_sequence"] != self.__sequence
+            or active["runtime_head"] != self.__head
         ):
             raise RuntimeAttestationError(
                 "optimizer boundary proof is not active for this session"
             )
         return active
 
+    def _expected_step_receipt_body(self, active):
+        return {
+            "schema_version": RUNTIME_STEP_RECEIPT_SCHEMA,
+            "session_id": self.__session_id,
+            "boundary_nonce": active["boundary_nonce"],
+            "runtime_sequence": active["runtime_sequence"],
+            "runtime_head": active["runtime_head"],
+            "receipt_order": 1,
+            "optimizer_identity": _object_identity(active["optimizer"]),
+            "transaction_identity": _object_identity(active["transaction"]),
+            "previous_receipt_sha256": RUNTIME_RECEIPT_GENESIS_HASH,
+        }
+
+    def _validated_step_receipt(self, active):
+        receipt = active["step_receipt"]
+        if not isinstance(receipt, _OptimizerStepReceipt):
+            raise RuntimeAttestationError(
+                "optimizer event lacks a completed optimizer step receipt"
+            )
+        body = _verified_receipt(
+            receipt,
+            _OptimizerStepReceipt,
+            RUNTIME_STEP_RECEIPT_DOMAIN,
+            self.__key.public_key(),
+            "optimizer step receipt",
+        )
+        if body != self._expected_step_receipt_body(active):
+            raise RuntimeAttestationError(
+                "optimizer step receipt does not match the active boundary"
+            )
+        return receipt
+
+    def _expected_commit_receipt_body(self, active, step_receipt):
+        return {
+            "schema_version": RUNTIME_COMMIT_RECEIPT_SCHEMA,
+            "session_id": self.__session_id,
+            "boundary_nonce": active["boundary_nonce"],
+            "runtime_sequence": active["runtime_sequence"],
+            "runtime_head": active["runtime_head"],
+            "receipt_order": 2,
+            "optimizer_identity": _object_identity(active["optimizer"]),
+            "transaction_identity": _object_identity(active["transaction"]),
+            "previous_receipt_sha256": _receipt_sha256(
+                RUNTIME_STEP_RECEIPT_DOMAIN, step_receipt
+            ),
+        }
+
+    def _validated_commit_receipt(self, active):
+        step_receipt = self._validated_step_receipt(active)
+        receipt = active["commit_receipt"]
+        if not isinstance(receipt, _TransactionCommitReceipt):
+            raise RuntimeAttestationError(
+                "optimizer event lacks a committed online transaction receipt"
+            )
+        body = _verified_receipt(
+            receipt,
+            _TransactionCommitReceipt,
+            RUNTIME_COMMIT_RECEIPT_DOMAIN,
+            self.__key.public_key(),
+            "transaction commit receipt",
+        )
+        if body != self._expected_commit_receipt_body(active, step_receipt):
+            raise RuntimeAttestationError(
+                "transaction commit receipt does not match the optimizer step"
+            )
+        return receipt
+
     def execute_optimizer_step(self, proof, optimizer, *, scaler=None):
         active = self._boundary(proof)
-        if active["optimizer_step_completed"]:
+        if active["step_receipt"] is not None:
             raise RuntimeAttestationError("optimizer step was already confirmed")
+        if active["commit_receipt"] is not None:
+            raise RuntimeAttestationError("transaction receipt precedes optimizer step")
         if active["optimizer"] is not optimizer:
             raise RuntimeAttestationError(
                 "optimizer boundary proof is bound to a different optimizer"
@@ -260,15 +390,18 @@ class RuntimeEvidenceSession:
             raise RuntimeAttestationError(
                 "optimizer.step was not executed at the authenticated boundary"
             )
-        active["optimizer_step_completed"] = True
+        receipt_payload = _canonical_bytes(self._expected_step_receipt_body(active))
+        active["step_receipt"] = _OptimizerStepReceipt(
+            payload=receipt_payload,
+            signature=self.__key.sign(
+                RUNTIME_STEP_RECEIPT_DOMAIN + receipt_payload
+            ),
+        )
 
     def commit_online_transaction(self, proof, transaction):
         active = self._boundary(proof)
-        if not active["optimizer_step_completed"]:
-            raise RuntimeAttestationError(
-                "transaction commit cannot precede optimizer step"
-            )
-        if active["transaction_commit_completed"]:
+        step_receipt = self._validated_step_receipt(active)
+        if active["commit_receipt"] is not None:
             raise RuntimeAttestationError("transaction commit was already confirmed")
         if active["transaction"] is not transaction:
             raise RuntimeAttestationError(
@@ -289,7 +422,15 @@ class RuntimeEvidenceSession:
             raise RuntimeAttestationError(
                 "online transaction remained pending after commit"
             )
-        active["transaction_commit_completed"] = True
+        receipt_payload = _canonical_bytes(
+            self._expected_commit_receipt_body(active, step_receipt)
+        )
+        active["commit_receipt"] = _TransactionCommitReceipt(
+            payload=receipt_payload,
+            signature=self.__key.sign(
+                RUNTIME_COMMIT_RECEIPT_DOMAIN + receipt_payload
+            ),
+        )
 
     def abort_optimizer_boundary(self, proof):
         if self.__active_boundary is None:
@@ -323,14 +464,8 @@ class RuntimeEvidenceSession:
 
     def sign_committed_optimizer_event(self, payload, proof):
         active = self._boundary(proof)
-        if not active["optimizer_step_completed"]:
-            raise RuntimeAttestationError(
-                "optimizer event lacks a completed optimizer step"
-            )
-        if not active["transaction_commit_completed"]:
-            raise RuntimeAttestationError(
-                "optimizer event lacks a committed online transaction"
-            )
+        self._validated_step_receipt(active)
+        self._validated_commit_receipt(active)
         if not isinstance(payload, Mapping):
             raise RuntimeAttestationError("optimizer event payload is invalid")
         event_id = payload.get("event_id")

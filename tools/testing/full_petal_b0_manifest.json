@@ -71,7 +71,7 @@
     },
     {
       "path": "opentad/utils/full_petal_runtime_attestation.py",
-      "sha256": "abdfb28a94f89001a68cab63d0ea20357a4f5960d10f781ff4b85662a8018bb9"
+      "sha256": "06dc250aeb5f3511e9da85c60961fded54421d00639c0abefa57f202cd2ab41e"
     },
     {
       "path": "opentad/utils/evidence_bundle.py",
@@ -489,11 +489,12 @@
         },
         {
           "path": "tests/test_full_petal_training_evidence.py",
-          "sha256": "01d9c12c7dba2c5c6fcbcb8df3802d4d5e7613be3b06d9170af4c2a9677f6505",
+          "sha256": "157adca5a256570078cf63a9658437331b3a6c94e95c2e9beb99165c2d027c3b",
           "test_functions": [
             "test_training_cost_is_derived_from_committed_optimizer_events",
             "test_optimizer_event_recorder_commits_exact_runtime_events",
             "test_optimizer_event_requires_step_and_transaction_commit",
+            "test_mutable_private_boundary_flags_cannot_mint_optimizer_evidence",
             "test_optimizer_event_rejects_a_scaler_skipped_optimizer_step",
             "test_runtime_session_state_rejects_unsigned_mutation",
             "test_runtime_session_has_no_direct_boundary_confirmation_shortcut",

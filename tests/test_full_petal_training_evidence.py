@@ -154,7 +154,8 @@ def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):
 
 
 def test_optimizer_event_requires_step_and_transaction_commit():
-    timestamps = iter((0.0, 1.0, 2.0, 3.0, 4.0))
+    timestamps = iter(float(value) for value in range(10))
+    runtime_session = issue_runtime_session()
     recorder = OptimizerEventTraceRecorder(
         precision="fp32",
         effective_batch_size=1,
@@ -163,7 +164,7 @@ def test_optimizer_event_requires_step_and_transaction_commit():
         scheduler_config_sha256="2" * 64,
         data_order_sha256="3" * 64,
         loss_normalization_sha256="4" * 64,
-        runtime_session=issue_runtime_session(),
+        runtime_session=runtime_session,
         clock=lambda: next(timestamps),
     )
     kwargs = {
@@ -188,17 +189,87 @@ def test_optimizer_event_requires_step_and_transaction_commit():
     with pytest.raises(TrainingEvidenceError, match="different optimizer"):
         recorder.execute_optimizer_step(proof, other_optimizer)
     recorder.execute_optimizer_step(proof, optimizer)
+    active = runtime_session._RuntimeEvidenceSession__active_boundary
+    step_receipt = active["step_receipt"]
+    active["step_receipt"] = step_receipt.__class__(
+        payload=step_receipt.payload + b" ", signature=step_receipt.signature
+    )
+    with pytest.raises(TrainingEvidenceError, match="signature is invalid"):
+        recorder.commit_online_transaction(proof, transaction)
+    active["step_receipt"] = step_receipt
     with pytest.raises(TrainingEvidenceError, match="committed online transaction"):
         recorder.record(boundary_proof=proof, **kwargs)
     with pytest.raises(TrainingEvidenceError, match="different transaction"):
         recorder.commit_online_transaction(proof, _CommittedTransaction())
     recorder.commit_online_transaction(proof, transaction)
+    commit_receipt = active["commit_receipt"]
     event = recorder.record(boundary_proof=proof, **kwargs)
 
     assert event["event_id"] == "optimizer-event-00000000"
     assert recorder.events == (event,)
     assert parameter.item() == pytest.approx(0.9)
     assert transaction.commits == 1
+
+    replay_optimizer = torch.optim.SGD(
+        [torch.nn.Parameter(torch.tensor(3.0))], lr=0.1
+    )
+    replay_transaction = _CommittedTransaction()
+    replay_proof = recorder.begin_optimizer_boundary(
+        replay_optimizer, replay_transaction
+    )
+    replay_state = runtime_session._RuntimeEvidenceSession__active_boundary
+    replay_state["step_receipt"] = step_receipt
+    replay_state["commit_receipt"] = commit_receipt
+    with pytest.raises(TrainingEvidenceError, match="does not match"):
+        recorder.record(boundary_proof=replay_proof, **kwargs)
+    recorder.abort_optimizer_boundary(replay_proof)
+
+
+def test_mutable_private_boundary_flags_cannot_mint_optimizer_evidence():
+    session = issue_runtime_session()
+    recorder = OptimizerEventTraceRecorder(
+        precision="fp32",
+        effective_batch_size=1,
+        world_size=1,
+        optimizer_config_sha256="1" * 64,
+        scheduler_config_sha256="2" * 64,
+        data_order_sha256="3" * 64,
+        loss_normalization_sha256="4" * 64,
+        runtime_session=session,
+    )
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    transaction = _CommittedTransaction()
+    proof = recorder.begin_optimizer_boundary(optimizer, transaction)
+    state = session._RuntimeEvidenceSession__active_boundary
+    state["optimizer_step_completed"] = True
+    state["transaction_commit_completed"] = True
+
+    with pytest.raises(TrainingEvidenceError, match="not active"):
+        recorder.record(
+            epoch=0,
+            episode_id="bypass",
+            input_tokens=1,
+            skipped=False,
+            boundary_proof=proof,
+        )
+
+    state.pop("optimizer_step_completed")
+    state.pop("transaction_commit_completed")
+    state["step_receipt"] = True
+    state["commit_receipt"] = True
+    with pytest.raises(TrainingEvidenceError, match="step receipt"):
+        recorder.record(
+            epoch=0,
+            episode_id="forged-receipts",
+            input_tokens=1,
+            skipped=False,
+            boundary_proof=proof,
+        )
+    recorder.abort_optimizer_boundary(proof)
+    assert parameter.item() == pytest.approx(1.0)
+    assert transaction.commits == 0
+    assert recorder.events == ()
 
 
 def test_optimizer_event_rejects_a_scaler_skipped_optimizer_step():
