@@ -7,7 +7,7 @@
   "runner_sources": [
     {
       "path": "tools/run_full_petal_b0.py",
-      "sha256": "889cc83cce85787bf7afed380411b4358a029eaf41ce947e4bedf09f10a9e56c"
+      "sha256": "09627a89eb7c398bf5a8db2c9b451dc5e70a4d47304cb557ead6d5e478cfcee0"
     },
     {
       "path": "tools/testing/run_isolated_torch_pytest.py",
@@ -15,27 +15,27 @@
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
-      "sha256": "17a6e4465ee2d38918e4da1a7e3de04ad349e2bce8fdb4d4f2117f1e8eb748d7"
+      "sha256": "d636b8d1c839d09634b4dc9f6415338cc6dcff4c1f642d2e6d37cec36815914c"
     },
     {
       "path": "tools/build_full_petal_run_manifest.py",
-      "sha256": "0ac39271eff25465e884bd7ef0fccf3e25c0be971c2045293b943e8e6c7095ad"
+      "sha256": "768941f1f6537f5d09a9c6c27259c1d1e6422be46de442374a6a87644d552e21"
     },
     {
       "path": "opentad/utils/full_petal_b0.py",
-      "sha256": "59201daa2aae059d3f6052840272b61832417e6fe38068d5612c6a9263c308d5"
+      "sha256": "e91a5905956a23a59298425fec1b737c9ad841ea645ad2b42a0b22dd952dbcf6"
     },
     {
       "path": "opentad/utils/full_petal_attestation.py",
-      "sha256": "3c45e9402b15c82adcd3f30e0de8c279a059ae6ab6bb8f26241d826a246515b6"
+      "sha256": "0d9355ee7fc835c4f786e85bb8d8c5f58dfa8ea14200d143633c80f1779b21b2"
     },
     {
       "path": "opentad/utils/full_petal_launch.py",
-      "sha256": "285c5a5edbd514070b6b7709aad37a3d717375ca59b2eeff8bbab789b35e4bfe"
+      "sha256": "5b1fae164d842ced14e88add6f4970a9581fced3b15640be6732ab0573883192"
     },
     {
       "path": "tools/check_full_petal_results.py",
-      "sha256": "eb0d4a2455205d44431b9a313f930580a926cc4866acfc08cbe08f44b6a9733b"
+      "sha256": "b1fefa925607c6724bb6371ed4cc176cbf8ea63f3df92f20f62e2a92139c28b8"
     }
   ],
   "schema_version": "full-petal-b0-manifest-v1",
@@ -225,7 +225,7 @@
         },
         {
           "path": "tests/test_full_petal_data_contract.py",
-          "sha256": "64e7678078c3b49ded801d3ae25956453aa5891214ef6592e7566012548640cd",
+          "sha256": "cda9011e193c08f253456d1271c1c7ff293f6bb9a5e15bc247db55c8ec7636ff",
           "test_functions": [
             "test_chunk_boundary_uses_exact_decimal_arithmetic",
             "test_strict_thumos_annotation_subsets_lock_canonical_160_40",
@@ -242,6 +242,7 @@
             "test_historical_211_manifest_reports_exact_diff_against_observed_213",
             "test_historical_reporting_counts_are_strict",
             "test_strict_reporting_comparison_rejects_unexplained_211_213_difference",
+            "test_reporting_artifacts_are_rebuilt_from_locked_source_files",
             "test_hashes_and_saved_json_are_deterministic",
             "test_hardware_runtime_manifest_validates_fixed_step_profile",
             "test_hardware_runtime_validation_rejects_invalid_required_fields",
@@ -268,18 +269,19 @@
         },
         {
           "path": "tests/test_full_petal_identity.py",
-          "sha256": "419c9a7d9fd518b69080e48b47c0643cdd3fc7b0add4d21af557724beb3277e3",
+          "sha256": "746c57c4563c7675d5a711ea3dd19edb3d1ae132901ea70671e88536a5bf30a8",
           "test_functions": [
             "test_data_identity_dereferences_every_feature_and_rejects_tampering",
             "test_scientific_source_identity_excludes_only_authorization_config",
             "test_profile_reuse_accepts_exact_authorization_literals_only",
+            "test_profile_reuse_rejects_same_tree_diff_from_a_diverged_history",
             "test_runtime_identity_hash_binds_resume_checkpoint_contents",
             "test_slurm_identity_is_parsed_and_bound_to_active_allocation"
           ]
         },
         {
           "path": "tests/test_full_petal_launch_contracts.py",
-          "sha256": "c6ee151e721c766732a3429cd9e41a12755fc99af686ae0ca96928f62354b58b",
+          "sha256": "9f7de89d33655f5e737bd3aa1cfa9053697d036393ddc9e68b540b772f4f88ba",
           "test_functions": [
             "test_q2_bridge_configs_change_only_post_birth_loss_binding",
             "test_q2_bridge_freezes_scientific_and_cost_contracts",
@@ -297,7 +299,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_gate.py",
-          "sha256": "9fe1e381905fedbcde8e6033effab87a7574d4a7b6de9396481821a840ad0666",
+          "sha256": "0ba8130389d2830a8c0ba7d81561eb31e99e165f480b1941c16f8a2ac54a84ae",
           "test_functions": [
             "test_non_full_petal_config_does_not_require_a_ticket",
             "test_profile_requires_signed_b0_same_reviewer_and_bound_runtime",
@@ -330,21 +332,25 @@
         },
         {
           "path": "tests/test_full_petal_registry_build.py",
-          "sha256": "d9b661e46b30ccdd5bdf512e153f8d6325570eb68b4cc6122974b7f8c9a53508",
+          "sha256": "581fbdaa4b8b58ed5b2ff6169a9b016a48cbac52c00e627327176742b2dd98c0",
           "test_functions": [
-            "test_locked_q2_config_builds_through_real_mmengine_registry"
+            "test_locked_q2_config_builds_and_runs_in_fresh_production_import"
           ]
         },
         {
           "path": "tests/test_full_petal_result_gate.py",
-          "sha256": "b0bfbe2be3cc4473b99788cc91c47b5aee3f1299ffc1da403396a8a8943aa2d7",
+          "sha256": "31234f01441d96c74c1619583cc0f9de453d167bdbd653488cd4a159baa7ce07",
           "test_functions": [
             "test_signed_replay_can_pass_independent_claim_and_project_gates",
             "test_c1_and_c2_remain_independent",
             "test_gate_rejects_handwritten_metrics_cost_and_pass_flags",
             "test_gate_rejects_unsigned_or_tampered_run_evidence",
+            "test_gate_rejects_rehashed_reporting_and_fineaction_semantic_forgery",
             "test_gate_rejects_self_consistent_evaluation_ticket_for_wrong_checkpoint",
             "test_gate_rejects_signed_receipt_without_active_slurm_allocation",
+            "test_formal_signer_rejects_data_artifact_substitution",
+            "test_formal_signer_rejects_evaluator_spec_substitution",
+            "test_formal_signer_rejects_self_reported_training_identity",
             "test_gate_rejects_unsigned_prerequisite_after_all_outer_hashes_are_rebuilt",
             "test_project_gate_requires_reporting_and_fineaction_evidence",
             "test_c1_map_gain_cannot_hide_worse_duplicate_and_fragmentation",
@@ -353,10 +359,11 @@
         },
         {
           "path": "tests/test_full_petal_run_manifest_cli.py",
-          "sha256": "504a02fd31521e8fb8832cfc4653438a99b61142de1edfd454a99c45e6cda31c",
+          "sha256": "6adbfd99a2412d58c3e9818982f2228e6e0d865b196353bbef84a97132e4db33",
           "test_functions": [
-            "test_cli_builds_manifest_from_ticket_commit_and_canonical_protocol",
-            "test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch"
+            "test_cli_wires_validated_manifest_builder_and_canonical_protocol",
+            "test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch",
+            "test_dedicated_formal_signer_rejects_arbitrary_role_payload"
           ]
         },
         {
@@ -372,18 +379,21 @@
         },
         {
           "path": "tests/test_full_petal_training_evidence.py",
-          "sha256": "f0a8b0b07894da2f58c209aba82073122c99fbf3031bd2edef9f8126c1d84ece",
+          "sha256": "a79f21c6e6a02e9e765b7e383724b2b04508da307d41d148452e8acacec79d67",
           "test_functions": [
             "test_training_cost_is_derived_from_committed_optimizer_events",
             "test_optimizer_event_recorder_commits_exact_runtime_events",
             "test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence",
             "test_training_tail_commitment_rejects_valid_prefix_truncation",
-            "test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes"
+            "test_split_evidence_publication_rolls_back_before_commitment",
+            "test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes",
+            "test_evidence_bundle_rejects_absolute_parent_and_symlink_escape",
+            "test_checkpoint_bytes_are_read_once_against_the_signed_reference"
           ]
         },
         {
           "path": "tests/test_full_petal_training_transaction.py",
-          "sha256": "e21f4b2402b9e3dd72cd9ad8bc4bb286e05fc6cf7f9a203caae151c966267709",
+          "sha256": "259d7551a50d673654c14dd3a41f5d72abab6f79a7824b1d2fb4e95c23a79694",
           "test_functions": [
             "test_stream_key_uses_structured_identity_without_delimiter_collisions",
             "test_training_forward_stages_state_across_chunks_until_atomic_commit",
@@ -396,13 +406,16 @@
             "test_train_engine_records_one_successful_event_per_complete_episode",
             "test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step",
             "test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event",
-            "test_commit_failure_precedes_all_parameter_optimizer_scheduler_and_scaler_mutation",
+            "test_commit_failure_restores_all_parameter_optimizer_scheduler_and_scaler_mutation",
+            "test_every_post_gradient_failure_restores_the_complete_training_transaction",
+            "test_training_produces_event_bound_visual_parameter_evidence",
+            "test_visual_evidence_failure_rolls_back_optimizer_and_both_evidence_streams",
             "test_fixed_step_profile_stops_only_after_committed_episode_boundary"
           ]
         },
         {
           "path": "tests/test_immutable_event_ledger.py",
-          "sha256": "00307583add228458ec30929bba4301df9fa252c0c0f6f1d7d56f24e48c98e28",
+          "sha256": "0f3d498ec37be58774ee85dac2c0cc7bf9fcadf8ad0ddbf1af167110ceb24102",
           "test_functions": [
             "test_canonical_json_and_row_hash_are_order_independent",
             "test_in_memory_ledger_builds_independent_per_stream_chains",
@@ -412,6 +425,8 @@
             "test_writer_rejects_duplicate_ids_and_decreasing_emit_frames",
             "test_builder_detaches_rows_from_caller_mutation",
             "test_formal_event_schema_rejects_gt_taint_and_all_unregistered_extras",
+            "test_optional_formal_fields_have_exact_scalar_and_hash_schemas",
+            "test_optional_timing_fields_are_cross_checked_against_frames",
             "test_atomic_writer_only_appends_and_can_resume_existing_chain",
             "test_atomic_writer_holds_one_exclusive_process_lease",
             "test_persisted_ledger_requires_external_commitment_and_round_trips",

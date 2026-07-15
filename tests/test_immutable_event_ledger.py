@@ -144,6 +144,14 @@ def test_builder_detaches_rows_from_caller_mutation():
     "extra",
     [
         {"ground_truth": {"segment": [1, 2]}},
+        {"ground_truths": [{"segment": [1, 2]}]},
+        {"annotations": [{"segment": [1, 2]}]},
+        {"gt_labels": [1]},
+        {"gt_segments": [[1, 2]]},
+        {"labels": [1]},
+        {"raw_predictions": {"scores": [0.9]}},
+        {"segments": [[1, 2]]},
+        {"targets": [1]},
         {"raw_prediction": {"scores": [0.9]}},
         {"segment": {"nested": {"target": [1, 2]}}},
         {"harmless_but_unregistered": 1},
@@ -152,6 +160,51 @@ def test_builder_detaches_rows_from_caller_mutation():
 def test_formal_event_schema_rejects_gt_taint_and_all_unregistered_extras(extra):
     with pytest.raises(LedgerValidationError, match="taint|schema differs"):
         ImmutableEventLedger().append(_event("tainted", **extra))
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"input_provenance_digest": "not-a-hash"}, "SHA-256"),
+        ({"segment": [0.0, "bad"]}, "finite"),
+        ({"emit_time_sec": {"value": 1.0}}, "finite"),
+        ({"fps": 0.0}, "positive"),
+        ({"latency_frames": 1}, "inconsistent"),
+        ({"latency_definition": ["unsupported"]}, "non-empty string"),
+    ],
+)
+def test_optional_formal_fields_have_exact_scalar_and_hash_schemas(override, message):
+    with pytest.raises(LedgerValidationError, match=message):
+        ImmutableEventLedger().append(_event("bad-optional", **override))
+
+
+def test_optional_timing_fields_are_cross_checked_against_frames():
+    valid = _event(
+        "timed",
+        emit_frame=10,
+        start_frame=4,
+        end_frame=8,
+        source_frame=9,
+        segment=[2.0, 4.0],
+        emit_time_sec=5.0,
+        source_time_sec=4.5,
+        fps=2.0,
+        latency_frames=2,
+        latency_sec=1.0,
+        predicted_end_latency_sec=1.0,
+        latency_definition="emit_time_minus_predicted_end_time",
+        input_provenance_digest="b" * 64,
+    )
+    row = ImmutableEventLedger().append(valid)
+    assert row["segment"] == [2.0, 4.0]
+
+    forged = dict(valid)
+    forged["emit_time_sec"] = 4.0
+    with pytest.raises(
+        LedgerValidationError,
+        match="source_time_sec exceeds emit_time_sec|emit_time_sec.*inconsistent",
+    ):
+        ImmutableEventLedger().append(forged)
 
 
 def test_atomic_writer_only_appends_and_can_resume_existing_chain(tmp_path):

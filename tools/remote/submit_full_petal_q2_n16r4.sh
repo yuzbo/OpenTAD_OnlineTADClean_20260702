@@ -93,12 +93,10 @@ set -euo pipefail
 
 cd "$BASE_DIR"
 source tools/env/activate_n16r4_causaltad.sh
-if [[ "$MODE" == "profile" ]]; then
-    [[ -n "${FULL_PETAL_PROFILE_ATTESTATION_KEY:-}" && -f "$FULL_PETAL_PROFILE_ATTESTATION_KEY" ]] || {
-        echo "Profile job lacks the external attestation private key" >&2
-        exit 2
-    }
-fi
+[[ -n "${FULL_PETAL_EXECUTION_ATTESTATION_KEY:-}" && -f "$FULL_PETAL_EXECUTION_ATTESTATION_KEY" ]] || {
+    echo "Full PETAL job lacks the external execution attestation private key" >&2
+    exit 2
+}
 [[ -z "$(git status --porcelain)" ]] || {
     echo "Compute-node checkout became dirty before launch" >&2
     exit 2
@@ -117,9 +115,11 @@ torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
     --cfg-options work_dir="${RUN_DIR}/work"
 
 if [[ "$MODE" == "profile" ]]; then
-    PROFILE_COUNT=$(find "$RUN_DIR/work" -type f -name fixed_step_profile.json | wc -l)
-    [[ "$PROFILE_COUNT" -eq 1 ]] || {
-        echo "Profile launch did not produce exactly one fixed-step artifact" >&2
+    PROFILE_BUNDLE=$(dirname "$TICKET")
+    [[ -f "$PROFILE_BUNDLE/fixed_step_profile.json" && \
+       -f "$PROFILE_BUNDLE/fixed_step_optimizer_trace.jsonl" && \
+       -f "$PROFILE_BUNDLE/fixed_step_optimizer_trace.commitment.json" ]] || {
+        echo "Profile launch did not publish the complete ticket-bound evidence bundle" >&2
         exit 2
     }
     if find "$RUN_DIR/work" -type f -name '*.pth' -print -quit | grep -q .; then
@@ -130,4 +130,4 @@ fi
 SBATCH
 
 echo "FULL_PETAL_RUN_DIR=$RUN_DIR"
-sbatch "$SCRIPT_PATH"
+/usr/bin/sbatch "$SCRIPT_PATH"

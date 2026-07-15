@@ -1,59 +1,50 @@
-from .prior_generator import AnchorGenerator, PointGenerator, IrregularPointGenerator, IrregularPointGeneratorV2
-from .anchor_head import AnchorHead
-from .anchor_free_head import AnchorFreeHead
-from .rpn_head import RPNHead
-from .afsd_coarse_head import AFSDCoarseHead
-from .actionformer_head import ActionFormerHead
-from .tridet_head import TriDetHead
-from .temporalmaxer_head import TemporalMaxerHead
-from .tem_head import TemporalEvaluationHead, GCNextTemporalEvaluationHead, LocalGlobalTemporalEvaluationHead
-from .vsgn_rpn_head import VSGNRPNHead
-from .dyn_head import TDynHead
-from .irregular_actionformer_head import IrregularActionFormerHead
-from .irregular_actionformer_bridge_head import IrregularActionFormerBridgeHead
-from .irregular_actionformer_head_v2 import IrregularActionFormerHeadV2
-from .irregular_actionformer_head_v3 import IrregularActionFormerHeadV3
-from .irregular_actionformer_head_v3_oabs import IrregularActionFormerHeadV3OABS
-from .geometry_residual import GeometryResidualCalibrator
-from .native_physical_point_head import NativePhysicalPointHead
-from .native_physical_multiscale_head import NativePhysicalMultiScaleHead
-from .query_decoder_head import QueryDecoderHead
-from .physical_segment_head import PhysicalSegmentHead
-from .matr_head import MATRHead
-from .prefix_event_emission_head import PrefixEventEmissionHead
+"""Route-aware dense-head registration.
+
+The Full PETAL head is dependency-light and registered on normal package import.
+Legacy OpenTAD heads remain available through explicit lazy registration.
+"""
+
+from importlib import import_module
+
 from .persistent_event_set_head import PersistentEventSetHead
-from ..builder import HEADS
 
-HEADS.register_module()(PrefixEventEmissionHead)
 
-__all__ = [
-    "AnchorGenerator",
-    "PointGenerator",
-    "IrregularPointGenerator",
-    "IrregularPointGeneratorV2",
-    "AnchorHead",
-    "AnchorFreeHead",
-    "RPNHead",
-    "AFSDCoarseHead",
-    "ActionFormerHead",
-    "IrregularActionFormerHead",
-    "IrregularActionFormerBridgeHead",
-    "IrregularActionFormerHeadV2",
-    "IrregularActionFormerHeadV3",
-    "IrregularActionFormerHeadV3OABS",
-    "GeometryResidualCalibrator",
-    "NativePhysicalPointHead",
-    "NativePhysicalMultiScaleHead",
-    "QueryDecoderHead",
-    "PhysicalSegmentHead",
-    "MATRHead",
-    "PrefixEventEmissionHead",
-    "PersistentEventSetHead",
-    "TriDetHead",
-    "TemporalMaxerHead",
-    "TemporalEvaluationHead",
-    "GCNextTemporalEvaluationHead",
-    "LocalGlobalTemporalEvaluationHead",
-    "VSGNRPNHead",
-    "TDynHead",
-]
+_LEGACY_HEAD_MODULES = (
+    "prior_generator",
+    "anchor_head",
+    "anchor_free_head",
+    "rpn_head",
+    "afsd_coarse_head",
+    "actionformer_head",
+    "tridet_head",
+    "temporalmaxer_head",
+    "tem_head",
+    "vsgn_rpn_head",
+    "dyn_head",
+    "irregular_actionformer_head",
+    "irregular_actionformer_bridge_head",
+    "irregular_actionformer_head_v2",
+    "irregular_actionformer_head_v3",
+    "irregular_actionformer_head_v3_oabs",
+    "geometry_residual",
+    "native_physical_point_head",
+    "native_physical_multiscale_head",
+    "query_decoder_head",
+    "physical_segment_head",
+    "matr_head",
+    "prefix_event_emission_head",
+)
+
+
+def register_all_dense_heads():
+    for module_name in _LEGACY_HEAD_MODULES:
+        import_module(f"{__name__}.{module_name}")
+
+    from ..builder import HEADS
+    from .prefix_event_emission_head import PrefixEventEmissionHead
+
+    if HEADS.get("PrefixEventEmissionHead") is None:
+        HEADS.register_module()(PrefixEventEmissionHead)
+
+
+__all__ = ["PersistentEventSetHead", "register_all_dense_heads"]

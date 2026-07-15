@@ -67,6 +67,7 @@ launch_contract = dict(
     ],
     allowed_cfg_overrides=["work_dir"],
     require_clean_checkout=True,
+    trusted_scontrol_path="/usr/bin/scontrol",
     attestation_trust_roots=dict(
         b0=dict(
             key_id="full-petal-b0-20260713",
@@ -196,6 +197,8 @@ evaluation = dict(
     tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
     latency_budgets_sec=[0.5, 1.0, 2.0, 4.0],
     fps=fps,
+    identity_tiou_threshold=0.5,
+    identity_latency_budget_sec=1.0,
     require_ledger=True,
     require_no_future=True,
     ground_truth_filename=annotation_path,

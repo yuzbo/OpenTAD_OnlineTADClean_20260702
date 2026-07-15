@@ -102,8 +102,8 @@ def generate_private_key(path):
     return public_key_base64(path)
 
 
-def sign_payload(payload, *, private_key_path, key_id, role):
-    """Return a deep-copied payload with a domain-separated Ed25519 attestation."""
+def _sign_payload(payload, *, private_key_path, key_id, role):
+    """Internal primitive for dedicated, schema-validating evidence producers."""
 
     if not isinstance(payload, Mapping):
         raise AttestationError("attested payload must be an object")
@@ -181,6 +181,5 @@ __all__ = [
     "generate_private_key",
     "public_key_base64",
     "public_key_sha256",
-    "sign_payload",
     "verify_payload",
 ]

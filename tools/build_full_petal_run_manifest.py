@@ -79,10 +79,13 @@ def build_from_inputs(
     artifacts,
     private_key_path,
     key_id,
+    bundle_root,
 ):
     expected = set(COMMON_ARTIFACT_ROLES)
     if claim == "C2":
-        expected.add("raw_visual_audit")
+        expected.update(
+            {"visual_parameter_trace", "visual_parameter_commitment"}
+        )
     elif claim != "C1":
         raise TrainingEvidenceError("formal run claim must be C1 or C2")
     if set(artifacts) != expected:
@@ -127,6 +130,7 @@ def build_from_inputs(
         commit_sha=commit_sha,
         protocol_sha256=canonical_json_sha256(protocol),
         artifacts=artifacts,
+        bundle_root=bundle_root,
         private_key_path=_outside_repository(private_key_path, "formal signing key"),
         key_id=key_id,
     )
@@ -159,6 +163,7 @@ def main(argv=None):
             artifacts=_artifacts(args.artifact),
             private_key_path=args.private_key,
             key_id=args.key_id,
+            bundle_root=output.parent,
         )
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("x", encoding="utf-8", newline="\n") as handle:

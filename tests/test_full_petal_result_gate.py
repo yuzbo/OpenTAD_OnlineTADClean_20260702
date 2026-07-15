@@ -2,12 +2,19 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
 import pytest
+import torch
+from mmengine import Config
 
-from opentad.utils.full_petal_attestation import generate_private_key, sign_payload
+from opentad.utils.full_petal_attestation import (
+    _sign_payload,
+    generate_private_key,
+    public_key_base64,
+)
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
@@ -17,16 +24,25 @@ from opentad.utils.full_petal_b0 import (
 )
 from opentad.utils.full_petal_data_contract import (
     build_fineaction_qualification_report,
+    build_id_file_provenance,
     build_reporting_universe_manifest,
     compare_reporting_universe,
     save_json,
     sha256_file,
 )
-from opentad.utils.full_petal_identity import DATA_IDENTITY_SCHEMA
-from opentad.utils.full_petal_training_evidence import (
-    build_formal_run_manifest,
-    persist_training_trace,
+from opentad.utils.full_petal_identity import (
+    DATA_IDENTITY_SCHEMA,
+    derive_training_trace_identity,
 )
+from opentad.utils.full_petal_training_evidence import (
+    TrainingEvidenceError,
+    build_formal_run_manifest,
+    derive_fixed_step_profile_measurements,
+    persist_training_trace,
+    persist_visual_parameter_trace,
+    tensor_sha256,
+)
+from opentad.utils.full_petal_launch import resolved_config_sha256
 from opentad.utils.immutable_event_ledger import (
     ImmutableEventLedger,
     persist_verified_ledger,
@@ -55,8 +71,13 @@ def _write_json(path, payload):
     return path
 
 
-def _reference(path):
-    return {"path": str(path.resolve()), "sha256": sha256_file(path)}
+def _reference(path, root=None):
+    reference_path = (
+        str(path.resolve())
+        if root is None
+        else path.resolve().relative_to(root.resolve()).as_posix()
+    )
+    return {"path": reference_path, "sha256": sha256_file(path)}
 
 
 def _protocol(claim):
@@ -116,7 +137,7 @@ def _keys(tmp_path, monkeypatch):
     return formal_private, b0_private, review_private, profile_private
 
 
-def _b0_evidence(root, private_key):
+def _b0_evidence(root, private_key, *, commit=COMMIT):
     b0_dir = root / "b0"
     b0_dir.mkdir(parents=True)
     log = b0_dir / "tests.log"
@@ -153,7 +174,7 @@ def _b0_evidence(root, private_key):
     test_report = {
         "schema_version": B0_TEST_REPORT_SCHEMA,
         "status": "PASS",
-        "commit_sha": COMMIT,
+        "commit_sha": commit,
         "manifest_sha256": sha256_file(manifest_path),
         "collected": 1,
         "passed": 1,
@@ -171,9 +192,9 @@ def _b0_evidence(root, private_key):
                 "failed": 0,
                 "errors": 0,
                 "skipped": 0,
-                "log_path": str(log),
+                "log_path": log.name,
                 "log_sha256": sha256_file(log),
-                "junit_path": str(junit),
+                "junit_path": junit.name,
                 "junit_sha256": sha256_file(junit),
                 "testcase_manifest_sha256": canonical_json_sha256(cases),
             }
@@ -189,7 +210,7 @@ def _b0_evidence(root, private_key):
                 "name": name,
                 "status": "PASS",
                 "canonical_argv": [name],
-                "log_path": str(path),
+                "log_path": path.name,
                 "log_sha256": sha256_file(path),
             }
         )
@@ -198,26 +219,26 @@ def _b0_evidence(root, private_key):
         {
             "schema_version": B0_AUDIT_REPORT_SCHEMA,
             "status": "PASS",
-            "commit_sha": COMMIT,
+            "commit_sha": commit,
             "manifest_sha256": sha256_file(manifest_path),
             "blocking_findings": 0,
             "protocol_violations": 0,
             "checks": checks,
         },
     )
-    signed = sign_payload(
+    signed = _sign_payload(
         {
             "schema_version": B0_SCHEMA,
             "status": "PASS",
-            "commit_sha": COMMIT,
+            "commit_sha": commit,
             "test_count": 1,
             "blocking_findings": 0,
             "protocol_violations": 0,
-            "manifest_path": str(manifest_path),
+            "manifest_path": manifest_path.name,
             "manifest_sha256": sha256_file(manifest_path),
-            "test_report_path": str(test_report_path),
+            "test_report_path": test_report_path.name,
             "test_report_sha256": sha256_file(test_report_path),
-            "audit_report_path": str(audit_report_path),
+            "audit_report_path": audit_report_path.name,
             "audit_report_sha256": sha256_file(audit_report_path),
         },
         private_key_path=private_key,
@@ -227,73 +248,125 @@ def _b0_evidence(root, private_key):
     return _reference(_write_json(b0_dir / "b0.json", signed))
 
 
-def _qualification_evidence(root, name, payload):
-    path = _write_json(root / f"{name}.json", payload)
-    return {**payload, "artifact_path": str(path), "artifact_sha256": sha256_file(path)}
+def _fineaction_sources(root):
+    media_dir = root / "media"
+    media_dir.mkdir(parents=True)
+    database = {}
+    entries = []
+    for index in range(10):
+        video_id = f"fineaction_{index:03d}"
+        media_path = media_dir / f"{video_id}.mp4"
+        media_path.write_bytes(f"verified-media-{index}".encode("ascii"))
+        entries.append(
+            {
+                "video_id": video_id,
+                "path": media_path.relative_to(root).as_posix(),
+                "sha256": sha256_file(media_path),
+                "size_bytes": media_path.stat().st_size,
+            }
+        )
+        database[video_id] = {
+            "subset": "training" if index < 5 else "validation",
+            "duration": 10.0,
+            "frame": 300,
+            "annotations": [
+                {"segment": segment, "label": "same-class"}
+                for segment in ([0.0, 4.0], [1.0, 5.0], [2.0, 6.0])
+            ],
+        }
+    annotation = _write_json(root / "annotation.json", {"database": database})
+    inventory = _write_json(
+        root / "media-inventory.json",
+        {
+            "schema": "full_petal.fineaction_media_inventory",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "entries": entries,
+        },
+    )
+    terms = root / "license-terms.txt"
+    terms.write_text("FineAction research terms\n", encoding="utf-8")
+    license_path = _write_json(
+        root / "license.json",
+        {
+            "schema": "full_petal.fineaction_license",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "license_id": "FineAction-research",
+            "access_authorized": True,
+            "terms": {"path": terms.name, "sha256": sha256_file(terms)},
+        },
+    )
+    preprocessing = _write_json(
+        root / "preprocessing.json",
+        {
+            "schema": "full_petal.fineaction_causal_preprocessing",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "future_frames_allowed": False,
+            "timestamp_convention": "zero_based_source_frame",
+            "frame_stride": 2,
+            "annotation_sha256": sha256_file(annotation),
+            "media_inventory_sha256": sha256_file(inventory),
+        },
+    )
+    smoke = _write_json(
+        root / "loader-smoke.json",
+        {
+            "schema": "full_petal.fineaction_loader_smoke",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "status": "PASS",
+            "command": ["python", "-m", "pytest", "tests/test_fineaction_loader.py"],
+            "exit_code": 0,
+            "tests_passed": 1,
+            "tests_failed": 0,
+            "tests_skipped": 0,
+            "annotation_sha256": sha256_file(annotation),
+            "media_inventory_sha256": sha256_file(inventory),
+            "preprocessing_sha256": sha256_file(preprocessing),
+        },
+    )
+    return {
+        "annotation": annotation,
+        "media_inventory": inventory,
+        "license": license_path,
+        "preprocessing": preprocessing,
+        "loader_smoke": smoke,
+    }
 
 
 def _reporting_evidence(root):
     reporting_dir = root / "reporting"
     reporting_dir.mkdir(parents=True)
     ids = [f"historical_{index:03d}" for index in range(211)]
+    observed_ids = [*ids, "extra_a", "extra_b"]
+    reasons = {
+        "extra_a": "documented canonical addition",
+        "extra_b": "documented canonical addition",
+    }
+    locked_ids_path = _write_json(reporting_dir / "locked-ids.json", ids)
+    observed_ids_path = _write_json(reporting_dir / "observed-ids.json", observed_ids)
+    reasons_path = _write_json(reporting_dir / "difference-reasons.json", reasons)
     universe = build_reporting_universe_manifest(
         ids,
-        provenance={"source": "locked-fixture"},
+        provenance=build_id_file_provenance(locked_ids_path, ids),
         seed=23,
         created_at="2026-07-13T08:00:00Z",
     )
     comparison = compare_reporting_universe(
         universe,
-        [*ids, "extra_a", "extra_b"],
-        observed_provenance={"source": "observed-fixture"},
-        difference_reasons={
-            "extra_a": "documented canonical addition",
-            "extra_b": "documented canonical addition",
-        },
+        observed_ids,
+        observed_provenance=build_id_file_provenance(
+            observed_ids_path, observed_ids
+        ),
+        difference_reasons=reasons,
         seed=23,
         created_at="2026-07-13T08:00:00Z",
     )
-    counter = 0
-
-    def checked(payload):
-        nonlocal counter
-        evidence = _qualification_evidence(reporting_dir, f"qualification-{counter}", payload)
-        counter += 1
-        return {"mandatory": True, "passed": True, "evidence": evidence}
-
-    digest = "a" * 64
+    fineaction_sources = _fineaction_sources(reporting_dir / "fineaction-sources")
     qualification = build_fineaction_qualification_report(
-        {
-            "protocol": {
-                "license": checked({"license_id": "FineAction-research"}),
-                "official_split": checked({"manifest_sha256": digest}),
-                "annotation_sha256": checked({"sha256": digest}),
-                "instance_interval_ids": checked({"field": "instance_id", "verified_count": 30}),
-            },
-            "completeness": {
-                "raw_video_access": checked({"inventory_sha256": digest}),
-                "same_class_overlap_pairs": checked({"count": 20}),
-                "same_class_repeated_instances": checked({"count": 30}),
-                "qualified_ground_truth": checked({"count": 30}),
-                "qualified_videos": checked({"count": 10}),
-                "estimated_decode_storage_cost": checked(
-                    {"decode_gpu_hours": 12.0, "storage_bytes": 1024}
-                ),
-            },
-            "causal_readiness": {
-                "causal_preprocessing_contract": checked(
-                    {
-                        "timestamp_convention": "zero_based_source_frame",
-                        "future_frames_allowed": False,
-                        "frame_stride": 2,
-                        "manifest_sha256": digest,
-                    }
-                ),
-                "minimal_dataset_loader_smoke": checked(
-                    {"status": "PASS", "test_report_sha256": digest}
-                ),
-            },
-        },
+        fineaction_sources,
         seed=29,
         created_at="2026-07-13T08:00:00Z",
     )
@@ -303,7 +376,13 @@ def _reporting_evidence(root):
     return {
         "universe": _reference(universe_path),
         "comparison": _reference(comparison_path),
+        "locked_ids": _reference(locked_ids_path),
+        "observed_ids": _reference(observed_ids_path),
+        "difference_reasons": _reference(reasons_path),
         "fineaction": _reference(qualification_path),
+        "fineaction_sources": {
+            name: _reference(path) for name, path in fineaction_sources.items()
+        },
     }, qualification_path
 
 
@@ -353,7 +432,7 @@ def _data_identity(path_records, fineaction_path):
     return {**body, "identity_sha256": MODULE._sha256_json(body, "data identity")}
 
 
-def _training_event(seed):
+def _training_event(seed, training_identity=None):
     return {
         "event_id": f"optimizer-{seed}",
         "episode_id": f"episode-{seed}",
@@ -362,11 +441,18 @@ def _training_event(seed):
         "world_size": 1,
         "elapsed_seconds": 10.0,
         "peak_memory_bytes": 1024,
-        "precision": "bf16",
-        "optimizer_config_sha256": "1" * 64,
-        "scheduler_config_sha256": "2" * 64,
-        "data_order_sha256": "3" * 64,
-        "loss_normalization_sha256": "4" * 64,
+        **(
+            training_identity
+            or {
+                "precision": "bf16",
+                "optimizer_config_sha256": "1" * 64,
+                "scheduler_config_sha256": "2" * 64,
+                "data_order_sha256": "3" * 64,
+                "loss_normalization_sha256": "4" * 64,
+                "effective_batch_size": 1,
+                "world_size": 1,
+            }
+        ),
         "skipped": False,
     }
 
@@ -381,12 +467,23 @@ def _run(
     review_private,
     profile_private,
     b0,
+    profile_b0,
     fineaction_path,
     pass_variant,
     evidence_mutator=None,
 ):
     run_dir = root / f"{claim}-{variant}-{seed}"
     run_dir.mkdir(parents=True)
+    formal_b0_dir = run_dir / "formal-b0"
+    profile_b0_dir = run_dir / "profile-b0"
+    shutil.copytree(Path(b0["path"]).parent, formal_b0_dir)
+    shutil.copytree(Path(profile_b0["path"]).parent, profile_b0_dir)
+    formal_b0_reference = _reference(
+        formal_b0_dir / Path(b0["path"]).name, run_dir
+    )
+    profile_b0_reference = _reference(
+        profile_b0_dir / Path(profile_b0["path"]).name, run_dir
+    )
     ground_truth = _write_json(
         run_dir / "ground-truth.json",
         {
@@ -404,10 +501,51 @@ def _run(
     )
     allowed = run_dir / "allowed.txt"
     allowed.write_text("video_1\n", encoding="utf-8")
+    fit_core = run_dir / "fit-core.txt"
+    fit_core.write_text("video_1\n", encoding="utf-8")
+    cache_manifest = _write_json(
+        run_dir / "cache-manifest.json",
+        {"videos": {"video_1": {"source_frames": list(range(64))}}},
+    )
     config = run_dir / "config.py"
-    config.write_text(f"claim = {claim!r}\nvariant = {variant!r}\n", encoding="utf-8")
+    config.write_text(
+        "\n".join(
+            (
+                f"claim = {claim!r}",
+                f"variant = {variant!r}",
+                "optimizer = dict(type='AdamW', lr=0.0002)",
+                "scheduler = dict(type='LinearWarmupCosineAnnealingLR', warmup_epoch=1, max_epoch=12)",
+                "model = dict(type='PersistentTrajectoryOnlineDetector')",
+                "solver = dict(train=dict(batch_size=1), amp=True, amp_dtype='bf16')",
+                "launch_contract = dict(attestation_trust_roots=dict(",
+                "    profile=dict(key_id='profile-test',",
+                f"        public_key={public_key_base64(profile_private)!r})))",
+                "visual_parameter_contract = dict(",
+                "    parameter_prefixes=['visual'],",
+                "    adapted_trainable_prefixes=['visual.encoder'])",
+                "dataset = dict(train=dict(",
+                f"    ann_file={str(ground_truth.resolve())!r},",
+                f"    allow_list={str(fit_core.resolve())!r},",
+                f"    cache_manifest={str(cache_manifest.resolve())!r},",
+                "    chunk_size=64, subset_name='validation'))",
+                "evaluation = dict(",
+                "    type='OnlineAPBudgeted', subset='validation',",
+                f"    allowed_videos={str(allowed.resolve())!r},",
+                "    tiou_thresholds=[0.5, 0.7], latency_budgets_sec=[0.5, 1.0],",
+                "    fps=30.0, require_ledger=True, require_no_future=True,",
+                f"    ground_truth_filename={str(ground_truth.resolve())!r},",
+                "    identity_tiou_threshold=0.5, identity_latency_budget_sec=1.0)",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
     checkpoint = run_dir / "checkpoint.pth"
-    checkpoint.write_bytes(f"{claim}:{variant}:{seed}".encode("ascii"))
+    checkpoint_parameter = torch.full((1,), float(seed + 1), dtype=torch.float32)
+    torch.save(
+        {"state_dict": {"visual.encoder.weight": checkpoint_parameter}},
+        checkpoint,
+    )
 
     ledger = ImmutableEventLedger()
     if pass_variant:
@@ -432,16 +570,35 @@ def _run(
             "identity_latency_budget_sec": 1.0,
         },
     )
+    data_identity = _data_identity(
+        {
+            "annotation": ground_truth,
+            "calibration": allowed,
+            "fit_core": fit_core,
+            "feature_cache_manifest": cache_manifest,
+        },
+        fineaction_path,
+    )
+    training_identity = derive_training_trace_identity(
+        Config.fromfile(str(config)),
+        data_identity,
+        seed=seed,
+        world_size=1,
+    )
     trace = run_dir / "training.jsonl"
     trace_commitment = run_dir / "training.commitment.json"
-    persist_training_trace(trace, trace_commitment, [_training_event(seed)])
-    data_identity = _data_identity(
-        {"annotation": ground_truth, "allowed_videos": allowed}, fineaction_path
+    persist_training_trace(
+        trace,
+        trace_commitment,
+        [_training_event(seed, training_identity)],
     )
     data_identity_path = _write_json(run_dir / "data-identity.json", data_identity)
+    resolved_cfg = Config.fromfile(str(config))
+    resolved_cfg_sha256 = resolved_config_sha256(resolved_cfg)
+    scientific_cfg_sha256 = resolved_config_sha256(resolved_cfg, scientific=True)
     review = _write_json(
         run_dir / "review.json",
-        sign_payload(
+        _sign_payload(
             {
                 "schema_version": MODULE.REVIEW_SCHEMA,
                 "reviewer_id": "review-test",
@@ -457,7 +614,26 @@ def _run(
             role=MODULE.REVIEW_ATTESTATION_ROLE,
         ),
     )
-    review_reference = _reference(review)
+    review_reference = _reference(review, run_dir)
+    profile_review = _write_json(
+        run_dir / "profile-review.json",
+        _sign_payload(
+            {
+                "schema_version": MODULE.REVIEW_SCHEMA,
+                "reviewer_id": "review-test",
+                "reviewed_commit": PROFILE_COMMIT,
+                "b0_artifact_sha256": profile_b0["sha256"],
+                "scope": REVIEW_SCOPE,
+                "verdict": "PASS",
+                "blocking_findings": [],
+                "protocol_violations": [],
+            },
+            private_key_path=review_private,
+            key_id="review-test",
+            role=MODULE.REVIEW_ATTESTATION_ROLE,
+        ),
+    )
+    profile_review_reference = _reference(profile_review, run_dir)
     profile_runtime = {
         "schema_version": "full-petal-runtime-identity-v1",
         "entrypoint": "train",
@@ -476,19 +652,42 @@ def _run(
             "commit_sha": PROFILE_COMMIT,
             "source_tree_sha256": "9" * 64,
             "config_file_sha256": sha256_file(config),
-            "resolved_config_sha256": "c" * 64,
-            "scientific_config_sha256": "b" * 64,
+            "resolved_config_sha256": resolved_cfg_sha256,
+            "scientific_config_sha256": scientific_cfg_sha256,
             "data_identity": data_identity,
             "runtime_identity": profile_runtime,
-            "b0_evidence": b0,
-            "review_evidence": review_reference,
+            "b0_evidence": profile_b0_reference,
+            "review_evidence": profile_review_reference,
             "profile_evidence": None,
         },
+    )
+    profile_trace = run_dir / "profile-optimizer-events.jsonl"
+    profile_commitment = run_dir / "profile-optimizer-events.commitment.json"
+    persist_training_trace(
+        profile_trace,
+        profile_commitment,
+        [
+            {
+                **_training_event(seed, training_identity),
+                "event_id": f"profile-optimizer-{index:08d}",
+                "episode_id": f"profile-episode-{index:08d}",
+                "elapsed_seconds": float(index + 1),
+                "peak_memory_bytes": 1024 + index,
+            }
+            for index in range(250)
+        ],
+    )
+    profile_measurements = derive_fixed_step_profile_measurements(
+        profile_trace,
+        profile_commitment,
+        warmup_optimizer_events=50,
+        measured_optimizer_events=200,
+        expected_identity=training_identity,
     )
     profile_job = f"{seed}-profile"
     profile = _write_json(
         run_dir / "profile.json",
-        sign_payload(
+        _sign_payload(
             {
                 "schema_version": MODULE.PROFILE_SCHEMA,
                 "status": "PASS",
@@ -498,9 +697,9 @@ def _run(
                 "runtime_identity_sha256": MODULE._sha256_json(
                     profile_runtime, "profile runtime"
                 ),
-                "resolved_config_sha256": "c" * 64,
-                "scientific_config_sha256": "b" * 64,
-                "launch_ticket_path": str(profile_ticket.resolve()),
+                "resolved_config_sha256": resolved_cfg_sha256,
+                "scientific_config_sha256": scientific_cfg_sha256,
+                "launch_ticket_path": profile_ticket.name,
                 "launch_ticket_sha256": sha256_file(profile_ticket),
                 "slurm_job_id": profile_job,
                 "slurm_allocation": {
@@ -526,22 +725,16 @@ def _run(
                     "memory_size": 192,
                     "slot_count": 4,
                 },
-                "measurements": {
-                    "warmup_optimizer_events": 50,
-                    "measured_optimizer_events": 200,
-                    "total_optimizer_events": 250,
-                    "skipped_optimizer_events": 0,
-                    "elapsed_seconds": 10.0,
-                    "peak_memory_bytes": 1024,
-                    "throughput_optimizer_events_per_second": 20.0,
-                },
+                "measurements": profile_measurements,
+                "optimizer_event_trace": _reference(profile_trace, run_dir),
+                "optimizer_event_commitment": _reference(profile_commitment, run_dir),
             },
             private_key_path=profile_private,
             key_id="profile-test",
             role=MODULE.PROFILE_ATTESTATION_ROLE,
         ),
     )
-    profile_reference = _reference(profile)
+    profile_reference = _reference(profile, run_dir)
 
     def launch_evidence(stage, entrypoint, resume_checkpoint):
         runtime = {
@@ -560,42 +753,47 @@ def _run(
             "commit_sha": COMMIT,
             "source_tree_sha256": "9" * 64,
             "config_file_sha256": sha256_file(config),
-            "resolved_config_sha256": "a" * 64,
-            "scientific_config_sha256": "b" * 64,
+            "resolved_config_sha256": resolved_cfg_sha256,
+            "scientific_config_sha256": scientific_cfg_sha256,
             "data_identity": data_identity,
             "runtime_identity": runtime,
-            "b0_evidence": b0,
+            "b0_evidence": formal_b0_reference,
             "review_evidence": review_reference,
             "profile_evidence": profile_reference,
         }
         ticket_path = _write_json(run_dir / f"{stage}-launch-ticket.json", ticket)
         job_id = f"{seed}-{stage}"
-        receipt = {
-            "schema_version": MODULE.LAUNCH_RECEIPT_SCHEMA,
-            "mode": "formal",
-            "commit_sha": COMMIT,
-            "source_tree_sha256": ticket["source_tree_sha256"],
-            "data_identity_sha256": data_identity["identity_sha256"],
-            "runtime_identity_sha256": MODULE._sha256_json(runtime, "runtime"),
-            "resolved_config_sha256": ticket["resolved_config_sha256"],
-            "scientific_config_sha256": ticket["scientific_config_sha256"],
-            "launch_ticket": _reference(ticket_path),
-            "b0_artifact_sha256": b0["sha256"],
-            "review_artifact_sha256": review_reference["sha256"],
-            "profile_artifact_sha256": profile_reference["sha256"],
-            "world_size": 1,
-            "slurm_job_id": job_id,
-            "slurm_allocation": {
-                "job_id": job_id,
-                "state": "RUNNING",
-                "user": "fixture-user",
-                "nodes": 1,
-                "tasks": 1,
-                "gpus": 1,
-                "command": f"python tools/{entrypoint}.py",
-                "work_dir": str(run_dir.resolve()),
+        receipt = _sign_payload(
+            {
+                "schema_version": MODULE.LAUNCH_RECEIPT_SCHEMA,
+                "mode": "formal",
+                "commit_sha": COMMIT,
+                "source_tree_sha256": ticket["source_tree_sha256"],
+                "data_identity_sha256": data_identity["identity_sha256"],
+                "runtime_identity_sha256": MODULE._sha256_json(runtime, "runtime"),
+                "resolved_config_sha256": ticket["resolved_config_sha256"],
+                "scientific_config_sha256": ticket["scientific_config_sha256"],
+                "launch_ticket": _reference(ticket_path, run_dir),
+                "b0_artifact_sha256": b0["sha256"],
+                "review_artifact_sha256": review_reference["sha256"],
+                "profile_artifact_sha256": profile_reference["sha256"],
+                "world_size": 1,
+                "slurm_job_id": job_id,
+                "slurm_allocation": {
+                    "job_id": job_id,
+                    "state": "RUNNING",
+                    "user": "fixture-user",
+                    "nodes": 1,
+                    "tasks": 1,
+                    "gpus": 1,
+                    "command": f"python tools/{entrypoint}.py",
+                    "work_dir": str(run_dir.resolve()),
+                },
             },
-        }
+            private_key_path=profile_private,
+            key_id="profile-test",
+            role=MODULE.LAUNCH_RECEIPT_ATTESTATION_ROLE,
+        )
         receipt_path = _write_json(
             run_dir / f"{stage}-launch-receipt.json", receipt
         )
@@ -606,7 +804,7 @@ def _run(
         "evaluation",
         "test",
         {
-            "path": str(checkpoint.resolve()),
+            "path": checkpoint.name,
             "sha256": sha256_file(checkpoint),
             "size_bytes": checkpoint.stat().st_size,
         },
@@ -629,24 +827,38 @@ def _run(
     }
     if claim == "C2":
         adapted = variant == "adapted"
-        artifacts["raw_visual_audit"] = _write_json(
-            run_dir / "raw-visual-audit.json",
-            {
-                "schema_version": MODULE.RAW_VISUAL_AUDIT_SCHEMA,
-                "claim": claim,
-                "variant": variant,
-                "seed": seed,
-                "model_sha256": sha256_file(checkpoint),
-                "dataset_manifest_sha256": sha256_file(data_identity_path),
-                "registered_visual_params": 2 if adapted else 0,
-                "nonzero_finite_grad_params": 2 if adapted else 0,
-                "changed_visual_params": 1 if adapted else 0,
-                "frozen_param_delta_max": 0.0,
-                "status": "PASS",
-            },
+        visual_trace = run_dir / "visual-parameters.jsonl"
+        visual_commitment = run_dir / "visual-parameters.commitment.json"
+        before = torch.zeros_like(checkpoint_parameter) if adapted else checkpoint_parameter
+        gradient = torch.ones_like(checkpoint_parameter) if adapted else None
+        persist_visual_parameter_trace(
+            visual_trace,
+            visual_commitment,
+            [
+                {
+                    "optimizer_event_id": f"optimizer-{seed}",
+                    "parameter_name": "visual.encoder.weight",
+                    "requires_grad": adapted,
+                    "optimizer_member": adapted,
+                    "numel": checkpoint_parameter.numel(),
+                    "dtype": str(checkpoint_parameter.dtype),
+                    "before_sha256": tensor_sha256(before),
+                    "after_sha256": tensor_sha256(checkpoint_parameter),
+                    "gradient_sha256": None if gradient is None else tensor_sha256(gradient),
+                    "gradient_finite": adapted,
+                    "gradient_norm": 1.0 if adapted else 0.0,
+                    "delta_norm": float(checkpoint_parameter.norm().item()) if adapted else 0.0,
+                }
+            ],
         )
+        artifacts["visual_parameter_trace"] = visual_trace
+        artifacts["visual_parameter_commitment"] = visual_commitment
     if evidence_mutator is not None:
-        evidence_mutator(artifacts)
+        artifacts["_profile_private"] = profile_private
+        try:
+            evidence_mutator(artifacts)
+        finally:
+            artifacts.pop("_profile_private", None)
     protocol = _protocol(claim)
     signed = build_formal_run_manifest(
         claim=claim,
@@ -655,6 +867,7 @@ def _run(
         commit_sha=COMMIT,
         protocol_sha256=MODULE._sha256_json(protocol, "protocol"),
         artifacts=artifacts,
+        bundle_root=run_dir,
         private_key_path=formal_private,
         key_id="profile-test",
     )
@@ -678,6 +891,11 @@ def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True
         root, monkeypatch
     )
     b0 = _b0_evidence(root, b0_private)
+    profile_b0 = _b0_evidence(
+        root / "profile-prerequisites",
+        b0_private,
+        commit=PROFILE_COMMIT,
+    )
     reporting_evidence, fineaction_path = _reporting_evidence(root)
     rows = []
     for seed in (11, 12):
@@ -692,6 +910,7 @@ def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True
                     review_private=review_private,
                     profile_private=profile_private,
                     b0=b0,
+                    profile_b0=profile_b0,
                     fineaction_path=fineaction_path,
                     pass_variant=not c1_pass,
                 ),
@@ -704,6 +923,7 @@ def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True
                     review_private=review_private,
                     profile_private=profile_private,
                     b0=b0,
+                    profile_b0=profile_b0,
                     fineaction_path=fineaction_path,
                     pass_variant=True,
                 ),
@@ -716,6 +936,7 @@ def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True
                     review_private=review_private,
                     profile_private=profile_private,
                     b0=b0,
+                    profile_b0=profile_b0,
                     fineaction_path=fineaction_path,
                     pass_variant=not c2_pass,
                 ),
@@ -728,6 +949,7 @@ def _report(tmp_path, monkeypatch, *, c1_pass=True, c2_pass=True, reporting=True
                     review_private=review_private,
                     profile_private=profile_private,
                     b0=b0,
+                    profile_b0=profile_b0,
                     fineaction_path=fineaction_path,
                     pass_variant=True,
                 ),
@@ -786,12 +1008,46 @@ def test_gate_rejects_unsigned_or_tampered_run_evidence(tmp_path, monkeypatch):
         MODULE.evaluate_result_gates(report)
 
     report = _report(tmp_path / "tamper", monkeypatch)
-    manifest = json.loads(
-        Path(report["runs"][0]["evidence"]["run_manifest_path"]).read_text(encoding="utf-8")
-    )
-    ledger = Path(manifest["artifacts"]["ledger"]["path"])
+    manifest_path = Path(report["runs"][0]["evidence"]["run_manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    ledger = manifest_path.parent / manifest["artifacts"]["ledger"]["path"]
     ledger.write_text(ledger.read_text(encoding="utf-8") + "{}\n", encoding="utf-8")
-    with pytest.raises(MODULE.ResultGateInputError, match="hash differs"):
+    with pytest.raises(MODULE.ResultGateInputError, match="hash mismatch"):
+        MODULE.evaluate_result_gates(report)
+
+
+def test_gate_rejects_rehashed_reporting_and_fineaction_semantic_forgery(
+    tmp_path, monkeypatch
+):
+    report = _report(tmp_path, monkeypatch)
+    reporting = report["reporting_evidence"]
+
+    observed_path = Path(reporting["observed_ids"]["path"])
+    observed_original = observed_path.read_bytes()
+    observed = json.loads(observed_original)
+    observed[-1] = "forged_extra"
+    _write_json(observed_path, observed)
+    reporting["observed_ids"]["sha256"] = sha256_file(observed_path)
+    with pytest.raises(MODULE.ResultGateInputError, match="source-derived.*provenance"):
+        MODULE.evaluate_result_gates(report)
+
+    observed_path.write_bytes(observed_original)
+    reporting["observed_ids"]["sha256"] = sha256_file(observed_path)
+    fineaction_path = Path(reporting["fineaction"]["path"])
+    fineaction = json.loads(fineaction_path.read_text(encoding="utf-8"))
+    fineaction["gates"]["completeness"]["checks"]["qualified_ground_truth"][
+        "evidence"
+    ]["count"] = 3000
+    fineaction.pop("content_sha256")
+    fineaction["content_sha256"] = MODULE._sha256_json(
+        fineaction, "forged FineAction"
+    )
+    _write_json(fineaction_path, fineaction)
+    reporting["fineaction"]["sha256"] = sha256_file(fineaction_path)
+    with pytest.raises(
+        MODULE.ResultGateInputError,
+        match="evidence hash mismatch|not source-derived",
+    ):
         MODULE.evaluate_result_gates(report)
 
 
@@ -802,6 +1058,11 @@ def _semantic_run(tmp_path, monkeypatch, mutator):
         root, monkeypatch
     )
     b0 = _b0_evidence(root, b0_private)
+    profile_b0 = _b0_evidence(
+        root / "profile-prerequisites",
+        b0_private,
+        commit=PROFILE_COMMIT,
+    )
     _, fineaction_path = _reporting_evidence(root)
     return _run(
         root,
@@ -812,6 +1073,7 @@ def _semantic_run(tmp_path, monkeypatch, mutator):
         review_private=review_private,
         profile_private=profile_private,
         b0=b0,
+        profile_b0=profile_b0,
         fineaction_path=fineaction_path,
         pass_variant=True,
         evidence_mutator=mutator,
@@ -828,15 +1090,14 @@ def test_gate_rejects_self_consistent_evaluation_ticket_for_wrong_checkpoint(
         ticket["runtime_identity"]["resume_checkpoint"]["sha256"] = "f" * 64
         _write_json(ticket_path, ticket)
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        receipt["launch_ticket"] = _reference(ticket_path)
+        receipt["launch_ticket"] = _reference(ticket_path, ticket_path.parent)
         receipt["runtime_identity_sha256"] = MODULE._sha256_json(
             ticket["runtime_identity"], "runtime"
         )
         _write_json(receipt_path, receipt)
 
-    row = _semantic_run(tmp_path, monkeypatch, wrong_checkpoint)
-    with pytest.raises(MODULE.ResultGateInputError, match="evaluated checkpoint"):
-        MODULE._validate_run_evidence(row, "C1", "fixed", 11, "semantic")
+    with pytest.raises(TrainingEvidenceError, match="checkpoint bytes"):
+        _semantic_run(tmp_path, monkeypatch, wrong_checkpoint)
 
 
 def test_gate_rejects_signed_receipt_without_active_slurm_allocation(
@@ -844,13 +1105,66 @@ def test_gate_rejects_signed_receipt_without_active_slurm_allocation(
 ):
     def completed_job(artifacts):
         receipt_path = artifacts["training_launch_receipt"]
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        signed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt = {key: value for key, value in signed_receipt.items() if key != "attestation"}
         receipt["slurm_allocation"]["state"] = "COMPLETED"
-        _write_json(receipt_path, receipt)
+        _write_json(
+            receipt_path,
+            _sign_payload(
+                receipt,
+                private_key_path=artifacts["_profile_private"],
+                key_id="profile-test",
+                role=MODULE.LAUNCH_RECEIPT_ATTESTATION_ROLE,
+            ),
+        )
 
-    row = _semantic_run(tmp_path, monkeypatch, completed_job)
-    with pytest.raises(MODULE.ResultGateProtocolError, match="active Slurm"):
-        MODULE._validate_run_evidence(row, "C1", "fixed", 11, "semantic")
+    with pytest.raises(TrainingEvidenceError, match="active one-GPU"):
+        _semantic_run(tmp_path, monkeypatch, completed_job)
+
+
+@pytest.mark.parametrize(
+    ("role", "message"),
+    (
+        ("ground_truth", "ground-truth artifact path differs"),
+        ("allowed_videos", "allowed-videos artifact path differs"),
+    ),
+)
+def test_formal_signer_rejects_data_artifact_substitution(
+    tmp_path, monkeypatch, role, message
+):
+    def substitute(artifacts):
+        original = artifacts[role]
+        replacement = original.with_name(f"substituted-{original.name}")
+        replacement.write_bytes(original.read_bytes())
+        artifacts[role] = replacement
+
+    with pytest.raises(TrainingEvidenceError, match=message):
+        _semantic_run(tmp_path, monkeypatch, substitute)
+
+
+def test_formal_signer_rejects_evaluator_spec_substitution(tmp_path, monkeypatch):
+    def substitute(artifacts):
+        spec_path = artifacts["evaluator_spec"]
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        spec["latency_budgets_sec"] = [0.25, 0.5]
+        _write_json(spec_path, spec)
+
+    with pytest.raises(TrainingEvidenceError, match="evaluator specification differs"):
+        _semantic_run(tmp_path, monkeypatch, substitute)
+
+
+def test_formal_signer_rejects_self_reported_training_identity(tmp_path, monkeypatch):
+    def substitute(artifacts):
+        trace = artifacts["training_trace"]
+        commitment = artifacts["training_commitment"]
+        trace.unlink()
+        commitment.unlink()
+        event = _training_event(11)
+        event["optimizer_config_sha256"] = "f" * 64
+        persist_training_trace(trace, commitment, [event])
+
+    with pytest.raises(TrainingEvidenceError, match="training trace identity differs"):
+        _semantic_run(tmp_path, monkeypatch, substitute)
 
 
 @pytest.mark.parametrize(
@@ -866,7 +1180,9 @@ def test_gate_rejects_unsigned_prerequisite_after_all_outer_hashes_are_rebuilt(
             artifacts["evaluation_launch_ticket"],
         ]
         first_ticket = json.loads(ticket_paths[0].read_text(encoding="utf-8"))
-        prerequisite_path = Path(first_ticket[f"{role}_evidence"]["path"])
+        prerequisite_path = (
+            ticket_paths[0].parent / first_ticket[f"{role}_evidence"]["path"]
+        )
         prerequisite = json.loads(prerequisite_path.read_text(encoding="utf-8"))
         prerequisite.pop("attestation")
         _write_json(prerequisite_path, prerequisite)
@@ -878,13 +1194,12 @@ def test_gate_rejects_unsigned_prerequisite_after_all_outer_hashes_are_rebuilt(
             _write_json(ticket_path, ticket)
             receipt_path = artifacts[f"{stage}_launch_receipt"]
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            receipt["launch_ticket"] = _reference(ticket_path)
+            receipt["launch_ticket"] = _reference(ticket_path, ticket_path.parent)
             receipt[receipt_field] = prerequisite_hash
             _write_json(receipt_path, receipt)
 
-    row = _semantic_run(tmp_path, monkeypatch, unsigned_prerequisite)
-    with pytest.raises(MODULE.ResultGateInputError, match="attestation"):
-        MODULE._validate_run_evidence(row, "C1", "fixed", 11, "semantic")
+    with pytest.raises(TrainingEvidenceError, match="receipt is not trusted"):
+        _semantic_run(tmp_path, monkeypatch, unsigned_prerequisite)
 
 
 def test_project_gate_requires_reporting_and_fineaction_evidence(tmp_path, monkeypatch):

@@ -198,6 +198,33 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def has_pending_online_update(self):
         return bool(self._staged_runtime_states or self._staged_supervision_states)
 
+    def snapshot_online_update(self):
+        if not self.has_pending_online_update():
+            raise ProtocolViolation("no staged online training state is available to snapshot")
+        return {
+            "runtime_states": dict(self._runtime_states),
+            "supervision_states": dict(self._supervision_states),
+            "staged_runtime_states": dict(self._staged_runtime_states),
+            "staged_supervision_states": dict(self._staged_supervision_states),
+            "staged_terminal_keys": set(self._staged_terminal_keys),
+        }
+
+    def restore_online_update(self, snapshot):
+        required = {
+            "runtime_states",
+            "supervision_states",
+            "staged_runtime_states",
+            "staged_supervision_states",
+            "staged_terminal_keys",
+        }
+        if not isinstance(snapshot, dict) or set(snapshot) != required:
+            raise ProtocolViolation("online training transaction snapshot is malformed")
+        self._runtime_states = dict(snapshot["runtime_states"])
+        self._supervision_states = dict(snapshot["supervision_states"])
+        self._staged_runtime_states = dict(snapshot["staged_runtime_states"])
+        self._staged_supervision_states = dict(snapshot["staged_supervision_states"])
+        self._staged_terminal_keys = set(snapshot["staged_terminal_keys"])
+
     def commit_online_update(self):
         if not self.has_pending_online_update():
             raise ProtocolViolation("no staged online training state is available to commit")

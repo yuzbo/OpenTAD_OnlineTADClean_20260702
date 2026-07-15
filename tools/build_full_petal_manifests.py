@@ -15,15 +15,14 @@ from opentad.utils.full_petal_data_contract import (  # noqa: E402
     THUMOS_DEVELOPMENT_SPLIT_SEED,
     build_fineaction_qualification_report,
     build_hardware_runtime_manifest,
+    build_id_file_provenance,
     build_reporting_universe_manifest,
     build_thumos_manifest_from_annotation_subsets,
     build_thumos_manifest_from_split_files,
-    canonical_json_sha256,
     compare_reporting_universe,
     load_id_file,
     load_json,
     save_json,
-    sha256_file,
     write_thumos_development_split,
 )
 
@@ -173,18 +172,6 @@ def parse_args(argv=None):
     return parser, parser.parse_args(argv)
 
 
-def _id_file_provenance(path, ids):
-    path = Path(path)
-    return {
-        "kind": "explicit_id_file",
-        "source": {
-            "name": path.name,
-            "sha256": sha256_file(path),
-            "content_sha256": canonical_json_sha256(sorted(ids)),
-        },
-    }
-
-
 def _build_thumos(args):
     feature_identity = load_json(args.feature_identity)
     extraction_identity = load_json(args.extraction_identity)
@@ -234,7 +221,7 @@ def _build_reporting_lock(args):
     ids = load_id_file(args.ids)
     return build_reporting_universe_manifest(
         ids,
-        provenance=_id_file_provenance(args.ids, ids),
+        provenance=build_id_file_provenance(args.ids, ids),
         seed=args.seed,
         created_at=args.created_at,
         strict=args.strict,
@@ -248,7 +235,9 @@ def _build_reporting_comparison(args):
     return compare_reporting_universe(
         locked_manifest,
         observed_ids,
-        observed_provenance=_id_file_provenance(args.observed_ids, observed_ids),
+        observed_provenance=build_id_file_provenance(
+            args.observed_ids, observed_ids
+        ),
         difference_reasons=difference_reasons,
         seed=args.seed,
         created_at=args.created_at,
@@ -277,16 +266,20 @@ def _build_fineaction(args):
     spec = load_json(args.input)
     if not isinstance(spec, dict):
         raise ContractValidationError("FineAction input must be a JSON object")
-    if "gates" in spec:
-        if set(spec) != {"gates"}:
+    if set(spec) != {"sources"} or not isinstance(spec["sources"], dict):
+        raise ContractValidationError(
+            "FineAction input requires exactly one sources object"
+        )
+    sources = {}
+    for name, raw_path in spec["sources"].items():
+        if not isinstance(raw_path, str) or not raw_path:
             raise ContractValidationError(
-                "FineAction input with a gates field cannot contain other fields"
+                f"FineAction source {name} must be a non-empty path"
             )
-        gates = spec["gates"]
-    else:
-        gates = spec
+        path = Path(raw_path).expanduser()
+        sources[name] = path if path.is_absolute() else args.input.parent / path
     return build_fineaction_qualification_report(
-        gates,
+        sources,
         seed=args.seed,
         created_at=args.created_at,
     )

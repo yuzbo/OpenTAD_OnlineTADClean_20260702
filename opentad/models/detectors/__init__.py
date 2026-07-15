@@ -1,52 +1,49 @@
-from .base import BaseDetector
-from .single_stage import SingleStageDetector
-from .two_stage import TwoStageDetector
-from .afsd import AFSD
-from .bmn import BMN
-from .gtad import GTAD
-from .tsi import TSI
-from .etad import ETAD
-from .actionformer import ActionFormer
-from .tridet import TriDet
-from .temporalmaxer import TemporalMaxer
-from .detr import DETR
-from .deformable_detr import DeformableDETR
-from .tadtr import TadTR
-from .vsgn import VSGN
-from .mamba import VideoMambaSuite
-from .dyfadet import DyFADet
-from .irregular_actionformer import IrregularActionFormer
-from .sparse_completion_actionformer import SparseCompletionActionFormer
-from .pceh_ontad import PCEHOnlineDetector
+"""Route-aware detector registration for production imports."""
+
+from importlib import import_module
+
 from .persistent_event_set_ontad import PersistentEventSetOnlineDetector
 from .persistent_trajectory_ontad import PersistentTrajectoryOnlineDetector
-from ..builder import DETECTORS
 
-DETECTORS.register_module()(PCEHOnlineDetector)
-from .query_sparse_detector import QuerySparseDetector
+
+_LEGACY_DETECTOR_MODULES = (
+    "base",
+    "single_stage",
+    "two_stage",
+    "afsd",
+    "bmn",
+    "gtad",
+    "tsi",
+    "etad",
+    "actionformer",
+    "tridet",
+    "temporalmaxer",
+    "detr",
+    "deformable_detr",
+    "tadtr",
+    "vsgn",
+    "mamba",
+    "dyfadet",
+    "irregular_actionformer",
+    "sparse_completion_actionformer",
+    "pceh_ontad",
+    "query_sparse_detector",
+)
+
+
+def register_all_detectors():
+    for module_name in _LEGACY_DETECTOR_MODULES:
+        import_module(f"{__name__}.{module_name}")
+
+    from ..builder import DETECTORS
+    from .pceh_ontad import PCEHOnlineDetector
+
+    if DETECTORS.get("PCEHOnlineDetector") is None:
+        DETECTORS.register_module()(PCEHOnlineDetector)
+
 
 __all__ = [
-    "BaseDetector",
-    "SingleStageDetector",
-    "TwoStageDetector",
-    "AFSD",
-    "BMN",
-    "GTAD",
-    "TSI",
-    "ETAD",
-    "VSGN",
-    "ActionFormer",
-    "IrregularActionFormer",
-    "QuerySparseDetector",
-    "TriDet",
-    "TemporalMaxer",
-    "VideoMambaSuite",
-    "DyFADet",
-    "SparseCompletionActionFormer",
-    "PCEHOnlineDetector",
     "PersistentEventSetOnlineDetector",
     "PersistentTrajectoryOnlineDetector",
-    "DETR",
-    "DeformableDETR",
-    "TadTR",
+    "register_all_detectors",
 ]

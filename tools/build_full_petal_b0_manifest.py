@@ -92,9 +92,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     payload = build_manifest()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    args.output.write_bytes(
+        (
+            json.dumps(payload, allow_nan=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
     )
     print(f"FULL_PETAL_B0_MANIFEST={args.output.resolve()}")
     return 0

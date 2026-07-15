@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 from opentad.utils.full_petal_attestation import (  # noqa: E402
     AttestationError,
-    sign_payload,
+    _sign_payload,
 )
 from opentad.utils.full_petal_b0 import (  # noqa: E402
     B0_ATTESTATION_ROLE,
@@ -317,7 +317,7 @@ def main(argv=None):
         "audit_report_sha256": sha256_file(audit_report_path),
     }
     try:
-        b0 = sign_payload(
+        b0 = _sign_payload(
             unsigned_b0,
             private_key_path=args.attestation_private_key,
             key_id=args.attestation_key_id,

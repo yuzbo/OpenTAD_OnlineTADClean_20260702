@@ -9,12 +9,20 @@ from pathlib import Path
 import runpy
 import sys
 
+from mmengine import Config
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
+from opentad.utils.evidence_bundle import (
+    EvidenceBundleError,
+    read_verified_bundle_bytes,
+    resolve_bundle_path,
+    verify_bundle_reference,
+)
 from opentad.utils.full_petal_attestation import (
     AttestationError,
     verify_payload,
@@ -25,25 +33,37 @@ from opentad.utils.full_petal_b0 import (
 )
 from opentad.utils.full_petal_data_contract import (
     ContractValidationError,
+    FINEACTION_SOURCE_KEYS,
+    validate_fineaction_qualification_report,
+    validate_reporting_artifacts_from_sources,
     verify_content_hash,
 )
 from opentad.utils.full_petal_identity import (
     DATA_IDENTITY_SCHEMA,
+    EVALUATOR_SPEC_SCHEMA,
     IdentityError,
     RUNTIME_IDENTITY_SCHEMA,
     authorization_only_diff,
+    derive_training_trace_identity,
+    validate_evaluation_artifact_bindings,
 )
 from opentad.utils.full_petal_launch import (
+    FullPetalLaunchError,
+    LAUNCH_RECEIPT_ATTESTATION_ROLE,
     LAUNCH_RECEIPT_SCHEMA,
     LAUNCH_TICKET_SCHEMA,
     PROFILE_ATTESTATION_ROLE,
     PROFILE_SCHEMA,
     REVIEW_ATTESTATION_ROLE,
     REVIEW_SCHEMA,
+    resolved_config_sha256,
+    verify_launch_receipt,
 )
 from opentad.utils.full_petal_training_evidence import (
     TrainingEvidenceError,
+    derive_fixed_step_profile_measurements,
     derive_training_cost,
+    derive_visual_parameter_evidence,
     verify_formal_run_manifest,
 )
 
@@ -90,9 +110,6 @@ METRIC_ALIASES = {
     "short_action_mAP": ("short_action_mAP",),
 }
 
-RAW_VISUAL_AUDIT_SCHEMA = "full-petal-raw-visual-audit-v1"
-EVALUATOR_SPEC_SCHEMA = "full-petal-evaluator-spec-v1"
-
 COMMON_RUN_ARTIFACTS = {
     "ledger",
     "commitment",
@@ -130,6 +147,7 @@ C1_COST_NUMERIC_FIELDS = (
     "input_tokens",
     "episodes",
     "effective_batch_size",
+    "world_size",
     "gpu_hours",
     "wall_clock_sec",
     "peak_vram_gb",
@@ -267,6 +285,14 @@ def _evidence_file(evidence, prefix, label):
             f"{label}.{prefix} evidence hash mismatch: expected {expected}, found {actual}"
         )
     return path, actual
+
+
+def _bundle_reference_file(reference, base_dir, label):
+    try:
+        path = verify_bundle_reference(reference, base_dir, label)
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
+    return path, reference["sha256"]
 
 
 def _finite_number(value, label, minimum=None, maximum=None):
@@ -447,11 +473,19 @@ def _normalized_cost(row, label):
         "input_tokens",
         "episodes",
         "effective_batch_size",
+        "world_size",
     ):
         normalized[field] = _nonnegative_integer(
             cost[field],
             f"{label}.cost.{field}",
-            positive=field in {"optimizer_events", "input_tokens", "episodes", "effective_batch_size"},
+            positive=field
+            in {
+                "optimizer_events",
+                "input_tokens",
+                "episodes",
+                "effective_batch_size",
+                "world_size",
+            },
         )
     if normalized["optimizer_events"] != (
         normalized["successful_optimizer_events"] + normalized["skipped_optimizer_events"]
@@ -477,79 +511,6 @@ def _load_evidence_json(path, label):
     if not isinstance(payload, dict):
         raise ResultGateInputError(f"{label} must be a JSON object")
     return payload
-
-
-def _validate_raw_visual_audit(path, claim, variant, seed, hashes, label):
-    audit = _load_evidence_json(path, f"{label}.raw_visual_audit")
-    required = {
-        "schema_version",
-        "claim",
-        "variant",
-        "seed",
-        "model_sha256",
-        "dataset_manifest_sha256",
-        "registered_visual_params",
-        "nonzero_finite_grad_params",
-        "changed_visual_params",
-        "frozen_param_delta_max",
-        "status",
-    }
-    if set(audit) != required:
-        raise ResultGateInputError(
-            f"{label} raw visual audit fields differ: "
-            f"expected {sorted(required)}, found {sorted(audit)}"
-        )
-    if audit["schema_version"] != RAW_VISUAL_AUDIT_SCHEMA:
-        raise ResultGateInputError(f"{label} raw visual audit schema is unsupported")
-    if (
-        _claim_name(audit["claim"]) != claim
-        or _variant_name(claim, audit["variant"]) != variant
-        or _seed(audit["seed"], f"{label}.raw_visual_audit.seed") != seed
-    ):
-        raise ResultGateInputError(f"{label} raw visual audit run identity mismatch")
-    if audit["model_sha256"] != hashes["model"]:
-        raise ResultGateInputError(f"{label} raw visual audit model hash mismatch")
-    if audit["dataset_manifest_sha256"] != hashes["dataset_manifest"]:
-        raise ResultGateInputError(f"{label} raw visual audit dataset hash mismatch")
-
-    registered = _nonnegative_integer(
-        audit["registered_visual_params"],
-        f"{label}.raw_visual_audit.registered_visual_params",
-    )
-    finite_grad = _nonnegative_integer(
-        audit["nonzero_finite_grad_params"],
-        f"{label}.raw_visual_audit.nonzero_finite_grad_params",
-    )
-    changed = _nonnegative_integer(
-        audit["changed_visual_params"],
-        f"{label}.raw_visual_audit.changed_visual_params",
-    )
-    frozen_delta = _finite_number(
-        audit["frozen_param_delta_max"],
-        f"{label}.raw_visual_audit.frozen_param_delta_max",
-        minimum=0.0,
-    )
-    if finite_grad > registered or changed > registered:
-        raise ResultGateInputError(
-            f"{label} raw visual audit counts exceed registered visual parameters"
-        )
-    if audit["status"] != "PASS":
-        raise ResultGateProtocolError(f"{label} raw visual audit did not pass")
-    if variant == "frozen":
-        if any((registered, finite_grad, changed)) or frozen_delta > 1e-12:
-            raise ResultGateProtocolError(
-                f"{label} frozen raw visual audit records trainable or changed parameters"
-            )
-    else:
-        if registered <= 0 or finite_grad <= 0 or changed <= 0:
-            raise ResultGateProtocolError(
-                f"{label} adapted raw visual audit lacks nonzero gradients or parameter changes"
-            )
-        if frozen_delta > 1e-12:
-            raise ResultGateProtocolError(
-                f"{label} adapted raw visual audit changed frozen parameters"
-            )
-    return audit
 
 
 def _validate_data_identity_artifact(path, ticket_identity, label):
@@ -629,7 +590,7 @@ def _validate_signed_review(path, *, commit_sha, b0_sha256, label):
     return review
 
 
-def _validate_signed_profile(path, *, ticket, manifest, label):
+def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
     signed = _load_evidence_json(path, f"{label}.signed_profile")
     try:
         profile = verify_payload(
@@ -659,6 +620,8 @@ def _validate_signed_profile(path, *, ticket, manifest, label):
         "hardware",
         "dimensions",
         "measurements",
+        "optimizer_event_trace",
+        "optimizer_event_commitment",
     }
     requirements = _route_launch_requirements()
     if set(profile) != required or profile["schema_version"] != PROFILE_SCHEMA:
@@ -767,13 +730,13 @@ def _validate_signed_profile(path, *, ticket, manifest, label):
     ):
         raise ResultGateProtocolError(f"{label} profile Slurm allocation differs")
 
-    profile_ticket_path, _ = _evidence_file(
+    profile_ticket_path, _ = _bundle_reference_file(
         {
-            "profile_ticket_path": profile["launch_ticket_path"],
-            "profile_ticket_sha256": profile["launch_ticket_sha256"],
+            "path": profile["launch_ticket_path"],
+            "sha256": profile["launch_ticket_sha256"],
         },
-        "profile_ticket",
-        f"{label}.fixed_step_profile",
+        Path(path).parent,
+        f"{label}.fixed_step_profile.profile_ticket",
     )
     profile_ticket = _load_evidence_json(
         profile_ticket_path, f"{label}.profile_launch_ticket"
@@ -799,6 +762,8 @@ def _validate_signed_profile(path, *, ticket, manifest, label):
         or profile_ticket["commit_sha"] != profile_commit
         or profile_ticket["profile_evidence"] is not None
         or profile_ticket["source_tree_sha256"] != ticket["source_tree_sha256"]
+        or profile_ticket["resolved_config_sha256"]
+        != profile["resolved_config_sha256"]
         or profile_ticket["scientific_config_sha256"]
         != ticket["scientific_config_sha256"]
         or profile_ticket["data_identity"] != ticket["data_identity"]
@@ -808,6 +773,84 @@ def _validate_signed_profile(path, *, ticket, manifest, label):
         != profile["runtime_identity_sha256"]
     ):
         raise ResultGateInputError(f"{label} profile launch ticket binding differs")
+    profile_runtime = profile_ticket["runtime_identity"]
+    if (
+        not isinstance(profile_runtime, dict)
+        or profile_runtime.get("schema_version") != RUNTIME_IDENTITY_SCHEMA
+        or profile_runtime.get("entrypoint") != "train"
+        or profile_runtime.get("deterministic") is not True
+        or profile_runtime.get("not_eval") is not False
+        or profile_runtime.get("resume_checkpoint") is not None
+    ):
+        raise ResultGateProtocolError(
+            f"{label} profile runtime identity is not a fresh deterministic train run"
+        )
+
+    profile_b0_reference = profile_ticket["b0_evidence"]
+    profile_review_reference = profile_ticket["review_evidence"]
+    for role, reference in (
+        ("profile_b0", profile_b0_reference),
+        ("profile_review", profile_review_reference),
+    ):
+        if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+            raise ResultGateInputError(f"{label} {role} reference differs")
+    try:
+        validate_b0_evidence(
+            profile_b0_reference,
+            base_dir=profile_ticket_path.parent,
+            expected_commit=profile_commit,
+            trust_root=_attestation_trust_roots()["b0"],
+        )
+    except B0EvidenceError as exc:
+        raise ResultGateInputError(
+            f"{label} profile B0 evidence is invalid: {exc}"
+        ) from exc
+    profile_review_path, profile_review_sha256 = _bundle_reference_file(
+        profile_review_reference,
+        profile_ticket_path.parent,
+        f"{label}.profile_review",
+    )
+    del profile_review_sha256
+    _validate_signed_review(
+        profile_review_path,
+        commit_sha=profile_commit,
+        b0_sha256=profile_b0_reference["sha256"],
+        label=f"{label}.profile",
+    )
+
+    trace_path, _ = _bundle_reference_file(
+        profile["optimizer_event_trace"],
+        Path(path).parent,
+        f"{label}.profile_trace",
+    )
+    commitment_path, _ = _bundle_reference_file(
+        profile["optimizer_event_commitment"],
+        Path(path).parent,
+        f"{label}.profile_commitment",
+    )
+    try:
+        profile_cfg = Config.fromfile(str(config_path))
+        expected_trace_identity = derive_training_trace_identity(
+            profile_cfg,
+            profile_ticket["data_identity"],
+            seed=profile_runtime["seed"],
+            world_size=requirements["world_size"],
+        )
+        derived_measurements = derive_fixed_step_profile_measurements(
+            trace_path,
+            commitment_path,
+            warmup_optimizer_events=warmup,
+            measured_optimizer_events=measured,
+            expected_identity=expected_trace_identity,
+        )
+    except (OSError, ValueError, TrainingEvidenceError, IdentityError) as exc:
+        raise ResultGateInputError(
+            f"{label} profile optimizer-event evidence is invalid: {exc}"
+        ) from exc
+    if profile["measurements"] != derived_measurements:
+        raise ResultGateInputError(
+            f"{label} fixed-step profile measurements differ from its event trace"
+        )
     return profile
 
 
@@ -877,7 +920,10 @@ def _validate_launch_ticket(
             raise ResultGateProtocolError(f"{label} formal training unexpectedly resumed")
     else:
         expected_checkpoint = {
-            "path": str(paths["checkpoint"].resolve()),
+            "path": paths["checkpoint"]
+            .resolve()
+            .relative_to(Path(path).resolve().parent)
+            .as_posix(),
             "sha256": hashes["checkpoint"],
             "size_bytes": paths["checkpoint"].stat().st_size,
         }
@@ -893,12 +939,10 @@ def _validate_launch_ticket(
         reference = ticket[f"{role}_evidence"]
         if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
             raise ResultGateInputError(f"{label} launch ticket {role} reference differs")
-        wrapper = {
-            f"{role}_path": reference["path"],
-            f"{role}_sha256": reference["sha256"],
-        }
-        prerequisite_paths[role], prerequisite_hashes[role] = _evidence_file(
-            wrapper, role, f"{label}.launch_ticket"
+        prerequisite_paths[role], prerequisite_hashes[role] = _bundle_reference_file(
+            reference,
+            Path(path).parent,
+            f"{label}.launch_ticket.{role}",
         )
     _validate_data_identity_artifact(paths["data_identity"], ticket["data_identity"], label)
     _validate_signed_review(
@@ -911,10 +955,20 @@ def _validate_launch_ticket(
         prerequisite_paths["profile"],
         ticket=ticket,
         manifest=manifest,
+        config_path=paths["config"],
         label=label,
     )
 
-    receipt = _load_evidence_json(receipt_path, f"{label}.launch_receipt")
+    signed_receipt = _load_evidence_json(receipt_path, f"{label}.launch_receipt")
+    try:
+        receipt = verify_launch_receipt(
+            signed_receipt,
+            trust_root=_attestation_trust_roots()["profile"],
+        )
+    except FullPetalLaunchError as exc:
+        raise ResultGateInputError(
+            f"{label} launch receipt attestation is invalid: {exc}"
+        ) from exc
     receipt_fields = {
         "schema_version",
         "mode",
@@ -943,7 +997,7 @@ def _validate_launch_ticket(
         "resolved_config_sha256": ticket["resolved_config_sha256"],
         "scientific_config_sha256": ticket["scientific_config_sha256"],
         "launch_ticket": {
-            "path": str(Path(path).resolve()),
+            "path": Path(path).name,
             "sha256": hashes[f"{ticket_role}_launch_ticket"],
         },
         "b0_artifact_sha256": prerequisite_hashes["b0"],
@@ -1030,6 +1084,15 @@ def _evaluate_signed_run(paths, claim, label):
     return _normalized_metrics({"metrics": computed}, claim, f"{label}.recomputed_metrics")
 
 
+def _resolved_run_config(path, label):
+    try:
+        return Config.fromfile(str(path))
+    except Exception as exc:
+        raise ResultGateInputError(
+            f"{label} resolved config cannot be loaded: {exc}"
+        ) from exc
+
+
 def _validate_run_evidence(row, claim, variant, seed, label):
     evidence = row.get("evidence")
     expected_evidence = {"run_manifest_path", "run_manifest_sha256"}
@@ -1043,6 +1106,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
         manifest = verify_formal_run_manifest(
             signed_manifest,
             trust_root=_attestation_trust_roots()["profile"],
+            base_dir=manifest_path.parent,
         )
     except TrainingEvidenceError as exc:
         raise ResultGateInputError(f"{label} formal run manifest is invalid: {exc}") from exc
@@ -1058,17 +1122,36 @@ def _validate_run_evidence(row, claim, variant, seed, label):
 
     expected_artifacts = set(COMMON_RUN_ARTIFACTS)
     if claim == "C2":
-        expected_artifacts.add("raw_visual_audit")
+        expected_artifacts.update(
+            {"visual_parameter_trace", "visual_parameter_commitment"}
+        )
     if set(manifest["artifacts"]) != expected_artifacts:
         raise ResultGateInputError(
             f"{label} formal run artifact roles differ; "
             f"missing={sorted(expected_artifacts - set(manifest['artifacts']))}, "
             f"extra={sorted(set(manifest['artifacts']) - expected_artifacts)}"
         )
-    paths = {
-        role: Path(reference["path"]).resolve()
-        for role, reference in manifest["artifacts"].items()
-    }
+    try:
+        paths = {
+            role: resolve_bundle_path(
+                reference["path"],
+                manifest_path.parent,
+                f"{label} formal run artifact {role}",
+            )
+            for role, reference in manifest["artifacts"].items()
+        }
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
+    try:
+        checkpoint_path, checkpoint_bytes = read_verified_bundle_bytes(
+            manifest["artifacts"]["checkpoint"],
+            manifest_path.parent,
+            f"{label} formal checkpoint",
+        )
+    except EvidenceBundleError as exc:
+        raise ResultGateInputError(str(exc)) from exc
+    if checkpoint_path != paths["checkpoint"]:
+        raise ResultGateInputError(f"{label} checkpoint path identity differs")
     hashes = {
         role: reference["sha256"] for role, reference in manifest["artifacts"].items()
     }
@@ -1108,6 +1191,38 @@ def _validate_run_evidence(row, claim, variant, seed, label):
             raise ResultGateInputError(
                 f"{label} training/evaluation launch tickets disagree on {field}"
             )
+    cfg = _resolved_run_config(paths["config"], label)
+    if training_ticket["resolved_config_sha256"] != resolved_config_sha256(cfg):
+        raise ResultGateInputError(
+            f"{label} launch ticket resolved config hash differs from the config artifact"
+        )
+    if training_ticket["scientific_config_sha256"] != resolved_config_sha256(
+        cfg, scientific=True
+    ):
+        raise ResultGateInputError(
+            f"{label} launch ticket scientific config hash differs from the config artifact"
+        )
+    evaluator_spec = _load_evidence_json(
+        paths["evaluator_spec"], f"{label}.evaluator_spec"
+    )
+    try:
+        validate_evaluation_artifact_bindings(
+            cfg,
+            training_ticket["data_identity"],
+            ground_truth_path=paths["ground_truth"],
+            allowed_videos_path=paths["allowed_videos"],
+            evaluator_spec=evaluator_spec,
+        )
+        expected_training_identity = derive_training_trace_identity(
+            cfg,
+            training_ticket["data_identity"],
+            seed=seed,
+            world_size=1,
+        )
+    except IdentityError as exc:
+        raise ResultGateInputError(
+            f"{label} bound config/data identity is invalid: {exc}"
+        ) from exc
     metrics = _evaluate_signed_run(paths, claim, label)
     try:
         cost = derive_training_cost(
@@ -1115,28 +1230,39 @@ def _validate_run_evidence(row, claim, variant, seed, label):
         )
     except TrainingEvidenceError as exc:
         raise ResultGateInputError(f"{label} training trace is invalid: {exc}") from exc
+    actual_training_identity = {
+        field: cost[field] for field in expected_training_identity
+    }
+    if actual_training_identity != expected_training_identity:
+        raise ResultGateInputError(
+            f"{label} training trace identity differs from the bound config/data order"
+        )
     normalized_cost = _normalized_cost({"cost": cost}, label) if claim == "C1" else None
 
-    raw_visual_audit = None
+    visual_parameter_evidence = None
     if claim == "C2":
-        raw_visual_audit = _validate_raw_visual_audit(
-            paths["raw_visual_audit"],
-            claim,
-            variant,
-            seed,
-            {
-                "model": hashes["checkpoint"],
-                "dataset_manifest": hashes["data_identity"],
-            },
-            label,
-        )
+        try:
+            visual_parameter_evidence = derive_visual_parameter_evidence(
+                cfg,
+                variant=variant,
+                checkpoint_path=paths["checkpoint"],
+                training_trace_path=paths["training_trace"],
+                training_commitment_path=paths["training_commitment"],
+                visual_trace_path=paths["visual_parameter_trace"],
+                visual_commitment_path=paths["visual_parameter_commitment"],
+                checkpoint_bytes=checkpoint_bytes,
+            )
+        except TrainingEvidenceError as exc:
+            raise ResultGateInputError(
+                f"{label} visual parameter evidence is invalid: {exc}"
+            ) from exc
     return {
         "manifest_sha256": manifest_hash,
         "commit_sha": manifest["commit_sha"],
         "b0_evidence": training_ticket["b0_evidence"],
         "metrics": metrics,
         "cost": normalized_cost,
-        "raw_visual_audit": raw_visual_audit,
+        "visual_parameter_evidence": visual_parameter_evidence,
     }
 
 
@@ -1240,6 +1366,13 @@ def _load_content_manifest(reference, label):
     return manifest, path, digest
 
 
+def _load_source_reference(reference, label):
+    if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+        raise ResultGateInputError(f"{label} reference requires exactly path and sha256")
+    wrapper = {f"{label}_path": reference["path"], f"{label}_sha256": reference["sha256"]}
+    return _evidence_file(wrapper, label, label)
+
+
 def _validate_reporting_evidence(containers, *, require_fineaction):
     evidence = _single_container_entry(containers, "reporting_evidence")
     if evidence is None:
@@ -1247,9 +1380,19 @@ def _validate_reporting_evidence(containers, *, require_fineaction):
             "reporting_211_213": {"provided": False, "passed": False},
             "FineAction": {"provided": False, "passed": not require_fineaction},
         }
-    if not isinstance(evidence, dict) or set(evidence) != {"universe", "comparison", "fineaction"}:
+    required_fields = {
+        "universe",
+        "comparison",
+        "locked_ids",
+        "observed_ids",
+        "difference_reasons",
+        "fineaction",
+        "fineaction_sources",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != required_fields:
         raise ResultGateInputError(
-            "reporting_evidence requires universe, comparison, and fineaction references"
+            "reporting_evidence requires reporting manifests, their raw sources, "
+            "and FineAction source references"
         )
     universe, _, universe_hash = _load_content_manifest(
         evidence["universe"], "reporting_universe"
@@ -1257,6 +1400,27 @@ def _validate_reporting_evidence(containers, *, require_fineaction):
     comparison, _, comparison_hash = _load_content_manifest(
         evidence["comparison"], "reporting_comparison"
     )
+    locked_ids_path, _ = _load_source_reference(
+        evidence["locked_ids"], "reporting_locked_ids"
+    )
+    observed_ids_path, _ = _load_source_reference(
+        evidence["observed_ids"], "reporting_observed_ids"
+    )
+    difference_reasons_path, _ = _load_source_reference(
+        evidence["difference_reasons"], "reporting_difference_reasons"
+    )
+    try:
+        validate_reporting_artifacts_from_sources(
+            universe,
+            comparison,
+            locked_ids_path=locked_ids_path,
+            observed_ids_path=observed_ids_path,
+            difference_reasons_path=difference_reasons_path,
+        )
+    except ContractValidationError as exc:
+        raise ResultGateInputError(
+            f"reporting evidence is not source-derived: {exc}"
+        ) from exc
     if (
         universe.get("schema") != "full_petal.historical_reporting_universe"
         or universe.get("universe", {}).get("count") != 211
@@ -1275,6 +1439,13 @@ def _validate_reporting_evidence(containers, *, require_fineaction):
 
     fineaction_result = {"provided": False, "passed": not require_fineaction}
     if evidence["fineaction"] is not None:
+        source_references = evidence["fineaction_sources"]
+        if not isinstance(source_references, dict) or set(source_references) != set(
+            FINEACTION_SOURCE_KEYS
+        ):
+            raise ResultGateInputError(
+                "FineAction evidence requires the exact source reference set"
+            )
         fineaction, _, fineaction_hash = _load_content_manifest(
             evidence["fineaction"], "fineaction_qualification"
         )
@@ -1284,30 +1455,27 @@ def _validate_reporting_evidence(containers, *, require_fineaction):
             or fineaction.get("status") != "PASS"
         ):
             raise ResultGateInputError("FineAction qualification has not reached PASS")
-        for gate_name in fineaction.get("mandatory_gates", ()):
-            gate = fineaction.get("gates", {}).get(gate_name, {})
-            for check_name, check in gate.get("checks", {}).items():
-                if not check.get("mandatory"):
-                    continue
-                if check.get("passed") is not True or check.get("evidence_valid") is not True:
-                    raise ResultGateInputError(
-                        f"FineAction mandatory evidence failed: {gate_name}.{check_name}"
-                    )
-                item = check.get("evidence")
-                if not isinstance(item, dict):
-                    raise ResultGateInputError(
-                        f"FineAction evidence is not dereferenceable: {gate_name}.{check_name}"
-                    )
-                wrapper = {
-                    "artifact_path": item.get("artifact_path"),
-                    "artifact_sha256": item.get("artifact_sha256"),
-                }
-                _evidence_file(wrapper, "artifact", f"FineAction.{gate_name}.{check_name}")
+        source_paths = {
+            name: _load_source_reference(
+                source_references[name], f"fineaction_{name}"
+            )[0]
+            for name in FINEACTION_SOURCE_KEYS
+        }
+        try:
+            validate_fineaction_qualification_report(fineaction, source_paths)
+        except ContractValidationError as exc:
+            raise ResultGateInputError(
+                f"FineAction qualification is not source-derived: {exc}"
+            ) from exc
         fineaction_result = {
             "provided": True,
             "passed": True,
             "artifact_sha256": fineaction_hash,
         }
+    elif evidence["fineaction_sources"] is not None:
+        raise ResultGateInputError(
+            "FineAction sources cannot be supplied without a qualification report"
+        )
     return {
         "reporting_211_213": {
             "provided": True,
@@ -1592,7 +1760,7 @@ def _not_evaluated(claim, variants):
             "protocol_equality": False,
             "scientific_metrics": False,
             **({"cost_parity": False} if claim == "C1" else {}),
-            **({"raw_visual_audit": False} if claim == "C2" else {}),
+            **({"visual_parameter_events": False} if claim == "C2" else {}),
         },
         "paired_seed_coverage": {
             "passed": False,
@@ -1719,7 +1887,7 @@ def _evaluate_c2(grouped, map_gain_points, specialized_gain_points, map_parity_t
             "paired_seed_coverage": True,
             "protocol_equality": True,
             "scientific_metrics": scientific_pass,
-            "raw_visual_audit": True,
+            "visual_parameter_events": True,
         },
         "paired_seed_coverage": {
             "passed": True,
@@ -1727,13 +1895,17 @@ def _evaluate_c2(grouped, map_gain_points, specialized_gain_points, map_parity_t
             "variants": list(variants),
         },
         "protocol_equality": {"passed": True},
-        "raw_visual_audit": {
+        "visual_parameter_events": {
             "passed": True,
             "per_seed": [
                 {
                     "seed": seed,
-                    "adapted": grouped["C2"]["adapted"][seed]["evidence"]["raw_visual_audit"],
-                    "frozen": grouped["C2"]["frozen"][seed]["evidence"]["raw_visual_audit"],
+                    "adapted": grouped["C2"]["adapted"][seed]["evidence"][
+                        "visual_parameter_evidence"
+                    ],
+                    "frozen": grouped["C2"]["frozen"][seed]["evidence"][
+                        "visual_parameter_evidence"
+                    ],
                 }
                 for seed in seeds
             ],

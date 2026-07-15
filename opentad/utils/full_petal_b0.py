@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .full_petal_attestation import AttestationError, verify_payload
+from .evidence_bundle import EvidenceBundleError, resolve_bundle_path
 
 
 B0_SCHEMA = "full-petal-b0-v2"
@@ -85,13 +86,18 @@ def _count(value, label, *, positive=False):
     return value
 
 
-def _path(value, base_dir, label):
+def _path(value, base_dir, label, *, require_relative=True):
     if not isinstance(value, str) or not value.strip():
         raise B0EvidenceError(f"{label} path must be non-empty text")
     result = Path(value).expanduser()
-    if not result.is_absolute():
-        result = Path(base_dir) / result
-    return result.resolve()
+    if result.is_absolute():
+        if require_relative:
+            raise B0EvidenceError(f"{label} must use a relative bundle path")
+        return result.resolve()
+    try:
+        return resolve_bundle_path(value, base_dir, label)
+    except EvidenceBundleError as exc:
+        raise B0EvidenceError(str(exc)) from exc
 
 
 def _load_json(path, label):
@@ -105,8 +111,12 @@ def _load_json(path, label):
     return payload
 
 
-def _verified_path(path_value, digest_value, base_dir, label):
-    path = _path(path_value, base_dir, label)
+def _verified_path(
+    path_value, digest_value, base_dir, label, *, require_relative=True
+):
+    path = _path(
+        path_value, base_dir, label, require_relative=require_relative
+    )
     expected = _sha(digest_value, f"{label}.sha256")
     actual = sha256_file(path)
     if not hmac.compare_digest(actual, expected):
@@ -267,7 +277,13 @@ def validate_b0_evidence(
     """Validate the complete signed B0 chain and return its unsigned root body."""
 
     _exact(reference, {"path", "sha256"}, "B0 evidence reference")
-    root_path = _verified_path(reference["path"], reference["sha256"], base_dir, "B0 evidence")
+    root_path = _verified_path(
+        reference["path"],
+        reference["sha256"],
+        base_dir,
+        "B0 evidence",
+        require_relative=False,
+    )
     signed_root = _load_json(root_path, "B0 evidence")
     try:
         root = verify_payload(signed_root, trust_root=trust_root, role=B0_ATTESTATION_ROLE)

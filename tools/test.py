@@ -7,6 +7,7 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import io
 from pathlib import Path
 import torch
 import torch.distributed as dist
@@ -20,6 +21,7 @@ from opentad.utils.full_petal_launch import (
     persist_launch_receipt,
     validate_full_petal_launch,
 )
+from opentad.utils.evidence_bundle import read_verified_bundle_bytes
 
 
 def parse_args():
@@ -54,6 +56,7 @@ def main():
             checkpoint_path = args.checkpoint
 
     cfg_overrides = dict(args.cfg_options or {})
+    execution_signing_key = os.environ.get("FULL_PETAL_EXECUTION_ATTESTATION_KEY")
 
     launch_authorization = validate_full_petal_launch(
         cfg,
@@ -70,9 +73,30 @@ def main():
         cfg_override_keys=tuple(cfg_overrides),
         environ=os.environ,
         repository_root=Path(__file__).resolve().parents[1],
+        execution_signing_key_path=execution_signing_key,
     )
+    bound_checkpoint_bytes = None
+    if launch_authorization is not None and checkpoint_path is not None:
+        checkpoint_record = launch_authorization.runtime_identity["resume_checkpoint"]
+        bound_path, bound_checkpoint_bytes = read_verified_bundle_bytes(
+            {
+                "path": checkpoint_record["path"],
+                "sha256": checkpoint_record["sha256"],
+            },
+            Path(launch_authorization.ticket_path).parent,
+            "formal evaluation checkpoint",
+        )
+        if bound_path != Path(checkpoint_path).expanduser().resolve():
+            raise RuntimeError(
+                "formal evaluation checkpoint path differs from the launch argument"
+            )
+        if len(bound_checkpoint_bytes) != checkpoint_record["size_bytes"]:
+            raise RuntimeError("formal evaluation checkpoint size differs from the ticket")
     if launch_authorization is not None:
-        receipt_path = persist_launch_receipt(launch_authorization)
+        receipt_path = persist_launch_receipt(
+            launch_authorization,
+            private_key_path=execution_signing_key,
+        )
         print(f"FULL_PETAL_LAUNCH_RECEIPT={receipt_path}")
 
     # DDP init
@@ -122,7 +146,13 @@ def main():
             checkpoint_path = os.path.join(cfg.work_dir, "checkpoint/best.pth")
         logger.info("Loading checkpoint from: {}".format(checkpoint_path))
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(
+            io.BytesIO(bound_checkpoint_bytes)
+            if bound_checkpoint_bytes is not None
+            else checkpoint_path,
+            map_location=device,
+        )
+        bound_checkpoint_bytes = None
         logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
 
         # Model EMA

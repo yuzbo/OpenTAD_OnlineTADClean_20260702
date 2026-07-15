@@ -16,6 +16,10 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     _stream_key,
 )
 from opentad.utils.fixed_step_profile import FixedStepProfiler
+from opentad.utils.full_petal_training_evidence import (
+    OptimizerEventTraceRecorder,
+    VisualParameterEventRecorder,
+)
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import (
     PrefixInstanceTarget,
@@ -263,14 +267,23 @@ class _Logger:
 
 
 class _Scheduler:
-    def __init__(self):
+    def __init__(self, *, fail_step=False):
         self.steps = 0
+        self.fail_step = fail_step
 
     def get_last_lr(self):
         return [0.1]
 
     def step(self):
         self.steps += 1
+        if self.fail_step:
+            raise RuntimeError("injected scheduler failure")
+
+    def state_dict(self):
+        return {"steps": self.steps}
+
+    def load_state_dict(self, state):
+        self.steps = int(state["steps"])
 
 
 class _TransactionalToy(torch.nn.Module):
@@ -289,6 +302,12 @@ class _TransactionalToy(torch.nn.Module):
 
     def has_pending_online_update(self):
         return self.pending
+
+    def snapshot_online_update(self):
+        return {"pending": self.pending}
+
+    def restore_online_update(self, snapshot):
+        self.pending = bool(snapshot["pending"])
 
     def commit_online_update(self):
         assert self.pending
@@ -354,8 +373,9 @@ class _ProfileBackend:
 
 
 class _StatefulScaler:
-    def __init__(self):
+    def __init__(self, *, fail_at=None):
         self.calls = {"unscale": 0, "step": 0, "update": 0}
+        self.fail_at = fail_at
 
     def scale(self, value):
         return value
@@ -363,24 +383,81 @@ class _StatefulScaler:
     def unscale_(self, optimizer):
         del optimizer
         self.calls["unscale"] += 1
+        if self.fail_at == "unscale":
+            raise RuntimeError("injected scaler unscale failure")
 
     def step(self, optimizer):
         self.calls["step"] += 1
         optimizer.step()
+        if self.fail_at == "step":
+            raise RuntimeError("injected scaler step failure")
 
     def update(self):
         self.calls["update"] += 1
+        if self.fail_at == "update":
+            raise RuntimeError("injected scaler update failure")
 
     def state_dict(self):
         return dict(self.calls)
 
+    def load_state_dict(self, state):
+        self.calls = dict(state)
+
 
 class _OptimizerEventRecorder:
-    def __init__(self):
+    def __init__(self, *, fail_record=False):
         self.calls = []
+        self.fail_record = fail_record
 
     def record(self, **event):
         self.calls.append(dict(event))
+        if self.fail_record:
+            raise RuntimeError("injected recorder failure")
+
+    def state_dict(self):
+        return {"calls": list(self.calls)}
+
+    def load_state_dict(self, state):
+        self.calls = list(state["calls"])
+
+
+class _FaultAfterStepAdamW(torch.optim.AdamW):
+    def step(self, closure=None):
+        result = super().step(closure)
+        raise RuntimeError("injected optimizer failure")
+
+
+class _StatefulEma(torch.nn.Module):
+    def __init__(self, model, *, fail_update=False):
+        super().__init__()
+        self.register_buffer("shadow", model.weight.detach().clone())
+        self.fail_update = fail_update
+
+    def update(self, model):
+        self.shadow.copy_(model.weight.detach())
+        if self.fail_update:
+            raise RuntimeError("injected EMA failure")
+
+
+def _authenticated_optimizer_recorder():
+    timestamps = iter((10.0, 11.0))
+    return OptimizerEventTraceRecorder(
+        precision="fp32",
+        effective_batch_size=1,
+        world_size=1,
+        optimizer_config_sha256="1" * 64,
+        scheduler_config_sha256="2" * 64,
+        data_order_sha256="3" * 64,
+        loss_normalization_sha256="4" * 64,
+        clock=lambda: next(timestamps),
+        peak_memory_reader=lambda: 0,
+    )
+
+
+class _FaultingVisualRecorder(VisualParameterEventRecorder):
+    def record_after(self, optimizer_event_id, model):
+        super().record_after(optimizer_event_id, model)
+        raise RuntimeError("injected visual evidence failure")
 
 
 def _state_digest(value):
@@ -503,7 +580,7 @@ def test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event():
     ]
 
 
-def test_commit_failure_precedes_all_parameter_optimizer_scheduler_and_scaler_mutation():
+def test_commit_failure_restores_all_parameter_optimizer_scheduler_and_scaler_mutation():
     model = _TransactionalToy(fail_commit=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
     scheduler = _Scheduler()
@@ -539,6 +616,156 @@ def test_commit_failure_precedes_all_parameter_optimizer_scheduler_and_scaler_mu
     assert model.rollbacks == 1
     assert model.pending is False
     assert recorder.calls == []
+
+
+@pytest.mark.parametrize(
+    ("fault", "message"),
+    [
+        ("unscale", "injected scaler unscale failure"),
+        ("clip", "injected gradient clip failure"),
+        ("optimizer", "injected optimizer failure"),
+        ("scaler_step", "injected scaler step failure"),
+        ("scheduler", "injected scheduler failure"),
+        ("recorder", "injected recorder failure"),
+        ("ema", "injected EMA failure"),
+    ],
+)
+def test_every_post_gradient_failure_restores_the_complete_training_transaction(
+    monkeypatch, fault, message
+):
+    model = _TransactionalToy()
+    optimizer_cls = _FaultAfterStepAdamW if fault == "optimizer" else torch.optim.AdamW
+    optimizer = optimizer_cls(model.parameters(), lr=0.1)
+    scheduler = _Scheduler(fail_step=fault == "scheduler")
+    scaler = (
+        _StatefulScaler(
+            fail_at=(
+                "unscale"
+                if fault == "unscale"
+                else "step" if fault == "scaler_step" else None
+            )
+        )
+        if fault in {"unscale", "scaler_step"}
+        else None
+    )
+    recorder = _OptimizerEventRecorder(fail_record=fault == "recorder")
+    model_ema = _StatefulEma(model, fail_update=fault == "ema")
+    if fault == "clip":
+        def fail_clip(parameters, max_norm):
+            del max_norm
+            for parameter in parameters:
+                if parameter.grad is not None:
+                    parameter.grad.mul_(0.5)
+            raise RuntimeError("injected gradient clip failure")
+
+        monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", fail_clip)
+
+    before = {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": _state_digest(scheduler.state_dict()),
+        "scaler": None if scaler is None else _state_digest(scaler.state_dict()),
+        "recorder": _state_digest(recorder.state_dict()),
+        "ema": _state_digest(model_ema.state_dict()),
+    }
+
+    with pytest.raises(RuntimeError, match=message):
+        train_one_epoch(
+            _toy_loader(),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            logging_interval=10,
+            scaler=scaler,
+            clip_grad_l2norm=1.0 if fault == "clip" else -1,
+            optimizer_event_recorder=recorder,
+            model_ema=model_ema,
+        )
+
+    after = {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": _state_digest(scheduler.state_dict()),
+        "scaler": None if scaler is None else _state_digest(scaler.state_dict()),
+        "recorder": _state_digest(recorder.state_dict()),
+        "ema": _state_digest(model_ema.state_dict()),
+    }
+    assert after == before
+    assert model.commits == 0
+    assert model.rollbacks == 1
+    assert model.pending is False
+
+
+def test_training_produces_event_bound_visual_parameter_evidence():
+    model = _TransactionalToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    optimizer_recorder = _authenticated_optimizer_recorder()
+    visual_recorder = VisualParameterEventRecorder(
+        model, optimizer, parameter_prefixes=("weight",)
+    )
+
+    train_one_epoch(
+        _toy_loader(),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=_Logger(),
+        logging_interval=10,
+        optimizer_event_recorder=optimizer_recorder,
+        visual_parameter_event_recorder=visual_recorder,
+    )
+
+    assert len(optimizer_recorder.events) == 1
+    assert len(visual_recorder.events) == 1
+    event = visual_recorder.events[0]
+    assert event["optimizer_event_id"] == optimizer_recorder.events[0]["event_id"]
+    assert event["parameter_name"] == "weight"
+    assert event["gradient_finite"] is True
+    assert event["gradient_norm"] > 0.0
+    assert event["delta_norm"] > 0.0
+    assert event["before_sha256"] != event["after_sha256"]
+
+
+def test_visual_evidence_failure_rolls_back_optimizer_and_both_evidence_streams():
+    model = _TransactionalToy()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    optimizer_recorder = _authenticated_optimizer_recorder()
+    visual_recorder = _FaultingVisualRecorder(
+        model, optimizer, parameter_prefixes=("weight",)
+    )
+    before = {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": _state_digest(scheduler.state_dict()),
+    }
+
+    with pytest.raises(RuntimeError, match="injected visual evidence failure"):
+        train_one_epoch(
+            _toy_loader(),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            logging_interval=10,
+            optimizer_event_recorder=optimizer_recorder,
+            visual_parameter_event_recorder=visual_recorder,
+        )
+
+    assert {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": _state_digest(scheduler.state_dict()),
+    } == before
+    assert optimizer_recorder.events == ()
+    assert visual_recorder.events == ()
+    assert model.commits == 0
+    assert model.rollbacks == 1
 
 
 def test_fixed_step_profile_stops_only_after_committed_episode_boundary():

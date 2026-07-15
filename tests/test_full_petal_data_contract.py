@@ -10,6 +10,7 @@ from opentad.utils.full_petal_data_contract import (
     ContractValidationError,
     build_fineaction_qualification_report,
     build_hardware_runtime_manifest,
+    build_id_file_provenance,
     build_reporting_universe_manifest,
     build_thumos_development_split,
     build_thumos_manifest_from_annotation_subsets,
@@ -22,6 +23,8 @@ from opentad.utils.full_petal_data_contract import (
     save_json,
     sha256_file,
     validate_hardware_runtime_manifest,
+    validate_fineaction_qualification_report,
+    validate_reporting_artifacts_from_sources,
     verify_content_hash,
     _crosses_chunk_boundary,
 )
@@ -561,6 +564,55 @@ def test_strict_reporting_comparison_rejects_unexplained_211_213_difference():
         )
 
 
+def test_reporting_artifacts_are_rebuilt_from_locked_source_files(tmp_path):
+    locked_ids = _ids("historical", 211)
+    observed_ids = [*locked_ids, "extra_a", "extra_b"]
+    locked_path = tmp_path / "locked.json"
+    observed_path = tmp_path / "observed.json"
+    reasons_path = tmp_path / "reasons.json"
+    save_json(locked_path, locked_ids)
+    save_json(observed_path, observed_ids)
+    save_json(
+        reasons_path,
+        {
+            "extra_a": "documented canonical addition",
+            "extra_b": "documented canonical addition",
+        },
+    )
+    locked = build_reporting_universe_manifest(
+        locked_ids,
+        provenance=build_id_file_provenance(locked_path, locked_ids),
+        seed=23,
+        created_at=CREATED_AT,
+    )
+    comparison = compare_reporting_universe(
+        locked,
+        observed_ids,
+        observed_provenance=build_id_file_provenance(observed_path, observed_ids),
+        difference_reasons=load_json(reasons_path),
+        seed=23,
+        created_at=CREATED_AT,
+    )
+
+    assert validate_reporting_artifacts_from_sources(
+        locked,
+        comparison,
+        locked_ids_path=locked_path,
+        observed_ids_path=observed_path,
+        difference_reasons_path=reasons_path,
+    )
+
+    save_json(observed_path, [*locked_ids, "extra_a", "forged_extra"])
+    with pytest.raises(ContractValidationError, match="provenance"):
+        validate_reporting_artifacts_from_sources(
+            locked,
+            comparison,
+            locked_ids_path=locked_path,
+            observed_ids_path=observed_path,
+            difference_reasons_path=reasons_path,
+        )
+
+
 def test_hashes_and_saved_json_are_deterministic(tmp_path):
     left = {"z": [3, 2, 1], "a": {"right": 2, "left": 1}}
     right = {"a": {"left": 1, "right": 2}, "z": [3, 2, 1]}
@@ -660,24 +712,109 @@ def test_hardware_runtime_validation_rejects_invalid_required_fields(mutate, mes
         validate_hardware_runtime_manifest(invalid)
 
 
-def test_incomplete_fineaction_evidence_remains_unqualified():
-    report = build_fineaction_qualification_report(
+def _fineaction_sources(tmp_path, *, overlapping=True, smoke_pass=True):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    media_dir = tmp_path / "media"
+    media_dir.mkdir()
+    database = {}
+    entries = []
+    for index in range(10):
+        video_id = f"fineaction_{index:03d}"
+        media_path = media_dir / f"{video_id}.mp4"
+        media_path.write_bytes(f"verified-media-{index}".encode("ascii"))
+        entries.append(
+            {
+                "video_id": video_id,
+                "path": media_path.relative_to(tmp_path).as_posix(),
+                "sha256": sha256_file(media_path),
+                "size_bytes": media_path.stat().st_size,
+            }
+        )
+        segments = (
+            ([0.0, 4.0], [1.0, 5.0], [2.0, 6.0])
+            if overlapping
+            else ([0.0, 1.0], [2.0, 3.0], [4.0, 5.0])
+        )
+        database[video_id] = {
+            "subset": "training" if index < 5 else "validation",
+            "duration": 10.0,
+            "frame": 300,
+            "annotations": [
+                {"segment": segment, "label": "same-class"}
+                for segment in segments
+            ],
+        }
+
+    annotation_path = tmp_path / "annotation.json"
+    save_json(annotation_path, {"database": database})
+    inventory_path = tmp_path / "media-inventory.json"
+    save_json(
+        inventory_path,
         {
-            "protocol": {
-                "split_lock": {
-                    "mandatory": True,
-                    "passed": True,
-                    "evidence": {"manifest_sha256": "a" * 64},
-                }
-            },
-            "completeness": {
-                "media_inventory": {
-                    "mandatory": True,
-                    "passed": True,
-                    "evidence": "",
-                }
-            },
+            "schema": "full_petal.fineaction_media_inventory",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "entries": entries,
         },
+    )
+    terms_path = tmp_path / "license-terms.txt"
+    terms_path.write_text("FineAction research terms\n", encoding="utf-8")
+    license_path = tmp_path / "license.json"
+    save_json(
+        license_path,
+        {
+            "schema": "full_petal.fineaction_license",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "license_id": "FineAction-research",
+            "access_authorized": True,
+            "terms": {"path": terms_path.name, "sha256": sha256_file(terms_path)},
+        },
+    )
+    preprocessing_path = tmp_path / "preprocessing.json"
+    save_json(
+        preprocessing_path,
+        {
+            "schema": "full_petal.fineaction_causal_preprocessing",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "future_frames_allowed": False,
+            "timestamp_convention": "zero_based_source_frame",
+            "frame_stride": 2,
+            "annotation_sha256": sha256_file(annotation_path),
+            "media_inventory_sha256": sha256_file(inventory_path),
+        },
+    )
+    smoke_path = tmp_path / "loader-smoke.json"
+    save_json(
+        smoke_path,
+        {
+            "schema": "full_petal.fineaction_loader_smoke",
+            "schema_version": 1,
+            "dataset": "FineAction",
+            "status": "PASS" if smoke_pass else "FAIL",
+            "command": ["python", "-m", "pytest", "tests/test_fineaction_loader.py"],
+            "exit_code": 0 if smoke_pass else 1,
+            "tests_passed": 1 if smoke_pass else 0,
+            "tests_failed": 0 if smoke_pass else 1,
+            "tests_skipped": 0,
+            "annotation_sha256": sha256_file(annotation_path),
+            "media_inventory_sha256": sha256_file(inventory_path),
+            "preprocessing_sha256": sha256_file(preprocessing_path),
+        },
+    )
+    return {
+        "annotation": annotation_path,
+        "media_inventory": inventory_path,
+        "license": license_path,
+        "preprocessing": preprocessing_path,
+        "loader_smoke": smoke_path,
+    }
+
+
+def test_incomplete_fineaction_evidence_remains_unqualified(tmp_path):
+    report = build_fineaction_qualification_report(
+        _fineaction_sources(tmp_path, overlapping=False),
         seed=29,
         created_at=CREATED_AT,
     )
@@ -685,88 +822,23 @@ def test_incomplete_fineaction_evidence_remains_unqualified():
     assert report["schema"] == "full_petal.fineaction_qualification"
     assert report["status"] == "FAIL"
     assert report["qualified"] is False
-    assert report["gates"]["protocol"]["status"] == "FAIL"
-    assert "annotation_sha256" in report["gates"]["protocol"][
+    assert report["gates"]["protocol"]["status"] == "PASS"
+    assert report["gates"]["completeness"]["status"] == "FAIL"
+    assert "same_class_overlap_pairs" in report["gates"]["completeness"][
         "failed_mandatory_checks"
     ]
-    assert report["gates"]["completeness"]["status"] == "FAIL"
-    assert "media_inventory" in report["gates"]["completeness"][
-        "missing_evidence"
-    ]
-    assert "same_class_overlap_pairs" in report["gates"]["completeness"][
-        "missing_evidence"
-    ]
-    assert report["gates"]["causal_readiness"]["status"] == "FAIL"
-    assert any(
-        reason.startswith("causal_readiness: mandatory checks failed")
-        for reason in report["failure_reasons"]
-    )
+    assert report["gates"]["causal_readiness"]["status"] == "PASS"
     assert verify_content_hash(report)
-
-
-def _fineaction_qualification_gates(tmp_path, overlap_pairs=20):
-    digest = "a" * 64
-    counter = 0
-    tmp_path.mkdir(parents=True, exist_ok=True)
-
-    def check(evidence):
-        nonlocal counter
-        path = tmp_path / f"fineaction-evidence-{counter}.json"
-        counter += 1
-        save_json(path, evidence)
-        return {
-            "mandatory": True,
-            "passed": True,
-            "evidence": {
-                **evidence,
-                "artifact_path": str(path),
-                "artifact_sha256": sha256_file(path),
-            },
-        }
-
-    return {
-        "protocol": {
-            "license": check({"license_id": "FineAction-research"}),
-            "official_split": check({"manifest_sha256": digest}),
-            "annotation_sha256": check({"sha256": digest}),
-            "instance_interval_ids": check(
-                {"field": "instance_id", "verified_count": 30}
-            ),
-        },
-        "completeness": {
-            "raw_video_access": check({"inventory_sha256": digest}),
-            "same_class_overlap_pairs": check({"count": overlap_pairs}),
-            "same_class_repeated_instances": check({"count": 30}),
-            "qualified_ground_truth": check({"count": 30}),
-            "qualified_videos": check({"count": 10}),
-            "estimated_decode_storage_cost": check(
-                {"decode_gpu_hours": 12.0, "storage_bytes": 1024}
-            ),
-        },
-        "causal_readiness": {
-            "causal_preprocessing_contract": check(
-                {
-                    "timestamp_convention": "zero_based_source_frame",
-                    "future_frames_allowed": False,
-                    "frame_stride": 2,
-                    "manifest_sha256": digest,
-                }
-            ),
-            "minimal_dataset_loader_smoke": check(
-                {"status": "PASS", "test_report_sha256": digest}
-            ),
-        },
-    }
 
 
 def test_fineaction_qualification_enforces_identity_sample_thresholds(tmp_path):
     failed = build_fineaction_qualification_report(
-        _fineaction_qualification_gates(tmp_path / "failed", overlap_pairs=19),
+        _fineaction_sources(tmp_path / "failed", overlapping=False),
         seed=29,
         created_at=CREATED_AT,
     )
     passed = build_fineaction_qualification_report(
-        _fineaction_qualification_gates(tmp_path / "passed", overlap_pairs=20),
+        _fineaction_sources(tmp_path / "passed", overlapping=True),
         seed=29,
         created_at=CREATED_AT,
     )
@@ -774,27 +846,38 @@ def test_fineaction_qualification_enforces_identity_sample_thresholds(tmp_path):
     assert failed["status"] == "FAIL"
     assert failed["gates"]["completeness"]["checks"][
         "same_class_overlap_pairs"
-    ]["evidence_valid"] is False
+    ]["evidence"]["count"] == 0
     assert passed["status"] == "PASS"
     assert passed["qualified"] is True
+    assert passed["gates"]["completeness"]["checks"][
+        "same_class_overlap_pairs"
+    ]["evidence"]["count"] == 30
 
 
 def test_fineaction_qualification_rejects_forged_or_tampered_evidence(tmp_path):
-    gates = _fineaction_qualification_gates(tmp_path / "tampered")
-    evidence = gates["protocol"]["license"]["evidence"]
-    Path(evidence["artifact_path"]).write_text(
-        json.dumps({"license_id": "different"}) + "\n",
-        encoding="utf-8",
-    )
-
+    sources = _fineaction_sources(tmp_path / "tampered")
     report = build_fineaction_qualification_report(
-        gates,
+        sources,
         seed=29,
         created_at=CREATED_AT,
     )
+    forged = deepcopy(report)
+    forged["gates"]["completeness"]["checks"]["qualified_ground_truth"][
+        "evidence"
+    ]["count"] = 3000
+    forged.pop("content_sha256")
+    forged["content_sha256"] = canonical_json_sha256(forged)
+    with pytest.raises(ContractValidationError, match="source-derived"):
+        validate_fineaction_qualification_report(forged, sources)
 
-    assert report["status"] == "FAIL"
-    assert report["gates"]["protocol"]["checks"]["license"]["evidence_valid"] is False
+    media_path = next((tmp_path / "tampered" / "media").iterdir())
+    media_path.write_bytes(b"tampered")
+    with pytest.raises(ContractValidationError, match="media (size|hash) differs"):
+        build_fineaction_qualification_report(
+            sources,
+            seed=29,
+            created_at=CREATED_AT,
+        )
 
 
 def test_cli_builds_deterministic_thumos_json_from_explicit_splits(tmp_path):
@@ -928,17 +1011,16 @@ def test_cli_loads_and_saves_reporting_hardware_and_fineaction_json(tmp_path):
     )
     validate_hardware_runtime_manifest(load_json(hardware_manifest))
 
+    fineaction_sources = _fineaction_sources(
+        tmp_path / "fineaction-sources", overlapping=False
+    )
     fineaction_spec = tmp_path / "fineaction-spec.json"
     fineaction_spec.write_text(
         json.dumps(
             {
-                "gates": {
-                    "protocol": {
-                        "split_lock": {
-                            "passed": True,
-                            "evidence": {"sha256": "a" * 64},
-                        }
-                    }
+                "sources": {
+                    name: path.relative_to(tmp_path).as_posix()
+                    for name, path in fineaction_sources.items()
                 }
             }
         ),

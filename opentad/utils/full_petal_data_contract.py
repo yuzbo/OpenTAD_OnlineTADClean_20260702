@@ -10,6 +10,8 @@ import math
 import os
 from pathlib import Path
 
+from .evidence_bundle import EvidenceBundleError, resolve_bundle_path
+
 
 SCHEMA_VERSION = 1
 THUMOS_TRAIN_COUNT = 160
@@ -45,6 +47,13 @@ FINEACTION_REQUIRED_CHECKS = {
         "minimal_dataset_loader_smoke",
     ),
 }
+FINEACTION_SOURCE_KEYS = (
+    "annotation",
+    "media_inventory",
+    "license",
+    "preprocessing",
+    "loader_smoke",
+)
 HARDWARE_REQUIRED_DIMENSIONS = (
     "batch_size",
     "chunk_size",
@@ -1169,6 +1178,82 @@ def compare_reporting_universe(
     return _finalize_manifest(payload)
 
 
+def build_id_file_provenance(path, ids):
+    path = Path(path)
+    return {
+        "kind": "explicit_id_file",
+        "source": {
+            "name": path.name,
+            "sha256": sha256_file(path),
+            "content_sha256": canonical_json_sha256(sorted(ids)),
+        },
+    }
+
+
+def validate_reporting_artifacts_from_sources(
+    locked_manifest,
+    comparison_manifest,
+    *,
+    locked_ids_path,
+    observed_ids_path,
+    difference_reasons_path,
+):
+    """Rebuild the 211/213 artifacts from their bound source files."""
+
+    if not isinstance(locked_manifest, dict) or not verify_content_hash(
+        locked_manifest
+    ):
+        raise ContractValidationError("historical reporting manifest is invalid")
+    if not isinstance(comparison_manifest, dict) or not verify_content_hash(
+        comparison_manifest
+    ):
+        raise ContractValidationError("reporting comparison manifest is invalid")
+    locked_ids = load_id_file(locked_ids_path)
+    observed_ids = load_id_file(observed_ids_path)
+    reasons = load_json(difference_reasons_path)
+    if not isinstance(reasons, dict):
+        raise ContractValidationError("reporting difference reasons must be an object")
+    expected_locked_provenance = build_id_file_provenance(
+        locked_ids_path, locked_ids
+    )
+    expected_observed_provenance = build_id_file_provenance(
+        observed_ids_path, observed_ids
+    )
+    if locked_manifest.get("provenance") != expected_locked_provenance:
+        raise ContractValidationError(
+            "historical reporting provenance differs from the locked ID source"
+        )
+    if comparison_manifest.get("observed_provenance") != expected_observed_provenance:
+        raise ContractValidationError(
+            "observed reporting provenance differs from the observed ID source"
+        )
+    rebuilt_locked = build_reporting_universe_manifest(
+        locked_ids,
+        provenance=expected_locked_provenance,
+        seed=locked_manifest.get("seed"),
+        created_at=locked_manifest.get("created_at"),
+        strict=locked_manifest.get("universe", {}).get("strict"),
+    )
+    if rebuilt_locked != locked_manifest:
+        raise ContractValidationError(
+            "historical reporting manifest differs from the locked ID source"
+        )
+    rebuilt_comparison = compare_reporting_universe(
+        rebuilt_locked,
+        observed_ids,
+        observed_provenance=expected_observed_provenance,
+        difference_reasons=reasons,
+        seed=comparison_manifest.get("seed"),
+        created_at=comparison_manifest.get("created_at"),
+        strict=comparison_manifest.get("strict"),
+    )
+    if rebuilt_comparison != comparison_manifest:
+        raise ContractValidationError(
+            "reporting comparison differs from source-derived evidence"
+        )
+    return True
+
+
 def _validated_software_versions(value):
     versions = _require_mapping(value, "software_versions")
     for name, version in versions.items():
@@ -1286,18 +1371,17 @@ def validate_hardware_runtime_manifest(manifest):
     return True
 
 
-def _has_evidence(value):
-    if value is None or isinstance(value, bool):
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, dict):
-        return bool(value) and any(_has_evidence(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return bool(value) and any(_has_evidence(item) for item in value)
-    if isinstance(value, (int, float)):
-        return math.isfinite(float(value))
-    return False
+def _require_exact_json_fields(value, fields, label):
+    if not isinstance(value, dict):
+        raise ContractValidationError(f"{label} must be a JSON object")
+    expected = set(fields)
+    missing = sorted(expected.difference(value))
+    extra = sorted(set(value).difference(expected))
+    if missing or extra:
+        raise ContractValidationError(
+            f"{label} fields do not match schema; missing={missing}, extra={extra}"
+        )
+    return value
 
 
 def _valid_sha256(value):
@@ -1308,247 +1392,522 @@ def _valid_sha256(value):
     )
 
 
-def _evidence_sha256(evidence, *keys):
-    if isinstance(evidence, str):
-        return evidence
-    if not isinstance(evidence, dict):
-        return None
-    for key in keys:
-        if key in evidence:
-            return evidence[key]
-    return None
-
-
-def _evidence_count(evidence):
-    value = evidence.get("count") if isinstance(evidence, dict) else evidence
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
-def _dereference_fineaction_evidence(evidence):
-    if not isinstance(evidence, dict):
-        return None, "qualification evidence must be an object with an artifact reference"
-    path = evidence.get("artifact_path")
-    digest = evidence.get("artifact_sha256")
-    if not isinstance(path, str) or not path.strip() or not _valid_sha256(digest):
-        return None, "qualification evidence requires artifact_path and artifact_sha256"
-    try:
-        if sha256_file(path) != digest:
-            return None, "qualification evidence artifact hash differs"
-        artifact = load_json(path)
-    except ContractValidationError as exc:
-        return None, f"qualification evidence artifact cannot be loaded: {exc}"
-    semantic = {
-        key: value
-        for key, value in evidence.items()
-        if key not in {"artifact_path", "artifact_sha256"}
-    }
-    if artifact != semantic:
-        return None, "qualification evidence fields differ from the referenced artifact"
-    return semantic, None
-
-
-def _fineaction_evidence_error(gate_name, check_name, evidence):
-    evidence, reference_error = _dereference_fineaction_evidence(evidence)
-    if reference_error is not None:
-        return reference_error
-    key = (gate_name, check_name)
-    if key == ("protocol", "license"):
-        if not isinstance(evidence, dict) or not isinstance(
-            evidence.get("license_id"), str
-        ) or not evidence["license_id"].strip():
-            return "license evidence requires a non-empty license_id"
-    elif key == ("protocol", "official_split"):
-        if not _valid_sha256(_evidence_sha256(evidence, "manifest_sha256")):
-            return "official split evidence requires manifest_sha256"
-    elif key == ("protocol", "annotation_sha256"):
-        if not _valid_sha256(_evidence_sha256(evidence, "sha256")):
-            return "annotation evidence requires a lowercase SHA-256"
-    elif key == ("protocol", "instance_interval_ids"):
-        verified_count = (
-            _evidence_count({"count": evidence.get("verified_count")})
-            if isinstance(evidence, dict)
-            else None
-        )
-        if (
-            not isinstance(evidence, dict)
-            or not isinstance(evidence.get("field"), str)
-            or not evidence["field"].strip()
-            or verified_count is None
-            or verified_count <= 0
-        ):
-            return "instance interval evidence requires an ID field and positive verified_count"
-    elif key == ("completeness", "raw_video_access"):
-        if not _valid_sha256(_evidence_sha256(evidence, "inventory_sha256")):
-            return "raw video access requires a hashed media inventory"
-    elif key == ("completeness", "same_class_overlap_pairs"):
-        count = _evidence_count(evidence)
-        if count is None or count < 20:
-            return "same-class overlap requires at least 20 audited pairs"
-    elif key == ("completeness", "same_class_repeated_instances"):
-        count = _evidence_count(evidence)
-        if count is None or count <= 0:
-            return "same-class repetition evidence requires a positive count"
-    elif key == ("completeness", "qualified_ground_truth"):
-        count = _evidence_count(evidence)
-        if count is None or count < 30:
-            return "identity qualification requires at least 30 GT instances"
-    elif key == ("completeness", "qualified_videos"):
-        count = _evidence_count(evidence)
-        if count is None or count <= 0:
-            return "qualified video evidence requires a positive count"
-    elif key == ("completeness", "estimated_decode_storage_cost"):
-        if not isinstance(evidence, dict):
-            return "cost evidence must contain decode_gpu_hours and storage_bytes"
-        decode = evidence.get("decode_gpu_hours")
-        storage = evidence.get("storage_bytes")
-        if (
-            isinstance(decode, bool)
-            or not isinstance(decode, (int, float))
-            or not math.isfinite(float(decode))
-            or float(decode) < 0
-            or isinstance(storage, bool)
-            or not isinstance(storage, int)
-            or storage <= 0
-        ):
-            return "cost evidence has invalid decode_gpu_hours or storage_bytes"
-    elif key == ("causal_readiness", "causal_preprocessing_contract"):
-        if not isinstance(evidence, dict):
-            return "causal preprocessing evidence must be an object"
-        if evidence.get("future_frames_allowed") is not False:
-            return "causal preprocessing must explicitly forbid future frames"
-        if not isinstance(evidence.get("timestamp_convention"), str) or not evidence[
-            "timestamp_convention"
-        ].strip():
-            return "causal preprocessing requires a timestamp convention"
-        if (
-            isinstance(evidence.get("frame_stride"), bool)
-            or not isinstance(evidence.get("frame_stride"), int)
-            or evidence["frame_stride"] <= 0
-        ):
-            return "causal preprocessing requires a positive frame_stride"
-        if not _valid_sha256(evidence.get("manifest_sha256")):
-            return "causal preprocessing requires manifest_sha256"
-    elif key == ("causal_readiness", "minimal_dataset_loader_smoke"):
-        if (
-            not isinstance(evidence, dict)
-            or evidence.get("status") != "PASS"
-            or not _valid_sha256(evidence.get("test_report_sha256"))
-        ):
-            return "loader smoke requires PASS and test_report_sha256"
-    return None
-
-
-def _build_qualification_gate(gate_name, raw_checks):
-    if raw_checks is None:
-        raw_checks = {}
-    if not isinstance(raw_checks, dict):
-        raise ContractValidationError(f"FineAction gate {gate_name} must be an object")
-
-    raw_checks = dict(raw_checks)
-    for required_name in FINEACTION_REQUIRED_CHECKS[gate_name]:
-        raw_checks.setdefault(
-            required_name,
-            {"mandatory": True, "passed": False, "evidence": None},
-        )
-
-    checks = {}
-    for check_name in sorted(raw_checks):
-        _require_nonempty_string(check_name, f"{gate_name} check name")
-        raw_check = raw_checks[check_name]
-        if not isinstance(raw_check, dict):
+def _fineaction_source_paths(sources):
+    _require_exact_json_fields(sources, FINEACTION_SOURCE_KEYS, "FineAction sources")
+    paths = {}
+    for name in FINEACTION_SOURCE_KEYS:
+        try:
+            path = Path(sources[name]).expanduser().resolve(strict=True)
+        except (OSError, TypeError, ValueError) as exc:
             raise ContractValidationError(
-                f"FineAction check {gate_name}.{check_name} must be an object"
-            )
-        mandatory = raw_check.get("mandatory", True)
-        passed = raw_check.get("passed", False)
-        if not isinstance(mandatory, bool):
-            raise ContractValidationError(
-                f"FineAction check {gate_name}.{check_name} mandatory must be boolean"
-            )
-        if not isinstance(passed, bool):
-            raise ContractValidationError(
-                f"FineAction check {gate_name}.{check_name} passed must be boolean"
-            )
-        evidence = _json_clone(
-            raw_check.get("evidence"),
-            f"FineAction evidence {gate_name}.{check_name}",
-        )
-        required = check_name in FINEACTION_REQUIRED_CHECKS[gate_name]
-        mandatory_override = required and mandatory is not True
-        if required:
-            mandatory = True
-        evidence_error = _fineaction_evidence_error(
-            gate_name,
-            check_name,
-            evidence,
-        )
-        if mandatory_override:
-            evidence_error = "required qualification checks cannot be optional"
-        evidence_valid = _has_evidence(evidence) and evidence_error is None
-        checks[check_name] = {
-            "mandatory": mandatory,
-            "passed": passed,
-            "has_evidence": _has_evidence(evidence),
-            "evidence_valid": evidence_valid,
-            "evidence_error": evidence_error,
-            "evidence": evidence,
-        }
+                f"FineAction {name} source is not a readable file"
+            ) from exc
+        if not path.is_file():
+            raise ContractValidationError(f"FineAction {name} source is not a file")
+        paths[name] = path
+    return paths
 
-    mandatory_names = [
-        name for name, check in checks.items() if check["mandatory"]
-    ]
-    failed = [
-        name
-        for name in mandatory_names
-        if not checks[name]["passed"] or not checks[name]["evidence_valid"]
-    ]
-    missing_evidence = [
-        name for name in mandatory_names if not checks[name]["has_evidence"]
-    ]
-    passed = bool(mandatory_names) and not failed and not missing_evidence
+
+def _fineaction_annotation_stats(annotation):
+    database = _annotation_database(annotation)
+    instances = []
+    split_assignments = {}
+    durations = {}
+    for video_id in sorted(database):
+        record = database[video_id]
+        if not isinstance(record, dict):
+            raise ContractValidationError(
+                f"FineAction annotation record {video_id} must be an object"
+            )
+        subset = _require_nonempty_string(
+            record.get("subset"), f"FineAction subset for {video_id}"
+        )
+        duration = _require_positive_number(
+            record.get("duration"), f"FineAction duration for {video_id}"
+        )
+        frame_count = _require_positive_int(
+            record.get("frame"), f"FineAction frame count for {video_id}"
+        )
+        annotations = record.get("annotations")
+        if not isinstance(annotations, list):
+            raise ContractValidationError(
+                f"FineAction annotations for {video_id} must be a list"
+            )
+        split_assignments[video_id] = subset
+        durations[video_id] = float(duration)
+        for annotation_index, item in enumerate(annotations):
+            if not isinstance(item, dict):
+                raise ContractValidationError(
+                    f"FineAction annotation {video_id}[{annotation_index}] must be an object"
+                )
+            label = _require_nonempty_string(
+                item.get("label"),
+                f"FineAction label for {video_id}[{annotation_index}]",
+            )
+            segment = item.get("segment")
+            if not isinstance(segment, (list, tuple)) or len(segment) != 2:
+                raise ContractValidationError(
+                    f"FineAction segment for {video_id}[{annotation_index}] must have two values"
+                )
+            start, end = segment
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in (start, end)
+            ):
+                raise ContractValidationError(
+                    f"FineAction segment for {video_id}[{annotation_index}] is non-finite"
+                )
+            start = float(start)
+            end = float(end)
+            if start < 0 or end <= start or end > float(duration) + 1e-6:
+                raise ContractValidationError(
+                    f"FineAction segment for {video_id}[{annotation_index}] is outside the video"
+                )
+            identity = canonical_json_sha256(
+                {
+                    "annotation_index": annotation_index,
+                    "end": end,
+                    "label": label,
+                    "start": start,
+                    "video_id": video_id,
+                }
+            )
+            instances.append(
+                {
+                    "annotation_index": annotation_index,
+                    "end": end,
+                    "instance_id": identity,
+                    "label": label,
+                    "start": start,
+                    "video_id": video_id,
+                }
+            )
+    identities = [item["instance_id"] for item in instances]
+    if len(set(identities)) != len(identities):
+        raise ContractValidationError("FineAction derived instance IDs are not unique")
     return {
-        "status": "PASS" if passed else "FAIL",
-        "mandatory_check_count": len(mandatory_names),
-        "checks": checks,
-        "failed_mandatory_checks": failed,
-        "missing_evidence": missing_evidence,
-        "invalid_evidence": {
-            name: checks[name]["evidence_error"]
-            for name in mandatory_names
-            if checks[name]["evidence_error"] is not None
-        },
+        "database_ids": sorted(database),
+        "durations": durations,
+        "instances": instances,
+        "split_assignments": split_assignments,
+        "split_manifest_sha256": canonical_json_sha256(split_assignments),
+        "subsets": sorted(set(split_assignments.values())),
     }
 
 
-def build_fineaction_qualification_report(gates, *, seed, created_at):
-    """Derive FineAction qualification solely from mandatory evidenced checks."""
+def _fineaction_media_inventory(path):
+    inventory = load_json(path)
+    _require_exact_json_fields(
+        inventory,
+        {"schema", "schema_version", "dataset", "entries"},
+        "FineAction media inventory",
+    )
+    if (
+        inventory["schema"] != "full_petal.fineaction_media_inventory"
+        or inventory["schema_version"] != SCHEMA_VERSION
+        or inventory["dataset"] != "FineAction"
+    ):
+        raise ContractValidationError("FineAction media inventory identity is invalid")
+    entries = inventory["entries"]
+    if not isinstance(entries, list) or not entries:
+        raise ContractValidationError("FineAction media inventory entries must be non-empty")
+    verified = []
+    seen_ids = set()
+    for index, entry in enumerate(entries):
+        _require_exact_json_fields(
+            entry,
+            {"video_id", "path", "sha256", "size_bytes"},
+            f"FineAction media inventory entry {index}",
+        )
+        video_id = _require_nonempty_string(
+            entry["video_id"], f"FineAction media video_id {index}"
+        )
+        if video_id != video_id.strip() or video_id in seen_ids:
+            raise ContractValidationError(
+                f"FineAction media inventory has an invalid or duplicate video ID: {video_id!r}"
+            )
+        if not _valid_sha256(entry["sha256"]):
+            raise ContractValidationError(
+                f"FineAction media inventory entry {video_id} has an invalid SHA-256"
+            )
+        _require_positive_int(
+            entry["size_bytes"], f"FineAction media size for {video_id}"
+        )
+        try:
+            media_path = resolve_bundle_path(
+                entry["path"], Path(path).parent, f"FineAction media {video_id}"
+            )
+        except EvidenceBundleError as exc:
+            raise ContractValidationError(str(exc)) from exc
+        actual_size = media_path.stat().st_size
+        if actual_size != entry["size_bytes"]:
+            raise ContractValidationError(
+                f"FineAction media size differs for {video_id}: "
+                f"expected {entry['size_bytes']}, found {actual_size}"
+            )
+        actual_sha256 = sha256_file(media_path)
+        if actual_sha256 != entry["sha256"]:
+            raise ContractValidationError(
+                f"FineAction media hash differs for {video_id}"
+            )
+        seen_ids.add(video_id)
+        verified.append(
+            {
+                "path": entry["path"],
+                "sha256": actual_sha256,
+                "size_bytes": actual_size,
+                "video_id": video_id,
+            }
+        )
+    verified.sort(key=lambda item: item["video_id"])
+    return {
+        "file_count": len(verified),
+        "files_sha256": canonical_json_sha256(verified),
+        "storage_bytes": sum(item["size_bytes"] for item in verified),
+        "video_ids": [item["video_id"] for item in verified],
+    }
 
-    if not isinstance(gates, dict):
-        raise ContractValidationError("FineAction gates must be a JSON object")
-    unknown_gates = sorted(set(gates).difference(FINEACTION_MANDATORY_GATES))
-    if unknown_gates:
-        raise ContractValidationError(f"unknown FineAction gates: {unknown_gates}")
+
+def _fineaction_license(path):
+    license_source = load_json(path)
+    _require_exact_json_fields(
+        license_source,
+        {
+            "schema",
+            "schema_version",
+            "dataset",
+            "license_id",
+            "access_authorized",
+            "terms",
+        },
+        "FineAction license source",
+    )
+    if (
+        license_source["schema"] != "full_petal.fineaction_license"
+        or license_source["schema_version"] != SCHEMA_VERSION
+        or license_source["dataset"] != "FineAction"
+    ):
+        raise ContractValidationError("FineAction license source identity is invalid")
+    _require_nonempty_string(license_source["license_id"], "FineAction license_id")
+    if not isinstance(license_source["access_authorized"], bool):
+        raise ContractValidationError("FineAction access_authorized must be boolean")
+    terms = _require_exact_json_fields(
+        license_source["terms"], {"path", "sha256"}, "FineAction license terms"
+    )
+    if not _valid_sha256(terms["sha256"]):
+        raise ContractValidationError("FineAction license terms SHA-256 is invalid")
+    try:
+        terms_path = resolve_bundle_path(
+            terms["path"], Path(path).parent, "FineAction license terms"
+        )
+    except EvidenceBundleError as exc:
+        raise ContractValidationError(str(exc)) from exc
+    if sha256_file(terms_path) != terms["sha256"]:
+        raise ContractValidationError("FineAction license terms hash differs")
+    return {
+        "access_authorized": license_source["access_authorized"],
+        "license_id": license_source["license_id"],
+        "terms_sha256": terms["sha256"],
+    }
+
+
+def _fineaction_preprocessing(path):
+    source = load_json(path)
+    _require_exact_json_fields(
+        source,
+        {
+            "schema",
+            "schema_version",
+            "dataset",
+            "future_frames_allowed",
+            "timestamp_convention",
+            "frame_stride",
+            "annotation_sha256",
+            "media_inventory_sha256",
+        },
+        "FineAction preprocessing source",
+    )
+    if (
+        source["schema"] != "full_petal.fineaction_causal_preprocessing"
+        or source["schema_version"] != SCHEMA_VERSION
+        or source["dataset"] != "FineAction"
+    ):
+        raise ContractValidationError("FineAction preprocessing source identity is invalid")
+    if not isinstance(source["future_frames_allowed"], bool):
+        raise ContractValidationError("FineAction future_frames_allowed must be boolean")
+    _require_nonempty_string(
+        source["timestamp_convention"], "FineAction timestamp convention"
+    )
+    _require_positive_int(source["frame_stride"], "FineAction frame stride")
+    for field in ("annotation_sha256", "media_inventory_sha256"):
+        if not _valid_sha256(source[field]):
+            raise ContractValidationError(f"FineAction {field} is invalid")
+    return source
+
+
+def _fineaction_loader_smoke(path):
+    source = load_json(path)
+    _require_exact_json_fields(
+        source,
+        {
+            "schema",
+            "schema_version",
+            "dataset",
+            "status",
+            "command",
+            "exit_code",
+            "tests_passed",
+            "tests_failed",
+            "tests_skipped",
+            "annotation_sha256",
+            "media_inventory_sha256",
+            "preprocessing_sha256",
+        },
+        "FineAction loader smoke source",
+    )
+    if (
+        source["schema"] != "full_petal.fineaction_loader_smoke"
+        or source["schema_version"] != SCHEMA_VERSION
+        or source["dataset"] != "FineAction"
+    ):
+        raise ContractValidationError("FineAction loader smoke source identity is invalid")
+    command = source["command"]
+    if not isinstance(command, list) or not command or not all(
+        isinstance(item, str) and item for item in command
+    ):
+        raise ContractValidationError("FineAction loader smoke command is invalid")
+    for field in ("exit_code", "tests_passed", "tests_failed", "tests_skipped"):
+        _require_nonnegative_int(source[field], f"FineAction loader smoke {field}")
+    for field in (
+        "annotation_sha256",
+        "media_inventory_sha256",
+        "preprocessing_sha256",
+    ):
+        if not _valid_sha256(source[field]):
+            raise ContractValidationError(f"FineAction loader smoke {field} is invalid")
+    return source
+
+
+def _fineaction_check(passed, evidence, failure):
+    return {
+        "mandatory": True,
+        "passed": bool(passed),
+        "has_evidence": True,
+        "evidence_valid": True,
+        "evidence_error": None,
+        "failure": None if passed else failure,
+        "evidence": _json_clone(evidence, "FineAction derived evidence"),
+    }
+
+
+def _fineaction_gate(gate_name, checks):
+    required = FINEACTION_REQUIRED_CHECKS[gate_name]
+    _require_exact_json_fields(checks, required, f"FineAction {gate_name} checks")
+    failed = [name for name in required if checks[name]["passed"] is not True]
+    return {
+        "status": "PASS" if not failed else "FAIL",
+        "mandatory_check_count": len(required),
+        "checks": {name: checks[name] for name in required},
+        "failed_mandatory_checks": failed,
+        "missing_evidence": [],
+        "invalid_evidence": {},
+    }
+
+
+def _fineaction_overlap_stats(instances):
+    grouped = defaultdict(list)
+    for item in instances:
+        grouped[(item["video_id"], item["label"])].append(item)
+    overlap_pairs = 0
+    repeated_groups = 0
+    repeated_instances = 0
+    for group in grouped.values():
+        if len(group) > 1:
+            repeated_groups += 1
+            repeated_instances += len(group)
+        for left_index, left in enumerate(group):
+            for right in group[left_index + 1 :]:
+                if max(left["start"], right["start"]) < min(left["end"], right["end"]):
+                    overlap_pairs += 1
+    return overlap_pairs, repeated_groups, repeated_instances
+
+
+def build_fineaction_qualification_report(sources, *, seed, created_at):
+    """Derive FineAction qualification by reopening and auditing source artifacts."""
+
+    paths = _fineaction_source_paths(sources)
+    annotation = load_json(paths["annotation"])
+    annotation_stats = _fineaction_annotation_stats(annotation)
+    media = _fineaction_media_inventory(paths["media_inventory"])
+    license_source = _fineaction_license(paths["license"])
+    preprocessing = _fineaction_preprocessing(paths["preprocessing"])
+    loader_smoke = _fineaction_loader_smoke(paths["loader_smoke"])
+
+    source_records = {
+        name: _file_record(path, content=load_json(path))
+        for name, path in paths.items()
+    }
+    annotation_sha256 = source_records["annotation"]["sha256"]
+    inventory_sha256 = source_records["media_inventory"]["sha256"]
+    preprocessing_sha256 = source_records["preprocessing"]["sha256"]
+
+    annotation_ids = set(annotation_stats["database_ids"])
+    inventory_ids = set(media["video_ids"])
+    unknown_media_ids = sorted(inventory_ids.difference(annotation_ids))
+    qualified_video_ids = sorted(inventory_ids.intersection(annotation_ids))
+    qualified_instances = [
+        item
+        for item in annotation_stats["instances"]
+        if item["video_id"] in inventory_ids
+    ]
+    qualified_instance_ids = sorted(
+        item["instance_id"] for item in qualified_instances
+    )
+    videos_with_instances = sorted(
+        {item["video_id"] for item in qualified_instances}
+    )
+    overlap_pairs, repeated_groups, repeated_instances = _fineaction_overlap_stats(
+        qualified_instances
+    )
+    source_video_seconds = sum(
+        annotation_stats["durations"][video_id] for video_id in qualified_video_ids
+    )
+
+    preprocessing_bound = (
+        preprocessing["future_frames_allowed"] is False
+        and preprocessing["annotation_sha256"] == annotation_sha256
+        and preprocessing["media_inventory_sha256"] == inventory_sha256
+    )
+    loader_smoke_bound = (
+        loader_smoke["status"] == "PASS"
+        and loader_smoke["exit_code"] == 0
+        and loader_smoke["tests_passed"] > 0
+        and loader_smoke["tests_failed"] == 0
+        and loader_smoke["tests_skipped"] == 0
+        and loader_smoke["annotation_sha256"] == annotation_sha256
+        and loader_smoke["media_inventory_sha256"] == inventory_sha256
+        and loader_smoke["preprocessing_sha256"] == preprocessing_sha256
+    )
 
     normalized_gates = {
-        gate_name: _build_qualification_gate(gate_name, gates.get(gate_name))
-        for gate_name in FINEACTION_MANDATORY_GATES
+        "protocol": _fineaction_gate(
+            "protocol",
+            {
+                "license": _fineaction_check(
+                    license_source["access_authorized"],
+                    license_source,
+                    "dataset access is not authorized by the bound license source",
+                ),
+                "official_split": _fineaction_check(
+                    len(annotation_stats["subsets"]) >= 2,
+                    {
+                        "manifest_sha256": annotation_stats["split_manifest_sha256"],
+                        "subsets": annotation_stats["subsets"],
+                        "video_count": len(annotation_stats["database_ids"]),
+                    },
+                    "annotation does not expose at least two locked subsets",
+                ),
+                "annotation_sha256": _fineaction_check(
+                    True,
+                    {"sha256": annotation_sha256},
+                    "annotation source is not bound",
+                ),
+                "instance_interval_ids": _fineaction_check(
+                    bool(qualified_instance_ids)
+                    and len(set(qualified_instance_ids)) == len(qualified_instance_ids),
+                    {
+                        "field": "sha256(video_id,annotation_index,label,start,end)",
+                        "verified_count": len(qualified_instance_ids),
+                        "ids_sha256": canonical_json_sha256(qualified_instance_ids),
+                    },
+                    "no unique source-derived interval identities are available",
+                ),
+            },
+        ),
+        "completeness": _fineaction_gate(
+            "completeness",
+            {
+                "raw_video_access": _fineaction_check(
+                    bool(inventory_ids) and not unknown_media_ids,
+                    {
+                        "inventory_sha256": inventory_sha256,
+                        "file_count": media["file_count"],
+                        "files_sha256": media["files_sha256"],
+                        "unknown_video_ids": unknown_media_ids,
+                    },
+                    "media inventory is empty or contains IDs absent from annotation",
+                ),
+                "same_class_overlap_pairs": _fineaction_check(
+                    overlap_pairs >= 20,
+                    {"count": overlap_pairs},
+                    "fewer than 20 same-class overlap pairs were derived",
+                ),
+                "same_class_repeated_instances": _fineaction_check(
+                    repeated_instances > 0,
+                    {"count": repeated_instances, "group_count": repeated_groups},
+                    "no repeated same-class instances were derived",
+                ),
+                "qualified_ground_truth": _fineaction_check(
+                    len(qualified_instances) >= 30,
+                    {"count": len(qualified_instances)},
+                    "fewer than 30 source-derived GT instances are available",
+                ),
+                "qualified_videos": _fineaction_check(
+                    bool(videos_with_instances),
+                    {
+                        "count": len(videos_with_instances),
+                        "ids_sha256": canonical_json_sha256(videos_with_instances),
+                    },
+                    "no inventoried video has a valid GT instance",
+                ),
+                "estimated_decode_storage_cost": _fineaction_check(
+                    source_video_seconds > 0 and media["storage_bytes"] > 0,
+                    {
+                        "decode_gpu_hours": source_video_seconds / 3600.0,
+                        "source_video_seconds": source_video_seconds,
+                        "storage_bytes": media["storage_bytes"],
+                        "derivation": "one_realtime_decode_pass",
+                    },
+                    "source duration or verified storage is zero",
+                ),
+            },
+        ),
+        "causal_readiness": _fineaction_gate(
+            "causal_readiness",
+            {
+                "causal_preprocessing_contract": _fineaction_check(
+                    preprocessing_bound,
+                    {
+                        "timestamp_convention": preprocessing["timestamp_convention"],
+                        "future_frames_allowed": preprocessing["future_frames_allowed"],
+                        "frame_stride": preprocessing["frame_stride"],
+                        "manifest_sha256": preprocessing_sha256,
+                    },
+                    "causal preprocessing does not bind the exact annotation and media inventory",
+                ),
+                "minimal_dataset_loader_smoke": _fineaction_check(
+                    loader_smoke_bound,
+                    {
+                        "status": loader_smoke["status"],
+                        "command_sha256": canonical_json_sha256(loader_smoke["command"]),
+                        "tests_passed": loader_smoke["tests_passed"],
+                        "tests_failed": loader_smoke["tests_failed"],
+                        "tests_skipped": loader_smoke["tests_skipped"],
+                        "test_report_sha256": source_records["loader_smoke"]["sha256"],
+                    },
+                    "loader smoke did not pass cleanly against the exact bound sources",
+                ),
+            },
+        ),
     }
-    failure_reasons = []
-    for gate_name, gate in normalized_gates.items():
-        if gate["mandatory_check_count"] == 0:
-            failure_reasons.append(f"{gate_name}: no mandatory checks declared")
-        if gate["failed_mandatory_checks"]:
-            failure_reasons.append(
-                f"{gate_name}: mandatory checks failed: "
-                + ", ".join(gate["failed_mandatory_checks"])
-            )
-        if gate["missing_evidence"]:
-            failure_reasons.append(
-                f"{gate_name}: mandatory checks missing evidence: "
-                + ", ".join(gate["missing_evidence"])
-            )
+    failure_reasons = [
+        f"{gate_name}: mandatory checks failed: "
+        + ", ".join(gate["failed_mandatory_checks"])
+        for gate_name, gate in normalized_gates.items()
+        if gate["failed_mandatory_checks"]
+    ]
     qualified = all(
         gate["status"] == "PASS" for gate in normalized_gates.values()
     )
@@ -1558,6 +1917,17 @@ def build_fineaction_qualification_report(gates, *, seed, created_at):
         "dataset": "FineAction",
         "created_at": _require_created_at(created_at),
         "seed": _require_seed(seed),
+        "derivation": {
+            "schema": "full_petal.fineaction_source_derivation",
+            "schema_version": SCHEMA_VERSION,
+            "sources": source_records,
+            "qualified_video_ids_sha256": canonical_json_sha256(
+                qualified_video_ids
+            ),
+            "qualified_instance_ids_sha256": canonical_json_sha256(
+                qualified_instance_ids
+            ),
+        },
         "mandatory_gates": list(FINEACTION_MANDATORY_GATES),
         "gates": normalized_gates,
         "qualified": qualified,
@@ -1565,3 +1935,24 @@ def build_fineaction_qualification_report(gates, *, seed, created_at):
         "failure_reasons": failure_reasons,
     }
     return _finalize_manifest(payload)
+
+
+def validate_fineaction_qualification_report(report, sources):
+    if not isinstance(report, dict):
+        raise ContractValidationError("FineAction qualification report must be an object")
+    if (
+        report.get("schema") != "full_petal.fineaction_qualification"
+        or report.get("schema_version") != SCHEMA_VERSION
+        or not verify_content_hash(report)
+    ):
+        raise ContractValidationError("FineAction qualification report identity is invalid")
+    rebuilt = build_fineaction_qualification_report(
+        sources,
+        seed=report.get("seed"),
+        created_at=report.get("created_at"),
+    )
+    if rebuilt != report:
+        raise ContractValidationError(
+            "FineAction qualification report differs from source-derived evidence"
+        )
+    return True

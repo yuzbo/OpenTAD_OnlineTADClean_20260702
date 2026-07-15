@@ -1,10 +1,11 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
-from opentad.utils.full_petal_attestation import generate_private_key
+from opentad.utils.full_petal_attestation import _sign_payload, generate_private_key
 from opentad.utils.full_petal_identity import canonical_json_sha256
 from opentad.utils.full_petal_training_evidence import (
     TrainingEvidenceError,
@@ -49,13 +50,38 @@ def _artifacts(root, *, seed=705):
     return artifacts
 
 
-def test_cli_builds_manifest_from_ticket_commit_and_canonical_protocol(tmp_path):
+def test_cli_wires_validated_manifest_builder_and_canonical_protocol(tmp_path, monkeypatch):
     private_key = tmp_path / "formal.pem"
     public_key = generate_private_key(private_key)
     protocol = {"decision_cadence": "packet_end", "immutable_emissions": True}
     protocol_path = _write_json(tmp_path / "protocol.json", protocol)
     artifacts = _artifacts(tmp_path)
     output = tmp_path / "signed-run.json"
+
+    def validated_builder(**kwargs):
+        references = {
+            role: {
+                "path": path.relative_to(kwargs["bundle_root"]).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for role, path in kwargs["artifacts"].items()
+        }
+        return _sign_payload(
+            {
+                "schema_version": "full-petal-formal-run-manifest-v1",
+                "claim": kwargs["claim"],
+                "variant": kwargs["variant"],
+                "seed": kwargs["seed"],
+                "commit_sha": kwargs["commit_sha"],
+                "protocol_sha256": kwargs["protocol_sha256"],
+                "artifacts": references,
+            },
+            private_key_path=kwargs["private_key_path"],
+            key_id=kwargs["key_id"],
+            role="formal-run",
+        )
+
+    monkeypatch.setattr(MODULE, "build_formal_run_manifest", validated_builder)
 
     argv = [
         "--claim",
@@ -81,6 +107,7 @@ def test_cli_builds_manifest_from_ticket_commit_and_canonical_protocol(tmp_path)
     body = verify_formal_run_manifest(
         signed,
         trust_root={"key_id": "formal-test", "public_key": public_key},
+        base_dir=tmp_path,
     )
 
     assert body["commit_sha"] == "a" * 40
@@ -105,6 +132,7 @@ def test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch(tmp_path
             artifacts=artifacts,
             private_key_path=private_key,
             key_id="formal-test",
+            bundle_root=tmp_path,
         )
 
     artifacts.pop("checkpoint")
@@ -115,6 +143,26 @@ def test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch(tmp_path
             seed=706,
             protocol_path=protocol_path,
             artifacts=artifacts,
+            private_key_path=private_key,
+            key_id="formal-test",
+            bundle_root=tmp_path,
+        )
+
+
+def test_dedicated_formal_signer_rejects_arbitrary_role_payload(tmp_path):
+    private_key = tmp_path / "formal.pem"
+    generate_private_key(private_key)
+    artifact = _write_json(tmp_path / "arbitrary.json", {"status": "PASS"})
+
+    with pytest.raises(TrainingEvidenceError, match="artifact roles differ"):
+        MODULE.build_formal_run_manifest(
+            claim="C1",
+            variant="fixed",
+            seed=705,
+            commit_sha="a" * 40,
+            protocol_sha256="b" * 64,
+            artifacts={"checkpoint": artifact},
+            bundle_root=tmp_path,
             private_key_path=private_key,
             key_id="formal-test",
         )

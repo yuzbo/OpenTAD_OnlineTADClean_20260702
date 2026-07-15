@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 import hashlib
-import hmac
 import json
 import math
 import os
@@ -17,8 +16,14 @@ from .full_petal_attestation import (
     AttestationError,
     public_key_base64,
     public_key_sha256,
-    sign_payload,
+    _sign_payload,
     verify_payload,
+)
+from .evidence_bundle import (
+    EvidenceBundleError,
+    bundle_file_reference,
+    relative_bundle_path,
+    verify_bundle_reference,
 )
 from .full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
@@ -51,6 +56,7 @@ PROFILE_MODE = "profile"
 FORMAL_MODE = "formal"
 REVIEW_ATTESTATION_ROLE = "independent-reviewer"
 PROFILE_ATTESTATION_ROLE = "fixed-step-profile"
+LAUNCH_RECEIPT_ATTESTATION_ROLE = "launch-receipt"
 
 _SHA256_ALPHABET = frozenset("0123456789abcdef")
 _SCIENTIFIC_DIGEST_EXCLUSIONS = {
@@ -79,8 +85,10 @@ class FullPetalLaunchAuthorization:
     mode: str
     commit_sha: str
     source_tree_sha256: str
+    data_identity: dict
     data_identity_sha256: str
     runtime_identity_sha256: str
+    runtime_identity: dict
     resolved_config_sha256: str
     scientific_config_sha256: str
     ticket_path: str
@@ -93,13 +101,15 @@ class FullPetalLaunchAuthorization:
     world_size: int
     slurm_job_id: str
     slurm_allocation: SlurmAllocation
+    execution_attestation_key_id: str
+    execution_attestation_public_key: str
 
     @property
     def total_optimizer_events(self):
         return self.warmup_optimizer_events + self.measured_optimizer_events
 
 
-def build_launch_receipt(authorization):
+def _launch_receipt_body(authorization):
     """Capture the authenticated runtime and active Slurm allocation."""
 
     if not isinstance(authorization, FullPetalLaunchAuthorization):
@@ -114,7 +124,7 @@ def build_launch_receipt(authorization):
         "resolved_config_sha256": authorization.resolved_config_sha256,
         "scientific_config_sha256": authorization.scientific_config_sha256,
         "launch_ticket": {
-            "path": authorization.ticket_path,
+            "path": Path(authorization.ticket_path).name,
             "sha256": authorization.ticket_sha256,
         },
         "b0_artifact_sha256": authorization.b0_artifact_sha256,
@@ -126,21 +136,64 @@ def build_launch_receipt(authorization):
     }
 
 
+def build_launch_receipt(authorization, *, private_key_path):
+    """Sign a receipt derived only from a validated launch authorization."""
+
+    body = _launch_receipt_body(authorization)
+    try:
+        signer_public_key = public_key_base64(private_key_path)
+    except AttestationError as exc:
+        raise FullPetalLaunchError(f"execution signing key is invalid: {exc}") from exc
+    if signer_public_key != authorization.execution_attestation_public_key:
+        raise FullPetalLaunchError(
+            "execution signing key does not match the launch authorization"
+        )
+    try:
+        return _sign_payload(
+            body,
+            private_key_path=private_key_path,
+            key_id=authorization.execution_attestation_key_id,
+            role=LAUNCH_RECEIPT_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise FullPetalLaunchError(f"failed to attest launch receipt: {exc}") from exc
+
+
+def verify_launch_receipt(payload, *, trust_root):
+    """Verify a launch receipt before any semantic binding is trusted."""
+
+    try:
+        return verify_payload(
+            payload,
+            trust_root=trust_root,
+            role=LAUNCH_RECEIPT_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise FullPetalLaunchError(f"launch receipt attestation is invalid: {exc}") from exc
+
+
 def default_launch_receipt_path(authorization):
     if not isinstance(authorization, FullPetalLaunchAuthorization):
         raise FullPetalLaunchError("launch receipt path requires validated authorization")
     return Path(f"{authorization.ticket_path}.receipt.json").resolve()
 
 
-def persist_launch_receipt(authorization, output_path=None):
+def persist_launch_receipt(authorization, *, private_key_path, output_path=None):
     """Write one canonical, non-overwritable receipt before CUDA initialization."""
 
-    payload = build_launch_receipt(authorization)
+    payload = build_launch_receipt(
+        authorization,
+        private_key_path=private_key_path,
+    )
     output = (
         default_launch_receipt_path(authorization)
         if output_path is None
         else Path(output_path).expanduser().resolve()
     )
+    if output.parent != Path(authorization.ticket_path).resolve().parent:
+        raise FullPetalLaunchError(
+            "launch receipt must remain beside its validated launch ticket"
+        )
     if output.exists():
         raise FullPetalLaunchError(f"refusing to overwrite launch receipt: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -222,6 +275,8 @@ def sha256_file(path, chunk_size=1024 * 1024):
 
 
 def _json_value(value):
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        return _json_value(value.to_dict())
     if isinstance(value, Mapping):
         return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -332,30 +387,24 @@ def _require_exact_fields(payload, expected, label):
         )
 
 
-def _resolve_path(value, base_dir, label):
-    if not isinstance(value, str) or not value.strip():
-        raise FullPetalLaunchError(f"{label} path must be non-empty text")
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = Path(base_dir) / path
-    return path.resolve()
+def _verify_file_reference(reference, base_dir, label):
+    try:
+        path = verify_bundle_reference(reference, base_dir, label)
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
+    return path, reference["sha256"]
 
 
 def _load_reference(reference, base_dir, label):
-    _require_exact_fields(reference, {"path", "sha256"}, label)
-    path = _resolve_path(reference["path"], base_dir, label)
-    expected = _require_sha256(reference["sha256"], f"{label}.sha256")
-    actual = sha256_file(path)
-    if not hmac.compare_digest(actual, expected):
-        raise FullPetalLaunchError(
-            f"{label} hash mismatch: expected {expected}, found {actual}"
-        )
+    path, actual = _verify_file_reference(reference, base_dir, label)
     return load_strict_json(path), path, actual
 
 
-def _file_reference(path):
-    path = Path(path).resolve()
-    return {"path": str(path), "sha256": sha256_file(path)}
+def _file_reference(path, bundle_root, label):
+    try:
+        return bundle_file_reference(path, bundle_root, label)
+    except EvidenceBundleError as exc:
+        raise FullPetalLaunchError(str(exc)) from exc
 
 
 def inspect_repository(repository_root):
@@ -531,6 +580,7 @@ def _validate_profile_artifact(
     reference,
     ticket_dir,
     *,
+    cfg,
     current_commit,
     repository_root,
     source_tree_sha256,
@@ -575,6 +625,8 @@ def _validate_profile_artifact(
             "hardware",
             "dimensions",
             "measurements",
+            "optimizer_event_trace",
+            "optimizer_event_commitment",
         },
         "fixed-step profile artifact",
     )
@@ -657,20 +709,53 @@ def _validate_profile_artifact(
         raise FullPetalLaunchError("fixed-step profile cuda_version is invalid")
     if profile["dimensions"] != dimensions:
         raise FullPetalLaunchError("fixed-step profile dimensions differ from the config")
-    _validate_measurements(
-        profile["measurements"],
-        warmup=warmup_events,
-        measured=measured_events,
-        label="fixed-step profile",
+    trace_path, _ = _verify_file_reference(
+        profile["optimizer_event_trace"],
+        path.parent,
+        "fixed-step optimizer-event trace",
     )
+    commitment_path, _ = _verify_file_reference(
+        profile["optimizer_event_commitment"],
+        path.parent,
+        "fixed-step optimizer-event commitment",
+    )
+    try:
+        from .full_petal_training_evidence import (
+            derive_fixed_step_profile_measurements,
+        )
+        from .full_petal_identity import derive_training_trace_identity
+
+        expected_trace_identity = derive_training_trace_identity(
+            cfg,
+            profile_ticket["data_identity"],
+            seed=profile_ticket["runtime_identity"]["seed"],
+            world_size=world_size,
+        )
+        derived_measurements = derive_fixed_step_profile_measurements(
+            trace_path,
+            commitment_path,
+            warmup_optimizer_events=warmup_events,
+            measured_optimizer_events=measured_events,
+            expected_identity=expected_trace_identity,
+        )
+    except (ImportError, ValueError) as exc:
+        raise FullPetalLaunchError(
+            f"fixed-step optimizer-event evidence is invalid: {exc}"
+        ) from exc
+    if profile["measurements"] != derived_measurements:
+        raise FullPetalLaunchError(
+            "fixed-step profile measurements differ from the committed event trace"
+        )
     return profile, path, digest
 
 
 def build_fixed_step_profile_artifact(
     authorization,
     cfg,
-    measurements,
     *,
+    optimizer_event_trace_path,
+    optimizer_event_commitment_path,
+    bundle_root,
     precision,
     gpu_name,
     torch_version,
@@ -686,12 +771,30 @@ def build_fixed_step_profile_artifact(
         raise FullPetalLaunchError("profile artifact requires profile-mode authorization")
     if precision not in {"fp32", "fp16", "bf16"}:
         raise FullPetalLaunchError("profile precision must be fp32, fp16, or bf16")
-    _validate_measurements(
-        measurements,
-        warmup=authorization.warmup_optimizer_events,
-        measured=authorization.measured_optimizer_events,
-        label="profile measurements",
-    )
+    try:
+        from .full_petal_training_evidence import (
+            derive_fixed_step_profile_measurements,
+        )
+        from .full_petal_identity import derive_training_trace_identity
+
+        profile_ticket = load_strict_json(authorization.ticket_path)
+        expected_trace_identity = derive_training_trace_identity(
+            cfg,
+            profile_ticket["data_identity"],
+            seed=profile_ticket["runtime_identity"]["seed"],
+            world_size=authorization.world_size,
+        )
+        measurements = derive_fixed_step_profile_measurements(
+            optimizer_event_trace_path,
+            optimizer_event_commitment_path,
+            warmup_optimizer_events=authorization.warmup_optimizer_events,
+            measured_optimizer_events=authorization.measured_optimizer_events,
+            expected_identity=expected_trace_identity,
+        )
+    except (ImportError, ValueError) as exc:
+        raise FullPetalLaunchError(
+            f"cannot derive fixed-step profile measurements: {exc}"
+        ) from exc
     hardware = {
         "gpu_name": gpu_name,
         "torch_version": torch_version,
@@ -709,7 +812,11 @@ def build_fixed_step_profile_artifact(
         "runtime_identity_sha256": authorization.runtime_identity_sha256,
         "resolved_config_sha256": authorization.resolved_config_sha256,
         "scientific_config_sha256": authorization.scientific_config_sha256,
-        "launch_ticket_path": authorization.ticket_path,
+        "launch_ticket_path": relative_bundle_path(
+            authorization.ticket_path,
+            bundle_root,
+            "profile launch ticket",
+        ),
         "launch_ticket_sha256": authorization.ticket_sha256,
         "slurm_job_id": authorization.slurm_job_id,
         "slurm_allocation": asdict(authorization.slurm_allocation),
@@ -718,9 +825,19 @@ def build_fixed_step_profile_artifact(
         "hardware": hardware,
         "dimensions": _profile_dimensions(cfg),
         "measurements": dict(measurements),
+        "optimizer_event_trace": _file_reference(
+            optimizer_event_trace_path,
+            bundle_root,
+            "profile optimizer-event trace",
+        ),
+        "optimizer_event_commitment": _file_reference(
+            optimizer_event_commitment_path,
+            bundle_root,
+            "profile optimizer-event commitment",
+        ),
     }
     try:
-        return sign_payload(
+        return _sign_payload(
             body,
             private_key_path=private_key_path,
             key_id=key_id,
@@ -740,6 +857,7 @@ def _launch_contract(cfg):
         "required_review_scope",
         "allowed_cfg_overrides",
         "require_clean_checkout",
+        "trusted_scontrol_path",
         "attestation_trust_roots",
     }
     _require_exact_fields(contract, required, "launch_contract")
@@ -760,6 +878,13 @@ def _launch_contract(cfg):
         raise FullPetalLaunchError("launch_contract allowed overrides are invalid")
     if contract["require_clean_checkout"] is not True:
         raise FullPetalLaunchError("Full PETAL requires a clean checkout")
+    if (
+        not isinstance(contract["trusted_scontrol_path"], str)
+        or not Path(contract["trusted_scontrol_path"]).is_absolute()
+    ):
+        raise FullPetalLaunchError(
+            "launch_contract trusted_scontrol_path must be absolute"
+        )
     _trust_roots(contract)
     return contract
 
@@ -790,6 +915,7 @@ def _validate_environment(
     *,
     slurm_allocation=None,
     expected_user=None,
+    scontrol_path=None,
 ):
     slurm_job_id = str(environ.get("SLURM_JOB_ID", "")).strip()
     if not slurm_job_id:
@@ -803,7 +929,9 @@ def _validate_environment(
             f"Full PETAL world size must be {world_size}, found {actual_world_size}"
         )
     try:
-        allocation = slurm_allocation or inspect_slurm_allocation(slurm_job_id)
+        allocation = slurm_allocation or inspect_slurm_allocation(
+            slurm_job_id, scontrol_path=scontrol_path
+        )
         validate_slurm_allocation(
             allocation,
             job_id=slurm_job_id,
@@ -837,6 +965,7 @@ def _runtime_identity(
     not_eval,
     resume_path,
     cfg_overrides,
+    bundle_root,
 ):
     try:
         return build_runtime_identity(
@@ -847,6 +976,7 @@ def _runtime_identity(
             not_eval=not_eval,
             resume_path=resume_path,
             cfg_overrides=cfg_overrides,
+            bundle_root=bundle_root,
         )
     except IdentityError as exc:
         raise FullPetalLaunchError(str(exc)) from exc
@@ -868,6 +998,7 @@ def build_launch_ticket(
     not_eval,
     resume_path,
     cfg_overrides,
+    bundle_root,
     repository_state=None,
 ):
     """Build a ticket only after the complete prerequisite chain validates."""
@@ -902,6 +1033,7 @@ def build_launch_ticket(
         not_eval=not_eval,
         resume_path=resume_path,
         cfg_overrides=cfg_overrides,
+        bundle_root=bundle_root,
     )
     if mode == PROFILE_MODE and runtime_identity["resume_checkpoint"] is not None:
         raise FullPetalLaunchError("fixed-step profile cannot resume from a checkpoint")
@@ -917,18 +1049,20 @@ def build_launch_ticket(
         raise FullPetalLaunchError("fixed-step profile is only valid through tools/train.py")
     if set(cfg_overrides) - set(contract["allowed_cfg_overrides"]):
         raise FullPetalLaunchError("launch ticket contains forbidden config overrides")
-    b0_reference = _file_reference(b0_path)
-    review_reference = _file_reference(review_path)
+    b0_reference = _file_reference(b0_path, bundle_root, "B0 evidence")
+    review_reference = _file_reference(
+        review_path, bundle_root, "independent review evidence"
+    )
     _, _, b0_digest = _validate_b0_artifact(
         b0_reference,
-        config_path.parent,
+        bundle_root,
         commit_sha,
         trust_root=trust_roots["b0"],
         repository_root=root,
     )
     _validate_review_artifact(
         review_reference,
-        config_path.parent,
+        bundle_root,
         commit_sha=commit_sha,
         b0_sha256=b0_digest,
         reviewer_id=contract["required_reviewer_id"],
@@ -939,10 +1073,13 @@ def build_launch_ticket(
     if mode == FORMAL_MODE:
         if profile_path is None:
             raise FullPetalLaunchError("formal launch ticket requires profile evidence")
-        profile_reference = _file_reference(profile_path)
+        profile_reference = _file_reference(
+            profile_path, bundle_root, "fixed-step profile evidence"
+        )
         _validate_profile_artifact(
             profile_reference,
-            config_path.parent,
+            bundle_root,
+            cfg=cfg,
             current_commit=commit_sha,
             repository_root=root,
             source_tree_sha256=source_digest,
@@ -993,7 +1130,7 @@ def validate_full_petal_launch(
     repository_state=None,
     slurm_allocation=None,
     expected_slurm_user=None,
-    profile_signing_key_path=None,
+    execution_signing_key_path=None,
 ):
     """Validate all evidence and runtime identity before CUDA or DDP initialization."""
 
@@ -1016,17 +1153,18 @@ def validate_full_petal_launch(
 
     contract = _launch_contract(cfg)
     trust_roots = _trust_roots(contract)
-    if mode == PROFILE_MODE:
-        if profile_signing_key_path is None:
-            raise FullPetalLaunchError(
-                "fixed-step profile requires an external profile signing key"
-            )
-        try:
-            signer_public_key = public_key_base64(profile_signing_key_path)
-        except AttestationError as exc:
-            raise FullPetalLaunchError(f"profile signing key is invalid: {exc}") from exc
-        if signer_public_key != trust_roots["profile"]["public_key"]:
-            raise FullPetalLaunchError("profile signing key does not match the trusted public key")
+    if execution_signing_key_path is None:
+        raise FullPetalLaunchError(
+            "Full PETAL launch requires an external execution signing key"
+        )
+    try:
+        signer_public_key = public_key_base64(execution_signing_key_path)
+    except AttestationError as exc:
+        raise FullPetalLaunchError(f"execution signing key is invalid: {exc}") from exc
+    if signer_public_key != trust_roots["profile"]["public_key"]:
+        raise FullPetalLaunchError(
+            "execution signing key does not match the trusted public key"
+        )
     cfg_overrides = dict(cfg_overrides or {})
     if cfg_override_keys and set(cfg_override_keys) != set(cfg_overrides):
         raise FullPetalLaunchError("config override keys/values identity is inconsistent")
@@ -1038,6 +1176,7 @@ def validate_full_petal_launch(
         )
     warmup, measured, world_size = _profile_contract(cfg)
     _validate_authorization_state(cfg, mode)
+    ticket_path = Path(ticket_path).expanduser().resolve()
     runtime_identity = _runtime_identity(
         entrypoint=entrypoint,
         seed=seed,
@@ -1046,6 +1185,7 @@ def validate_full_petal_launch(
         not_eval=not_eval,
         resume_path=resume_path,
         cfg_overrides=cfg_overrides,
+        bundle_root=ticket_path.parent,
     )
     if mode == PROFILE_MODE and runtime_identity["resume_checkpoint"] is not None:
         raise FullPetalLaunchError("fixed-step profile cannot resume from a checkpoint")
@@ -1063,6 +1203,7 @@ def validate_full_petal_launch(
         world_size,
         slurm_allocation=slurm_allocation,
         expected_user=expected_slurm_user,
+        scontrol_path=contract["trusted_scontrol_path"],
     )
     root = Path(repository_root or Path(config_path).resolve().parents[2]).resolve()
     state = repository_state or inspect_repository(root)
@@ -1072,7 +1213,6 @@ def validate_full_petal_launch(
         )
     commit_sha = _require_git_sha(state.commit_sha, "repository commit")
 
-    ticket_path = Path(ticket_path).resolve()
     ticket = load_strict_json(ticket_path)
     _require_exact_fields(ticket, _ticket_fields(), "launch ticket")
     if ticket["schema_version"] != LAUNCH_TICKET_SCHEMA:
@@ -1125,6 +1265,7 @@ def validate_full_petal_launch(
         _, _, profile_digest = _validate_profile_artifact(
             ticket["profile_evidence"],
             ticket_path.parent,
+            cfg=cfg,
             current_commit=commit_sha,
             repository_root=root,
             source_tree_sha256=source_digest,
@@ -1143,8 +1284,10 @@ def validate_full_petal_launch(
         mode=mode,
         commit_sha=commit_sha,
         source_tree_sha256=source_digest,
+        data_identity=dict(ticket["data_identity"]),
         data_identity_sha256=ticket["data_identity"]["identity_sha256"],
         runtime_identity_sha256=canonical_json_sha256(runtime_identity),
+        runtime_identity=dict(runtime_identity),
         resolved_config_sha256=resolved_digest,
         scientific_config_sha256=scientific_digest,
         ticket_path=str(ticket_path),
@@ -1157,6 +1300,8 @@ def validate_full_petal_launch(
         world_size=world_size,
         slurm_job_id=slurm_job_id,
         slurm_allocation=allocation,
+        execution_attestation_key_id=trust_roots["profile"]["key_id"],
+        execution_attestation_public_key=trust_roots["profile"]["public_key"],
     )
 
 
@@ -1171,6 +1316,7 @@ __all__ = [
     "FullPetalLaunchError",
     "LAUNCH_CONTRACT_SCHEMA",
     "LAUNCH_RECEIPT_SCHEMA",
+    "LAUNCH_RECEIPT_ATTESTATION_ROLE",
     "LAUNCH_TICKET_SCHEMA",
     "PROFILE_MODE",
     "PROFILE_SCHEMA",
@@ -1184,6 +1330,7 @@ __all__ = [
     "is_full_petal_route",
     "load_strict_json",
     "persist_launch_receipt",
+    "verify_launch_receipt",
     "resolved_config_sha256",
     "sha256_file",
     "validate_full_petal_launch",

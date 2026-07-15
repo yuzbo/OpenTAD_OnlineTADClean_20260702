@@ -37,6 +37,7 @@ from opentad.utils import (
     save_best_checkpoint,
 )
 from opentad.utils.fixed_step_profile import FixedStepProfiler, TorchCudaProfileBackend
+from opentad.utils.evidence_bundle import publish_exclusive_file
 from opentad.utils.full_petal_launch import (
     FORMAL_MODE,
     PROFILE_MODE,
@@ -45,7 +46,11 @@ from opentad.utils.full_petal_launch import (
     persist_launch_receipt,
     validate_full_petal_launch,
 )
-from opentad.utils.full_petal_training_evidence import OptimizerEventTraceRecorder
+from opentad.utils.full_petal_training_evidence import (
+    OptimizerEventTraceRecorder,
+    VisualParameterEventRecorder,
+)
+from opentad.utils.full_petal_identity import derive_training_trace_identity
 
 
 def parse_args():
@@ -106,7 +111,7 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
 
     cfg_overrides = dict(args.cfg_options or {})
-    profile_signing_key = os.environ.get("FULL_PETAL_PROFILE_ATTESTATION_KEY")
+    execution_signing_key = os.environ.get("FULL_PETAL_EXECUTION_ATTESTATION_KEY")
     launch_authorization = validate_full_petal_launch(
         cfg,
         args.config,
@@ -122,12 +127,15 @@ def main():
         cfg_override_keys=tuple(cfg_overrides),
         environ=os.environ,
         repository_root=Path(__file__).resolve().parents[1],
-        profile_signing_key_path=profile_signing_key,
+        execution_signing_key_path=execution_signing_key,
     )
     if launch_authorization is not None and args.launch_mode == PROFILE_MODE and args.resume:
         raise RuntimeError("fixed-step profile cannot resume from a checkpoint")
     if launch_authorization is not None:
-        receipt_path = persist_launch_receipt(launch_authorization)
+        receipt_path = persist_launch_receipt(
+            launch_authorization,
+            private_key_path=execution_signing_key,
+        )
         print(f"FULL_PETAL_LAUNCH_RECEIPT={receipt_path}")
 
     # DDP init
@@ -235,17 +243,20 @@ def main():
         )
 
     optimizer_event_recorder = None
-    if launch_authorization is not None and launch_authorization.mode == FORMAL_MODE:
-        optimizer_event_recorder = OptimizerEventTraceRecorder(
-            precision=_precision_name(amp_dtype),
-            effective_batch_size=int(cfg.solver.train.batch_size) * args.world_size,
+    if launch_authorization is not None:
+        expected_training_identity = derive_training_trace_identity(
+            cfg,
+            launch_authorization.data_identity,
+            seed=args.seed,
             world_size=args.world_size,
-            optimizer_config_sha256=canonical_json_sha256(dict(cfg.optimizer)),
-            scheduler_config_sha256=canonical_json_sha256(dict(cfg.scheduler)),
-            data_order_sha256=_data_order_identity(train_dataset, args.seed),
-            loss_normalization_sha256=canonical_json_sha256(
-                {"model": dict(cfg.model), "solver": dict(cfg.solver)}
-            ),
+        )
+        runtime_data_order_sha256 = _data_order_identity(train_dataset, args.seed)
+        if runtime_data_order_sha256 != expected_training_identity["data_order_sha256"]:
+            raise RuntimeError(
+                "runtime packet order differs from the data/config-derived training identity"
+            )
+        optimizer_event_recorder = OptimizerEventTraceRecorder(
+            **expected_training_identity,
             peak_memory_reader=torch.cuda.max_memory_allocated,
         )
 
@@ -256,6 +267,23 @@ def main():
         optimizer,
         optimizer_events_per_epoch(train_loader),
     )
+    visual_parameter_event_recorder = None
+    visual_parameter_contract = getattr(cfg, "visual_parameter_contract", None)
+    if (
+        launch_authorization is not None
+        and launch_authorization.mode == FORMAL_MODE
+        and visual_parameter_contract is not None
+    ):
+        if set(visual_parameter_contract) != {
+            "parameter_prefixes",
+            "adapted_trainable_prefixes",
+        }:
+            raise RuntimeError("visual_parameter_contract fields differ")
+        visual_parameter_event_recorder = VisualParameterEventRecorder(
+            model,
+            optimizer,
+            parameter_prefixes=visual_parameter_contract["parameter_prefixes"],
+        )
 
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)
@@ -301,27 +329,44 @@ def main():
             amp_dtype=amp_dtype,
             fixed_step_profiler=fixed_step_profiler,
             optimizer_event_recorder=optimizer_event_recorder,
+            visual_parameter_event_recorder=visual_parameter_event_recorder,
         )
 
         if fixed_step_profiler is not None and train_stats["fixed_step_profile_complete"]:
             if args.rank == 0:
+                profile_bundle_root = Path(launch_authorization.ticket_path).parent
+                trace_path = profile_bundle_root / "fixed_step_optimizer_trace.jsonl"
+                commitment_path = (
+                    profile_bundle_root
+                    / "fixed_step_optimizer_trace.commitment.json"
+                )
+                optimizer_event_recorder.persist(trace_path, commitment_path)
                 precision = _precision_name(amp_dtype)
                 artifact = build_fixed_step_profile_artifact(
                     launch_authorization,
                     cfg,
-                    fixed_step_profiler.measurements(),
+                    optimizer_event_trace_path=trace_path,
+                    optimizer_event_commitment_path=commitment_path,
+                    bundle_root=profile_bundle_root,
                     precision=precision,
                     gpu_name=torch.cuda.get_device_name(args.local_rank),
                     torch_version=torch.__version__,
                     cuda_version=torch.version.cuda,
-                    private_key_path=profile_signing_key,
+                    private_key_path=execution_signing_key,
                     key_id=cfg.launch_contract.attestation_trust_roots.profile.key_id,
                 )
-                output = Path(cfg.work_dir) / "fixed_step_profile.json"
-                output.write_text(
-                    json.dumps(artifact, allow_nan=False, indent=2, sort_keys=True)
-                    + "\n",
-                    encoding="utf-8",
+                output = profile_bundle_root / "fixed_step_profile.json"
+                publish_exclusive_file(
+                    output,
+                    (
+                        json.dumps(
+                            artifact,
+                            allow_nan=False,
+                            indent=2,
+                            sort_keys=True,
+                        )
+                        + "\n"
+                    ).encode("utf-8"),
                 )
                 logger.info("Fixed-step profile PASS: %s", output)
             dist.barrier()
@@ -382,6 +427,21 @@ def main():
             )
             optimizer_event_recorder.persist(trace_path, commitment_path)
             logger.info("Formal optimizer-event trace committed: %s", trace_path)
+            if visual_parameter_event_recorder is not None:
+                visual_trace_path = (
+                    Path(cfg.work_dir) / "formal_visual_parameter_trace.jsonl"
+                )
+                visual_commitment_path = (
+                    Path(cfg.work_dir)
+                    / "formal_visual_parameter_trace.commitment.json"
+                )
+                visual_parameter_event_recorder.persist(
+                    visual_trace_path, visual_commitment_path
+                )
+                logger.info(
+                    "Formal visual parameter-event trace committed: %s",
+                    visual_trace_path,
+                )
         dist.barrier()
     logger.info("Training Over...\n")
 

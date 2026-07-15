@@ -88,6 +88,8 @@ def _transaction_target(model):
     target = _unwrap_model(model)
     required = (
         "has_pending_online_update",
+        "snapshot_online_update",
+        "restore_online_update",
         "commit_online_update",
         "rollback_online_update",
     )
@@ -132,6 +134,131 @@ def _rollback_online_transaction(transaction):
         transaction.rollback_online_update()
 
 
+def _snapshot_component(component, label):
+    if component is None:
+        return None
+    state_dict = getattr(component, "state_dict", None)
+    load_state_dict = getattr(component, "load_state_dict", None)
+    if not callable(state_dict) or not callable(load_state_dict):
+        raise RuntimeError(
+            f"strict online transaction requires state_dict/load_state_dict for {label}"
+        )
+    try:
+        return copy.deepcopy(state_dict())
+    except Exception as exc:
+        raise RuntimeError(f"failed to snapshot {label} state") from exc
+
+
+def _capture_training_mutation_snapshot(
+    *,
+    model,
+    optimizer,
+    scheduler,
+    scaler,
+    model_ema,
+    optimizer_event_recorder,
+    visual_parameter_event_recorder,
+    transaction,
+):
+    """Capture every persistent state mutated at an optimizer boundary."""
+
+    snapshot = {
+        "model": _snapshot_component(model, "model"),
+        "optimizer": _snapshot_component(optimizer, "optimizer"),
+        "scheduler": _snapshot_component(scheduler, "scheduler"),
+        "scaler": _snapshot_component(scaler, "scaler"),
+        "model_ema": _snapshot_component(model_ema, "EMA"),
+        "optimizer_event_recorder": _snapshot_component(
+            optimizer_event_recorder, "optimizer event recorder"
+        ),
+        "visual_parameter_event_recorder": _snapshot_component(
+            visual_parameter_event_recorder, "visual parameter event recorder"
+        ),
+    }
+    snapshot["online_update"] = (
+        transaction.snapshot_online_update() if transaction is not None else None
+    )
+    return snapshot
+
+
+def _restore_training_mutation_snapshot(
+    snapshot,
+    *,
+    model,
+    optimizer,
+    scheduler,
+    scaler,
+    model_ema,
+    optimizer_event_recorder,
+    visual_parameter_event_recorder,
+    transaction,
+):
+    components = (
+        (model, "model"),
+        (optimizer, "optimizer"),
+        (scheduler, "scheduler"),
+        (scaler, "scaler"),
+        (model_ema, "EMA"),
+        (optimizer_event_recorder, "optimizer event recorder"),
+        (visual_parameter_event_recorder, "visual parameter event recorder"),
+    )
+    state_keys = (
+        "model",
+        "optimizer",
+        "scheduler",
+        "scaler",
+        "model_ema",
+        "optimizer_event_recorder",
+        "visual_parameter_event_recorder",
+    )
+    for state_key, (component, label) in zip(state_keys, components):
+        state = snapshot[state_key]
+        if component is None:
+            if state is not None:
+                raise RuntimeError(f"rollback snapshot unexpectedly contains {label} state")
+            continue
+        try:
+            component.load_state_dict(copy.deepcopy(state))
+        except Exception as exc:
+            raise RuntimeError(f"failed to restore {label} state") from exc
+    if transaction is not None:
+        transaction.restore_online_update(snapshot["online_update"])
+
+
+def _rollback_failed_training_mutation(
+    snapshot,
+    *,
+    model,
+    optimizer,
+    scheduler,
+    scaler,
+    model_ema,
+    optimizer_event_recorder,
+    visual_parameter_event_recorder,
+    transaction,
+):
+    restore_error = None
+    try:
+        _restore_training_mutation_snapshot(
+            snapshot,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=scaler,
+            model_ema=model_ema,
+            optimizer_event_recorder=optimizer_event_recorder,
+            visual_parameter_event_recorder=visual_parameter_event_recorder,
+            transaction=transaction,
+        )
+    except Exception as exc:
+        restore_error = exc
+    finally:
+        _rollback_online_transaction(transaction)
+        optimizer.zero_grad(set_to_none=True)
+    if restore_error is not None:
+        raise RuntimeError("strict online training rollback failed") from restore_error
+
+
 def _input_token_count(data_dict):
     masks = data_dict.get("masks")
     if torch.is_tensor(masks):
@@ -169,6 +296,7 @@ def train_one_epoch(
     amp_dtype=None,
     fixed_step_profiler=None,
     optimizer_event_recorder=None,
+    visual_parameter_event_recorder=None,
 ):
     """Training the model for one epoch"""
 
@@ -198,6 +326,10 @@ def train_one_epoch(
     optimizer.zero_grad(set_to_none=True)
     if fixed_step_profiler is not None:
         fixed_step_profiler.start()
+    if visual_parameter_event_recorder is not None and optimizer_event_recorder is None:
+        raise RuntimeError(
+            "visual parameter evidence requires the authenticated optimizer event recorder"
+        )
 
     for iter_idx, raw_data_dict in enumerate(train_loader):
         control = _transaction_control(raw_data_dict) if transaction is not None else None
@@ -318,51 +450,80 @@ def train_one_epoch(
             episode_input_tokens = 0
             continue
 
+        mutation_snapshot = None
         try:
             if transaction is not None:
-                transaction.commit_online_update()
-        except Exception:
-            _rollback_online_transaction(transaction)
-            optimizer.zero_grad(set_to_none=True)
-            raise
-
-        if scaler is not None:
-            scaler.unscale_(optimizer)
-        _normalize_accumulated_gradients(model, episode_weight)
-        if clip_grad_l2norm > 0.0:
-            torch.nn.utils.clip_grad_norm_(
-                _grad_clip_parameters(model), clip_grad_l2norm
-            )
-        bad_param_name = _find_first_nonfinite_grad(model)
-        if bad_param_name is not None:
-            optimizer.zero_grad(set_to_none=True)
-            raise RuntimeError(
-                "gradient state became non-finite after the atomic online-state commit; "
-                f"aborting before optimizer mutation at parameter {bad_param_name}"
-            )
-
-        try:
+                mutation_snapshot = _capture_training_mutation_snapshot(
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    model_ema=model_ema,
+                    optimizer_event_recorder=optimizer_event_recorder,
+                    visual_parameter_event_recorder=visual_parameter_event_recorder,
+                    transaction=transaction,
+                )
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+            _normalize_accumulated_gradients(model, episode_weight)
+            if clip_grad_l2norm > 0.0:
+                torch.nn.utils.clip_grad_norm_(
+                    _grad_clip_parameters(model), clip_grad_l2norm
+                )
+            bad_param_name = _find_first_nonfinite_grad(model)
+            if bad_param_name is not None:
+                raise RuntimeError(
+                    "gradient state became non-finite before optimizer mutation at "
+                    f"parameter {bad_param_name}"
+                )
+            if visual_parameter_event_recorder is not None:
+                visual_parameter_event_recorder.capture_before(model, optimizer)
             if scaler is not None:
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 optimizer.step()
+            scheduler.step()
+            optimizer_event = None
+            if optimizer_event_recorder is not None:
+                optimizer_event = optimizer_event_recorder.record(
+                    epoch=curr_epoch,
+                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
+                    input_tokens=episode_input_tokens,
+                    skipped=False,
+                )
+            if visual_parameter_event_recorder is not None:
+                if not isinstance(optimizer_event, Mapping):
+                    raise RuntimeError(
+                        "optimizer event recorder did not return an authenticated event"
+                    )
+                visual_parameter_event_recorder.record_after(
+                    optimizer_event["event_id"], model
+                )
+            if model_ema is not None:
+                model_ema.update(model)
+            if transaction is not None:
+                transaction.commit_online_update()
         except Exception:
-            optimizer.zero_grad(set_to_none=True)
+            if mutation_snapshot is not None:
+                _rollback_failed_training_mutation(
+                    mutation_snapshot,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    scaler=scaler,
+                    model_ema=model_ema,
+                    optimizer_event_recorder=optimizer_event_recorder,
+                    visual_parameter_event_recorder=visual_parameter_event_recorder,
+                    transaction=transaction,
+                )
+            else:
+                _rollback_online_transaction(transaction)
+                optimizer.zero_grad(set_to_none=True)
             raise
 
-        scheduler.step()
         successful_optimizer_events += 1
-        if optimizer_event_recorder is not None:
-            optimizer_event_recorder.record(
-                epoch=curr_epoch,
-                episode_id=_episode_identity(control, curr_epoch, iter_idx),
-                input_tokens=episode_input_tokens,
-                skipped=False,
-            )
         episode_input_tokens = 0
-        if model_ema is not None:
-            model_ema.update(model)
         optimizer.zero_grad(set_to_none=True)
         if fixed_step_profiler is not None and fixed_step_profiler.record_optimizer_event():
             episode_weight = 0.0

@@ -13,6 +13,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from .evidence_bundle import EvidenceBundleError, publish_exclusive_pair
+
 
 LEDGER_SCHEMA = "opentad.immutable_event_ledger"
 LEDGER_VERSION = 1
@@ -61,7 +63,19 @@ _OPTIONAL_EVENT_FIELDS = frozenset(
     }
 )
 _EVENT_FIELDS = _REQUIRED_EVENT_FIELDS | _OPTIONAL_EVENT_FIELDS
-_TAINT_TOKENS = frozenset({"ground_truth", "groundtruth", "gt", "target", "raw_prediction"})
+_TAINT_TOKENS = frozenset(
+    {
+        "annotation",
+        "ground_truth",
+        "groundtruth",
+        "gt",
+        "label",
+        "raw_prediction",
+        "segment",
+        "target",
+    }
+)
+_TOP_LEVEL_SCIENTIFIC_OUTPUT_KEYS = frozenset({"label", "segment"})
 _MUTATION_OPERATION_KEYS = frozenset(
     {
         "action",
@@ -215,9 +229,29 @@ def _reject_evaluation_taint(
         for key, item in value.items():
             normalized = _normalized_key(key)
             compact = normalized.replace("_", "")
+            singular = normalized[:-1] if normalized.endswith("s") else normalized
+            compact_singular = singular.replace("_", "")
+            parts = {
+                part[:-1] if part.endswith("s") else part
+                for part in normalized.split("_")
+                if part
+            }
+            top_level_output = (
+                path == "event" and normalized in _TOP_LEVEL_SCIENTIFIC_OUTPUT_KEYS
+            )
             if (
-                normalized in _TAINT_TOKENS
-                or compact in {token.replace("_", "") for token in _TAINT_TOKENS}
+                not top_level_output
+                and (
+                    normalized in _TAINT_TOKENS
+                    or singular in _TAINT_TOKENS
+                    or compact
+                    in {token.replace("_", "") for token in _TAINT_TOKENS}
+                    or compact_singular
+                    in {token.replace("_", "") for token in _TAINT_TOKENS}
+                    or bool(parts.intersection({"annotation", "gt", "label", "segment", "target"}))
+                    or {"ground", "truth"}.issubset(parts)
+                    or {"raw", "prediction"}.issubset(parts)
+                )
             ):
                 raise error_type(
                     f"formal emission ledger forbids GT/target/raw-prediction taint at {path}.{key}"
@@ -271,6 +305,26 @@ def _required_hash(value, field, error_type):
     if not _valid_hash(value):
         raise error_type(f"ledger {field} must be a lowercase SHA-256 hex digest")
     return value
+
+
+def _required_finite_real(value, field, error_type, *, minimum=None, positive=False):
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise error_type(f"ledger {field} must be a finite real number")
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise error_type(f"ledger {field} must be a finite real number")
+    if positive and normalized <= 0:
+        raise error_type(f"ledger {field} must be positive")
+    if minimum is not None and normalized < minimum:
+        raise error_type(f"ledger {field} must be >= {minimum}")
+    return normalized
+
+
+def _require_close(actual, expected, field, error_type):
+    if not math.isclose(float(actual), float(expected), rel_tol=1e-9, abs_tol=1e-9):
+        raise error_type(
+            f"ledger {field}={actual} is inconsistent with derived value {expected}"
+        )
 
 
 def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_id=None):
@@ -336,6 +390,84 @@ def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_i
         raise error_type(
             f"ledger start_frame={start_frame} exceeds end_frame={end_frame}"
         )
+
+    if stream_key is not None:
+        payload["stream_key"] = _required_text(stream_key, "stream_key", error_type)
+    if "input_provenance_digest" in payload:
+        payload["input_provenance_digest"] = _required_hash(
+            payload["input_provenance_digest"],
+            "input_provenance_digest",
+            error_type,
+        )
+    if "segment" in payload:
+        segment = payload["segment"]
+        if not isinstance(segment, (list, tuple)) or len(segment) != 2:
+            raise error_type("ledger segment must contain exactly two finite times")
+        segment_start = _required_finite_real(
+            segment[0], "segment[0]", error_type, minimum=0.0
+        )
+        segment_end = _required_finite_real(
+            segment[1], "segment[1]", error_type, minimum=0.0
+        )
+        if segment_start > segment_end:
+            raise error_type("ledger segment start exceeds segment end")
+        payload["segment"] = [segment_start, segment_end]
+
+    optional_nonnegative_reals = (
+        "emit_time_sec",
+        "source_time_sec",
+        "latency_sec",
+        "predicted_end_latency_sec",
+    )
+    for field in optional_nonnegative_reals:
+        if field in payload:
+            payload[field] = _required_finite_real(
+                payload[field], field, error_type, minimum=0.0
+            )
+    if "fps" in payload:
+        payload["fps"] = _required_finite_real(
+            payload["fps"], "fps", error_type, positive=True
+        )
+    if "latency_frames" in payload:
+        payload["latency_frames"] = _required_nonnegative_integer(
+            payload["latency_frames"], "latency_frames", error_type
+        )
+        if payload["latency_frames"] != emit_frame - end_frame:
+            raise error_type(
+                "ledger latency_frames is inconsistent with emit_frame-end_frame"
+            )
+    if "latency_definition" in payload:
+        definition = _required_text(
+            payload["latency_definition"], "latency_definition", error_type
+        )
+        if definition != "emit_time_minus_predicted_end_time":
+            raise error_type("ledger latency_definition is unsupported")
+        payload["latency_definition"] = definition
+
+    if "emit_time_sec" in payload and "source_time_sec" in payload:
+        if payload["source_time_sec"] > payload["emit_time_sec"]:
+            raise error_type("ledger source_time_sec exceeds emit_time_sec")
+    if "fps" in payload:
+        fps = payload["fps"]
+        if "segment" in payload:
+            _require_close(payload["segment"][0], start_frame / fps, "segment[0]", error_type)
+            _require_close(payload["segment"][1], end_frame / fps, "segment[1]", error_type)
+        if "emit_time_sec" in payload:
+            _require_close(payload["emit_time_sec"], emit_frame / fps, "emit_time_sec", error_type)
+        if "source_time_sec" in payload:
+            _require_close(
+                payload["source_time_sec"], source_frame / fps, "source_time_sec", error_type
+            )
+        expected_latency_sec = (emit_frame - end_frame) / fps
+        if "latency_sec" in payload:
+            _require_close(payload["latency_sec"], expected_latency_sec, "latency_sec", error_type)
+        if "predicted_end_latency_sec" in payload:
+            _require_close(
+                payload["predicted_end_latency_sec"],
+                expected_latency_sec,
+                "predicted_end_latency_sec",
+                error_type,
+            )
 
     payload["stream_id"] = stream_id
     payload["event_id"] = event_id
@@ -866,25 +998,6 @@ def _sha256_file(path, chunk_size=1024 * 1024):
     return digest.hexdigest()
 
 
-def _write_exclusive_canonical_json(path, payload):
-    output_path = Path(path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = (canonical_json(payload) + "\n").encode("utf-8")
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-    flags |= getattr(os, "O_BINARY", 0)
-    try:
-        descriptor = os.open(output_path, flags, 0o600)
-    except FileExistsError as exc:
-        raise LedgerValidationError(f"commitment path already exists: {output_path}") from exc
-    try:
-        written = os.write(descriptor, encoded)
-        if written != len(encoded):
-            raise OSError(f"partial commitment write: {written} of {len(encoded)} bytes")
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def _read_canonical_json_file(path, description):
     input_path = Path(path)
     try:
@@ -918,27 +1031,27 @@ def persist_verified_ledger(ledger_path, commitment_path, rows):
         raise LedgerValidationError(f"commitment path already exists: {commitment_path}")
 
     source = verify_rows(rows)
-    with AtomicLedgerWriter(ledger_path, create_new=True) as writer:
-        for expected in source.rows:
-            actual = writer.append(_payload_from_row(expected))
-            if actual != expected:
-                raise LedgerVerificationError("persisted ledger row differs from verified source row")
-
-    persisted = verify_ledger(
-        ledger_path,
-        expected_count=source.count,
-        expected_final_hash=source.final_hashes,
-    )
+    ledger_payload = "".join(
+        canonical_json(row) + "\n" for row in source.rows
+    ).encode("utf-8")
     commitment = {
         "schema": LEDGER_COMMITMENT_SCHEMA,
         "version": LEDGER_COMMITMENT_VERSION,
         "ledger_filename": ledger_path.name,
-        "ledger_sha256": _sha256_file(ledger_path),
-        "count": persisted.count,
-        "stream_counts": persisted.stream_counts,
-        "final_hashes": persisted.final_hashes,
+        "ledger_sha256": hashlib.sha256(ledger_payload).hexdigest(),
+        "count": source.count,
+        "stream_counts": source.stream_counts,
+        "final_hashes": source.final_hashes,
     }
-    _write_exclusive_canonical_json(commitment_path, commitment)
+    try:
+        publish_exclusive_pair(
+            ledger_path,
+            ledger_payload,
+            commitment_path,
+            (canonical_json(commitment) + "\n").encode("utf-8"),
+        )
+    except EvidenceBundleError as exc:
+        raise LedgerValidationError(str(exc)) from exc
     return _json_copy(commitment)
 
 

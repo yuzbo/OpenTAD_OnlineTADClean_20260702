@@ -1,6 +1,5 @@
 from mmengine.registry import Registry
 from mmengine.registry import MODELS as MM_BACKBONES
-from .backbones import BackboneWrapper
 
 MODELS = Registry("models")
 
@@ -18,6 +17,11 @@ MATCHERS = MODELS
 
 def build_detector(cfg):
     """Build detector."""
+    detector_type = cfg.get("type") if hasattr(cfg, "get") else None
+    if DETECTORS.get(detector_type) is None:
+        from . import register_legacy_models
+
+        register_legacy_models()
     return DETECTORS.build(cfg)
 
 
@@ -25,6 +29,8 @@ def build_backbone(cfg):
     """Build backbone."""
     if cfg.get("type", None) == "OnlineVideoMAEAdapter":
         return MM_BACKBONES.build(cfg)
+    from .backbones import BackboneWrapper
+
     return BackboneWrapper(cfg)
 
 

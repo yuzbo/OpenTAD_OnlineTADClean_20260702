@@ -74,6 +74,7 @@ def main(argv=None):
             not_eval=args.not_eval,
             resume_path=args.resume,
             cfg_overrides=cfg_overrides,
+            bundle_root=output.parent,
         )
     except FullPetalLaunchError as exc:
         parser.error(str(exc))

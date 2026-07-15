@@ -2,7 +2,21 @@
 # https://github.com/open-mmlab/mmcv/blob/master/mmcv/ops/nms.py
 import torch
 
-import nms_1d_cpu
+try:
+    import nms_1d_cpu
+except ModuleNotFoundError as exc:
+    if exc.name != "nms_1d_cpu":
+        raise
+    nms_1d_cpu = None
+
+
+def _require_nms_extension():
+    if nms_1d_cpu is None:
+        raise RuntimeError(
+            "nms_1d_cpu is required only when temporal NMS is invoked; "
+            "build the extension before enabling NMS post-processing"
+        )
+    return nms_1d_cpu
 
 
 class NMSop(torch.autograd.Function):
@@ -17,7 +31,7 @@ class NMSop(torch.autograd.Function):
             valid_inds = torch.nonzero(valid_mask, as_tuple=False).squeeze(dim=1)
 
         # nms op; return inds that is sorted by descending order
-        inds = nms_1d_cpu.nms(
+        inds = _require_nms_extension().nms(
             segs.contiguous().cpu(),
             scores.contiguous().cpu(),
             iou_threshold=float(iou_threshold),
@@ -38,7 +52,7 @@ class SoftNMSop(torch.autograd.Function):
         # pre allocate memory for sorted results
         dets = segs.new_empty((segs.size(0), 3), device="cpu")
         # softnms op, return dets that stores the sorted segs / scores
-        inds = nms_1d_cpu.softnms(
+        inds = _require_nms_extension().softnms(
             segs.cpu(),
             scores.cpu(),
             dets.cpu(),

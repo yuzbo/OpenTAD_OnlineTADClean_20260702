@@ -148,6 +148,27 @@ def test_profile_reuse_accepts_exact_authorization_literals_only(tmp_path):
         authorization_only_diff(tmp_path, profile_commit, forbidden_commit)
 
 
+def test_profile_reuse_rejects_same_tree_diff_from_a_diverged_history(tmp_path):
+    config, _, root_commit = _init_repository(tmp_path)
+    _git(tmp_path, "checkout", "-b", "profile-branch")
+    _git(tmp_path, "commit", "--allow-empty", "-m", "profile sibling")
+    profile_commit = _git(tmp_path, "rev-parse", "HEAD")
+
+    _git(tmp_path, "checkout", "-b", "formal-branch", root_commit)
+    config.write_text(
+        'formal_training_ready = True\n'
+        'gpu_authorization = "FORMAL_TRAINING_APPROVED"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "authorize sibling formal training")
+    formal_commit = _git(tmp_path, "rev-parse", "HEAD")
+
+    with pytest.raises(IdentityError, match="not an ancestor"):
+        authorization_only_diff(tmp_path, profile_commit, formal_commit)
+
+
 def test_runtime_identity_hash_binds_resume_checkpoint_contents(tmp_path):
     checkpoint = _write(tmp_path / "checkpoint.pth", "checkpoint-v1\n")
     first = build_runtime_identity(
@@ -173,18 +194,24 @@ def test_runtime_identity_hash_binds_resume_checkpoint_contents(tmp_path):
     assert first["resume_checkpoint"]["sha256"] != second["resume_checkpoint"]["sha256"]
 
 
-def test_slurm_identity_is_parsed_and_bound_to_active_allocation(monkeypatch):
+def test_slurm_identity_is_parsed_and_bound_to_active_allocation(monkeypatch, tmp_path):
     output = (
         "JobId=12345 JobState=RUNNING UserId=fixture-user(1000) "
         "NumNodes=1 NumTasks=1 TresPerNode=gres:gpu:1 "
         "Command=/repo/tools/train.py WorkDir=/repo\n"
     )
 
+    scontrol = _write(tmp_path / "trusted-scontrol", "fixture\n")
+
     def run(*args, **kwargs):
+        assert Path(args[0][0]).is_absolute()
+        assert Path(args[0][0]) == scontrol.resolve()
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=output, stderr="")
 
     monkeypatch.setattr(identity_module.subprocess, "run", run)
-    allocation = inspect_slurm_allocation("12345")
+    allocation = inspect_slurm_allocation(
+        "12345", scontrol_path=scontrol.resolve()
+    )
 
     assert allocation.gpus == 1
     assert validate_slurm_allocation(
@@ -200,3 +227,5 @@ def test_slurm_identity_is_parsed_and_bound_to_active_allocation(monkeypatch):
             world_size=1,
             expected_user="fixture-user",
         )
+    with pytest.raises(IdentityError, match="must be absolute"):
+        inspect_slurm_allocation("12345", scontrol_path="scontrol")

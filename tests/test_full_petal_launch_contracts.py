@@ -154,7 +154,10 @@ def test_profile_path_exits_before_checkpoint_or_evaluation():
     assert completion_offset < artifact_offset < return_offset
     assert return_offset < checkpoint_offset < validation_offset
     assert "build_fixed_step_profile_artifact(" in source
-    assert "fixed_step_profiler.measurements()" in source
+    assert "optimizer_event_recorder.persist(trace_path, commitment_path)" in source
+    assert "optimizer_event_trace_path=trace_path" in source
+    assert "optimizer_event_commitment_path=commitment_path" in source
+    assert "fixed_step_profiler.measurements()" not in source
 
 
 def test_test_entrypoint_uses_resolved_amp_dtype():
@@ -223,4 +226,4 @@ def test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo():
     assert '"manifest_path": evidence_manifest_path.name' in source
     assert '"test_report_path": test_report_path.name' in source
     assert '"audit_report_path": audit_report_path.name' in source
-    assert "sign_payload(" in source
+    assert "_sign_payload(" in source

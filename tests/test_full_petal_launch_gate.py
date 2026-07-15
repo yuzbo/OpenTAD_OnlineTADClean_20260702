@@ -5,7 +5,8 @@ import shutil
 import pytest
 
 import opentad.utils.full_petal_launch as launch_module
-from opentad.utils.full_petal_attestation import generate_private_key, sign_payload
+import opentad.utils.full_petal_identity as identity_module
+from opentad.utils.full_petal_attestation import _sign_payload, generate_private_key
 from opentad.utils.full_petal_b0 import (
     B0_AUDIT_REPORT_SCHEMA,
     B0_MANIFEST_SCHEMA,
@@ -32,7 +33,9 @@ from opentad.utils.full_petal_launch import (
     resolved_config_sha256,
     sha256_file,
     validate_full_petal_launch,
+    verify_launch_receipt,
 )
+from opentad.utils.full_petal_training_evidence import persist_training_trace
 
 
 COMMIT = "a" * 40
@@ -47,6 +50,15 @@ SCOPE = [
 ]
 SOURCE_SHA = "5" * 64
 DATA_IDENTITY = {"identity_sha256": "6" * 64}
+TRACE_IDENTITY = {
+    "precision": "bf16",
+    "effective_batch_size": 1,
+    "world_size": 1,
+    "optimizer_config_sha256": "1" * 64,
+    "scheduler_config_sha256": "2" * 64,
+    "data_order_sha256": "3" * 64,
+    "loss_normalization_sha256": "4" * 64,
+}
 
 
 def _write_json(path, payload):
@@ -58,8 +70,33 @@ def _write_json(path, payload):
     return path
 
 
-def _reference(path):
-    return {"path": str(path.resolve()), "sha256": sha256_file(path)}
+def _reference(path, root):
+    return {
+        "path": path.resolve().relative_to(root.resolve()).as_posix(),
+        "sha256": sha256_file(path),
+    }
+
+
+def _profile_trace(root):
+    trace = root / "profile-optimizer-events.jsonl"
+    commitment = root / "profile-optimizer-events.commitment.json"
+    persist_training_trace(
+        trace,
+        commitment,
+        [
+            {
+                "event_id": f"optimizer-event-{index:08d}",
+                "episode_id": f"profile-episode-{index:08d}",
+                "input_tokens": 64,
+                "elapsed_seconds": float(index + 1),
+                "peak_memory_bytes": 1024 + index,
+                "skipped": False,
+                **TRACE_IDENTITY,
+            }
+            for index in range(250)
+        ],
+    )
+    return trace, commitment
 
 
 def _keys(root):
@@ -78,6 +115,9 @@ def _keys(root):
 
 
 def _config(root, roots, *, formal=False):
+    root.mkdir(parents=True, exist_ok=True)
+    trusted_scontrol = root / "trusted-scontrol"
+    trusted_scontrol.write_text("fixture\n", encoding="utf-8")
     cfg = {
         "route_stage": "q2_persistent_binding_one_factor",
         "formal_training_ready": formal,
@@ -102,6 +142,7 @@ def _config(root, roots, *, formal=False):
             "required_review_scope": SCOPE,
             "allowed_cfg_overrides": ["work_dir"],
             "require_clean_checkout": True,
+            "trusted_scontrol_path": str(trusted_scontrol.resolve()),
             "attestation_trust_roots": roots,
         },
         "work_dir": str(root / "work"),
@@ -212,7 +253,7 @@ def _b0(root, private_key, *, commit):
             "checks": checks,
         },
     )
-    signed = sign_payload(
+    signed = _sign_payload(
         {
             "schema_version": B0_SCHEMA,
             "status": "PASS",
@@ -235,7 +276,7 @@ def _b0(root, private_key, *, commit):
 
 
 def _review(root, private_key, b0_path, *, commit, reviewer=REVIEWER, verdict="PASS"):
-    signed = sign_payload(
+    signed = _sign_payload(
         {
             "schema_version": REVIEW_SCHEMA,
             "reviewer_id": reviewer,
@@ -253,7 +294,9 @@ def _review(root, private_key, b0_path, *, commit, reviewer=REVIEWER, verdict="P
     return _write_json(root / f"review-{commit[:4]}.json", signed)
 
 
-def _runtime(seed=705, *, entrypoint="train", resume_path=None):
+def _runtime(
+    seed=705, *, entrypoint="train", resume_path=None, bundle_root=None
+):
     return build_runtime_identity(
         entrypoint=entrypoint,
         seed=seed,
@@ -262,6 +305,7 @@ def _runtime(seed=705, *, entrypoint="train", resume_path=None):
         not_eval=False,
         resume_path=resume_path,
         cfg_overrides={},
+        bundle_root=bundle_root,
     )
 
 
@@ -289,11 +333,14 @@ def _ticket(
         "scientific_config_sha256": resolved_config_sha256(cfg, scientific=True),
         "data_identity": DATA_IDENTITY,
         "runtime_identity": _runtime(
-            seed, entrypoint=entrypoint, resume_path=resume_path
+            seed,
+            entrypoint=entrypoint,
+            resume_path=resume_path,
+            bundle_root=root,
         ),
-        "b0_evidence": _reference(b0_path),
-        "review_evidence": _reference(review_path),
-        "profile_evidence": None if profile is None else _reference(profile),
+        "b0_evidence": _reference(b0_path, root),
+        "review_evidence": _reference(review_path, root),
+        "profile_evidence": None if profile is None else _reference(profile, root),
     }
     return _write_json(
         root / f"{mode}-{entrypoint}-ticket-{commit[:4]}.json", payload
@@ -331,6 +378,11 @@ def _patch_identities(monkeypatch, *, authorization_error=None):
         return DATA_IDENTITY
 
     monkeypatch.setattr(launch_module, "validate_data_identity", validate)
+    monkeypatch.setattr(
+        identity_module,
+        "derive_training_trace_identity",
+        lambda cfg, data_identity, seed, world_size: dict(TRACE_IDENTITY),
+    )
     if authorization_error is None:
         monkeypatch.setattr(
             launch_module,
@@ -375,7 +427,7 @@ def _authorize(
         repository_state=kwargs.pop("repository_state", RepositoryState(commit, True)),
         slurm_allocation=kwargs.pop("slurm_allocation", _allocation(root)),
         expected_slurm_user="fixture-user",
-        profile_signing_key_path=profile_private if mode == "profile" else None,
+        execution_signing_key_path=profile_private,
         **kwargs,
     )
 
@@ -438,9 +490,16 @@ def test_launch_receipt_binds_ticket_runtime_and_slurm_without_overwrite(tmp_pat
         setup["profile_private"],
     )
 
-    receipt = build_launch_receipt(authorization)
+    signed_receipt = build_launch_receipt(
+        authorization,
+        private_key_path=setup["profile_private"],
+    )
+    receipt = verify_launch_receipt(
+        signed_receipt,
+        trust_root=setup["roots"]["profile"],
+    )
     assert receipt["launch_ticket"] == {
-        "path": str(setup["ticket"].resolve()),
+        "path": setup["ticket"].name,
         "sha256": sha256_file(setup["ticket"]),
     }
     assert receipt["runtime_identity_sha256"] == authorization.runtime_identity_sha256
@@ -448,11 +507,19 @@ def test_launch_receipt_binds_ticket_runtime_and_slurm_without_overwrite(tmp_pat
     assert receipt["slurm_allocation"]["state"] == "RUNNING"
 
     output = tmp_path / "receipt.json"
-    assert persist_launch_receipt(authorization, output) == output.resolve()
+    assert persist_launch_receipt(
+        authorization,
+        private_key_path=setup["profile_private"],
+        output_path=output,
+    ) == output.resolve()
     persisted = json.loads(output.read_text(encoding="utf-8"))
-    assert persisted == receipt
+    assert persisted == signed_receipt
     with pytest.raises(FullPetalLaunchError, match="overwrite"):
-        persist_launch_receipt(authorization, output)
+        persist_launch_receipt(
+            authorization,
+            private_key_path=setup["profile_private"],
+            output_path=output,
+        )
 
 
 def test_unsigned_self_consistent_review_is_rejected(tmp_path, monkeypatch):
@@ -461,7 +528,7 @@ def test_unsigned_self_consistent_review_is_rejected(tmp_path, monkeypatch):
     payload.pop("attestation")
     _write_json(setup["review"], payload)
     ticket = json.loads(setup["ticket"].read_text(encoding="utf-8"))
-    ticket["review_evidence"] = _reference(setup["review"])
+    ticket["review_evidence"] = _reference(setup["review"], tmp_path)
     _write_json(setup["ticket"], ticket)
 
     with pytest.raises(FullPetalLaunchError, match="lacks a signed attestation"):
@@ -496,7 +563,7 @@ def test_b0_bundle_remains_verifiable_after_directory_relocation(tmp_path):
     moved_b0 = moved / b0_path.name
 
     artifact = validate_b0_evidence(
-        _reference(moved_b0),
+        _reference(moved_b0, moved),
         base_dir=moved,
         expected_commit=COMMIT,
         trust_root=roots["b0"],
@@ -565,6 +632,7 @@ def test_ticket_builder_uses_the_same_signed_prerequisites(tmp_path, monkeypatch
         not_eval=False,
         resume_path=None,
         cfg_overrides={},
+        bundle_root=tmp_path,
         repository_state=RepositoryState(COMMIT, True),
     )
 
@@ -595,6 +663,7 @@ def test_formal_ticket_rejects_resume_until_trace_continuation_exists(tmp_path, 
             not_eval=False,
             resume_path=checkpoint,
             cfg_overrides={},
+            bundle_root=tmp_path,
             repository_state=RepositoryState(COMMIT, True),
         )
 
@@ -608,18 +677,13 @@ def test_profile_artifact_is_signed_and_binds_exact_authorization(tmp_path, monk
         setup["ticket"],
         setup["profile_private"],
     )
+    trace, commitment = _profile_trace(tmp_path)
     artifact = build_fixed_step_profile_artifact(
         authorization,
         setup["cfg"],
-        {
-            "warmup_optimizer_events": 50,
-            "measured_optimizer_events": 200,
-            "total_optimizer_events": 250,
-            "skipped_optimizer_events": 0,
-            "elapsed_seconds": 10.0,
-            "peak_memory_bytes": 1024,
-            "throughput_optimizer_events_per_second": 20.0,
-        },
+        optimizer_event_trace_path=trace,
+        optimizer_event_commitment_path=commitment,
+        bundle_root=tmp_path,
         precision="bf16",
         gpu_name="Fixture GPU",
         torch_version="2.6.0",
@@ -659,18 +723,13 @@ def test_formal_launch_accepts_only_later_authorization_only_commit(tmp_path, mo
         profile_private,
         commit=PROFILE_COMMIT,
     )
+    trace, commitment = _profile_trace(tmp_path)
     profile_payload = build_fixed_step_profile_artifact(
         profile_authorization,
         profile_cfg,
-        {
-            "warmup_optimizer_events": 50,
-            "measured_optimizer_events": 200,
-            "total_optimizer_events": 250,
-            "skipped_optimizer_events": 0,
-            "elapsed_seconds": 10.0,
-            "peak_memory_bytes": 1024,
-            "throughput_optimizer_events_per_second": 20.0,
-        },
+        optimizer_event_trace_path=trace,
+        optimizer_event_commitment_path=commitment,
+        bundle_root=tmp_path,
         precision="bf16",
         gpu_name="Fixture GPU",
         torch_version="2.6.0",
