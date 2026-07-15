@@ -30,15 +30,23 @@ python tools/run_full_petal_b0.py `
   --dependency-site C:\path\to\pytest-site-packages
 ```
 
-The B0 runner refuses a dirty checkout, refuses an output directory inside the
-repository, executes the non-Torch and focused Torch contract suites, records
-JUnit and raw logs, hashes every leaf artifact, checks every tracked Python
-source, runs `git diff --check`, and verifies that the checkout remains clean.
+The B0 runner refuses a dirty checkout and an output directory inside the
+repository. It executes every discovered test through the locked Torch runner,
+records JUnit and raw logs, hashes every test and runner source, checks every
+tracked Python source, runs `git diff --check`, and verifies that the checkout
+remains clean.
+
+Every accepted formal result must bind separate training and evaluation launch
+tickets. Each entrypoint writes a non-overwritable `.receipt.json` beside its
+ticket before CUDA/DDP initialization. The signed run manifest must include both
+tickets and both receipts; the evaluation ticket must bind the exact checkpoint
+path, size, and SHA-256. Build tickets and all evidence outside the repository.
 
 ## Prohibited Shortcuts
 
 - No legacy Stage-1 smoke launcher for either Q2 Full PETAL config.
 - No direct `tools/train.py` or `tools/test.py` launch without a valid ticket.
+- No ticket reuse or overwrite; every launch produces one immutable receipt.
 - No non-Slurm GPU launch.
 - No scientific `--cfg-options`; only `work_dir` is allowed.
 - No profile before B0 and the locked independent review reach PASS.

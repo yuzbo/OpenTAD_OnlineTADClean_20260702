@@ -93,6 +93,12 @@ set -euo pipefail
 
 cd "$BASE_DIR"
 source tools/env/activate_n16r4_causaltad.sh
+if [[ "$MODE" == "profile" ]]; then
+    [[ -n "${FULL_PETAL_PROFILE_ATTESTATION_KEY:-}" && -f "$FULL_PETAL_PROFILE_ATTESTATION_KEY" ]] || {
+        echo "Profile job lacks the external attestation private key" >&2
+        exit 2
+    }
+fi
 [[ -z "$(git status --porcelain)" ]] || {
     echo "Compute-node checkout became dirty before launch" >&2
     exit 2

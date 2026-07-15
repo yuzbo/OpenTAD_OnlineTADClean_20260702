@@ -71,11 +71,22 @@ def _stream_key(meta):
     video = meta.get("video_id", meta.get("video_name"))
     if video is None:
         raise ProtocolViolation("model metadata requires video_id or video_name")
-    return (
-        f"video={video}|stream={meta.get('stream_id', 'default')}|"
-        f"input={meta.get('input_format', 'unknown')}|"
-        f"stride={meta.get('feature_stride', meta.get('snippet_stride', 'unknown'))}"
-    )
+    identity = {
+        "video_id": video,
+        "stream_id": meta.get("stream_id", "default"),
+        "input_format": meta.get("input_format", "unknown"),
+        "feature_stride": meta.get(
+            "feature_stride", meta.get("snippet_stride", "unknown")
+        ),
+    }
+    encoded = json.dumps(
+        identity,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return "stream:" + hashlib.sha256(encoded).hexdigest()
 
 
 @dataclass

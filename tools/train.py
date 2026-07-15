@@ -20,6 +20,7 @@ from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import (
     build_optimizer,
     build_scheduler,
+    optimizer_events_per_epoch,
     eval_one_epoch,
     resolve_amp_dtype,
     train_one_epoch,
@@ -37,10 +38,14 @@ from opentad.utils import (
 )
 from opentad.utils.fixed_step_profile import FixedStepProfiler, TorchCudaProfileBackend
 from opentad.utils.full_petal_launch import (
+    FORMAL_MODE,
     PROFILE_MODE,
     build_fixed_step_profile_artifact,
+    canonical_json_sha256,
+    persist_launch_receipt,
     validate_full_petal_launch,
 )
+from opentad.utils.full_petal_training_evidence import OptimizerEventTraceRecorder
 
 
 def parse_args():
@@ -69,6 +74,29 @@ def _set_dataloader_epoch(loader, epoch):
             return
 
 
+def _precision_name(amp_dtype):
+    if amp_dtype is torch.bfloat16:
+        return "bf16"
+    if amp_dtype is torch.float16:
+        return "fp16"
+    return "fp32"
+
+
+def _data_order_identity(dataset, seed):
+    manifests = getattr(dataset, "packet_manifests", None)
+    if not isinstance(manifests, dict) or not manifests:
+        raise RuntimeError("formal training requires an explicit packet manifest order")
+    return canonical_json_sha256(
+        {
+            "seed": int(seed),
+            "episodes": [
+                {"video_id": str(video_id), "packet_indices": list(indices)}
+                for video_id, indices in manifests.items()
+            ],
+        }
+    )
+
+
 def main():
     args = parse_args()
 
@@ -77,18 +105,30 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
+    cfg_overrides = dict(args.cfg_options or {})
+    profile_signing_key = os.environ.get("FULL_PETAL_PROFILE_ATTESTATION_KEY")
     launch_authorization = validate_full_petal_launch(
         cfg,
         args.config,
         mode=args.launch_mode,
         ticket_path=args.launch_ticket,
         entrypoint="train",
-        cfg_override_keys=tuple((args.cfg_options or {}).keys()),
+        seed=args.seed,
+        run_id=args.id,
+        deterministic=not args.disable_deterministic,
+        not_eval=args.not_eval,
+        resume_path=args.resume,
+        cfg_overrides=cfg_overrides,
+        cfg_override_keys=tuple(cfg_overrides),
         environ=os.environ,
         repository_root=Path(__file__).resolve().parents[1],
+        profile_signing_key_path=profile_signing_key,
     )
     if launch_authorization is not None and args.launch_mode == PROFILE_MODE and args.resume:
         raise RuntimeError("fixed-step profile cannot resume from a checkpoint")
+    if launch_authorization is not None:
+        receipt_path = persist_launch_receipt(launch_authorization)
+        print(f"FULL_PETAL_LAUNCH_RECEIPT={receipt_path}")
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -194,9 +234,28 @@ def main():
             backend=TorchCudaProfileBackend(args.local_rank),
         )
 
+    optimizer_event_recorder = None
+    if launch_authorization is not None and launch_authorization.mode == FORMAL_MODE:
+        optimizer_event_recorder = OptimizerEventTraceRecorder(
+            precision=_precision_name(amp_dtype),
+            effective_batch_size=int(cfg.solver.train.batch_size) * args.world_size,
+            world_size=args.world_size,
+            optimizer_config_sha256=canonical_json_sha256(dict(cfg.optimizer)),
+            scheduler_config_sha256=canonical_json_sha256(dict(cfg.scheduler)),
+            data_order_sha256=_data_order_identity(train_dataset, args.seed),
+            loss_normalization_sha256=canonical_json_sha256(
+                {"model": dict(cfg.model), "solver": dict(cfg.solver)}
+            ),
+            peak_memory_reader=torch.cuda.max_memory_allocated,
+        )
+
     # build optimizer and scheduler
     optimizer = build_optimizer(cfg.optimizer, model, logger)
-    scheduler, max_epoch = build_scheduler(cfg.scheduler, optimizer, len(train_loader))
+    scheduler, max_epoch = build_scheduler(
+        cfg.scheduler,
+        optimizer,
+        optimizer_events_per_epoch(train_loader),
+    )
 
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)
@@ -241,17 +300,12 @@ def main():
             scaler=scaler,
             amp_dtype=amp_dtype,
             fixed_step_profiler=fixed_step_profiler,
+            optimizer_event_recorder=optimizer_event_recorder,
         )
 
         if fixed_step_profiler is not None and train_stats["fixed_step_profile_complete"]:
             if args.rank == 0:
-                precision = (
-                    "bf16"
-                    if amp_dtype is torch.bfloat16
-                    else "fp16"
-                    if amp_dtype is torch.float16
-                    else "fp32"
-                )
+                precision = _precision_name(amp_dtype)
                 artifact = build_fixed_step_profile_artifact(
                     launch_authorization,
                     cfg,
@@ -260,6 +314,8 @@ def main():
                     gpu_name=torch.cuda.get_device_name(args.local_rank),
                     torch_version=torch.__version__,
                     cuda_version=torch.version.cuda,
+                    private_key_path=profile_signing_key,
+                    key_id=cfg.launch_contract.attestation_trust_roots.profile.key_id,
                 )
                 output = Path(cfg.work_dir) / "fixed_step_profile.json"
                 output.write_text(
@@ -318,6 +374,15 @@ def main():
         raise RuntimeError(
             "training schedule ended before the fixed-step profile reached its event budget"
         )
+    if optimizer_event_recorder is not None:
+        if args.rank == 0:
+            trace_path = Path(cfg.work_dir) / "formal_training_trace.jsonl"
+            commitment_path = (
+                Path(cfg.work_dir) / "formal_training_trace.commitment.json"
+            )
+            optimizer_event_recorder.persist(trace_path, commitment_path)
+            logger.info("Formal optimizer-event trace committed: %s", trace_path)
+        dist.barrier()
     logger.info("Training Over...\n")
 
 

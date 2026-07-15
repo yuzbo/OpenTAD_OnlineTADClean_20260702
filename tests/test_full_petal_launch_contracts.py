@@ -1,11 +1,19 @@
 from copy import deepcopy
+import importlib.util
 from pathlib import Path
 
 from mmengine.config import Config
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "configs" / "causaltad"
+TICKET_SCRIPT = ROOT / "tools" / "build_full_petal_launch_ticket.py"
+TICKET_SPEC = importlib.util.spec_from_file_location(
+    "build_full_petal_launch_ticket", TICKET_SCRIPT
+)
+TICKET_MODULE = importlib.util.module_from_spec(TICKET_SPEC)
+TICKET_SPEC.loader.exec_module(TICKET_MODULE)
 
 
 def _load(name):
@@ -44,10 +52,15 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     assert cfg.profile_contract.b1_total_gpu_hour_cap == 2
     assert cfg.profile_contract.b2_total_gpu_hour_cap == 10
     assert cfg.optimizer.audit.fail_on_frozen is True
-    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v1"
+    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v2"
     assert cfg.launch_contract.required_reviewer_id == (
         "019f5abd-5104-79b3-882e-354ca796f2c1"
     )
+    assert set(cfg.launch_contract.attestation_trust_roots) == {
+        "b0",
+        "review",
+        "profile",
+    }
 
     assert cfg.experiment_contract.changed_axis == "post_birth_target_to_slot_loss_binding"
     assert cfg.experiment_contract.shared_first_crossing_birth is True
@@ -122,11 +135,12 @@ def test_full_petal_gate_runs_before_ddp_and_cuda_in_every_entrypoint():
         source = _entrypoint_source(name)
         main_offset = source.index("def main()")
         gate_offset = source.index("validate_full_petal_launch(", main_offset)
+        receipt_offset = source.index("persist_launch_receipt(", gate_offset)
         ddp_offset = source.index("dist.init_process_group(", main_offset)
         cuda_offset = source.index("torch.cuda.set_device(", main_offset)
 
-        assert gate_offset < ddp_offset
-        assert gate_offset < cuda_offset
+        assert gate_offset < receipt_offset < ddp_offset
+        assert gate_offset < receipt_offset < cuda_offset
 
 
 def test_profile_path_exits_before_checkpoint_or_evaluation():
@@ -170,15 +184,29 @@ def test_ticket_builder_and_slurm_launcher_use_the_locked_gate():
     assert "ALLOW_FORMAL" in launcher
 
 
+def test_ticket_builder_requires_external_non_overwritable_output(tmp_path):
+    output = tmp_path / "ticket.json"
+    assert TICKET_MODULE._external_output(output) == output.resolve()
+
+    output.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(TICKET_MODULE.FullPetalLaunchError, match="overwrite"):
+        TICKET_MODULE._external_output(output)
+    with pytest.raises(TICKET_MODULE.FullPetalLaunchError, match="outside"):
+        TICKET_MODULE._external_output(ROOT / "ticket.json")
+
+
 def test_isolated_torch_runner_bypasses_only_package_level_registration():
     source = (
         ROOT / "tools" / "testing" / "run_isolated_torch_pytest.py"
     ).read_text(encoding="utf-8")
 
-    assert "_install_focused_opentad" in source
+    assert "_install_b0_opentad" in source
+    assert 'Registry("full_petal_b0_models")' in source
     assert 'sys.path.insert(0, str(repo_root))' in source
     assert "pytest.main(args.pytest_args)" in source
-    assert "nms_1d_cpu" not in source
+    assert "_ensure_cpu_nms_module" in source
+    assert 'if exc.name != "nms_1d_cpu"' in source
+    assert "_install_cpu_nms_test_double(torch)" in source
     assert "mmcv" not in source
 
 
@@ -189,4 +217,10 @@ def test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo():
     assert '"junit_sha256"' in source
     assert '"log_sha256"' in source
     assert "B0 evidence must be written outside the repository" in source
-    assert "run_isolated_torch_pytest.py" in source
+    assert "DEFAULT_MANIFEST" in source
+    assert "validate_manifest(payload, repository_root=ROOT)" in source
+    assert 'evidence_manifest_path = output_dir / "b0-manifest.json"' in source
+    assert '"manifest_path": evidence_manifest_path.name' in source
+    assert '"test_report_path": test_report_path.name' in source
+    assert '"audit_report_path": audit_report_path.name' in source
+    assert "sign_payload(" in source

@@ -110,6 +110,12 @@ class StreamingFeatureDataset:
         if not self.data_list:
             raise ValueError(f"no cached feature chunks found for subsets {sorted(self._subsets)}")
 
+    @property
+    def optimizer_events_per_epoch(self):
+        """One transactional optimizer event is emitted per complete video episode."""
+
+        return len(self.packet_manifests)
+
     @staticmethod
     def _load_class_map(path):
         with Path(path).open("r", encoding="utf-8") as handle:

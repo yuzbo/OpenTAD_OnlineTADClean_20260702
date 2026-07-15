@@ -1,49 +1,49 @@
 #!/usr/bin/env python3
-"""Run the locked Full PETAL CPU B0 matrix and emit hash-bound evidence."""
+"""Run the exhaustive Full PETAL CPU B0 matrix and sign its evidence root."""
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tokenize
-import xml.etree.ElementTree as ET
 
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
-B0_SCHEMA = "full-petal-b0-v1"
-TEST_REPORT_SCHEMA = "full-petal-b0-test-report-v1"
-AUDIT_REPORT_SCHEMA = "full-petal-b0-audit-report-v1"
-TORCH_TARGETS = (
-    "tests/test_full_petal_training_transaction.py",
-    "tests/test_full_petal_detector_contracts.py",
-    "tests/test_persistent_event_set_detector.py",
-    "tests/test_persistent_event_set_head.py",
-    "tests/test_optimizer_audit.py",
-    "tests/test_full_petal_training_cost_controls.py",
-    "tests/test_training_update_audit.py",
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from opentad.utils.full_petal_attestation import (  # noqa: E402
+    AttestationError,
+    sign_payload,
 )
-TORCH_IMPORT = re.compile(r"(^|\s)(import torch|from torch)", re.MULTILINE)
+from opentad.utils.full_petal_b0 import (  # noqa: E402
+    B0_ATTESTATION_ROLE,
+    B0_AUDIT_REPORT_SCHEMA,
+    B0_SCHEMA,
+    B0_TEST_REPORT_SCHEMA,
+    canonical_json_sha256,
+    junit_cases,
+    sha256_file,
+    validate_manifest,
+)
+
+
+DEFAULT_MANIFEST = ROOT / "tools" / "testing" / "full_petal_b0_manifest.json"
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--torch-python", type=Path, required=True)
-    parser.add_argument("--dependency-site", type=Path, action="append", default=[])
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--attestation-private-key", type=Path, required=True)
+    parser.add_argument("--attestation-key-id", required=True)
     return parser.parse_args(argv)
-
-
-def _sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _write_json(path, payload):
@@ -80,25 +80,33 @@ def _is_relative_to(path, parent):
         return False
 
 
-def _junit_counts(path):
-    root = ET.parse(path).getroot()
-    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-    totals = {key: 0 for key in ("collected", "failed", "errors", "skipped")}
-    for suite in suites:
-        totals["collected"] += int(suite.attrib.get("tests", 0))
-        totals["failed"] += int(suite.attrib.get("failures", 0))
-        totals["errors"] += int(suite.attrib.get("errors", 0))
-        totals["skipped"] += int(suite.attrib.get("skipped", 0))
-    totals["passed"] = totals["collected"] - sum(
-        totals[key] for key in ("failed", "errors", "skipped")
-    )
-    return totals
+def _load_manifest(path):
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"failed to load B0 manifest {path}: {exc}") from exc
+    validate_manifest(payload, repository_root=ROOT)
+    return payload
 
 
-def _run_pytest(name, command, output_dir, env):
+def _actual_command(canonical, *, torch_python, junit_path):
+    replacements = {
+        "$TORCH_PYTHON": str(torch_python),
+        "$REPO_ROOT": str(ROOT),
+        "$JUNIT": str(junit_path),
+    }
+    return [replacements.get(item, item) for item in canonical]
+
+
+def _run_suite(suite, output_dir, torch_python, env):
+    name = suite["name"]
     log_path = output_dir / f"{name}.log"
     junit_path = output_dir / f"{name}.junit.xml"
-    command = [*command, "--junitxml", str(junit_path)]
+    command = _actual_command(
+        suite["canonical_argv"],
+        torch_python=torch_python,
+        junit_path=junit_path,
+    )
     result = subprocess.run(
         command,
         cwd=ROOT,
@@ -110,12 +118,30 @@ def _run_pytest(name, command, output_dir, env):
         check=False,
     )
     log_path.write_text(
-        "COMMAND=" + json.dumps(command) + "\n\nSTDOUT\n" + result.stdout
-        + "\nSTDERR\n" + result.stderr,
+        "CANONICAL_ARGV="
+        + json.dumps(suite["canonical_argv"], separators=(",", ":"))
+        + "\nACTUAL_ARGV="
+        + json.dumps(command, separators=(",", ":"))
+        + "\nRETURN_CODE="
+        + str(result.returncode)
+        + "\n\nSTDOUT\n"
+        + result.stdout
+        + "\nSTDERR\n"
+        + result.stderr,
         encoding="utf-8",
     )
     if junit_path.is_file():
-        counts = _junit_counts(junit_path)
+        try:
+            counts, cases = junit_cases(junit_path)
+        except Exception as exc:
+            counts = {
+                "collected": 0,
+                "passed": 0,
+                "failed": 0,
+                "errors": 1,
+                "skipped": 0,
+            }
+            cases = [{"classname": "b0.runner", "name": f"junit_parse_error:{exc}"}]
     else:
         junit_path.write_text("<testsuites/>\n", encoding="utf-8")
         counts = {
@@ -125,6 +151,7 @@ def _run_pytest(name, command, output_dir, env):
             "errors": 1,
             "skipped": 0,
         }
+        cases = []
     status = (
         "PASS"
         if result.returncode == 0
@@ -135,25 +162,26 @@ def _run_pytest(name, command, output_dir, env):
     return {
         "name": name,
         "status": status,
-        "command": command,
-        "python_executable": command[0],
+        "canonical_argv": suite["canonical_argv"],
+        "python_executable": str(torch_python),
         **counts,
-        "log_path": str(log_path.resolve()),
-        "log_sha256": _sha256(log_path),
-        "junit_path": str(junit_path.resolve()),
-        "junit_sha256": _sha256(junit_path),
+        "log_path": log_path.name,
+        "log_sha256": sha256_file(log_path),
+        "junit_path": junit_path.name,
+        "junit_sha256": sha256_file(junit_path),
+        "testcase_manifest_sha256": canonical_json_sha256(cases),
     }
 
 
-def _write_check(output_dir, name, command, status, content):
+def _write_check(output_dir, name, canonical_argv, status, content):
     log_path = output_dir / f"audit-{name}.log"
     log_path.write_text(content, encoding="utf-8")
     return {
         "name": name,
         "status": status,
-        "command": list(command),
-        "log_path": str(log_path.resolve()),
-        "log_sha256": _sha256(log_path),
+        "canonical_argv": list(canonical_argv),
+        "log_path": log_path.name,
+        "log_sha256": sha256_file(log_path),
     }
 
 
@@ -168,23 +196,22 @@ def _syntax_check(output_dir):
         except Exception as exc:
             failures.append(f"{relative_path}: {exc!r}")
     content = f"tracked_python_files={len(tracked)}\n" + "\n".join(failures)
-    status = "PASS" if tracked and not failures else "FAIL"
     return _write_check(
         output_dir,
         "python_syntax",
-        [sys.executable, "compile(all tracked Python sources)"],
-        status,
+        ["$B0_PYTHON", "compile", "$ALL_TRACKED_PYTHON"],
+        "PASS" if tracked and not failures else "FAIL",
         content + "\n",
     )
 
 
-def _git_check(output_dir, name, *args):
+def _git_check(output_dir, name, canonical_argv, *args):
     result = _git(*args, check=False)
     status = "PASS" if result.returncode == 0 and not result.stdout.strip() else "FAIL"
     return _write_check(
         output_dir,
         name,
-        ["git", "-C", str(ROOT), *args],
+        canonical_argv,
         status,
         result.stdout + result.stderr,
     )
@@ -206,44 +233,33 @@ def main(argv=None):
     torch_python = args.torch_python.resolve()
     if not torch_python.is_file():
         raise SystemExit(f"Torch Python does not exist: {torch_python}")
-    dependency_sites = [path.resolve() for path in args.dependency_site]
-    for dependency_site in dependency_sites:
-        if not dependency_site.is_dir():
-            raise SystemExit(f"dependency site does not exist: {dependency_site}")
+    if not args.attestation_private_key.resolve().is_file():
+        raise SystemExit("B0 attestation private key does not exist")
+    manifest_path = args.manifest.resolve()
+    if not manifest_path.is_file() or not _is_relative_to(manifest_path, ROOT.resolve()):
+        raise SystemExit("B0 manifest must be a tracked repository file")
+    manifest = _load_manifest(manifest_path)
+    evidence_manifest_path = output_dir / "b0-manifest.json"
+    shutil.copyfile(manifest_path, evidence_manifest_path)
 
-    pure_targets = []
-    for path in sorted((ROOT / "tests").glob("test_*.py")):
-        if not TORCH_IMPORT.search(path.read_text(encoding="utf-8")):
-            pure_targets.append(str(path.relative_to(ROOT)))
-    common_pytest = ["-q", "-p", "no:cacheprovider"]
-    pure_command = [sys.executable, "-m", "pytest", *pure_targets, *common_pytest]
-
-    wrapper = ROOT / "tools" / "testing" / "run_isolated_torch_pytest.py"
-    torch_command = [str(torch_python), str(wrapper)]
-    for dependency_site in dependency_sites:
-        torch_command.extend(["--dependency-site", str(dependency_site)])
-    torch_command.extend(["--", *TORCH_TARGETS, *common_pytest])
-
-    base_env = dict(os.environ)
-    base_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env = dict(os.environ)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONNOUSERSITE"] = "1"
     suites = [
-        _run_pytest("pure_contracts", pure_command, output_dir, base_env),
+        _run_suite(suite, output_dir, torch_python, env)
+        for suite in manifest["suites"]
     ]
-    torch_env = dict(base_env)
-    torch_env["PYTHONNOUSERSITE"] = "1"
-    suites.append(
-        _run_pytest("focused_torch_contracts", torch_command, output_dir, torch_env)
-    )
-
     totals = {
         field: sum(suite[field] for suite in suites)
         for field in ("collected", "passed", "failed", "errors", "skipped")
     }
     tests_pass = all(suite["status"] == "PASS" for suite in suites)
+    manifest_sha = sha256_file(evidence_manifest_path)
     test_report = {
-        "schema_version": TEST_REPORT_SCHEMA,
+        "schema_version": B0_TEST_REPORT_SCHEMA,
         "status": "PASS" if tests_pass else "FAIL",
         "commit_sha": commit,
+        "manifest_sha256": manifest_sha,
         **totals,
         "suites": suites,
     }
@@ -252,8 +268,20 @@ def main(argv=None):
 
     checks = [
         _syntax_check(output_dir),
-        _git_check(output_dir, "git_diff_check", "diff", "--check"),
-        _git_check(output_dir, "repository_clean_after", "status", "--porcelain"),
+        _git_check(
+            output_dir,
+            "git_diff_check",
+            ["git", "-C", "$REPO_ROOT", "diff", "--check"],
+            "diff",
+            "--check",
+        ),
+        _git_check(
+            output_dir,
+            "repository_clean_after",
+            ["git", "-C", "$REPO_ROOT", "status", "--porcelain"],
+            "status",
+            "--porcelain",
+        ),
     ]
     final_commit, final_status = _repository_state()
     audit_pass = (
@@ -262,9 +290,10 @@ def main(argv=None):
         and all(check["status"] == "PASS" for check in checks)
     )
     audit_report = {
-        "schema_version": AUDIT_REPORT_SCHEMA,
+        "schema_version": B0_AUDIT_REPORT_SCHEMA,
         "status": "PASS" if audit_pass else "FAIL",
         "commit_sha": commit,
+        "manifest_sha256": manifest_sha,
         "blocking_findings": 0 if audit_pass else 1,
         "protocol_violations": 0,
         "checks": checks,
@@ -273,22 +302,34 @@ def main(argv=None):
     _write_json(audit_report_path, audit_report)
 
     b0_pass = tests_pass and audit_pass
-    b0 = {
+    unsigned_b0 = {
         "schema_version": B0_SCHEMA,
         "status": "PASS" if b0_pass else "FAIL",
         "commit_sha": commit,
         "test_count": totals["collected"],
         "blocking_findings": 0 if b0_pass else 1,
         "protocol_violations": 0,
-        "test_report_path": str(test_report_path.resolve()),
-        "test_report_sha256": _sha256(test_report_path),
-        "audit_report_path": str(audit_report_path.resolve()),
-        "audit_report_sha256": _sha256(audit_report_path),
+        "manifest_path": evidence_manifest_path.name,
+        "manifest_sha256": manifest_sha,
+        "test_report_path": test_report_path.name,
+        "test_report_sha256": sha256_file(test_report_path),
+        "audit_report_path": audit_report_path.name,
+        "audit_report_sha256": sha256_file(audit_report_path),
     }
+    try:
+        b0 = sign_payload(
+            unsigned_b0,
+            private_key_path=args.attestation_private_key,
+            key_id=args.attestation_key_id,
+            role=B0_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise SystemExit(f"failed to attest B0 evidence: {exc}") from exc
     b0_path = output_dir / "b0.json"
     _write_json(b0_path, b0)
     print(f"FULL_PETAL_B0={b0_path}")
-    print(f"FULL_PETAL_B0_STATUS={b0['status']}")
+    print(f"FULL_PETAL_B0_SHA256={sha256_file(b0_path)}")
+    print(f"FULL_PETAL_B0_STATUS={unsigned_b0['status']}")
     return 0 if b0_pass else 1
 
 

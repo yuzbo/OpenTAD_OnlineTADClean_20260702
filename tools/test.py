@@ -16,7 +16,10 @@ from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import eval_one_epoch, resolve_amp_dtype
 from opentad.utils import update_workdir, set_seed, create_folder, setup_logger
-from opentad.utils.full_petal_launch import validate_full_petal_launch
+from opentad.utils.full_petal_launch import (
+    persist_launch_receipt,
+    validate_full_petal_launch,
+)
 
 
 def parse_args():
@@ -41,16 +44,36 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
-    validate_full_petal_launch(
+    checkpoint_path = None
+    if not cfg.inference.load_from_raw_predictions:
+        if args.checkpoint == "none" and args.launch_mode is not None:
+            raise RuntimeError(
+                "Full PETAL evaluation requires an explicit hash-bound --checkpoint"
+            )
+        if args.checkpoint != "none":
+            checkpoint_path = args.checkpoint
+
+    cfg_overrides = dict(args.cfg_options or {})
+
+    launch_authorization = validate_full_petal_launch(
         cfg,
         args.config,
         mode=args.launch_mode,
         ticket_path=args.launch_ticket,
         entrypoint="test",
-        cfg_override_keys=tuple((args.cfg_options or {}).keys()),
+        seed=args.seed,
+        run_id=args.id,
+        deterministic=True,
+        not_eval=args.not_eval,
+        resume_path=checkpoint_path,
+        cfg_overrides=cfg_overrides,
+        cfg_override_keys=tuple(cfg_overrides),
         environ=os.environ,
         repository_root=Path(__file__).resolve().parents[1],
     )
+    if launch_authorization is not None:
+        receipt_path = persist_launch_receipt(launch_authorization)
+        print(f"FULL_PETAL_LAUNCH_RECEIPT={receipt_path}")
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -93,11 +116,9 @@ def main():
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
-        if args.checkpoint != "none":
-            checkpoint_path = args.checkpoint
-        elif "test_epoch" in cfg.inference.keys():
+        if checkpoint_path is None and "test_epoch" in cfg.inference.keys():
             checkpoint_path = os.path.join(cfg.work_dir, f"checkpoint/epoch_{cfg.inference.test_epoch}.pth")
-        else:
+        elif checkpoint_path is None:
             checkpoint_path = os.path.join(cfg.work_dir, "checkpoint/best.pth")
         logger.info("Loading checkpoint from: {}".format(checkpoint_path))
         device = f"cuda:{args.rank % torch.cuda.device_count()}"

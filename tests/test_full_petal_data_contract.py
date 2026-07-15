@@ -20,8 +20,10 @@ from opentad.utils.full_petal_data_contract import (
     load_id_file,
     load_json,
     save_json,
+    sha256_file,
     validate_hardware_runtime_manifest,
     verify_content_hash,
+    _crosses_chunk_boundary,
 )
 
 
@@ -38,6 +40,11 @@ EXTRACTION_IDENTITY = {
     "stride": 4,
 }
 DEVELOPMENT_SPLIT_SEED = 20260713
+
+
+def test_chunk_boundary_uses_exact_decimal_arithmetic():
+    assert _crosses_chunk_boundary(0.3, 0.31, 0.1) is False
+    assert _crosses_chunk_boundary(0.29, 0.31, 0.1) is True
 
 
 def _ids(prefix, count):
@@ -697,11 +704,25 @@ def test_incomplete_fineaction_evidence_remains_unqualified():
     assert verify_content_hash(report)
 
 
-def _fineaction_qualification_gates(overlap_pairs=20):
+def _fineaction_qualification_gates(tmp_path, overlap_pairs=20):
     digest = "a" * 64
+    counter = 0
+    tmp_path.mkdir(parents=True, exist_ok=True)
 
     def check(evidence):
-        return {"mandatory": True, "passed": True, "evidence": evidence}
+        nonlocal counter
+        path = tmp_path / f"fineaction-evidence-{counter}.json"
+        counter += 1
+        save_json(path, evidence)
+        return {
+            "mandatory": True,
+            "passed": True,
+            "evidence": {
+                **evidence,
+                "artifact_path": str(path),
+                "artifact_sha256": sha256_file(path),
+            },
+        }
 
     return {
         "protocol": {
@@ -738,14 +759,14 @@ def _fineaction_qualification_gates(overlap_pairs=20):
     }
 
 
-def test_fineaction_qualification_enforces_identity_sample_thresholds():
+def test_fineaction_qualification_enforces_identity_sample_thresholds(tmp_path):
     failed = build_fineaction_qualification_report(
-        _fineaction_qualification_gates(overlap_pairs=19),
+        _fineaction_qualification_gates(tmp_path / "failed", overlap_pairs=19),
         seed=29,
         created_at=CREATED_AT,
     )
     passed = build_fineaction_qualification_report(
-        _fineaction_qualification_gates(overlap_pairs=20),
+        _fineaction_qualification_gates(tmp_path / "passed", overlap_pairs=20),
         seed=29,
         created_at=CREATED_AT,
     )
@@ -756,6 +777,24 @@ def test_fineaction_qualification_enforces_identity_sample_thresholds():
     ]["evidence_valid"] is False
     assert passed["status"] == "PASS"
     assert passed["qualified"] is True
+
+
+def test_fineaction_qualification_rejects_forged_or_tampered_evidence(tmp_path):
+    gates = _fineaction_qualification_gates(tmp_path / "tampered")
+    evidence = gates["protocol"]["license"]["evidence"]
+    Path(evidence["artifact_path"]).write_text(
+        json.dumps({"license_id": "different"}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = build_fineaction_qualification_report(
+        gates,
+        seed=29,
+        created_at=CREATED_AT,
+    )
+
+    assert report["status"] == "FAIL"
+    assert report["gates"]["protocol"]["checks"]["license"]["evidence_valid"] is False
 
 
 def test_cli_builds_deterministic_thumos_json_from_explicit_splits(tmp_path):

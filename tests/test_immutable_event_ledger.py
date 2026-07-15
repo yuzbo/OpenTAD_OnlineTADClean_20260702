@@ -129,15 +129,29 @@ def test_writer_rejects_duplicate_ids_and_decreasing_emit_frames():
 
 
 def test_builder_detaches_rows_from_caller_mutation():
-    event = _event("detached", payload={"scores": [0.5]})
+    event = _event("detached", segment=[0.25, 0.5])
     ledger = ImmutableEventLedger()
 
     row = ledger.append(event)
-    event["payload"]["scores"][0] = 99
-    row["payload"]["scores"][0] = 88
+    event["segment"][0] = 99
+    row["segment"][0] = 88
 
-    assert ledger.rows[0]["payload"]["scores"] == [0.5]
+    assert ledger.rows[0]["segment"] == [0.25, 0.5]
     verify_rows(ledger.rows)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"ground_truth": {"segment": [1, 2]}},
+        {"raw_prediction": {"scores": [0.9]}},
+        {"segment": {"nested": {"target": [1, 2]}}},
+        {"harmless_but_unregistered": 1},
+    ],
+)
+def test_formal_event_schema_rejects_gt_taint_and_all_unregistered_extras(extra):
+    with pytest.raises(LedgerValidationError, match="taint|schema differs"):
+        ImmutableEventLedger().append(_event("tainted", **extra))
 
 
 def test_atomic_writer_only_appends_and_can_resume_existing_chain(tmp_path):
@@ -203,6 +217,20 @@ def test_persisted_ledger_requires_external_commitment_and_round_trips(tmp_path)
 
     commitment_path.unlink()
     with pytest.raises(LedgerVerificationError, match="commitment"):
+        load_verified_ledger(ledger_path, commitment_path)
+
+
+def test_external_tail_commitment_rejects_a_valid_hash_chained_prefix(tmp_path):
+    source = ImmutableEventLedger()
+    first = source.append(_event("first", emit_frame=3))
+    source.append(_event("second", emit_frame=5))
+    ledger_path = tmp_path / "formal.jsonl"
+    commitment_path = tmp_path / "formal.commitment.json"
+    persist_verified_ledger(ledger_path, commitment_path, source.rows)
+
+    _write_rows(ledger_path, [first])
+
+    with pytest.raises(LedgerVerificationError, match="hash|truncated"):
         load_verified_ledger(ledger_path, commitment_path)
 
 

@@ -2,7 +2,11 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable, List
 
-from .immutable_event_ledger import LedgerVerificationError, verify_rows
+from .immutable_event_ledger import (
+    LedgerVerificationError,
+    load_verified_ledger,
+    verify_rows,
+)
 
 
 class ProtocolViolation(ValueError):
@@ -161,8 +165,8 @@ def sort_emission_ledger(result_dict):
     return sorted_results
 
 
-def verified_emission_result_dict(result_dict):
-    """Verify formal rows without changing ledger chronology or video ownership."""
+def verify_emission_result_dict_rows(result_dict):
+    """Internal pre-persistence verification; never sufficient for evaluation."""
 
     if not isinstance(result_dict, dict):
         raise LedgerVerificationError("formal emission results must be a video mapping")
@@ -189,6 +193,16 @@ def verified_emission_result_dict(result_dict):
     verified = {video_id: [] for video_id in video_order}
     for row in report.rows:
         verified[row["video_id"]].append(dict(row))
+    return verified
+
+
+def verified_emission_result_dict(ledger_path, commitment_path):
+    """Load evaluator rows only from a ledger with an external tail commitment."""
+
+    report = load_verified_ledger(ledger_path, commitment_path)
+    verified = {}
+    for row in report.rows:
+        verified.setdefault(row["video_id"], []).append(dict(row))
     return verified
 
 

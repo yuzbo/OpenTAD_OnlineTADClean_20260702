@@ -261,5 +261,8 @@ def test_model_metadata_is_detached_json_native_and_causally_validated():
 
     with pytest.raises(StreamMetadataError, match="future source frame"):
         validate_model_meta(_causal_meta(source_frames=(3, 12), current_frame=11))
+    for field in ("packet_end_frame", "window_end_frame"):
+        with pytest.raises(StreamMetadataError, match="future source frame"):
+            validate_model_meta(_causal_meta(current_frame=11, **{field: 12}))
     with pytest.raises(StreamMetadataError, match="JSON serializable"):
         sanitize_stream_metadata(_causal_meta(encoder_policy={"layers": {1, 2}}))

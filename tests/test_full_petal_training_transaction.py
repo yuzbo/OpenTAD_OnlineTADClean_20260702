@@ -1,4 +1,6 @@
 from dataclasses import replace
+import hashlib
+import json
 
 import pytest
 import torch
@@ -40,6 +42,28 @@ def _head():
         end_threshold=1.1,
         refractory_steps=1,
     )
+
+
+def test_stream_key_uses_structured_identity_without_delimiter_collisions():
+    left = _stream_key(
+        {
+            "video_id": "x|stream=y",
+            "stream_id": "z",
+            "input_format": "cached",
+            "feature_stride": 8,
+        }
+    )
+    right = _stream_key(
+        {
+            "video_id": "x",
+            "stream_id": "y|stream=z",
+            "input_format": "cached",
+            "feature_stride": 8,
+        }
+    )
+
+    assert left != right
+    assert left.startswith("stream:") and len(left) == len("stream:") + 64
 
 
 def _meta(source_frames):
@@ -250,10 +274,11 @@ class _Scheduler:
 
 
 class _TransactionalToy(torch.nn.Module):
-    def __init__(self, *, fail_second=False):
+    def __init__(self, *, fail_second=False, fail_commit=False):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(0.0))
         self.fail_second = fail_second
+        self.fail_commit = fail_commit
         self.forward_calls = 0
         self.pending = False
         self.commits = 0
@@ -267,6 +292,8 @@ class _TransactionalToy(torch.nn.Module):
 
     def commit_online_update(self):
         assert self.pending
+        if self.fail_commit:
+            raise RuntimeError("injected commit failure")
         self.pending = False
         self.commits += 1
 
@@ -326,6 +353,59 @@ class _ProfileBackend:
         return 4096
 
 
+class _StatefulScaler:
+    def __init__(self):
+        self.calls = {"unscale": 0, "step": 0, "update": 0}
+
+    def scale(self, value):
+        return value
+
+    def unscale_(self, optimizer):
+        del optimizer
+        self.calls["unscale"] += 1
+
+    def step(self, optimizer):
+        self.calls["step"] += 1
+        optimizer.step()
+
+    def update(self):
+        self.calls["update"] += 1
+
+    def state_dict(self):
+        return dict(self.calls)
+
+
+class _OptimizerEventRecorder:
+    def __init__(self):
+        self.calls = []
+
+    def record(self, **event):
+        self.calls.append(dict(event))
+
+
+def _state_digest(value):
+    digest = hashlib.sha256()
+
+    def update(item):
+        if torch.is_tensor(item):
+            tensor = item.detach().cpu().contiguous()
+            digest.update(str(tensor.dtype).encode("ascii"))
+            digest.update(json.dumps(list(tensor.shape)).encode("ascii"))
+            digest.update(tensor.numpy().tobytes())
+        elif isinstance(item, dict):
+            for key in sorted(item, key=str):
+                digest.update(str(key).encode("utf-8"))
+                update(item[key])
+        elif isinstance(item, (list, tuple)):
+            for child in item:
+                update(child)
+        else:
+            digest.update(repr(item).encode("utf-8"))
+
+    update(value)
+    return digest.hexdigest()
+
+
 def test_train_engine_steps_once_per_complete_episode():
     model = _TransactionalToy()
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -345,6 +425,33 @@ def test_train_engine_steps_once_per_complete_episode():
     assert model.commits == 1
     assert model.rollbacks == 0
     assert scheduler.steps == 1
+
+
+def test_train_engine_records_one_successful_event_per_complete_episode():
+    model = _TransactionalToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    recorder = _OptimizerEventRecorder()
+
+    train_one_epoch(
+        _toy_loader(),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=4,
+        logger=_Logger(),
+        logging_interval=10,
+        optimizer_event_recorder=recorder,
+    )
+
+    assert recorder.calls == [
+        {
+            "epoch": 4,
+            "episode_id": "video",
+            "input_tokens": 2,
+            "skipped": False,
+        }
+    ]
 
 
 def test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step():
@@ -367,6 +474,71 @@ def test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step():
     assert model.rollbacks == 1
     assert scheduler.steps == 0
     assert torch.equal(model.weight.detach(), before)
+
+
+def test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event():
+    model = _TransactionalToy(fail_second=True)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    recorder = _OptimizerEventRecorder()
+
+    train_one_epoch(
+        _toy_loader(),
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=2,
+        logger=_Logger(),
+        logging_interval=10,
+        optimizer_event_recorder=recorder,
+    )
+
+    assert recorder.calls == [
+        {
+            "epoch": 2,
+            "episode_id": "video",
+            "input_tokens": 2,
+            "skipped": True,
+        }
+    ]
+
+
+def test_commit_failure_precedes_all_parameter_optimizer_scheduler_and_scaler_mutation():
+    model = _TransactionalToy(fail_commit=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
+    scheduler = _Scheduler()
+    scaler = _StatefulScaler()
+    recorder = _OptimizerEventRecorder()
+    before = {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": scheduler.steps,
+        "scaler": _state_digest(scaler.state_dict()),
+    }
+
+    with pytest.raises(RuntimeError, match="injected commit failure"):
+        train_one_epoch(
+            _toy_loader(),
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            logging_interval=10,
+            scaler=scaler,
+            optimizer_event_recorder=recorder,
+        )
+
+    after = {
+        "model": _state_digest(model.state_dict()),
+        "optimizer": _state_digest(optimizer.state_dict()),
+        "scheduler": scheduler.steps,
+        "scaler": _state_digest(scaler.state_dict()),
+    }
+    assert after == before
+    assert model.rollbacks == 1
+    assert model.pending is False
+    assert recorder.calls == []
 
 
 def test_fixed_step_profile_stops_only_after_committed_episode_boundary():

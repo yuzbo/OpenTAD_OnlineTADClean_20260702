@@ -30,6 +30,38 @@ _ENVELOPE_FIELDS = frozenset(
     }
 )
 _RESERVED_EVENT_FIELDS = _ENVELOPE_FIELDS | frozenset({"prev_hash"})
+_REQUIRED_EVENT_FIELDS = frozenset(
+    {
+        "event_id",
+        "stream_id",
+        "video_id",
+        "immutable",
+        "slot_id",
+        "label",
+        "score",
+        "start_frame",
+        "end_frame",
+        "emit_frame",
+        "source_frame",
+        "provenance_digest",
+    }
+)
+_OPTIONAL_EVENT_FIELDS = frozenset(
+    {
+        "stream_key",
+        "input_provenance_digest",
+        "segment",
+        "emit_time_sec",
+        "source_time_sec",
+        "fps",
+        "latency_frames",
+        "latency_sec",
+        "predicted_end_latency_sec",
+        "latency_definition",
+    }
+)
+_EVENT_FIELDS = _REQUIRED_EVENT_FIELDS | _OPTIONAL_EVENT_FIELDS
+_TAINT_TOKENS = frozenset({"ground_truth", "groundtruth", "gt", "target", "raw_prediction"})
 _MUTATION_OPERATION_KEYS = frozenset(
     {
         "action",
@@ -176,6 +208,26 @@ def _reject_mutation_semantics(value, path="event"):
             _reject_mutation_semantics(item, f"{path}[{index}]")
 
 
+def _reject_evaluation_taint(
+    value, path="event", error_type=LedgerValidationError
+):
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = _normalized_key(key)
+            compact = normalized.replace("_", "")
+            if (
+                normalized in _TAINT_TOKENS
+                or compact in {token.replace("_", "") for token in _TAINT_TOKENS}
+            ):
+                raise error_type(
+                    f"formal emission ledger forbids GT/target/raw-prediction taint at {path}.{key}"
+                )
+            _reject_evaluation_taint(item, f"{path}.{key}", error_type)
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _reject_evaluation_taint(item, f"{path}[{index}]", error_type)
+
+
 def _required_text(value, field, error_type):
     if not isinstance(value, str) or not value.strip():
         raise error_type(f"ledger {field} must be a non-empty string")
@@ -230,6 +282,16 @@ def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_i
         raise error_type(f"ledger event contains reserved fields: {collisions}")
 
     payload = dict(event)
+    _reject_mutation_semantics(payload)
+    _reject_evaluation_taint(payload, error_type=error_type)
+    if payload.get("immutable") is not True:
+        raise error_type("ledger event must explicitly contain immutable=true")
+    missing = sorted(_REQUIRED_EVENT_FIELDS.difference(payload))
+    extra = sorted(set(payload).difference(_EVENT_FIELDS))
+    if missing or extra:
+        raise error_type(
+            f"ledger event schema differs; missing={missing}, extra={extra}"
+        )
     embedded_stream_id = payload.get("stream_id")
     stream_key = payload.get("stream_key")
     if stream_id is None:
@@ -275,7 +337,6 @@ def _validate_event_payload(event, *, error_type=LedgerValidationError, stream_i
             f"ledger start_frame={start_frame} exceeds end_frame={end_frame}"
         )
 
-    _reject_mutation_semantics(payload)
     payload["stream_id"] = stream_id
     payload["event_id"] = event_id
     payload["video_id"] = video_id

@@ -395,7 +395,14 @@ def validate_model_meta(model_meta):
     if "current_frame" in canonical:
         current = canonical["current_frame"]
         observed = []
-        for field in ("source_frame", "max_cache_source_frame"):
+        for field in (
+            "source_frame",
+            "max_cache_source_frame",
+            "packet_start_frame",
+            "packet_end_frame",
+            "window_start_frame",
+            "window_end_frame",
+        ):
             if field in canonical:
                 observed.append(canonical[field])
         for field in _MODEL_FRAME_SEQUENCES:

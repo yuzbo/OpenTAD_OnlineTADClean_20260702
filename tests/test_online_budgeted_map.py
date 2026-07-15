@@ -53,6 +53,17 @@ def _evaluator(
         require_ledger=False,
     )
     arguments.update(overrides)
+    if arguments["require_ledger"] and rows and "schema" in rows[0]:
+        from opentad.utils.immutable_event_ledger import persist_verified_ledger
+
+        index = len(list(tmp_path.glob("formal-*.jsonl")))
+        ledger_path = tmp_path / f"formal-{index}.jsonl"
+        commitment_path = tmp_path / f"formal-{index}.commitment.json"
+        persist_verified_ledger(ledger_path, commitment_path, rows)
+        arguments["prediction_filename"] = {
+            "ledger_path": str(ledger_path),
+            "commitment_path": str(commitment_path),
+        }
     return OnlineAPBudgeted(**arguments)
 
 
@@ -236,7 +247,7 @@ def test_nonfinite_protocol_parameters_are_rejected(tmp_path, overrides, message
 
 
 def test_formal_evaluator_requires_a_hash_verified_ledger(tmp_path):
-    with pytest.raises(ValueError, match="envelope"):
+    with pytest.raises(ValueError, match="ledger_path|commitment_path|tail"):
         _evaluator(
             tmp_path,
             [{"segment": [0.0, 10.0], "label": "Action"}],

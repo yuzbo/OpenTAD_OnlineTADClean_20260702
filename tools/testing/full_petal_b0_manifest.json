@@ -1,0 +1,848 @@
+{
+  "audit_checks": [
+    "python_syntax",
+    "git_diff_check",
+    "repository_clean_after"
+  ],
+  "runner_sources": [
+    {
+      "path": "tools/run_full_petal_b0.py",
+      "sha256": "889cc83cce85787bf7afed380411b4358a029eaf41ce947e4bedf09f10a9e56c"
+    },
+    {
+      "path": "tools/testing/run_isolated_torch_pytest.py",
+      "sha256": "eef6e35a9fa90816e034bbbc7be18875b6dc54f8f38a871adde8b5248ba8e086"
+    },
+    {
+      "path": "tools/build_full_petal_b0_manifest.py",
+      "sha256": "17a6e4465ee2d38918e4da1a7e3de04ad349e2bce8fdb4d4f2117f1e8eb748d7"
+    },
+    {
+      "path": "tools/build_full_petal_run_manifest.py",
+      "sha256": "0ac39271eff25465e884bd7ef0fccf3e25c0be971c2045293b943e8e6c7095ad"
+    },
+    {
+      "path": "opentad/utils/full_petal_b0.py",
+      "sha256": "59201daa2aae059d3f6052840272b61832417e6fe38068d5612c6a9263c308d5"
+    },
+    {
+      "path": "opentad/utils/full_petal_attestation.py",
+      "sha256": "3c45e9402b15c82adcd3f30e0de8c279a059ae6ab6bb8f26241d826a246515b6"
+    },
+    {
+      "path": "opentad/utils/full_petal_launch.py",
+      "sha256": "285c5a5edbd514070b6b7709aad37a3d717375ca59b2eeff8bbab789b35e4bfe"
+    },
+    {
+      "path": "tools/check_full_petal_results.py",
+      "sha256": "eb0d4a2455205d44431b9a313f930580a926cc4866acfc08cbe08f44b6a9733b"
+    }
+  ],
+  "schema_version": "full-petal-b0-manifest-v1",
+  "suite_order": [
+    "all_contracts"
+  ],
+  "suites": [
+    {
+      "canonical_argv": [
+        "$TORCH_PYTHON",
+        "tools/testing/run_isolated_torch_pytest.py",
+        "--repo-root",
+        "$REPO_ROOT",
+        "--",
+        "tests/test_analyze_ontad_instances.py",
+        "tests/test_causal_compliance_audit.py",
+        "tests/test_causal_compliance_cli.py",
+        "tests/test_causal_temporalmaxer_proj.py",
+        "tests/test_causaltad_config_contracts.py",
+        "tests/test_claim_hygiene.py",
+        "tests/test_core_single_process_contracts.py",
+        "tests/test_df_rpa_feature_gate.py",
+        "tests/test_final_online_tad_contracts.py",
+        "tests/test_fixed_step_profile.py",
+        "tests/test_formal_evaluation_ledger.py",
+        "tests/test_full_petal_data_contract.py",
+        "tests/test_full_petal_detector_contracts.py",
+        "tests/test_full_petal_identity.py",
+        "tests/test_full_petal_launch_contracts.py",
+        "tests/test_full_petal_launch_gate.py",
+        "tests/test_full_petal_metrics.py",
+        "tests/test_full_petal_registry_build.py",
+        "tests/test_full_petal_result_gate.py",
+        "tests/test_full_petal_run_manifest_cli.py",
+        "tests/test_full_petal_training_cost_controls.py",
+        "tests/test_full_petal_training_evidence.py",
+        "tests/test_full_petal_training_transaction.py",
+        "tests/test_immutable_event_ledger.py",
+        "tests/test_map_evaluator_contracts.py",
+        "tests/test_model_causal_replay.py",
+        "tests/test_online_budgeted_map.py",
+        "tests/test_online_censored_training.py",
+        "tests/test_online_emission_protocol.py",
+        "tests/test_online_protocol_audit.py",
+        "tests/test_ontad_feature_cache.py",
+        "tests/test_optimizer_audit.py",
+        "tests/test_p0_review_hardening.py",
+        "tests/test_pceh_config_contracts.py",
+        "tests/test_pceh_incremental_detector.py",
+        "tests/test_pceh_launch_contracts.py",
+        "tests/test_pceh_route_metadata.py",
+        "tests/test_persistent_event_set_detector.py",
+        "tests/test_persistent_event_set_head.py",
+        "tests/test_pes_stage1_config_contracts.py",
+        "tests/test_pes_stage1_launch_contracts.py",
+        "tests/test_pes_stage1_result_gate.py",
+        "tests/test_pes_stage1_run_summary.py",
+        "tests/test_prefix_event_emission_head.py",
+        "tests/test_prefix_event_targets.py",
+        "tests/test_prefix_instance_schedule.py",
+        "tests/test_prefix_trajectory_supervision.py",
+        "tests/test_raw_frame_bounds.py",
+        "tests/test_siglip_ontad_contracts.py",
+        "tests/test_siglip_ontad_runtime_smoke.py",
+        "tests/test_stream_control.py",
+        "tests/test_stream_smoke_runner.py",
+        "tests/test_streaming_feature_dataset.py",
+        "tests/test_streaming_raw_frame_dataset.py",
+        "tests/test_training_update_audit.py",
+        "tests/test_videomae_matr_ontad_contracts.py",
+        "tests/test_videomae_matr_runtime_smoke.py",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--junitxml",
+        "$JUNIT"
+      ],
+      "name": "all_contracts",
+      "runner": "isolated_torch",
+      "test_files": [
+        {
+          "path": "tests/test_analyze_ontad_instances.py",
+          "sha256": "ae662209eca0097c23a5cb4b8c2890c6e3469478973a79035d013ce32a555803",
+          "test_functions": [
+            "test_concurrency_keeps_same_class_instances_separate_and_ignores_touching_boundaries",
+            "test_invalid_segments_are_audited_instead_of_counted"
+          ]
+        },
+        {
+          "path": "tests/test_causal_compliance_audit.py",
+          "sha256": "552a112a229b4cf8c0f38ec79044bc1b3bcc0ceae5cb3df31f3e2c26f0bc4d6d",
+          "test_functions": [
+            "test_future_perturbation_accepts_prefix_only_runner",
+            "test_future_perturbation_reports_first_divergence",
+            "test_chunk_invariance_compares_logical_timestamps_not_transport_fields",
+            "test_chunk_invariance_rejects_chunk_dependent_predictions",
+            "test_eos_audit_rejects_terminal_metadata_on_intermediate_packet",
+            "test_packet_audit_accepts_new_monotonic_packets_and_terminal_duration",
+            "test_packet_audit_rejects_overlap_or_replayed_frames",
+            "test_batch_isolation_accepts_stream_local_state",
+            "test_batch_isolation_detects_cross_stream_state",
+            "test_recorded_trace_equivalence_supports_offline_audit_artifacts",
+            "test_emission_ledger_audits_immutable_read_provenance"
+          ]
+        },
+        {
+          "path": "tests/test_causal_compliance_cli.py",
+          "sha256": "1511a50c3c3603f9c01a7c00c48a5129dcfa9e07f3f288dc544ca7d2ad8188b2",
+          "test_functions": [
+            "test_packet_cli_returns_machine_readable_pass_report",
+            "test_recorded_future_perturbation_cli_fails_at_first_changed_prefix"
+          ]
+        },
+        {
+          "path": "tests/test_causal_temporalmaxer_proj.py",
+          "sha256": "a084ec4ed0af9efce1fc92a5729fb368a77ca77a58293f37d3c37b32077b4907",
+          "test_functions": [
+            "test_causal_temporalmaxer_proj_does_not_change_past_outputs_when_future_changes",
+            "test_causal_temporalmaxer_proj_rejects_noncausal_stem_or_flag"
+          ]
+        },
+        {
+          "path": "tests/test_causaltad_config_contracts.py",
+          "sha256": "7c00f430714b4fcd0b767bdba1807842a9f846fd526ade86dbaf1945be486d4c",
+          "test_functions": [
+            "test_causaltad_n16r4_configs_load_and_keep_protocol",
+            "test_causal_projection_is_online_causal_route",
+            "test_vit_adapter_imported_rasterizer_is_present"
+          ]
+        },
+        {
+          "path": "tests/test_claim_hygiene.py",
+          "sha256": "99f27535c498a81627b624f66b78fbfd76ba75f660fd7c25a360040aeaa71b96",
+          "test_functions": [
+            "test_siglip_route_configs_do_not_overclaim_formal_or_paper_ready_status",
+            "test_all_raw_frame_routes_keep_formal_training_ready_false_until_online_eval_exists",
+            "test_readme_labels_current_raw_frame_routes_as_validation_candidates"
+          ]
+        },
+        {
+          "path": "tests/test_core_single_process_contracts.py",
+          "sha256": "36d001cd65724251ae2991341ea738f1120664ba9dd2c72dbf593f4c0b07de0b",
+          "test_functions": [
+            "test_core_training_helpers_do_not_assume_ddp_module_wrapper",
+            "test_train_one_epoch_supports_unwrapped_single_process_model",
+            "test_build_optimizer_supports_unwrapped_single_process_model"
+          ]
+        },
+        {
+          "path": "tests/test_df_rpa_feature_gate.py",
+          "sha256": "e278aed51adf1041182d26d88d1539d88643f87b5baafeb41f0bb73e887077e3",
+          "test_functions": [
+            "test_precision_at_k_uses_same_candidate_records_for_all_scores",
+            "test_load_candidate_records_from_jsonl",
+            "test_precision_at_k_rejects_missing_score_field"
+          ]
+        },
+        {
+          "path": "tests/test_final_online_tad_contracts.py",
+          "sha256": "9ebb07171f694ba1844e0db692325b06aaca20adc6c76f4541131d155bc0ed31",
+          "test_functions": [
+            "test_legacy_final_route_is_truthfully_labeled_chunk_end_baseline",
+            "test_selector_source_is_selected_only_before_heavy_encoder",
+            "test_irregular_decode_and_online_map_modules_exist",
+            "test_streaming_protocol_tracks_source_frame_separately_from_segment_end"
+          ]
+        },
+        {
+          "path": "tests/test_fixed_step_profile.py",
+          "sha256": "c2240dde3cfe8e9697cfcebe1d5fc1927d4a376f2c51e7c2854cf864a8369d0d",
+          "test_functions": [
+            "test_fixed_step_profile_measures_exact_events_after_warmup",
+            "test_zero_warmup_starts_before_first_measured_event",
+            "test_profile_state_can_span_multiple_epoch_calls",
+            "test_any_skipped_optimizer_event_invalidates_profile",
+            "test_profile_rejects_invalid_event_counts"
+          ]
+        },
+        {
+          "path": "tests/test_formal_evaluation_ledger.py",
+          "sha256": "33e914d3fdaaa902cbf78f8e562900d5bf550cc37019912a75a60bae7445e431",
+          "test_functions": [
+            "test_verified_results_preserve_hash_chain_order_for_same_frame_emissions",
+            "test_verified_results_reject_video_bucket_rebinding",
+            "test_verified_results_reject_unhashed_legacy_rows"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_data_contract.py",
+          "sha256": "64e7678078c3b49ded801d3ae25956453aa5891214ef6592e7566012548640cd",
+          "test_functions": [
+            "test_chunk_boundary_uses_exact_decimal_arithmetic",
+            "test_strict_thumos_annotation_subsets_lock_canonical_160_40",
+            "test_thumos_development_split_is_exact_stratified_and_hashed",
+            "test_thumos_development_split_ignores_annotation_dictionary_order",
+            "test_thumos_development_split_seed_is_reproducible_and_breaks_ties",
+            "test_thumos_development_split_rejects_malformed_annotations",
+            "test_thumos_development_split_rejects_non_200_duplicate_and_impossible_counts",
+            "test_cli_writes_thumos_development_ids_and_path_free_manifest",
+            "test_strict_thumos_explicit_split_files_are_supported",
+            "test_thumos_protocol_rejects_overlap_even_without_strict_counts",
+            "test_thumos_protocol_rejects_duplicates_missing_ids_and_wrong_counts",
+            "test_id_file_loader_rejects_whitespace_and_duplicate_coercion",
+            "test_historical_211_manifest_reports_exact_diff_against_observed_213",
+            "test_historical_reporting_counts_are_strict",
+            "test_strict_reporting_comparison_rejects_unexplained_211_213_difference",
+            "test_hashes_and_saved_json_are_deterministic",
+            "test_hardware_runtime_manifest_validates_fixed_step_profile",
+            "test_hardware_runtime_validation_rejects_invalid_required_fields",
+            "test_incomplete_fineaction_evidence_remains_unqualified",
+            "test_fineaction_qualification_enforces_identity_sample_thresholds",
+            "test_fineaction_qualification_rejects_forged_or_tampered_evidence",
+            "test_cli_builds_deterministic_thumos_json_from_explicit_splits",
+            "test_cli_loads_and_saves_reporting_hardware_and_fineaction_json"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_detector_contracts.py",
+          "sha256": "64ab6be7b57b4f7a72f26948eaaced5a0f8f3dfd4e24afc28786e022be6860f7",
+          "test_functions": [
+            "test_runtime_state_schema_has_no_training_identity_or_terminal_fields",
+            "test_inference_rejects_terminal_metadata_and_has_no_supervision_argument",
+            "test_single_active_instance_has_identical_fixed_and_rematch_losses",
+            "test_episode_scan_matches_incremental_cached_execution",
+            "test_future_feature_perturbation_does_not_change_earlier_prefix_logits",
+            "test_inference_masked_tail_does_not_advance_the_decision_clock",
+            "test_formal_emission_is_hash_chained_and_standard_evaluator_ready",
+            "test_two_active_one_factor_changes_only_loss_binding_and_its_gradient"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_identity.py",
+          "sha256": "419c9a7d9fd518b69080e48b47c0643cdd3fc7b0add4d21af557724beb3277e3",
+          "test_functions": [
+            "test_data_identity_dereferences_every_feature_and_rejects_tampering",
+            "test_scientific_source_identity_excludes_only_authorization_config",
+            "test_profile_reuse_accepts_exact_authorization_literals_only",
+            "test_runtime_identity_hash_binds_resume_checkpoint_contents",
+            "test_slurm_identity_is_parsed_and_bound_to_active_allocation"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_launch_contracts.py",
+          "sha256": "c6ee151e721c766732a3429cd9e41a12755fc99af686ae0ca96928f62354b58b",
+          "test_functions": [
+            "test_q2_bridge_configs_change_only_post_birth_loss_binding",
+            "test_q2_bridge_freezes_scientific_and_cost_contracts",
+            "test_q2_configs_keep_pointer_hazard_and_raw_video_out_of_c1_gate",
+            "test_streaming_evaluator_does_not_inject_rank_into_model_metadata",
+            "test_full_petal_gate_runs_before_ddp_and_cuda_in_every_entrypoint",
+            "test_profile_path_exits_before_checkpoint_or_evaluation",
+            "test_test_entrypoint_uses_resolved_amp_dtype",
+            "test_legacy_smoke_cannot_launch_full_petal",
+            "test_ticket_builder_and_slurm_launcher_use_the_locked_gate",
+            "test_ticket_builder_requires_external_non_overwritable_output",
+            "test_isolated_torch_runner_bypasses_only_package_level_registration",
+            "test_b0_runner_emits_hashed_junit_logs_and_requires_clean_repo"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_launch_gate.py",
+          "sha256": "9fe1e381905fedbcde8e6033effab87a7574d4a7b6de9396481821a840ad0666",
+          "test_functions": [
+            "test_non_full_petal_config_does_not_require_a_ticket",
+            "test_profile_requires_signed_b0_same_reviewer_and_bound_runtime",
+            "test_launch_receipt_binds_ticket_runtime_and_slurm_without_overwrite",
+            "test_unsigned_self_consistent_review_is_rejected",
+            "test_tampered_b0_leaf_is_rejected_even_when_root_is_unchanged",
+            "test_b0_bundle_remains_verifiable_after_directory_relocation",
+            "test_profile_rejects_runtime_slurm_dirty_and_signing_key_mismatch",
+            "test_ticket_builder_uses_the_same_signed_prerequisites",
+            "test_formal_ticket_rejects_resume_until_trace_continuation_exists",
+            "test_profile_artifact_is_signed_and_binds_exact_authorization",
+            "test_formal_launch_accepts_only_later_authorization_only_commit",
+            "test_formal_profile_reuse_rejects_non_authorization_diff"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_metrics.py",
+          "sha256": "631d55f6113a7b96e8e87edce1685a616ae42aef0fd90ef06dcc4a84caf114de",
+          "test_functions": [
+            "test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable",
+            "test_fragmentation_requires_multiple_subthreshold_parts_with_joint_coverage",
+            "test_diagnostic_matching_maximizes_cardinality_before_pairwise_tiou",
+            "test_diagnostic_matching_applies_endpoint_latency_budget",
+            "test_temporal_matching_has_deterministic_ground_truth_tie_breaking",
+            "test_explicit_frame_bounds_take_precedence_over_display_segment_units",
+            "test_causal_validation_rejects_future_tainted_or_mutable_rows",
+            "test_causal_validation_rejects_nonmonotonic_stream_order",
+            "test_lifecycle_metrics_count_slot_survival_and_target_binding_shuffles"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_registry_build.py",
+          "sha256": "d9b661e46b30ccdd5bdf512e153f8d6325570eb68b4cc6122974b7f8c9a53508",
+          "test_functions": [
+            "test_locked_q2_config_builds_through_real_mmengine_registry"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_result_gate.py",
+          "sha256": "b0bfbe2be3cc4473b99788cc91c47b5aee3f1299ffc1da403396a8a8943aa2d7",
+          "test_functions": [
+            "test_signed_replay_can_pass_independent_claim_and_project_gates",
+            "test_c1_and_c2_remain_independent",
+            "test_gate_rejects_handwritten_metrics_cost_and_pass_flags",
+            "test_gate_rejects_unsigned_or_tampered_run_evidence",
+            "test_gate_rejects_self_consistent_evaluation_ticket_for_wrong_checkpoint",
+            "test_gate_rejects_signed_receipt_without_active_slurm_allocation",
+            "test_gate_rejects_unsigned_prerequisite_after_all_outer_hashes_are_rebuilt",
+            "test_project_gate_requires_reporting_and_fineaction_evidence",
+            "test_c1_map_gain_cannot_hide_worse_duplicate_and_fragmentation",
+            "test_cli_reports_malformed_input_without_claiming_science"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_run_manifest_cli.py",
+          "sha256": "504a02fd31521e8fb8832cfc4653438a99b61142de1edfd454a99c45e6cda31c",
+          "test_functions": [
+            "test_cli_builds_manifest_from_ticket_commit_and_canonical_protocol",
+            "test_manifest_builder_rejects_missing_role_and_ticket_seed_mismatch"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_training_cost_controls.py",
+          "sha256": "4ae2cd09c681db80db61a9e6344621b002f05ec0c54eac4e1778f0aa7c8f45a3",
+          "test_functions": [
+            "test_q2_training_registers_bf16_and_fixed_step_profile_contract",
+            "test_precision_resolver_distinguishes_fp16_bf16_and_disabled",
+            "test_training_entrypoint_passes_registered_dtype_to_train_val_and_eval",
+            "test_engine_uses_amp_without_requiring_a_grad_scaler",
+            "test_streaming_scheduler_uses_complete_video_events_not_chunk_count"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_training_evidence.py",
+          "sha256": "f0a8b0b07894da2f58c209aba82073122c99fbf3031bd2edef9f8126c1d84ece",
+          "test_functions": [
+            "test_training_cost_is_derived_from_committed_optimizer_events",
+            "test_optimizer_event_recorder_commits_exact_runtime_events",
+            "test_optimizer_event_recorder_refuses_empty_or_overwritten_evidence",
+            "test_training_tail_commitment_rejects_valid_prefix_truncation",
+            "test_formal_run_manifest_requires_trusted_signature_and_artifact_hashes"
+          ]
+        },
+        {
+          "path": "tests/test_full_petal_training_transaction.py",
+          "sha256": "e21f4b2402b9e3dd72cd9ad8bc4bb286e05fc6cf7f9a203caae151c966267709",
+          "test_functions": [
+            "test_stream_key_uses_structured_identity_without_delimiter_collisions",
+            "test_training_forward_stages_state_across_chunks_until_atomic_commit",
+            "test_training_rollback_discards_staged_state_and_allows_clean_restart",
+            "test_failed_episode_does_not_mutate_caller_supervision_state",
+            "test_masked_tail_neither_advances_state_nor_accepts_supervision",
+            "test_training_birth_mask_excludes_runtime_refractory_slot",
+            "test_inference_rejects_training_targets_even_in_control_plane",
+            "test_train_engine_steps_once_per_complete_episode",
+            "test_train_engine_records_one_successful_event_per_complete_episode",
+            "test_nonfinite_episode_rolls_back_state_and_skips_optimizer_step",
+            "test_nonfinite_episode_records_consumed_tokens_as_a_skipped_event",
+            "test_commit_failure_precedes_all_parameter_optimizer_scheduler_and_scaler_mutation",
+            "test_fixed_step_profile_stops_only_after_committed_episode_boundary"
+          ]
+        },
+        {
+          "path": "tests/test_immutable_event_ledger.py",
+          "sha256": "00307583add228458ec30929bba4301df9fa252c0c0f6f1d7d56f24e48c98e28",
+          "test_functions": [
+            "test_canonical_json_and_row_hash_are_order_independent",
+            "test_in_memory_ledger_builds_independent_per_stream_chains",
+            "test_writer_rejects_non_immutable_future_mutating_or_noncanonical_events",
+            "test_writer_requires_immutable_marker_and_rejects_reserved_fields",
+            "test_writer_requires_complete_formal_emission_provenance",
+            "test_writer_rejects_duplicate_ids_and_decreasing_emit_frames",
+            "test_builder_detaches_rows_from_caller_mutation",
+            "test_formal_event_schema_rejects_gt_taint_and_all_unregistered_extras",
+            "test_atomic_writer_only_appends_and_can_resume_existing_chain",
+            "test_atomic_writer_holds_one_exclusive_process_lease",
+            "test_persisted_ledger_requires_external_commitment_and_round_trips",
+            "test_external_tail_commitment_rejects_a_valid_hash_chained_prefix",
+            "test_atomic_writer_rejects_same_size_external_edits",
+            "test_verifier_detects_edited_and_reordered_rows",
+            "test_verifier_detects_duplicate_event_ids_and_replayed_rows",
+            "test_verifier_detects_cross_stream_predecessor",
+            "test_expected_count_or_final_hash_detects_truncation"
+          ]
+        },
+        {
+          "path": "tests/test_map_evaluator_contracts.py",
+          "sha256": "503f68dfa7ca9ac6f79fc45b179b5c0b350646f1c86d509c2e114311b222d95b",
+          "test_functions": [
+            "test_map_evaluator_filters_ground_truth_and_predictions_to_allowed_videos"
+          ]
+        },
+        {
+          "path": "tests/test_model_causal_replay.py",
+          "sha256": "ba7b06adfde8b3c76c7dfa8850ad82637ece3fa2953ec18be91cb05ac1198764",
+          "test_functions": [
+            "test_future_perturbation_replay_preserves_every_prefix_field",
+            "test_future_perturbation_preserves_normalized_image_domain",
+            "test_future_perturbation_requires_a_nonempty_future_suffix",
+            "test_future_perturbation_rejects_an_input_insensitive_model",
+            "test_model_audit_cli_loads_checkpoint_and_writes_replay_report"
+          ]
+        },
+        {
+          "path": "tests/test_online_budgeted_map.py",
+          "sha256": "08f32e08cb7e2dca1fe67be7fceb2554c471560fc38833f8495d9de59851cb8b",
+          "test_functions": [
+            "test_late_prediction_is_false_positive_and_does_not_delete_ground_truth",
+            "test_late_only_prediction_is_fp_while_gt_remains_fn",
+            "test_latency_budget_sweep_changes_eligibility_without_dropping_rows",
+            "test_primary_latency_uses_matched_gt_end_not_predicted_end",
+            "test_emission_before_ground_truth_end_cannot_match",
+            "test_duplicate_timely_prediction_is_false_positive",
+            "test_future_read_provenance_is_rejected",
+            "test_frame_ledger_uses_explicit_evaluator_fps",
+            "test_distinct_identical_ground_truth_instances_are_not_deduplicated",
+            "test_nonfinite_prediction_values_are_rejected",
+            "test_nonfinite_protocol_parameters_are_rejected",
+            "test_formal_evaluator_requires_a_hash_verified_ledger",
+            "test_production_evaluator_reports_distinct_standard_online_and_identity_metrics",
+            "test_per_video_annotation_fps_controls_frame_latency_and_rejects_drift"
+          ]
+        },
+        {
+          "path": "tests/test_online_censored_training.py",
+          "sha256": "4038b6ad8ca0393a556b5101010a6926f1af59b582d57264c633558d325094ce",
+          "test_functions": [
+            "test_future_endpoint_regression_weight_is_zero_until_observed",
+            "test_future_endpoint_is_not_positive_end_or_emit_target"
+          ]
+        },
+        {
+          "path": "tests/test_online_emission_protocol.py",
+          "sha256": "0188f18e223ffe904f23a232dbb59f90b364291a80b2f353a13c73d19af8fbbd",
+          "test_functions": [
+            "test_streaming_safe_config_disables_video_level_sliding_window_nms",
+            "test_online_emitter_filters_future_segments_and_records_latency",
+            "test_online_emitter_rejects_non_monotonic_stream",
+            "test_online_emitter_suppresses_duplicate_against_prior_prefix",
+            "test_candidate_source_grid_uses_absolute_proposal_end_not_flattened_index",
+            "test_stream_key_includes_protocol_identity_not_just_video_name",
+            "test_streaming_emission_ledger_sort_is_rank_order_independent",
+            "test_streaming_emission_ledger_summary_reports_latency_and_no_future",
+            "test_streaming_emission_ledger_summary_rejects_future_rows",
+            "test_streaming_safe_online_eval_rejects_multi_rank_state_splitting",
+            "test_streaming_safe_online_eval_rejects_callable_external_classifiers",
+            "test_eval_engine_verifies_streaming_ledger_without_reordering_it",
+            "test_single_stage_streaming_results_include_emission_ledger_fields",
+            "test_matr_stream_memory_uses_protocol_stream_key",
+            "test_single_stage_streaming_post_processing_filters_future_and_writes_ledger"
+          ]
+        },
+        {
+          "path": "tests/test_online_protocol_audit.py",
+          "sha256": "346d08944425636f575a0b9315d788e2dda9cd09ccda3b1e698cca0c88c4e0ef",
+          "test_functions": [
+            "test_online_protocol_import_does_not_load_torch",
+            "test_audit_accepts_selected_packet_inside_bounded_buffer",
+            "test_audit_rejects_future_or_out_of_buffer_packet",
+            "test_audit_rejects_oracle_dense_cache_or_teacher_sources"
+          ]
+        },
+        {
+          "path": "tests/test_ontad_feature_cache.py",
+          "sha256": "b8cc04a1133e9afceb5dc0d8b10f9d759c277db1cbb7c38fe2658468b1787305",
+          "test_functions": [
+            "test_recent_packet_source_frames_include_short_terminal_packet",
+            "test_selected_frames_are_encoded_once_in_fixed_batches",
+            "test_feature_file_write_is_atomic_and_resume_checks_geometry",
+            "test_per_video_resume_record_fails_closed_on_encoder_or_stride_change",
+            "test_manifest_records_hashes_and_exact_source_frames"
+          ]
+        },
+        {
+          "path": "tests/test_optimizer_audit.py",
+          "sha256": "189f42a6ae3becfeb362c453147a698f99c37a9b8178555179266c9b084f4851",
+          "test_functions": [
+            "test_optimizer_audit_accepts_exact_trainable_coverage",
+            "test_optimizer_audit_fails_for_missing_trainable_parameter",
+            "test_optimizer_audit_detects_duplicate_groups_even_for_external_optimizer",
+            "test_optimizer_audit_can_fail_on_frozen_parameters_in_groups",
+            "test_optimizer_audit_enforces_declared_trainable_plan",
+            "test_optimizer_audit_rejects_unknown_parameter_objects",
+            "test_optimizer_builder_handles_none_backbone_without_mutating_config"
+          ]
+        },
+        {
+          "path": "tests/test_p0_review_hardening.py",
+          "sha256": "43f6bb51c5ecb1923a2186b4f9c4835075abc73a1614ff55ca2fc83b7830e5bd",
+          "test_functions": [
+            "test_online_emitter_latency_frames_is_max_allowed_delay",
+            "test_online_map_stats_are_computed_after_allowed_and_latency_filtering",
+            "test_selector_source_fails_closed_for_all_invalid_masks",
+            "test_siglip_selected_only_runtime_assert_is_strict",
+            "test_matr_irregular_metadata_batch_contract_is_explicit_fail_fast",
+            "test_selected_only_encoder_runtime_counts_encoded_frames",
+            "test_selector_rejects_all_invalid_masks_at_runtime"
+          ]
+        },
+        {
+          "path": "tests/test_pceh_config_contracts.py",
+          "sha256": "0485728a3587f3ba3cb08a0e264a1a1db7dad4341023618c8e3f045c18a8ef04",
+          "test_functions": [
+            "test_main_pceh_config_wires_strict_streaming_route",
+            "test_controlled_baselines_change_only_declared_stream_schedule",
+            "test_endpoint_only_baseline_keeps_stream_and_compute_controls_fixed",
+            "test_streaming_train_entry_disables_shuffle_and_handles_batch_sampler_epoch"
+          ]
+        },
+        {
+          "path": "tests/test_pceh_incremental_detector.py",
+          "sha256": "fe7bf4445611a09ddbb8ad5cf1bec331a9102d7785b1ad649cef3d478703009b",
+          "test_functions": [
+            "test_forward_step_encodes_only_new_packet_and_bounds_cache",
+            "test_read_trace_comes_from_packet_and_cache_not_prediction",
+            "test_explicit_encoded_source_frames_are_preserved",
+            "test_read_trace_reports_actual_encoded_read_not_packet_clock",
+            "test_non_monotonic_or_cross_video_packet_fails_closed",
+            "test_first_packet_requires_explicit_video_start",
+            "test_videomamba_optimizer_grouping_defers_backbone_adapters_to_outer_builder",
+            "test_standard_inference_maps_class_index_and_writes_time_ledger"
+          ]
+        },
+        {
+          "path": "tests/test_pceh_launch_contracts.py",
+          "sha256": "20bb8b859930aa071cee01191dc3e20a33c2c8f38a231fd65a54f6d11ce1fb15",
+          "test_functions": [
+            "test_pilot_configs_are_short_strict_and_comparable",
+            "test_slurm_submitter_enforces_smoke_gate_before_pilot",
+            "test_slurm_submitter_keeps_generated_runs_outside_code_checkout",
+            "test_slurm_submitter_uses_n16r4_accepted_cpu_default",
+            "test_remote_check_helper_reads_slurm_and_gate_artifacts"
+          ]
+        },
+        {
+          "path": "tests/test_pceh_route_metadata.py",
+          "sha256": "c3566221fe363a9785fd7ac3079beab4a8261586d851cbcd8ee0c4b54dabb0e3",
+          "test_functions": [
+            "test_chunk_end_baseline_uses_truthful_fixed_stride_metadata",
+            "test_siglip_metadata_is_derived_from_runtime_selector_policy",
+            "test_legacy_named_config_does_not_claim_adaptive_or_low_latency"
+          ]
+        },
+        {
+          "path": "tests/test_persistent_event_set_detector.py",
+          "sha256": "a231752bbb0b882562f43984083e68592067fe002bc6e10e9605f2695910f070",
+          "test_functions": [
+            "test_assignment_is_globally_optimal_instead_of_pairwise_greedy",
+            "test_unexpected_forward_inputs_are_rejected_as_potential_gt_taint",
+            "test_training_uses_one_first_event_endpoint_positive_and_has_gradients",
+            "test_prefix_assignment_preserves_two_overlapping_same_class_instances",
+            "test_slot_exhaustion_is_counted_instead_of_merging_instances",
+            "test_inference_writes_one_immutable_completion_without_terminal_meta_taint",
+            "test_chunk_scan_matches_incremental_prefixes_and_future_perturbation"
+          ]
+        },
+        {
+          "path": "tests/test_persistent_event_set_head.py",
+          "sha256": "acb19f9b5447384f8142335f320997a6308a485891e286ef568dafad7b6afbf8",
+          "test_functions": [
+            "test_fresh_queries_ignore_carried_query_state_but_persistent_queries_use_it",
+            "test_pointer_target_has_explicit_before_memory_bin",
+            "test_scalar_start_offset_is_decoded_in_feature_steps_not_raw_frames",
+            "test_end_hazard_targets_cover_only_instance_aware_risk_slots",
+            "test_active_false_birth_is_released_when_alive_evidence_disappears",
+            "test_two_same_class_slots_emit_independently_once_then_rearm",
+            "test_binary_endpoint_uses_first_crossing_frame_not_unsupervised_offset",
+            "test_emission_label_and_score_share_the_same_historical_class_peak"
+          ]
+        },
+        {
+          "path": "tests/test_pes_stage1_config_contracts.py",
+          "sha256": "12a292ed5a8e5217b40dccc805bc9f8ac547f245b937b86f328b6ba6dc40a2ee",
+          "test_functions": [
+            "test_stage1_variants_change_only_registered_mechanism_fields",
+            "test_stage1_contract_freezes_visual_training_nms_and_raw_prediction_shortcuts"
+          ]
+        },
+        {
+          "path": "tests/test_pes_stage1_launch_contracts.py",
+          "sha256": "0253d8d2311cac31c8766b0b7074fe9dfdeb67b407f89fa2faf637033a135692",
+          "test_functions": [
+            "test_stage1_smoke_tool_audits_real_parameter_updates_and_protocol_state",
+            "test_stage1_submitter_is_slurm_only_clean_checkout_and_budget_gated",
+            "test_stage1_checker_reports_gate_and_slurm_accounting"
+          ]
+        },
+        {
+          "path": "tests/test_pes_stage1_result_gate.py",
+          "sha256": "4da810021b4791ef9dbe50fdd35284cc537b0b49b07c545ef3e7f6b177f9110d",
+          "test_functions": [
+            "test_gate_passes_only_as_a_mechanism_pilot_not_a_final_claim",
+            "test_gate_kills_equivalence_to_temporal_trackformer",
+            "test_gate_rejects_unmatched_seeds_and_budget_overrun"
+          ]
+        },
+        {
+          "path": "tests/test_pes_stage1_run_summary.py",
+          "sha256": "d1c12673bd3e743fd676086b6804366113b427456f8dea824702388773c1e2df",
+          "test_functions": [
+            "test_duplicate_metrics_use_canonical_ground_truth_and_emission_denominators",
+            "test_fragmentation_requires_multiple_timely_pieces_with_sufficient_union_coverage",
+            "test_future_or_mutable_rows_are_protocol_violations"
+          ]
+        },
+        {
+          "path": "tests/test_prefix_event_emission_head.py",
+          "sha256": "01878f5466e1d8a46fc4efa41c200d2548f795094e0ebbd7b0293d87cea08fb9",
+          "test_functions": [
+            "test_endpoint_and_emission_heads_have_disjoint_parameters",
+            "test_censored_survival_and_forbidden_emission_train_independent_heads",
+            "test_late_target_adds_positive_delay_penalty",
+            "test_emission_state_is_absorbing_until_start_signal_rearms",
+            "test_decode_rejects_future_read_provenance",
+            "test_endpoint_only_policy_emits_without_completion_or_emission_gate",
+            "test_unknown_emission_policy_fails_closed"
+          ]
+        },
+        {
+          "path": "tests/test_prefix_event_targets.py",
+          "sha256": "768cf836c1505d902d101615787e03af9a86576e0913ab4df86ab53ac9422e49",
+          "test_functions": [
+            "test_future_endpoint_does_not_change_prefix_targets",
+            "test_no_end_regression_before_endpoint",
+            "test_emit_forbidden_before_endpoint",
+            "test_completion_is_monotonic_for_an_event",
+            "test_endpoint_crossing_creates_distinct_end_and_first_emit_events",
+            "test_late_prefix_remains_complete_but_is_outside_emit_budget",
+            "test_targets_validate_segments_labels_and_class_range"
+          ]
+        },
+        {
+          "path": "tests/test_prefix_instance_schedule.py",
+          "sha256": "42731c42bb4df303d62dfedd4e1223038ba922f80be7689dc5947c4ba56d6f54",
+          "test_functions": [
+            "test_schedule_reveals_endpoint_only_at_first_decision_after_crossing",
+            "test_schedule_keeps_repeated_and_overlapping_same_class_instances_distinct",
+            "test_schedule_does_not_repeat_births_across_chunk_boundaries",
+            "test_schedule_handles_more_births_than_slots_without_merging_targets",
+            "test_schedule_rejects_invalid_inputs"
+          ]
+        },
+        {
+          "path": "tests/test_prefix_trajectory_supervision.py",
+          "sha256": "b17f58012d55c849639f1c6607020776ef5417d17e6aa46589763925cfb05db5",
+          "test_functions": [
+            "test_one_visible_instance_has_identical_fixed_and_rematch_supervision",
+            "test_birth_allocation_is_globally_optimal_and_shared_by_both_arms",
+            "test_same_class_overlap_swaps_only_loss_bindings_in_rematch",
+            "test_endpoint_uses_each_arms_loss_binding_once_before_canonical_retirement",
+            "test_retired_instance_cannot_resurrect_or_repeat_its_endpoint",
+            "test_tied_slot_exhaustion_is_deterministic_shared_and_never_late_allocated",
+            "test_clone_and_frozen_snapshot_do_not_share_mutable_lifecycle_storage",
+            "test_cost_provider_is_phase_scoped_and_receives_ids_in_canonical_order",
+            "test_state_rejects_non_bijections_and_slots_outside_capacity",
+            "test_transition_rejects_unknown_active_ids_and_future_endpoint_leaks",
+            "test_birth_candidates_intersect_runtime_available_slots",
+            "test_failed_cost_provider_transition_is_atomic",
+            "test_delayed_birth_endpoint_and_lifecycle_continue_across_chunk_boundary",
+            "test_repeated_birth_and_missing_occupied_lifecycle_are_rejected_atomically",
+            "test_non_finite_assignment_costs_are_rejected_without_state_changes"
+          ]
+        },
+        {
+          "path": "tests/test_raw_frame_bounds.py",
+          "sha256": "396959f4b6b498bff7ec40b928517bc04016f92daf9b7e66ffb765d9f67da1b4",
+          "test_functions": [
+            "test_raw_frame_total_frames_do_not_exceed_annotation_frame_count",
+            "test_raw_frame_total_frames_fall_back_to_protocol_fps_without_frame_count",
+            "test_raw_frame_total_frames_use_annotation_frames_without_fixed_fps"
+          ]
+        },
+        {
+          "path": "tests/test_siglip_ontad_contracts.py",
+          "sha256": "97012ec182f26ce87fd57149782f49ed045dc56f04c0f29e8161258d9f7e7c1a",
+          "test_functions": [
+            "test_siglip_online_encoder_source_declares_real_frozen_frame_route",
+            "test_backbone_registry_exposes_siglip_online_encoder",
+            "test_detector_and_adapter_pass_metas_and_updated_masks_through_backbone",
+            "test_p0_siglip2_config_is_frozen_recent_frame_no_memory_baseline",
+            "test_p1_siglip2_config_declares_trainable_raw_frame_adapter_protocol",
+            "test_p1_pilot_config_runs_real_eval_with_emission_reports",
+            "test_p1_fix_config_lowers_lr_controls_emissions_and_uses_subset_eval",
+            "test_p1_full_60_config_uses_full_dataset_and_full_validation_eval",
+            "test_p1_fix_and_full_configs_explicitly_preserve_streaming_safe_post_processing",
+            "test_p0_smoke_config_limits_remote_validation_run",
+            "test_p0_smoke_overfit_config_uses_effective_lr_for_learning_check",
+            "test_p2_config_adds_causal_motion_or_streaming_safe_emission_contribution",
+            "test_online_censored_training_masks_future_endpoint_supervision",
+            "test_frame_grid_seconds_roundtrip_helpers_are_declared",
+            "test_matr_boundary_score_fusion_is_not_same_point_start_end_product",
+            "test_raw_frame_loader_supports_remote_mp4_video_files",
+            "test_raw_frame_dataset_aligns_gt_with_fixed_fps_protocol",
+            "test_remote_siglip_submit_uses_slurm_not_login_node_training"
+          ]
+        },
+        {
+          "path": "tests/test_siglip_ontad_runtime_smoke.py",
+          "sha256": "5e8d36fb818a9f09ba32929f14c0ebce460771c877b872133ad1e6cab021fd17",
+          "test_functions": [
+            "test_tiny_siglip_encoder_is_shape_stable_and_no_future",
+            "test_tiny_siglip_detector_forward_backward_and_frozen_encoder_grads",
+            "test_frame_grid_seconds_roundtrip_runtime"
+          ]
+        },
+        {
+          "path": "tests/test_stream_control.py",
+          "sha256": "5f25f97716f5cfc892435a6d4aab661d94f10df44f282bdb220d94d58a2b9e15",
+          "test_functions": [
+            "test_allowlists_keep_terminal_and_target_fields_out_of_model_meta",
+            "test_sanitizer_splits_causal_terminal_and_training_target_fields",
+            "test_nested_terminal_or_target_aliases_are_rejected_from_model_values",
+            "test_compound_nested_future_and_gt_taint_is_rejected",
+            "test_aliases_are_canonicalized_into_the_correct_plane",
+            "test_conflicting_aliases_are_rejected",
+            "test_unknown_fields_fail_closed_in_both_planes",
+            "test_model_validator_rejects_terminal_target_and_alias_leaks",
+            "test_end_of_stream_reset_is_legal_only_in_control_plane",
+            "test_targets_must_use_the_training_target_structure_in_control",
+            "test_explicit_control_and_targets_merge_without_entering_model_meta",
+            "test_training_schedule_objects_remain_in_control_without_tainting_model_meta",
+            "test_model_metadata_is_detached_json_native_and_causally_validated"
+          ]
+        },
+        {
+          "path": "tests/test_stream_smoke_runner.py",
+          "sha256": "5437590ad1c7d6b89c636e637f948e80634683e9396edf558aaa447b3fc4c437",
+          "test_functions": [
+            "test_train_smoke_runs_chronological_packets_and_audits_updates",
+            "test_inference_smoke_collects_results_without_optimizer",
+            "test_train_smoke_rejects_nonfinite_cost",
+            "test_smoke_cli_builds_config_dataset_model_and_optimizer"
+          ]
+        },
+        {
+          "path": "tests/test_streaming_feature_dataset.py",
+          "sha256": "4bc5362f4d4121269cbb45f87cdff106c1cc37caad0ef1da37d7b614f5885ed8",
+          "test_functions": [
+            "test_dataset_builds_complete_video_manifests_and_contiguous_chunks",
+            "test_dataset_keeps_terminal_metadata_out_of_model_meta",
+            "test_dataset_constructs_training_only_prefix_observable_schedule",
+            "test_dataset_rejects_cache_manifest_geometry_mismatch",
+            "test_dataset_rejects_selected_video_with_zero_cached_tokens",
+            "test_dataset_rejects_duplicate_cache_manifest_json_keys",
+            "test_dataset_rejects_manifest_from_different_annotations",
+            "test_dataset_rejects_feature_bytes_that_do_not_match_manifest",
+            "test_dataset_consumes_hashed_split_role_and_binds_it_to_provenance",
+            "test_dataset_rejects_split_seed_role_or_id_file_drift",
+            "test_dataset_rejects_rehashed_but_semantically_overlapping_split"
+          ]
+        },
+        {
+          "path": "tests/test_streaming_raw_frame_dataset.py",
+          "sha256": "6cd17e7af0ae01cae50c3cc6d77914e3f78f960c0f8d3298195763ac2782ddb7",
+          "test_functions": [
+            "test_packet_manifest_contains_only_new_frames_and_hides_future_duration",
+            "test_packet_manifest_rejects_invalid_lengths",
+            "test_chronological_sampler_preserves_lane_order_and_visits_every_packet",
+            "test_chronological_sampler_can_drop_partial_final_batch",
+            "test_chronological_sampler_rejects_multi_rank_state_splitting",
+            "test_packet_frame_selection_is_prefix_only",
+            "test_packet_frame_selection_rejects_unknown_or_invalid_policy",
+            "test_registered_dataset_sanitizes_non_terminal_metadata"
+          ]
+        },
+        {
+          "path": "tests/test_training_update_audit.py",
+          "sha256": "f77a62ca1ae828242386d4c473c1ea457c3d6da16671288e565984d72b4bdb7a",
+          "test_functions": [
+            "test_recursive_device_transfer_preserves_metadata_and_container_shapes",
+            "test_training_update_audit_proves_required_modules_receive_updates",
+            "test_training_update_audit_fails_when_required_module_is_disconnected",
+            "test_training_engines_move_batches_to_the_model_device"
+          ]
+        },
+        {
+          "path": "tests/test_videomae_matr_ontad_contracts.py",
+          "sha256": "fc9b53261261ed19c8ea39121e31b046e60016b2ea22ca574e3240066f4d3fd8",
+          "test_functions": [
+            "test_matr_head_source_declares_online_start_end_memory_contract",
+            "test_online_videomae_adapter_source_declares_causal_frame_adapter_contract",
+            "test_strict_causal_projection_source_has_no_required_future_path",
+            "test_videomae_matr_config_declares_raw_frame_online_protocol",
+            "test_optimizer_source_keeps_trainable_adapter_params_when_backbone_frozen",
+            "test_raw_frame_dataset_and_loader_are_registered_for_training_route",
+            "test_videomae_matr_config_has_trainable_runtime_fields_and_batch_keys",
+            "test_matr_head_has_supervised_online_branches_and_video_aware_state_reset",
+            "test_raw_frame_route_has_no_missing_pseudo_boundary_import_dependency",
+            "test_matr_stream_state_reset_uses_window_start_frame_not_only_video_name",
+            "test_matr_stream_memory_reuses_only_contiguous_non_overlapping_windows",
+            "test_runtime_smoke_does_not_skip_opentad_import_or_build_errors",
+            "test_raw_videomae_route_marks_stub_backbone_as_contract_only",
+            "test_causal_adapter_does_not_start_with_double_zero_branch"
+          ]
+        },
+        {
+          "path": "tests/test_videomae_matr_runtime_smoke.py",
+          "sha256": "799ca47124db884c401c27df4c25af82267be63feb07344452932e6f049a3efe",
+          "test_functions": [
+            "test_build_raw_frame_dataset_from_synthetic_frames",
+            "test_build_model_synthetic_raw_frames_forward_backward",
+            "test_optimizer_param_groups_include_frozen_backbone_adapters"
+          ]
+        }
+      ]
+    }
+  ]
+}

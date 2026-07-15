@@ -14,6 +14,9 @@ development_split_manifest = manifest_root + "/thumos_development_split.json"
 fit_core_manifest = manifest_root + "/thumos_fit_core_160.txt"
 calibration_manifest = manifest_root + "/thumos_calibration_40.txt"
 reporting_manifest = manifest_root + "/thumos_reporting_locked_211.txt"
+reporting_universe_manifest = manifest_root + "/thumos_reporting_universe_211.json"
+reporting_comparison_manifest = manifest_root + "/thumos_reporting_211_vs_213.json"
+fineaction_qualification_manifest = None
 development_split_seed = 20260713
 
 feature_cache_path = "/data/run01/sczc063/yuzibo/thumos14/features/pes_siglip2_stride8"
@@ -53,7 +56,7 @@ profile_contract = dict(
 )
 
 launch_contract = dict(
-    schema_version="full-petal-launch-contract-v1",
+    schema_version="full-petal-launch-contract-v2",
     required_reviewer_id="019f5abd-5104-79b3-882e-354ca796f2c1",
     required_review_scope=[
         "P0_evidence_chain",
@@ -64,6 +67,20 @@ launch_contract = dict(
     ],
     allowed_cfg_overrides=["work_dir"],
     require_clean_checkout=True,
+    attestation_trust_roots=dict(
+        b0=dict(
+            key_id="full-petal-b0-20260713",
+            public_key="rZMjZ/ST5X5cf+u7dSm1T8sStP/PkACL+cr8b/KLB3Y=",
+        ),
+        review=dict(
+            key_id="019f5abd-5104-79b3-882e-354ca796f2c1",
+            public_key="yjZXBpBY917paABqnDxL15y/eyKECmbhJDQuq4ce7Xk=",
+        ),
+        profile=dict(
+            key_id="full-petal-profile-20260713",
+            public_key="+3fu1yJFnAtE0U/wKdMw2X0sMKdfWcBqyUglXyAi6rE=",
+        ),
+    ),
 )
 
 reporting_contract = dict(

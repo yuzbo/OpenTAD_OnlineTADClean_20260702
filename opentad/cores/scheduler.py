@@ -1,28 +1,49 @@
 import math
 import warnings
+from copy import deepcopy
 from bisect import bisect_right
 from collections import Counter
 from torch.optim.lr_scheduler import _LRScheduler
 
 
-def build_scheduler(cfg, optimizer, dataloader_len):
+def optimizer_events_per_epoch(train_loader):
+    """Return the number of scheduler steps produced by one training epoch."""
+
+    dataset = getattr(train_loader, "dataset", None)
+    declared = getattr(dataset, "optimizer_events_per_epoch", None)
+    if declared is not None:
+        declared = declared() if callable(declared) else declared
+        if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+            raise ValueError("dataset optimizer_events_per_epoch must be positive")
+        return declared
+    return len(train_loader)
+
+
+def build_scheduler(cfg, optimizer, optimizer_events_per_epoch):
+    cfg = deepcopy(dict(cfg))
+    if (
+        isinstance(optimizer_events_per_epoch, bool)
+        or not isinstance(optimizer_events_per_epoch, int)
+        or optimizer_events_per_epoch <= 0
+    ):
+        raise ValueError("optimizer_events_per_epoch must be a positive integer")
     scheduler_type = cfg["type"]
     cfg.pop("type")
 
     max_epoch = cfg["max_epoch"]
 
     if scheduler_type == "LinearWarmupCosineAnnealingLR":
-        cfg["warmup_epoch"] *= dataloader_len
-        cfg["max_epoch"] *= dataloader_len
+        cfg["warmup_epoch"] *= optimizer_events_per_epoch
+        cfg["max_epoch"] *= optimizer_events_per_epoch
         scheduler = LinearWarmupCosineAnnealingLR(optimizer, **cfg)
     elif scheduler_type == "LinearWarmupMultiStepLR":
         cfg.pop("max_epoch")
-        cfg["warmup_epoch"] *= dataloader_len
-        cfg["milestones"] = [dataloader_len * step for step in cfg["milestones"]]
+        cfg["warmup_epoch"] *= optimizer_events_per_epoch
+        cfg["milestones"] = [optimizer_events_per_epoch * step for step in cfg["milestones"]]
         scheduler = LinearWarmupMultiStepLR(optimizer, **cfg)
     elif scheduler_type == "MultiStepLR":
         cfg.pop("max_epoch")
-        cfg["milestones"] = [dataloader_len * step for step in cfg["milestones"]]
+        cfg["milestones"] = [optimizer_events_per_epoch * step for step in cfg["milestones"]]
         scheduler = LinearWarmupMultiStepLR(optimizer, warmup_epoch=0, **cfg)
     else:
         raise ValueError(f"Scheduler {scheduler_type} is not supported so far.")

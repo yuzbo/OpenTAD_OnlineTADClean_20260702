@@ -402,7 +402,10 @@ def _contains_temporal_overlap(annotations, *, same_class):
 
 
 def _crosses_chunk_boundary(start, end, chunk_duration_seconds):
-    boundary_index = math.floor(start / chunk_duration_seconds) + 1
+    start = Fraction(str(start))
+    end = Fraction(str(end))
+    chunk_duration_seconds = Fraction(str(chunk_duration_seconds))
+    boundary_index = start // chunk_duration_seconds + 1
     boundary = boundary_index * chunk_duration_seconds
     return start < boundary < end
 
@@ -1323,7 +1326,33 @@ def _evidence_count(evidence):
     return value
 
 
+def _dereference_fineaction_evidence(evidence):
+    if not isinstance(evidence, dict):
+        return None, "qualification evidence must be an object with an artifact reference"
+    path = evidence.get("artifact_path")
+    digest = evidence.get("artifact_sha256")
+    if not isinstance(path, str) or not path.strip() or not _valid_sha256(digest):
+        return None, "qualification evidence requires artifact_path and artifact_sha256"
+    try:
+        if sha256_file(path) != digest:
+            return None, "qualification evidence artifact hash differs"
+        artifact = load_json(path)
+    except ContractValidationError as exc:
+        return None, f"qualification evidence artifact cannot be loaded: {exc}"
+    semantic = {
+        key: value
+        for key, value in evidence.items()
+        if key not in {"artifact_path", "artifact_sha256"}
+    }
+    if artifact != semantic:
+        return None, "qualification evidence fields differ from the referenced artifact"
+    return semantic, None
+
+
 def _fineaction_evidence_error(gate_name, check_name, evidence):
+    evidence, reference_error = _dereference_fineaction_evidence(evidence)
+    if reference_error is not None:
+        return reference_error
     key = (gate_name, check_name)
     if key == ("protocol", "license"):
         if not isinstance(evidence, dict) or not isinstance(

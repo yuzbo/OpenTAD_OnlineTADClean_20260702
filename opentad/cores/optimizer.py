@@ -92,11 +92,10 @@ def _audit_optimizer(model, optimizer, audit_cfg, logger):
     report.raise_for_errors()
     if logger is not None:
         logger.info(
-            "Optimizer audit passed: %d trainable parameters across %d groups; "
-            "%d frozen parameters present in groups",
-            len(report.trainable_parameters),
-            len(report.group_summaries),
-            len(report.frozen_in_optimizer),
+            "Optimizer audit passed: "
+            f"{len(report.trainable_parameters)} trainable parameters across "
+            f"{len(report.group_summaries)} groups; "
+            f"{len(report.frozen_in_optimizer)} frozen parameters present in groups"
         )
     return optimizer
 

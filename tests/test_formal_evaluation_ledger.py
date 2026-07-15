@@ -2,8 +2,15 @@ import hashlib
 
 import pytest
 
-from opentad.utils.immutable_event_ledger import ImmutableEventLedger, LedgerVerificationError
-from opentad.utils.online_protocol import verified_emission_result_dict
+from opentad.utils.immutable_event_ledger import (
+    ImmutableEventLedger,
+    LedgerVerificationError,
+    persist_verified_ledger,
+)
+from opentad.utils.online_protocol import (
+    verify_emission_result_dict_rows,
+    verified_emission_result_dict,
+)
 
 
 def _event(event_id, *, video_id="video-a", emit_frame=10, slot_id=0):
@@ -26,16 +33,19 @@ def _event(event_id, *, video_id="video-a", emit_frame=10, slot_id=0):
     }
 
 
-def test_verified_results_preserve_hash_chain_order_for_same_frame_emissions():
+def test_verified_results_preserve_hash_chain_order_for_same_frame_emissions(tmp_path):
     ledger = ImmutableEventLedger()
     first = ledger.append(_event("first", emit_frame=10, slot_id=1))
     second = ledger.append(_event("second", emit_frame=10, slot_id=0))
 
-    verified = verified_emission_result_dict({"video-a": [first, second]})
+    ledger_path = tmp_path / "emissions.jsonl"
+    commitment_path = tmp_path / "emissions.commitment.json"
+    persist_verified_ledger(ledger_path, commitment_path, [first, second])
+    verified = verified_emission_result_dict(ledger_path, commitment_path)
 
     assert [row["sequence"] for row in verified["video-a"]] == [0, 1]
     with pytest.raises(LedgerVerificationError, match="replayed|sequence|reordered"):
-        verified_emission_result_dict({"video-a": [second, first]})
+        verify_emission_result_dict_rows({"video-a": [second, first]})
 
 
 def test_verified_results_reject_video_bucket_rebinding():
@@ -43,12 +53,12 @@ def test_verified_results_reject_video_bucket_rebinding():
     row = ledger.append(_event("first", video_id="video-a"))
 
     with pytest.raises(LedgerVerificationError, match="video bucket"):
-        verified_emission_result_dict({"video-b": [row]})
+        verify_emission_result_dict_rows({"video-b": [row]})
 
 
 def test_verified_results_reject_unhashed_legacy_rows():
     with pytest.raises(LedgerVerificationError, match="envelope"):
-        verified_emission_result_dict(
+        verify_emission_result_dict_rows(
             {
                 "video-a": [
                     {

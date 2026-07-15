@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import runpy
 import sys
 
 
@@ -13,13 +14,42 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from opentad.utils.immutable_event_ledger import (
-    LedgerError,
-    load_verified_ledger,
+from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
+from opentad.utils.full_petal_attestation import (
+    AttestationError,
+    verify_payload,
+)
+from opentad.utils.full_petal_b0 import (
+    B0EvidenceError,
+    validate_b0_evidence,
+)
+from opentad.utils.full_petal_data_contract import (
+    ContractValidationError,
+    verify_content_hash,
+)
+from opentad.utils.full_petal_identity import (
+    DATA_IDENTITY_SCHEMA,
+    IdentityError,
+    RUNTIME_IDENTITY_SCHEMA,
+    authorization_only_diff,
+)
+from opentad.utils.full_petal_launch import (
+    LAUNCH_RECEIPT_SCHEMA,
+    LAUNCH_TICKET_SCHEMA,
+    PROFILE_ATTESTATION_ROLE,
+    PROFILE_SCHEMA,
+    REVIEW_ATTESTATION_ROLE,
+    REVIEW_SCHEMA,
+)
+from opentad.utils.full_petal_training_evidence import (
+    TrainingEvidenceError,
+    derive_training_cost,
+    verify_formal_run_manifest,
 )
 
 
-SCHEMA_VERSION = "full_petal_result_gate.v2"
+SCHEMA_VERSION = "full_petal_result_gate.v3"
+TRUST_CONFIG = REPO_ROOT / "configs" / "causaltad" / "thumos_pes_q2_base.py"
 
 C1_VARIANTS = {
     "fixed": "fixed",
@@ -60,19 +90,25 @@ METRIC_ALIASES = {
     "short_action_mAP": ("short_action_mAP",),
 }
 
-SHA256_FIELDS = (
-    "config",
-    "model",
-    "dataset_manifest",
-    "evaluator",
-    "metrics",
-    "run_manifest",
-)
-RUN_MANIFEST_SCHEMA = "full-petal-run-manifest-v1"
-B0_SCHEMA = "full-petal-b0-v1"
-B0_TEST_REPORT_SCHEMA = "full-petal-b0-test-report-v1"
-B0_AUDIT_REPORT_SCHEMA = "full-petal-b0-audit-report-v1"
 RAW_VISUAL_AUDIT_SCHEMA = "full-petal-raw-visual-audit-v1"
+EVALUATOR_SPEC_SCHEMA = "full-petal-evaluator-spec-v1"
+
+COMMON_RUN_ARTIFACTS = {
+    "ledger",
+    "commitment",
+    "ground_truth",
+    "allowed_videos",
+    "evaluator_spec",
+    "config",
+    "checkpoint",
+    "data_identity",
+    "training_launch_ticket",
+    "training_launch_receipt",
+    "evaluation_launch_ticket",
+    "evaluation_launch_receipt",
+    "training_trace",
+    "training_commitment",
+}
 
 PROTOCOL_REQUIRED_VALUES = {
     "decision_cadence": "packet_end",
@@ -117,6 +153,43 @@ class ResultGateInputError(ResultGateError):
 
 class ResultGateProtocolError(ResultGateError):
     """Raised when an artifact records a protocol violation or mismatch."""
+
+
+def _attestation_trust_roots():
+    try:
+        namespace = runpy.run_path(str(TRUST_CONFIG))
+        roots = namespace["launch_contract"]["attestation_trust_roots"]
+    except (OSError, KeyError, TypeError) as exc:
+        raise ResultGateInputError(
+            f"cannot load the repository trust roots from {TRUST_CONFIG}: {exc}"
+        ) from exc
+    if not isinstance(roots, dict) or set(roots) != {"b0", "review", "profile"}:
+        raise ResultGateInputError("repository attestation trust roots are incomplete")
+    return roots
+
+
+def _route_launch_requirements():
+    try:
+        namespace = runpy.run_path(str(TRUST_CONFIG))
+        launch = namespace["launch_contract"]
+        profile = namespace["profile_contract"]
+        return {
+            "reviewer_id": launch["required_reviewer_id"],
+            "review_scope": list(launch["required_review_scope"]),
+            "warmup_events": profile["warmup_steps"],
+            "measured_events": profile["measured_steps"],
+            "world_size": profile["world_size"],
+            "dimensions": {
+                "batch_size": namespace["solver"]["train"]["batch_size"],
+                "chunk_size": namespace["chunk_size"],
+                "memory_size": namespace["memory_size"],
+                "slot_count": namespace["num_slots"],
+            },
+        }
+    except (OSError, KeyError, TypeError) as exc:
+        raise ResultGateInputError(
+            f"cannot load the repository launch requirements from {TRUST_CONFIG}: {exc}"
+        ) from exc
 
 
 def _canonical_json(value, label):
@@ -264,24 +337,6 @@ def _has_violations(value):
 
 
 def _validate_row_protocol(row, claim, label):
-    metrics = row.get("metrics")
-    violation_values = [row.get("protocol_violations")]
-    if isinstance(metrics, dict):
-        violation_values.append(metrics.get("protocol_violations"))
-        causal = metrics.get("causal_validation")
-        if isinstance(causal, dict):
-            if causal.get("passed") is False:
-                raise ResultGateProtocolError(f"{label} failed causal emission validation")
-            violation_values.append(causal.get("violations"))
-            counts = causal.get("violation_counts")
-            if isinstance(counts, dict) and any(
-                _finite_number(value, f"{label}.causal_validation.{key}", minimum=0.0) > 0
-                for key, value in counts.items()
-            ):
-                raise ResultGateProtocolError(f"{label} records causal protocol violations")
-    if any(_has_violations(value) for value in violation_values):
-        raise ResultGateProtocolError(f"{label} records protocol violations")
-
     protocol = row.get("protocol")
     if not isinstance(protocol, dict) or not protocol:
         raise ResultGateInputError(f"{label}.protocol must be a non-empty object")
@@ -497,144 +552,590 @@ def _validate_raw_visual_audit(path, claim, variant, seed, hashes, label):
     return audit
 
 
-def _validate_run_manifest(
-    path,
-    row,
-    claim,
-    variant,
-    seed,
-    hashes,
-    raw_visual_hash,
-    label,
-):
-    manifest = _load_evidence_json(path, f"{label}.run_manifest")
+def _validate_data_identity_artifact(path, ticket_identity, label):
+    identity = _load_evidence_json(path, f"{label}.data_identity")
+    if identity != ticket_identity:
+        raise ResultGateInputError(f"{label} data identity differs from its launch ticket")
     required = {
         "schema_version",
-        "claim",
-        "variant",
-        "seed",
-        "ledger_sha256",
-        "commitment_sha256",
-        "config_sha256",
-        "model_sha256",
-        "dataset_manifest_sha256",
-        "evaluator_sha256",
-        "metrics_sha256",
-        "cost_sha256",
-        "protocol_sha256",
-        "raw_visual_audit_sha256",
+        "files",
+        "feature_inventory_count",
+        "feature_inventory_sha256",
+        "optional_qualifications",
+        "identity_sha256",
     }
-    if set(manifest) != required:
-        raise ResultGateInputError(
-            f"{label}.run_manifest fields differ: "
-            f"expected {sorted(required)}, found {sorted(manifest)}"
+    if set(identity) != required or identity["schema_version"] != DATA_IDENTITY_SCHEMA:
+        raise ResultGateInputError(f"{label} data identity schema/fields differ")
+    body = dict(identity)
+    declared_identity = body.pop("identity_sha256")
+    if _sha256_json(body, f"{label}.data_identity") != declared_identity:
+        raise ResultGateInputError(f"{label} data identity digest is invalid")
+    records = list(identity["files"].items())
+    records.extend(
+        (name, record)
+        for name, record in identity["optional_qualifications"].items()
+        if record is not None
+    )
+    for name, record in records:
+        if not isinstance(record, dict) or set(record) != {"path", "sha256", "size_bytes"}:
+            raise ResultGateInputError(f"{label} data record {name} fields differ")
+        reference = {f"{name}_path": record["path"], f"{name}_sha256": record["sha256"]}
+        record_path, _ = _evidence_file(reference, name, f"{label}.data_identity")
+        if record_path.stat().st_size != record["size_bytes"]:
+            raise ResultGateInputError(f"{label} data record {name} size differs")
+    return identity
+
+
+def _validate_signed_review(path, *, commit_sha, b0_sha256, label):
+    signed = _load_evidence_json(path, f"{label}.signed_review")
+    try:
+        review = verify_payload(
+            signed,
+            trust_root=_attestation_trust_roots()["review"],
+            role=REVIEW_ATTESTATION_ROLE,
         )
-    if manifest["schema_version"] != RUN_MANIFEST_SCHEMA:
-        raise ResultGateInputError(f"{label}.run_manifest schema is unsupported")
+    except AttestationError as exc:
+        raise ResultGateInputError(
+            f"{label} independent review attestation is invalid: {exc}"
+        ) from exc
+    required = {
+        "schema_version",
+        "reviewer_id",
+        "reviewed_commit",
+        "b0_artifact_sha256",
+        "scope",
+        "verdict",
+        "blocking_findings",
+        "protocol_violations",
+    }
+    requirements = _route_launch_requirements()
+    if set(review) != required or review["schema_version"] != REVIEW_SCHEMA:
+        raise ResultGateInputError(f"{label} independent review schema/fields differ")
+    if (
+        review["reviewer_id"] != requirements["reviewer_id"]
+        or review["reviewed_commit"] != commit_sha
+        or review["b0_artifact_sha256"] != b0_sha256
+        or review["scope"] != requirements["review_scope"]
+    ):
+        raise ResultGateInputError(f"{label} independent review binding differs")
+    if (
+        review["verdict"] != "PASS"
+        or not isinstance(review["blocking_findings"], list)
+        or review["blocking_findings"]
+        or not isinstance(review["protocol_violations"], list)
+        or review["protocol_violations"]
+    ):
+        raise ResultGateProtocolError(f"{label} independent review has not reached PASS")
+    return review
+
+
+def _validate_signed_profile(path, *, ticket, manifest, label):
+    signed = _load_evidence_json(path, f"{label}.signed_profile")
+    try:
+        profile = verify_payload(
+            signed,
+            trust_root=_attestation_trust_roots()["profile"],
+            role=PROFILE_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise ResultGateInputError(
+            f"{label} fixed-step profile attestation is invalid: {exc}"
+        ) from exc
+    required = {
+        "schema_version",
+        "status",
+        "commit_sha",
+        "source_tree_sha256",
+        "data_identity_sha256",
+        "runtime_identity_sha256",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "launch_ticket_path",
+        "launch_ticket_sha256",
+        "slurm_job_id",
+        "slurm_allocation",
+        "world_size",
+        "precision",
+        "hardware",
+        "dimensions",
+        "measurements",
+    }
+    requirements = _route_launch_requirements()
+    if set(profile) != required or profile["schema_version"] != PROFILE_SCHEMA:
+        raise ResultGateInputError(f"{label} fixed-step profile schema/fields differ")
+    if profile["status"] != "PASS":
+        raise ResultGateProtocolError(f"{label} fixed-step profile has not reached PASS")
+    profile_commit = _required_git_sha(
+        profile["commit_sha"], f"{label}.fixed_step_profile.commit_sha"
+    )
+    if profile_commit == manifest["commit_sha"]:
+        raise ResultGateProtocolError(
+            f"{label} formal commit is not later than the profile commit"
+        )
+    try:
+        authorization_only_diff(REPO_ROOT, profile_commit, manifest["commit_sha"])
+    except IdentityError as exc:
+        raise ResultGateProtocolError(
+            f"{label} profile-to-formal authorization diff is invalid: {exc}"
+        ) from exc
+    expected_bindings = {
+        "source_tree_sha256": ticket["source_tree_sha256"],
+        "data_identity_sha256": ticket["data_identity"]["identity_sha256"],
+        "scientific_config_sha256": ticket["scientific_config_sha256"],
+        "world_size": requirements["world_size"],
+        "dimensions": requirements["dimensions"],
+    }
+    for field, expected in expected_bindings.items():
+        if profile[field] != expected:
+            raise ResultGateInputError(f"{label} fixed-step profile {field} differs")
+    _required_sha256(
+        profile["runtime_identity_sha256"],
+        f"{label}.fixed_step_profile.runtime_identity_sha256",
+    )
+    _required_sha256(
+        profile["resolved_config_sha256"],
+        f"{label}.fixed_step_profile.resolved_config_sha256",
+    )
+    if profile["precision"] not in {"fp32", "fp16", "bf16"}:
+        raise ResultGateInputError(f"{label} fixed-step profile precision differs")
+    hardware = profile["hardware"]
+    if not isinstance(hardware, dict) or set(hardware) != {
+        "gpu_name",
+        "torch_version",
+        "cuda_version",
+    }:
+        raise ResultGateInputError(f"{label} fixed-step profile hardware fields differ")
+    for field in ("gpu_name", "torch_version"):
+        if not isinstance(hardware[field], str) or not hardware[field].strip():
+            raise ResultGateInputError(f"{label} fixed-step profile lacks {field}")
+
+    measurements = profile["measurements"]
+    measurement_fields = {
+        "warmup_optimizer_events",
+        "measured_optimizer_events",
+        "total_optimizer_events",
+        "skipped_optimizer_events",
+        "elapsed_seconds",
+        "peak_memory_bytes",
+        "throughput_optimizer_events_per_second",
+    }
+    if not isinstance(measurements, dict) or set(measurements) != measurement_fields:
+        raise ResultGateInputError(f"{label} fixed-step profile measurements differ")
+    warmup = requirements["warmup_events"]
+    measured = requirements["measured_events"]
+    if (
+        measurements["warmup_optimizer_events"] != warmup
+        or measurements["measured_optimizer_events"] != measured
+        or measurements["total_optimizer_events"] != warmup + measured
+        or measurements["skipped_optimizer_events"] != 0
+    ):
+        raise ResultGateProtocolError(f"{label} fixed-step profile event counts differ")
+    _finite_number(
+        measurements["elapsed_seconds"],
+        f"{label}.fixed_step_profile.elapsed_seconds",
+        minimum=1e-12,
+    )
+    _nonnegative_integer(
+        measurements["peak_memory_bytes"],
+        f"{label}.fixed_step_profile.peak_memory_bytes",
+    )
+    _finite_number(
+        measurements["throughput_optimizer_events_per_second"],
+        f"{label}.fixed_step_profile.throughput",
+        minimum=1e-12,
+    )
+
+    allocation = profile["slurm_allocation"]
+    allocation_fields = {
+        "job_id",
+        "state",
+        "user",
+        "nodes",
+        "tasks",
+        "gpus",
+        "command",
+        "work_dir",
+    }
+    if not isinstance(allocation, dict) or set(allocation) != allocation_fields:
+        raise ResultGateInputError(f"{label} profile Slurm allocation fields differ")
+    if (
+        allocation["job_id"] != profile["slurm_job_id"]
+        or allocation["state"] != "RUNNING"
+        or allocation["nodes"] != 1
+        or allocation["tasks"] != requirements["world_size"]
+        or allocation["gpus"] != requirements["world_size"]
+    ):
+        raise ResultGateProtocolError(f"{label} profile Slurm allocation differs")
+
+    profile_ticket_path, _ = _evidence_file(
+        {
+            "profile_ticket_path": profile["launch_ticket_path"],
+            "profile_ticket_sha256": profile["launch_ticket_sha256"],
+        },
+        "profile_ticket",
+        f"{label}.fixed_step_profile",
+    )
+    profile_ticket = _load_evidence_json(
+        profile_ticket_path, f"{label}.profile_launch_ticket"
+    )
+    ticket_fields = {
+        "schema_version",
+        "mode",
+        "commit_sha",
+        "source_tree_sha256",
+        "config_file_sha256",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "data_identity",
+        "runtime_identity",
+        "b0_evidence",
+        "review_evidence",
+        "profile_evidence",
+    }
+    if (
+        set(profile_ticket) != ticket_fields
+        or profile_ticket["schema_version"] != LAUNCH_TICKET_SCHEMA
+        or profile_ticket["mode"] != "profile"
+        or profile_ticket["commit_sha"] != profile_commit
+        or profile_ticket["profile_evidence"] is not None
+        or profile_ticket["source_tree_sha256"] != ticket["source_tree_sha256"]
+        or profile_ticket["scientific_config_sha256"]
+        != ticket["scientific_config_sha256"]
+        or profile_ticket["data_identity"] != ticket["data_identity"]
+        or _sha256_json(
+            profile_ticket["runtime_identity"], f"{label}.profile_runtime"
+        )
+        != profile["runtime_identity_sha256"]
+    ):
+        raise ResultGateInputError(f"{label} profile launch ticket binding differs")
+    return profile
+
+
+def _validate_launch_ticket(
+    path,
+    receipt_path,
+    manifest,
+    paths,
+    hashes,
+    seed,
+    label,
+    *,
+    entrypoint,
+):
+    ticket_role = "training" if entrypoint == "train" else "evaluation"
+    ticket = _load_evidence_json(path, f"{label}.launch_ticket")
+    required = {
+        "schema_version",
+        "mode",
+        "commit_sha",
+        "source_tree_sha256",
+        "config_file_sha256",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "data_identity",
+        "runtime_identity",
+        "b0_evidence",
+        "review_evidence",
+        "profile_evidence",
+    }
+    if set(ticket) != required or ticket["schema_version"] != LAUNCH_TICKET_SCHEMA:
+        raise ResultGateInputError(f"{label} launch ticket schema/fields differ")
+    if ticket["mode"] != "formal" or ticket["commit_sha"] != manifest["commit_sha"]:
+        raise ResultGateInputError(f"{label} launch ticket mode/commit differs")
+    if ticket["config_file_sha256"] != hashes["config"]:
+        raise ResultGateInputError(f"{label} launch ticket config hash differs")
+    runtime = ticket["runtime_identity"]
+    runtime_fields = {
+        "schema_version",
+        "entrypoint",
+        "seed",
+        "run_id",
+        "deterministic",
+        "not_eval",
+        "resume_checkpoint",
+        "cfg_overrides",
+    }
+    if (
+        not isinstance(runtime, dict)
+        or set(runtime) != runtime_fields
+        or runtime.get("schema_version") != RUNTIME_IDENTITY_SCHEMA
+    ):
+        raise ResultGateInputError(f"{label} launch ticket runtime schema/fields differ")
+    if runtime.get("seed") != seed:
+        raise ResultGateInputError(f"{label} launch ticket runtime seed differs")
+    if runtime.get("entrypoint") != entrypoint:
+        raise ResultGateInputError(f"{label} launch ticket entrypoint differs")
+    _nonnegative_integer(runtime.get("run_id"), f"{label}.runtime.run_id")
+    if runtime.get("deterministic") is not True or runtime.get("not_eval") is not False:
+        raise ResultGateProtocolError(f"{label} formal runtime was not deterministic")
+    overrides = runtime.get("cfg_overrides")
+    if not isinstance(overrides, dict) or set(overrides) - {"work_dir"}:
+        raise ResultGateInputError(f"{label} launch ticket cfg overrides differ")
+    checkpoint = runtime.get("resume_checkpoint")
+    if entrypoint == "train":
+        if checkpoint is not None:
+            raise ResultGateProtocolError(f"{label} formal training unexpectedly resumed")
+    else:
+        expected_checkpoint = {
+            "path": str(paths["checkpoint"].resolve()),
+            "sha256": hashes["checkpoint"],
+            "size_bytes": paths["checkpoint"].stat().st_size,
+        }
+        if checkpoint != expected_checkpoint:
+            raise ResultGateInputError(
+                f"{label} evaluation ticket does not bind the evaluated checkpoint"
+            )
+    if ticket["profile_evidence"] is None:
+        raise ResultGateInputError(f"{label} formal ticket lacks fixed-step profile evidence")
+    prerequisite_hashes = {}
+    prerequisite_paths = {}
+    for role in ("b0", "review", "profile"):
+        reference = ticket[f"{role}_evidence"]
+        if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+            raise ResultGateInputError(f"{label} launch ticket {role} reference differs")
+        wrapper = {
+            f"{role}_path": reference["path"],
+            f"{role}_sha256": reference["sha256"],
+        }
+        prerequisite_paths[role], prerequisite_hashes[role] = _evidence_file(
+            wrapper, role, f"{label}.launch_ticket"
+        )
+    _validate_data_identity_artifact(paths["data_identity"], ticket["data_identity"], label)
+    _validate_signed_review(
+        prerequisite_paths["review"],
+        commit_sha=manifest["commit_sha"],
+        b0_sha256=prerequisite_hashes["b0"],
+        label=label,
+    )
+    _validate_signed_profile(
+        prerequisite_paths["profile"],
+        ticket=ticket,
+        manifest=manifest,
+        label=label,
+    )
+
+    receipt = _load_evidence_json(receipt_path, f"{label}.launch_receipt")
+    receipt_fields = {
+        "schema_version",
+        "mode",
+        "commit_sha",
+        "source_tree_sha256",
+        "data_identity_sha256",
+        "runtime_identity_sha256",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "launch_ticket",
+        "b0_artifact_sha256",
+        "review_artifact_sha256",
+        "profile_artifact_sha256",
+        "world_size",
+        "slurm_job_id",
+        "slurm_allocation",
+    }
+    if set(receipt) != receipt_fields or receipt["schema_version"] != LAUNCH_RECEIPT_SCHEMA:
+        raise ResultGateInputError(f"{label} launch receipt schema/fields differ")
+    expected_receipt_values = {
+        "mode": "formal",
+        "commit_sha": manifest["commit_sha"],
+        "source_tree_sha256": ticket["source_tree_sha256"],
+        "data_identity_sha256": ticket["data_identity"]["identity_sha256"],
+        "runtime_identity_sha256": _sha256_json(runtime, f"{label}.runtime_identity"),
+        "resolved_config_sha256": ticket["resolved_config_sha256"],
+        "scientific_config_sha256": ticket["scientific_config_sha256"],
+        "launch_ticket": {
+            "path": str(Path(path).resolve()),
+            "sha256": hashes[f"{ticket_role}_launch_ticket"],
+        },
+        "b0_artifact_sha256": prerequisite_hashes["b0"],
+        "review_artifact_sha256": prerequisite_hashes["review"],
+        "profile_artifact_sha256": prerequisite_hashes["profile"],
+    }
+    for field, expected in expected_receipt_values.items():
+        if receipt[field] != expected:
+            raise ResultGateInputError(f"{label} launch receipt {field} differs")
+    world_size = _nonnegative_integer(
+        receipt["world_size"], f"{label}.launch_receipt.world_size"
+    )
+    if world_size != 1:
+        raise ResultGateProtocolError(f"{label} launch receipt violates locked world_size=1")
+    allocation = receipt["slurm_allocation"]
+    allocation_fields = {
+        "job_id",
+        "state",
+        "user",
+        "nodes",
+        "tasks",
+        "gpus",
+        "command",
+        "work_dir",
+    }
+    if not isinstance(allocation, dict) or set(allocation) != allocation_fields:
+        raise ResultGateInputError(f"{label} Slurm allocation fields differ")
+    if (
+        not isinstance(receipt["slurm_job_id"], str)
+        or not receipt["slurm_job_id"].strip()
+        or allocation["job_id"] != receipt["slurm_job_id"]
+        or allocation["state"] != "RUNNING"
+    ):
+        raise ResultGateProtocolError(f"{label} launch receipt lacks an active Slurm job")
+    if (
+        allocation["nodes"] != 1
+        or allocation["tasks"] != world_size
+        or allocation["gpus"] != world_size
+    ):
+        raise ResultGateProtocolError(f"{label} Slurm allocation geometry differs")
+    for field in ("user", "command", "work_dir"):
+        if not isinstance(allocation[field], str) or not allocation[field].strip():
+            raise ResultGateInputError(f"{label} Slurm allocation lacks {field}")
+    return ticket, receipt
+
+
+def _evaluate_signed_run(paths, claim, label):
+    spec = _load_evidence_json(paths["evaluator_spec"], f"{label}.evaluator_spec")
+    required = {
+        "schema_version",
+        "type",
+        "subset",
+        "tiou_thresholds",
+        "latency_budgets_sec",
+        "fps",
+        "identity_tiou_threshold",
+        "identity_latency_budget_sec",
+    }
+    if set(spec) != required or spec["schema_version"] != EVALUATOR_SPEC_SCHEMA:
+        raise ResultGateInputError(f"{label} evaluator specification fields differ")
+    if spec["type"] != "OnlineAPBudgeted":
+        raise ResultGateInputError(f"{label} evaluator type is unsupported")
+    try:
+        evaluator = OnlineAPBudgeted(
+            ground_truth_filename=str(paths["ground_truth"]),
+            prediction_filename={
+                "ledger_path": str(paths["ledger"]),
+                "commitment_path": str(paths["commitment"]),
+            },
+            allowed_videos=str(paths["allowed_videos"]),
+            subset=spec["subset"],
+            tiou_thresholds=spec["tiou_thresholds"],
+            latency_budgets_sec=spec["latency_budgets_sec"],
+            fps=spec["fps"],
+            require_ledger=True,
+            require_no_future=True,
+            include_identity_diagnostics=True,
+            identity_tiou_threshold=spec["identity_tiou_threshold"],
+            identity_latency_budget_sec=spec["identity_latency_budget_sec"],
+        )
+        computed = evaluator.evaluate()
+    except (OSError, TypeError, ValueError) as exc:
+        raise ResultGateProtocolError(f"{label} evaluator replay failed: {exc}") from exc
+    return _normalized_metrics({"metrics": computed}, claim, f"{label}.recomputed_metrics")
+
+
+def _validate_run_evidence(row, claim, variant, seed, label):
+    evidence = row.get("evidence")
+    expected_evidence = {"run_manifest_path", "run_manifest_sha256"}
+    if not isinstance(evidence, dict) or set(evidence) != expected_evidence:
+        raise ResultGateInputError(
+            f"{label}.evidence requires exactly a signed run manifest path and hash"
+        )
+    manifest_path, manifest_hash = _evidence_file(evidence, "run_manifest", label)
+    signed_manifest = _load_evidence_json(manifest_path, f"{label}.run_manifest")
+    try:
+        manifest = verify_formal_run_manifest(
+            signed_manifest,
+            trust_root=_attestation_trust_roots()["profile"],
+        )
+    except TrainingEvidenceError as exc:
+        raise ResultGateInputError(f"{label} formal run manifest is invalid: {exc}") from exc
     if (
         _claim_name(manifest["claim"]) != claim
         or _variant_name(claim, manifest["variant"]) != variant
         or _seed(manifest["seed"], f"{label}.run_manifest.seed") != seed
     ):
-        raise ResultGateInputError(f"{label}.run_manifest run identity mismatch")
+        raise ResultGateInputError(f"{label} formal run identity differs")
+    _required_git_sha(manifest["commit_sha"], f"{label}.run_manifest.commit_sha")
+    if manifest["protocol_sha256"] != _sha256_json(row["protocol"], f"{label}.protocol"):
+        raise ResultGateInputError(f"{label} formal run protocol hash differs")
 
-    expected = {
-        "ledger_sha256": hashes["ledger"],
-        "commitment_sha256": hashes["commitment"],
-        "config_sha256": hashes["config"],
-        "model_sha256": hashes["model"],
-        "dataset_manifest_sha256": hashes["dataset_manifest"],
-        "evaluator_sha256": hashes["evaluator"],
-        "metrics_sha256": hashes["metrics"],
-        "cost_sha256": hashes.get("cost"),
-        "protocol_sha256": _sha256_json(row["protocol"], f"{label}.protocol"),
-        "raw_visual_audit_sha256": raw_visual_hash,
+    expected_artifacts = set(COMMON_RUN_ARTIFACTS)
+    if claim == "C2":
+        expected_artifacts.add("raw_visual_audit")
+    if set(manifest["artifacts"]) != expected_artifacts:
+        raise ResultGateInputError(
+            f"{label} formal run artifact roles differ; "
+            f"missing={sorted(expected_artifacts - set(manifest['artifacts']))}, "
+            f"extra={sorted(set(manifest['artifacts']) - expected_artifacts)}"
+        )
+    paths = {
+        role: Path(reference["path"]).resolve()
+        for role, reference in manifest["artifacts"].items()
     }
-    for field, expected_value in expected.items():
-        if manifest[field] != expected_value:
-            raise ResultGateInputError(f"{label}.run_manifest {field} mismatch")
-    return manifest
-
-
-def _validate_run_evidence(row, claim, variant, seed, label):
-    evidence = row.get("evidence")
-    if not isinstance(evidence, dict) or not evidence:
-        raise ResultGateInputError(f"{label} requires verified ledger evidence")
-
-    prefixes = ["ledger", "commitment", *SHA256_FIELDS]
-    if claim == "C1":
-        prefixes.append("cost")
-    else:
-        prefixes.append("raw_visual_audit")
-    expected_fields = {"ledger_count", "ledger_final_hashes"}
-    for prefix in prefixes:
-        expected_fields.update({f"{prefix}_path", f"{prefix}_sha256"})
-    if set(evidence) != expected_fields:
-        raise ResultGateInputError(
-            f"{label}.evidence fields differ: "
-            f"expected {sorted(expected_fields)}, found {sorted(evidence)}"
-        )
-
-    paths = {}
-    hashes = {}
-    for prefix in prefixes:
-        paths[prefix], hashes[prefix] = _evidence_file(evidence, prefix, label)
-
-    try:
-        ledger = load_verified_ledger(paths["ledger"], paths["commitment"])
-    except LedgerError as exc:
-        raise ResultGateInputError(f"{label} verified ledger evidence failed: {exc}") from exc
-    expected_count = _nonnegative_integer(
-        evidence["ledger_count"], f"{label}.evidence.ledger_count"
+    hashes = {
+        role: reference["sha256"] for role, reference in manifest["artifacts"].items()
+    }
+    training_ticket, _ = _validate_launch_ticket(
+        paths["training_launch_ticket"],
+        paths["training_launch_receipt"],
+        manifest,
+        paths,
+        hashes,
+        seed,
+        f"{label}.training",
+        entrypoint="train",
     )
-    if ledger.count != expected_count:
-        raise ResultGateInputError(f"{label} ledger count differs from evidence")
-    expected_final_hashes = evidence["ledger_final_hashes"]
-    if not isinstance(expected_final_hashes, dict):
-        raise ResultGateInputError(
-            f"{label}.evidence.ledger_final_hashes must be an object"
+    evaluation_ticket, _ = _validate_launch_ticket(
+        paths["evaluation_launch_ticket"],
+        paths["evaluation_launch_receipt"],
+        manifest,
+        paths,
+        hashes,
+        seed,
+        f"{label}.evaluation",
+        entrypoint="test",
+    )
+    shared_ticket_fields = {
+        "commit_sha",
+        "source_tree_sha256",
+        "config_file_sha256",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "data_identity",
+        "b0_evidence",
+        "review_evidence",
+        "profile_evidence",
+    }
+    for field in shared_ticket_fields:
+        if training_ticket[field] != evaluation_ticket[field]:
+            raise ResultGateInputError(
+                f"{label} training/evaluation launch tickets disagree on {field}"
+            )
+    metrics = _evaluate_signed_run(paths, claim, label)
+    try:
+        cost = derive_training_cost(
+            paths["training_trace"], paths["training_commitment"]
         )
-    for stream_id, final_hash in expected_final_hashes.items():
-        if not isinstance(stream_id, str) or not stream_id:
-            raise ResultGateInputError(f"{label} ledger final-hash stream id is invalid")
-        _required_sha256(final_hash, f"{label}.ledger_final_hashes.{stream_id}")
-    if ledger.final_hashes != expected_final_hashes:
-        raise ResultGateInputError(f"{label} ledger final hashes differ from evidence")
+    except TrainingEvidenceError as exc:
+        raise ResultGateInputError(f"{label} training trace is invalid: {exc}") from exc
+    normalized_cost = _normalized_cost({"cost": cost}, label) if claim == "C1" else None
 
-    metrics_artifact = _load_evidence_json(paths["metrics"], f"{label}.metrics evidence")
-    if metrics_artifact != row.get("metrics"):
-        raise ResultGateInputError(f"{label} metrics differ from verified metrics evidence")
-    if claim == "C1":
-        cost_artifact = _load_evidence_json(paths["cost"], f"{label}.cost evidence")
-        if cost_artifact != row.get("cost"):
-            raise ResultGateInputError(f"{label} cost differs from verified cost evidence")
-
-    raw_visual_hash = None
     raw_visual_audit = None
     if claim == "C2":
-        raw_visual_hash = hashes["raw_visual_audit"]
         raw_visual_audit = _validate_raw_visual_audit(
             paths["raw_visual_audit"],
             claim,
             variant,
             seed,
-            hashes,
+            {
+                "model": hashes["checkpoint"],
+                "dataset_manifest": hashes["data_identity"],
+            },
             label,
         )
-    _validate_run_manifest(
-        paths["run_manifest"],
-        row,
-        claim,
-        variant,
-        seed,
-        hashes,
-        raw_visual_hash,
-        label,
-    )
     return {
-        "hashes": hashes,
-        "ledger_count": ledger.count,
-        "ledger_final_hashes": ledger.final_hashes,
+        "manifest_sha256": manifest_hash,
+        "commit_sha": manifest["commit_sha"],
+        "b0_evidence": training_ticket["b0_evidence"],
+        "metrics": metrics,
+        "cost": normalized_cost,
         "raw_visual_audit": raw_visual_audit,
     }
 
@@ -651,6 +1152,11 @@ def _collect_payloads(value):
         if "claim" in payload:
             runs.append(payload)
             continue
+        unknown = set(payload) - {"runs", "b0_evidence", "reporting_evidence"}
+        if unknown:
+            raise ResultGateInputError(
+                f"artifact[{index}] contains unsupported self-attested fields: {sorted(unknown)}"
+            )
         containers.append(payload)
         artifact_runs = payload.get("runs", ())
         if not isinstance(artifact_runs, (list, tuple)):
@@ -681,114 +1187,179 @@ def _b0_evidence_entry(containers):
     return entries[0][1] if entries else None
 
 
-def _validate_b0_evidence(containers):
+def _validate_b0_evidence(containers, *, expected_commit, ticket_b0_hashes):
     evidence = _b0_evidence_entry(containers)
     if evidence is None:
         return {"provided": False, "passed": False, "violations": []}
-    if not isinstance(evidence, dict) or set(evidence) != {"path", "sha256"}:
-        raise ResultGateInputError("b0_evidence requires exactly path and sha256")
-    wrapper = {
-        "b0_path": evidence["path"],
-        "b0_sha256": evidence["sha256"],
-    }
-    b0_path, b0_hash = _evidence_file(wrapper, "b0", "b0_evidence")
-    artifact = _load_evidence_json(b0_path, "b0_evidence artifact")
-    required = {
-        "schema_version",
-        "status",
-        "commit_sha",
-        "test_count",
-        "blocking_findings",
-        "protocol_violations",
-        "test_report_path",
-        "test_report_sha256",
-        "audit_report_path",
-        "audit_report_sha256",
-    }
-    if set(artifact) != required:
-        raise ResultGateInputError(
-            "B0 artifact fields differ: "
-            f"expected {sorted(required)}, found {sorted(artifact)}"
+    try:
+        artifact = validate_b0_evidence(
+            evidence,
+            base_dir=REPO_ROOT,
+            expected_commit=expected_commit,
+            trust_root=_attestation_trust_roots()["b0"],
         )
-    if artifact["schema_version"] != B0_SCHEMA:
-        raise ResultGateInputError("unsupported B0 artifact schema")
-    commit_sha = _required_git_sha(artifact["commit_sha"], "B0.commit_sha")
-    test_count = _nonnegative_integer(artifact["test_count"], "B0.test_count", positive=True)
-    blocking_findings = _nonnegative_integer(
-        artifact["blocking_findings"], "B0.blocking_findings"
-    )
-    protocol_violations = _nonnegative_integer(
-        artifact["protocol_violations"], "B0.protocol_violations"
-    )
-
-    linked = {
-        "test_report_path": artifact["test_report_path"],
-        "test_report_sha256": artifact["test_report_sha256"],
-        "audit_report_path": artifact["audit_report_path"],
-        "audit_report_sha256": artifact["audit_report_sha256"],
-    }
-    test_path, _ = _evidence_file(linked, "test_report", "B0")
-    audit_path, _ = _evidence_file(linked, "audit_report", "B0")
-    test_report = _load_evidence_json(test_path, "B0 test report")
-    audit_report = _load_evidence_json(audit_path, "B0 audit report")
-
-    test_required = {"schema_version", "status", "commit_sha", "collected", "passed", "failed"}
-    if set(test_report) != test_required or test_report.get("schema_version") != B0_TEST_REPORT_SCHEMA:
-        raise ResultGateInputError("B0 test report schema or fields are invalid")
-    if _required_git_sha(test_report["commit_sha"], "B0.test_report.commit_sha") != commit_sha:
-        raise ResultGateInputError("B0 test report commit does not match B0 artifact")
-    collected = _nonnegative_integer(test_report["collected"], "B0.test_report.collected")
-    passed = _nonnegative_integer(test_report["passed"], "B0.test_report.passed")
-    failed = _nonnegative_integer(test_report["failed"], "B0.test_report.failed")
-    test_pass = (
-        test_report["status"] == "PASS"
-        and collected == test_count
-        and passed == test_count
-        and failed == 0
-    )
-
-    audit_required = {
-        "schema_version",
-        "status",
-        "commit_sha",
-        "blocking_findings",
-        "protocol_violations",
-    }
-    if set(audit_report) != audit_required or audit_report.get("schema_version") != B0_AUDIT_REPORT_SCHEMA:
-        raise ResultGateInputError("B0 audit report schema or fields are invalid")
-    if _required_git_sha(audit_report["commit_sha"], "B0.audit_report.commit_sha") != commit_sha:
-        raise ResultGateInputError("B0 audit report commit does not match B0 artifact")
-    audit_blockers = _nonnegative_integer(
-        audit_report["blocking_findings"], "B0.audit_report.blocking_findings"
-    )
-    audit_violations = _nonnegative_integer(
-        audit_report["protocol_violations"], "B0.audit_report.protocol_violations"
-    )
-    audit_pass = (
-        audit_report["status"] == "PASS"
-        and audit_blockers == blocking_findings == 0
-        and audit_violations == protocol_violations == 0
-    )
-    overall_pass = artifact["status"] == "PASS" and test_pass and audit_pass
-    violations = []
-    if not test_pass:
-        violations.append("B0 test report did not pass or count accounting differs")
-    if not audit_pass:
-        violations.append("B0 audit report contains blockers or protocol violations")
-    if artifact["status"] not in {"PASS", "FAIL"}:
-        raise ResultGateInputError("B0.status must be PASS or FAIL")
+    except B0EvidenceError as exc:
+        raise ResultGateInputError(f"B0 evidence is invalid: {exc}") from exc
+    b0_hash = artifact["artifact_sha256"]
+    if ticket_b0_hashes != {b0_hash}:
+        raise ResultGateInputError(
+            "formal launch tickets do not all bind the supplied B0 artifact"
+        )
     return {
         "provided": True,
-        "passed": overall_pass,
-        "violations": violations,
+        "passed": True,
+        "violations": [],
         "artifact_sha256": b0_hash,
-        "commit_sha": commit_sha,
-        "test_count": test_count,
+        "commit_sha": artifact["commit_sha"],
+        "test_count": artifact["test_count"],
     }
 
 
-def _normalize_prerequisites(containers, run_count):
-    b0 = _validate_b0_evidence(containers)
+def _single_container_entry(containers, name):
+    entries = [(index, container[name]) for index, container in enumerate(containers) if name in container]
+    if not entries:
+        return None
+    canonical = {_canonical_json(value, f"artifact[{index}].{name}") for index, value in entries}
+    if len(canonical) != 1:
+        raise ResultGateInputError(f"conflicting {name} artifacts")
+    return entries[0][1]
+
+
+def _load_content_manifest(reference, label):
+    if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+        raise ResultGateInputError(f"{label} reference requires exactly path and sha256")
+    wrapper = {f"{label}_path": reference["path"], f"{label}_sha256": reference["sha256"]}
+    path, digest = _evidence_file(wrapper, label, label)
+    manifest = _load_evidence_json(path, label)
+    try:
+        valid = verify_content_hash(manifest)
+    except ContractValidationError as exc:
+        raise ResultGateInputError(f"{label} content hash validation failed: {exc}") from exc
+    if not valid:
+        raise ResultGateInputError(f"{label} content hash is invalid")
+    return manifest, path, digest
+
+
+def _validate_reporting_evidence(containers, *, require_fineaction):
+    evidence = _single_container_entry(containers, "reporting_evidence")
+    if evidence is None:
+        return {
+            "reporting_211_213": {"provided": False, "passed": False},
+            "FineAction": {"provided": False, "passed": not require_fineaction},
+        }
+    if not isinstance(evidence, dict) or set(evidence) != {"universe", "comparison", "fineaction"}:
+        raise ResultGateInputError(
+            "reporting_evidence requires universe, comparison, and fineaction references"
+        )
+    universe, _, universe_hash = _load_content_manifest(
+        evidence["universe"], "reporting_universe"
+    )
+    comparison, _, comparison_hash = _load_content_manifest(
+        evidence["comparison"], "reporting_comparison"
+    )
+    if (
+        universe.get("schema") != "full_petal.historical_reporting_universe"
+        or universe.get("universe", {}).get("count") != 211
+    ):
+        raise ResultGateInputError("historical reporting universe is not the locked 211-ID artifact")
+    if (
+        comparison.get("schema") != "full_petal.reporting_universe_comparison"
+        or comparison.get("strict") is not True
+        or comparison.get("observed_universe", {}).get("count") != 213
+        or comparison.get("historical_universe", {}).get("manifest_content_sha256")
+        != universe.get("content_sha256")
+        or comparison.get("comparison", {}).get("unexplained_ids")
+        or comparison.get("status") not in {"MATCH", "EXPLAINED_MISMATCH"}
+    ):
+        raise ResultGateInputError("211-vs-213 reporting comparison is not fully explained")
+
+    fineaction_result = {"provided": False, "passed": not require_fineaction}
+    if evidence["fineaction"] is not None:
+        fineaction, _, fineaction_hash = _load_content_manifest(
+            evidence["fineaction"], "fineaction_qualification"
+        )
+        if (
+            fineaction.get("schema") != "full_petal.fineaction_qualification"
+            or fineaction.get("qualified") is not True
+            or fineaction.get("status") != "PASS"
+        ):
+            raise ResultGateInputError("FineAction qualification has not reached PASS")
+        for gate_name in fineaction.get("mandatory_gates", ()):
+            gate = fineaction.get("gates", {}).get(gate_name, {})
+            for check_name, check in gate.get("checks", {}).items():
+                if not check.get("mandatory"):
+                    continue
+                if check.get("passed") is not True or check.get("evidence_valid") is not True:
+                    raise ResultGateInputError(
+                        f"FineAction mandatory evidence failed: {gate_name}.{check_name}"
+                    )
+                item = check.get("evidence")
+                if not isinstance(item, dict):
+                    raise ResultGateInputError(
+                        f"FineAction evidence is not dereferenceable: {gate_name}.{check_name}"
+                    )
+                wrapper = {
+                    "artifact_path": item.get("artifact_path"),
+                    "artifact_sha256": item.get("artifact_sha256"),
+                }
+                _evidence_file(wrapper, "artifact", f"FineAction.{gate_name}.{check_name}")
+        fineaction_result = {
+            "provided": True,
+            "passed": True,
+            "artifact_sha256": fineaction_hash,
+        }
+    return {
+        "reporting_211_213": {
+            "provided": True,
+            "passed": True,
+            "universe_sha256": universe_hash,
+            "comparison_sha256": comparison_hash,
+        },
+        "FineAction": fineaction_result,
+    }
+
+
+def _run_evidence_rows(grouped):
+    return [
+        row["evidence"]
+        for claim in grouped.values()
+        for variant in claim.values()
+        for row in variant.values()
+    ]
+
+
+def _normalize_prerequisites(containers, grouped, run_count):
+    evidence_rows = _run_evidence_rows(grouped)
+    if not evidence_rows:
+        reporting = _validate_reporting_evidence(containers, require_fineaction=False)
+        return {
+            "protocol": {
+                "provided": False,
+                "passed": False,
+                "violations": [],
+                "source": "verified_run_evidence",
+            },
+            "B0": {"provided": False, "passed": False, "violations": []},
+            **reporting,
+        }
+    commits = {row["commit_sha"] for row in evidence_rows}
+    if len(commits) != 1:
+        raise ResultGateInputError("all formal runs must bind one exact source commit")
+    expected_commit = _required_git_sha(next(iter(commits)), "formal run commit")
+    ticket_b0_hashes = {
+        row["b0_evidence"].get("sha256")
+        for row in evidence_rows
+        if isinstance(row.get("b0_evidence"), dict)
+    }
+    b0 = _validate_b0_evidence(
+        containers,
+        expected_commit=expected_commit,
+        ticket_b0_hashes=ticket_b0_hashes,
+    )
+    require_fineaction = any(grouped["C2"][name] for name in grouped["C2"])
+    reporting = _validate_reporting_evidence(
+        containers, require_fineaction=require_fineaction
+    )
     return {
         "protocol": {
             "provided": run_count > 0,
@@ -797,6 +1368,7 @@ def _normalize_prerequisites(containers, run_count):
             "source": "verified_run_evidence",
         },
         "B0": b0,
+        **reporting,
     }
 
 
@@ -808,9 +1380,11 @@ def _normalize_runs(raw_runs):
     for index, row in enumerate(raw_runs):
         if not isinstance(row, dict):
             raise ResultGateInputError(f"runs[{index}] must be a JSON object")
-        if "claim" not in row or "variant" not in row or "seed" not in row:
+        required_fields = {"claim", "variant", "seed", "protocol", "evidence"}
+        if set(row) != required_fields:
             raise ResultGateInputError(
-                f"runs[{index}] requires claim, variant, and seed fields"
+                f"runs[{index}] fields differ; expected {sorted(required_fields)}, "
+                f"found {sorted(row)}. Metrics, costs, and PASS flags must be recomputed."
             )
         claim = _claim_name(row["claim"])
         variant = _variant_name(claim, row["variant"])
@@ -823,11 +1397,11 @@ def _normalize_runs(raw_runs):
         normalized = {
             "seed": seed,
             "protocol": protocol,
-            "metrics": _normalized_metrics(row, claim, label),
+            "metrics": evidence["metrics"],
             "evidence": evidence,
         }
         if claim == "C1":
-            normalized["cost"] = _normalized_cost(row, label)
+            normalized["cost"] = evidence["cost"]
         grouped[claim][variant][seed] = normalized
     return grouped
 
@@ -954,6 +1528,10 @@ def _c1_scientific_metrics(
         },
     }
     best_error_reduction = max(aggregate["error_reduction"].values())
+    identity_noninferior = all(
+        reduction >= -1e-12
+        for reduction in aggregate["error_reduction"].values()
+    )
     map_path = aggregate["online_map_gain_points"] >= map_gain_points - 1e-12
     error_path = (
         best_error_reduction >= error_reduction - 1e-12
@@ -977,6 +1555,7 @@ def _c1_scientific_metrics(
         and recall_pass
         and false_emission_pass
         and latency_pass
+        and identity_noninferior
     )
     return {
         "passed": passed,
@@ -989,6 +1568,7 @@ def _c1_scientific_metrics(
             "recall_noninferior": recall_pass,
             "false_emission_noninferior": false_emission_pass,
             "endpoint_latency_noninferior": latency_pass,
+            "duplicate_and_fragmentation_noninferior": identity_noninferior,
         },
         "aggregate": aggregate,
         "per_seed": per_seed,
@@ -1195,7 +1775,7 @@ def evaluate_result_gates(
 
     containers, raw_runs = _collect_payloads(artifacts)
     grouped = _normalize_runs(raw_runs)
-    prerequisites = _normalize_prerequisites(containers, len(raw_runs))
+    prerequisites = _normalize_prerequisites(containers, grouped, len(raw_runs))
     c1 = _evaluate_c1(
         grouped,
         thresholds["c1_cost_relative_tolerance"],
@@ -1217,6 +1797,8 @@ def evaluate_result_gates(
         "C2": c2["status"] == "PASS",
         "protocol": prerequisites["protocol"]["passed"],
         "B0": prerequisites["B0"]["passed"],
+        "reporting_211_213": prerequisites["reporting_211_213"]["passed"],
+        "FineAction": prerequisites["FineAction"]["passed"],
     }
     screen_pass = all(project_requirements.values())
     project = {

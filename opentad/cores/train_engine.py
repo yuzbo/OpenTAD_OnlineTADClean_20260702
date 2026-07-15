@@ -132,6 +132,28 @@ def _rollback_online_transaction(transaction):
         transaction.rollback_online_update()
 
 
+def _input_token_count(data_dict):
+    masks = data_dict.get("masks")
+    if torch.is_tensor(masks):
+        count = int(masks.detach().to(dtype=torch.int64).sum().item())
+    else:
+        inputs = data_dict.get("inputs")
+        if not torch.is_tensor(inputs) or inputs.ndim == 0:
+            raise RuntimeError("formal optimizer evidence cannot determine input tokens")
+        count = int(inputs.shape[0] * inputs.shape[-1])
+    if count <= 0:
+        raise RuntimeError("formal optimizer evidence requires positive input tokens")
+    return count
+
+
+def _episode_identity(control, curr_epoch, iter_idx):
+    if isinstance(control, Mapping):
+        video_id = control.get("video_id")
+        if isinstance(video_id, str) and video_id.strip():
+            return video_id
+    return f"epoch-{curr_epoch}-iter-{iter_idx}"
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -146,6 +168,7 @@ def train_one_epoch(
     scaler=None,
     amp_dtype=None,
     fixed_step_profiler=None,
+    optimizer_event_recorder=None,
 ):
     """Training the model for one epoch"""
 
@@ -167,6 +190,7 @@ def train_one_epoch(
     transaction = _transaction_target(model)
     episode_weight = 0.0
     episode_loss_records = []
+    episode_input_tokens = 0
     skip_until_boundary = False
     optimizer_events = 0
     successful_optimizer_events = 0
@@ -188,6 +212,8 @@ def train_one_epoch(
             continue
 
         data_dict = move_data_to_device(raw_data_dict, model_device)
+        if optimizer_event_recorder is not None:
+            episode_input_tokens += _input_token_count(data_dict)
         curr_backbone_lr = None
         if hasattr(target, "backbone") and not getattr(
             target.backbone, "freeze_backbone", True
@@ -222,6 +248,14 @@ def train_one_epoch(
             skipped_optimizer_events += 1
             if fixed_step_profiler is not None:
                 fixed_step_profiler.record_skipped_optimizer_event()
+            if optimizer_event_recorder is not None:
+                optimizer_event_recorder.record(
+                    epoch=curr_epoch,
+                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
+                    input_tokens=episode_input_tokens,
+                    skipped=True,
+                )
+            episode_input_tokens = 0
             skip_until_boundary = not boundary
             continue
 
@@ -246,16 +280,9 @@ def train_one_epoch(
         if transaction is not None and not transaction.has_pending_online_update():
             optimizer.zero_grad(set_to_none=True)
             raise RuntimeError("episode boundary has no staged online state")
-        if scaler is not None:
-            scaler.unscale_(optimizer)
-        _normalize_accumulated_gradients(model, episode_weight)
+        # A failed state commit must occur before optimizer/scaler mutation. Scaled
+        # gradients are sufficient for the first non-finite guard.
         bad_param_name = _find_first_nonfinite_grad(model)
-        if bad_param_name is None and clip_grad_l2norm > 0.0:
-            torch.nn.utils.clip_grad_norm_(
-                _grad_clip_parameters(model), clip_grad_l2norm
-            )
-            bad_param_name = _find_first_nonfinite_grad(model)
-
         if bad_param_name is not None:
             logger.error(
                 "[Train]: non-finite episode gradients at epoch=%d iter=%d param=%s; rollback",
@@ -281,14 +308,17 @@ def train_one_epoch(
             skipped_optimizer_events += 1
             if fixed_step_profiler is not None:
                 fixed_step_profiler.record_skipped_optimizer_event()
+            if optimizer_event_recorder is not None:
+                optimizer_event_recorder.record(
+                    epoch=curr_epoch,
+                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
+                    input_tokens=episode_input_tokens,
+                    skipped=True,
+                )
+            episode_input_tokens = 0
             continue
 
         try:
-            if scaler is not None:
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                optimizer.step()
             if transaction is not None:
                 transaction.commit_online_update()
         except Exception:
@@ -296,8 +326,41 @@ def train_one_epoch(
             optimizer.zero_grad(set_to_none=True)
             raise
 
+        if scaler is not None:
+            scaler.unscale_(optimizer)
+        _normalize_accumulated_gradients(model, episode_weight)
+        if clip_grad_l2norm > 0.0:
+            torch.nn.utils.clip_grad_norm_(
+                _grad_clip_parameters(model), clip_grad_l2norm
+            )
+        bad_param_name = _find_first_nonfinite_grad(model)
+        if bad_param_name is not None:
+            optimizer.zero_grad(set_to_none=True)
+            raise RuntimeError(
+                "gradient state became non-finite after the atomic online-state commit; "
+                f"aborting before optimizer mutation at parameter {bad_param_name}"
+            )
+
+        try:
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+        except Exception:
+            optimizer.zero_grad(set_to_none=True)
+            raise
+
         scheduler.step()
         successful_optimizer_events += 1
+        if optimizer_event_recorder is not None:
+            optimizer_event_recorder.record(
+                epoch=curr_epoch,
+                episode_id=_episode_identity(control, curr_epoch, iter_idx),
+                input_tokens=episode_input_tokens,
+                skipped=False,
+            )
+        episode_input_tokens = 0
         if model_ema is not None:
             model_ema.update(model)
         optimizer.zero_grad(set_to_none=True)
@@ -368,6 +431,8 @@ def train_one_epoch(
         _rollback_online_transaction(transaction)
         optimizer.zero_grad(set_to_none=True)
         raise RuntimeError("online training epoch ended with an uncommitted episode")
+    if episode_input_tokens:
+        raise RuntimeError("online training epoch ended with uncommitted optimizer evidence")
     return {
         "optimizer_events": optimizer_events,
         "successful_optimizer_events": successful_optimizer_events,

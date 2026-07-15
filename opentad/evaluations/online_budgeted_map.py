@@ -350,11 +350,20 @@ class OnlineAPBudgeted:
 
     def _load_predictions(self, filename):
         data = self._load_json_or_dict(filename)
-        if "results" not in data:
-            raise IOError("predictions must contain a results field")
-        result_mapping = data["results"]
         if self.require_ledger:
-            result_mapping = verified_emission_result_dict(result_mapping)
+            required = {"ledger_path", "commitment_path"}
+            if set(data) != required:
+                raise ValueError(
+                    "formal predictions require exactly ledger_path and "
+                    "commitment_path; in-memory rows cannot prove the tail"
+                )
+            result_mapping = verified_emission_result_dict(
+                data["ledger_path"], data["commitment_path"]
+            )
+        else:
+            if "results" not in data:
+                raise IOError("predictions must contain a results field")
+            result_mapping = data["results"]
         rows = []
         for video_id, video_rows in result_mapping.items():
             video_id = str(video_id)

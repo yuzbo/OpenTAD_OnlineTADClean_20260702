@@ -67,3 +67,35 @@ def test_engine_uses_amp_without_requiring_a_grad_scaler():
     assert "use_amp = amp_dtype is not None" in source
     assert "dtype=amp_dtype" in source
     assert "use_amp = False if scaler is None else True" not in source
+
+
+def test_streaming_scheduler_uses_complete_video_events_not_chunk_count():
+    torch = _torch_or_skip()
+    from opentad.cores.scheduler import build_scheduler, optimizer_events_per_epoch
+
+    class Dataset:
+        optimizer_events_per_epoch = 2
+
+    class Loader:
+        dataset = Dataset()
+
+        def __len__(self):
+            return 9
+
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+    scheduler_cfg = {
+        "type": "LinearWarmupCosineAnnealingLR",
+        "warmup_epoch": 1,
+        "max_epoch": 12,
+    }
+    original = dict(scheduler_cfg)
+
+    event_count = optimizer_events_per_epoch(Loader())
+    scheduler, max_epoch = build_scheduler(scheduler_cfg, optimizer, event_count)
+
+    assert event_count == 2
+    assert scheduler.warmup_epoch == 2
+    assert scheduler.max_epoch == 24
+    assert max_epoch == 12
+    assert scheduler_cfg == original

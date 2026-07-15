@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run focused Torch contracts without importing unrelated optional OpenTAD ops."""
+"""Run all B0 contracts with target Torch and a real MMEngine registry."""
 
 import argparse
+import importlib
 import importlib.machinery
 from pathlib import Path
 import sys
@@ -44,48 +45,78 @@ def _namespace(name, path):
     return module
 
 
-class _FocusedRegistry:
-    def __init__(self):
-        self.modules = {}
-
-    def register_module(self, module=None, name=None, force=False, **kwargs):
-        del force, kwargs
-
-        def register(target):
-            self.modules[name or target.__name__] = target
-            return target
-
-        return register(module) if module is not None else register
-
-    def build(self, cfg):
-        if not isinstance(cfg, dict):
-            return cfg
-        options = dict(cfg)
-        target = options.pop("type")
-        if isinstance(target, str):
-            if target not in self.modules:
-                raise KeyError(f"focused registry has not imported {target!r}")
-            target = self.modules[target]
-        return target(**options)
+def _execute_package_init(name, path):
+    module = sys.modules[name]
+    init_path = Path(path) / "__init__.py"
+    module.__file__ = str(init_path)
+    code = compile(init_path.read_text(encoding="utf-8"), str(init_path), "exec")
+    exec(code, module.__dict__)
+    return module
 
 
-def _install_focused_opentad(repo_root):
+def _install_cpu_nms_test_double(torch):
+    module = types.ModuleType("nms_1d_cpu")
+    module.__spec__ = importlib.machinery.ModuleSpec("nms_1d_cpu", loader=None)
+
+    def nms(segs, scores, iou_threshold=0.5):
+        del segs, iou_threshold
+        return torch.argsort(scores, descending=True).cpu()
+
+    def softnms(
+        segs,
+        scores,
+        dets,
+        iou_threshold=0.5,
+        sigma=0.5,
+        min_score=0.0,
+        method=2,
+        t1=0.0,
+        t2=0.0,
+    ):
+        del iou_threshold, sigma, method, t1, t2
+        indices = torch.argsort(scores, descending=True).cpu()
+        kept = indices[scores[indices].cpu() >= float(min_score)]
+        if len(kept):
+            dets[: len(kept), :2].copy_(segs[kept].cpu())
+            dets[: len(kept), 2].copy_(scores[kept].cpu())
+        return kept
+
+    module.nms = nms
+    module.softnms = softnms
+    sys.modules[module.__name__] = module
+
+
+def _ensure_cpu_nms_module(torch):
+    try:
+        importlib.import_module("nms_1d_cpu")
+    except ModuleNotFoundError as exc:
+        if exc.name != "nms_1d_cpu":
+            raise
+        _install_cpu_nms_test_double(torch)
+
+
+def _install_b0_opentad(repo_root):
+    import torch
+    from mmengine.registry import MODELS as MM_MODELS
+    from mmengine.registry import Registry
+
     packages = (
         ("opentad", "opentad"),
         ("opentad.cores", "opentad/cores"),
         ("opentad.models", "opentad/models"),
+        ("opentad.models.backbones", "opentad/models/backbones"),
         ("opentad.models.bricks", "opentad/models/bricks"),
         ("opentad.models.dense_heads", "opentad/models/dense_heads"),
         ("opentad.models.detectors", "opentad/models/detectors"),
         ("opentad.models.losses", "opentad/models/losses"),
+        ("opentad.models.necks", "opentad/models/necks"),
         ("opentad.models.projections", "opentad/models/projections"),
-        ("opentad.utils", "opentad/utils"),
-        ("opentad.evaluations", "opentad/evaluations"),
+        ("opentad.models.selectors", "opentad/models/selectors"),
     )
     for name, relative_path in packages:
         _namespace(name, repo_root / relative_path)
 
-    registry = _FocusedRegistry()
+    registry = Registry("full_petal_b0_models")
     builder = types.ModuleType("opentad.models.builder")
     builder.__spec__ = importlib.machinery.ModuleSpec(
         "opentad.models.builder", loader=None
@@ -118,8 +149,39 @@ def _install_focused_opentad(repo_root):
         "build_loss",
     ):
         setattr(builder, name, registry.build)
+
+    def build_backbone(cfg):
+        if cfg.get("type") in {
+            "OnlineSigLIPFrameEncoder",
+            "OnlineVideoMAEAdapter",
+            "CausalFrameSelector",
+        }:
+            return MM_MODELS.build(cfg)
+        return registry.build(cfg)
+
+    builder.build_backbone = build_backbone
     sys.modules[builder.__name__] = builder
     setattr(sys.modules["opentad.models"], "builder", builder)
+
+    _ensure_cpu_nms_module(torch)
+    _execute_package_init("opentad.models.bricks", repo_root / "opentad/models/bricks")
+    _execute_package_init("opentad.models.losses", repo_root / "opentad/models/losses")
+
+    selected_modules = (
+        "opentad.models.backbones.online_siglip_adapter",
+        "opentad.models.backbones.online_videomae_adapter",
+        "opentad.models.selectors.causal_frame_selector",
+        "opentad.models.dense_heads.prior_generator",
+        "opentad.models.dense_heads.anchor_free_head",
+        "opentad.models.dense_heads.matr_head",
+        "opentad.models.projections.temporalmaxer_proj",
+        "opentad.models.projections.causal_temporalmaxer_proj",
+        "opentad.models.necks.fpn",
+        "opentad.models.detectors.mamba",
+    )
+    for name in selected_modules:
+        importlib.import_module(name)
+    sys.modules["opentad.models"].build_detector = builder.build_detector
 
 
 def main(argv=None):
@@ -145,10 +207,11 @@ def main(argv=None):
         ) from exc
 
     sys.path.insert(0, str(repo_root))
-    _install_focused_opentad(repo_root)
+    _install_b0_opentad(repo_root)
     print(
         "FULL_PETAL_ISOLATED_TORCH="
-        f"python={sys.executable} torch={torch.__version__} repo={repo_root}"
+        f"python={sys.executable} torch={torch.__version__} "
+        f"registry=mmengine repo={repo_root}"
     )
     return int(pytest.main(args.pytest_args))
 

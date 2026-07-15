@@ -7,10 +7,7 @@ import torch.distributed as dist
 
 from opentad.utils import create_folder
 from opentad.utils.device import get_model_device, move_data_to_device
-from opentad.utils.immutable_event_ledger import (
-    load_verified_ledger,
-    persist_verified_ledger,
-)
+from opentad.utils.immutable_event_ledger import persist_verified_ledger
 from opentad.utils.online_protocol import (
     is_streaming_safe_emission,
     resolve_sliding_window_for_post_processing,
@@ -19,6 +16,7 @@ from opentad.utils.online_protocol import (
     validate_emission_ledger_summary,
     validate_streaming_safe_ext_cls,
     validate_streaming_safe_world_size,
+    verify_emission_result_dict_rows,
     verified_emission_result_dict,
 )
 from opentad.models.utils.post_processing import build_classifier, batched_nms
@@ -99,7 +97,7 @@ def eval_one_epoch(
     result_dict = gather_ddp_results(world_size, result_dict, cfg.post_processing)
     emission_summary = None
     if is_streaming_safe_emission(cfg.post_processing):
-        result_dict = verified_emission_result_dict(result_dict)
+        result_dict = verify_emission_result_dict_rows(result_dict)
         if not getattr(cfg.post_processing, "save_emission_ledger", True):
             raise RuntimeError("formal streaming evaluation requires a persisted emission ledger")
         if rank == 0:
@@ -125,11 +123,9 @@ def eval_one_epoch(
                 commitment_path,
                 flattened_rows,
             )
-            verified = load_verified_ledger(ledger_path, commitment_path)
-            persisted_results = {video_id: [] for video_id in result_dict}
-            for row in verified.rows:
-                persisted_results[row["video_id"]].append(dict(row))
-            result_dict = verified_emission_result_dict(persisted_results)
+            result_dict = verified_emission_result_dict(
+                ledger_path, commitment_path
+            )
         else:
             commitment = None
         emission_summary = summarize_emission_ledger(result_dict)
@@ -142,7 +138,10 @@ def eval_one_epoch(
     if rank == 0:
         result_eval = dict(results=result_dict)
         if emission_summary is not None:
-            result_eval["ledger_commitment"] = commitment
+            result_eval = {
+                "ledger_path": str(ledger_path),
+                "commitment_path": str(commitment_path),
+            }
             latency = emission_summary["latency_sec"]
             logger.info(
                 "[OnlineEval]: emissions=%d videos=%d streams=%d latency_mean=%s latency_p95=%s "
@@ -188,7 +187,7 @@ def gather_ddp_results(world_size, result_dict, post_cfg):
                 result_dict[k] = v
 
     if is_streaming_safe_emission(post_cfg):
-        return verified_emission_result_dict(result_dict)
+        return verify_emission_result_dict_rows(result_dict)
 
     # do nms for sliding window, if needed
     if should_run_video_level_nms(post_cfg, getattr(post_cfg, "sliding_window", False)):
