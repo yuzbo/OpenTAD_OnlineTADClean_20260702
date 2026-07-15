@@ -14,6 +14,11 @@ from ..builder import DETECTORS, build_backbone, build_head, build_projection
 from ..dense_heads.persistent_event_set_head import SLOT_FREE, PersistentEventSetState
 from opentad.utils.immutable_event_ledger import ImmutableEventLedger
 from opentad.utils.online_protocol import ProtocolViolation
+from opentad.utils.crs_eps_sampling import (
+    CrsEpsSamplingError,
+    canonical_json_sha256,
+    episode_payload_sha256,
+)
 from opentad.utils.prefix_trajectory_supervision import (
     PrefixTrajectorySupervisionState,
     SupervisionMode,
@@ -890,6 +895,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         required = {
             "draw_index",
             "episode_id",
+            "episode_payload_sha256",
             "supervised_range",
             "replay_range",
             "gradient_ranges",
@@ -899,6 +905,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "is_video_group_start",
             "is_video_group_end",
             "episode_manifest_sha256",
+            "episode_sequence_sha256",
         }
         missing = sorted(required.difference(control))
         if missing:
@@ -953,6 +960,28 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             or any(character not in "0123456789abcdef" for character in manifest_hash)
         ):
             raise ProtocolViolation("CRS-EPS manifest hash is malformed")
+        sequence_hash = control["episode_sequence_sha256"]
+        if (
+            not isinstance(sequence_hash, str)
+            or len(sequence_hash) != 64
+            or any(character not in "0123456789abcdef" for character in sequence_hash)
+        ):
+            raise ProtocolViolation("CRS-EPS episode sequence hash is malformed")
+        payload_hash = control["episode_payload_sha256"]
+        if (
+            not isinstance(payload_hash, str)
+            or len(payload_hash) != 64
+            or any(character not in "0123456789abcdef" for character in payload_hash)
+        ):
+            raise ProtocolViolation("CRS-EPS episode payload hash is malformed")
+        try:
+            recomputed_payload_hash = episode_payload_sha256(control)
+        except CrsEpsSamplingError as exc:
+            raise ProtocolViolation(f"CRS-EPS episode payload is incomplete: {exc}") from exc
+        if recomputed_payload_hash != payload_hash:
+            raise ProtocolViolation("CRS-EPS episode payload hash does not verify")
+        if group_size == 1 and canonical_json_sha256([payload_hash]) != sequence_hash:
+            raise ProtocolViolation("CRS-EPS single-draw sequence hash does not verify")
         return {
             "replay_range": replay,
             "supervised_range": supervised,

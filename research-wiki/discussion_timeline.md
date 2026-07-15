@@ -803,3 +803,31 @@ Current decision:
 > Freeze and commit the implementation, regenerate full B0 evidence, and send
 > the exact commit plus B0 artifact to the locked reviewer. Do not run G0 on
 > real data, profile, or formal training while that gate is pending.
+
+### T25: First Exact-Commit Review Blocks Four Enforceability Gaps
+
+Commit `0731f070e7d7f982a1df20cfaff801b21bed96fe` passed signed B0 with
+`548/548` tests, but the same independent reviewer returned `REVISE`,
+`PROFILE=BLOCK`, and `FORMAL_TRAINING=BLOCK`. The four accepted findings were:
+
+- G0 was documented but not mandatory in profile launch tickets;
+- exact `0..M-1` draw membership/order was not optimizer-bound;
+- failed groups did not restore mutated model buffers;
+- G0 provenance and outcome-blind margins were caller claims rather than a
+  signed, byte-reconciled evidence chain.
+
+The correction route upgrades the manifest with a sampling-population hash and
+per-video episode-sequence hash, enforces exact draw order, restores buffers and
+staged state on every pre-boundary failure, preregisters signed selection and
+margins, signs the terminal G0 audit, and makes G0 PASS a profile-ticket field
+that is re-evaluated before CUDA/DDP.
+
+Current decision:
+
+> Complete the four corrections and their adversarial tests, then freeze a new
+> commit, regenerate full B0, and return to the same reviewer. The prior B0 PASS
+> does not authorize profile because its associated review is REVISE.
+
+Source:
+
+- [`../PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md`](../PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md).

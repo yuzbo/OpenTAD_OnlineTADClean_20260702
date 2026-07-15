@@ -1127,3 +1127,42 @@ Reversibility:
 - Code may change after a failed B0 or review, but every change requires a new
   commit, regenerated B0, and another review. The no-experiment-before-PASS
   ordering is not reversible for this evidence chain.
+
+## DR-032: Make G0 and Exact-M Lifecycle Launch-Enforced
+
+Status: active correction; new B0 and same-reviewer acceptance pending.
+
+Decision:
+
+> Accept all four blocking findings on commit `0731f07`. CRS-EPS profile
+> authorization now requires a signed, reproducible G0 PASS chain, and each
+> optimizer event must prove exact manifest draw membership/order. Any failed
+> draw restores the group-start buffer and staged online state.
+
+Reasons:
+
+- documentation-only G0 ordering can be bypassed by ticket construction;
+- one update per video is not scientifically meaningful if the claimed `M`
+  draws can contain duplicates or omissions;
+- a raised exception is not fail-closed when model buffers retain mutations;
+- self-consistent false provenance and post-result margins can manufacture an
+  apparently valid G0 result unless source bytes and preregistration signatures
+  are independently checked.
+
+Rejected alternatives:
+
+- rely on the operator to run G0 before profile;
+- accept only draw count `M` without ordered manifest membership;
+- clear gradients/state but leave buffers for the next group;
+- treat a textual `PREREGISTERED` status as proof of outcome blindness;
+- reuse the prior B0 after changing the correction code.
+
+Source:
+
+- `PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md`;
+- [discussion_timeline.md#T25-first-exact-commit-review-blocks-four-enforceability-gaps](discussion_timeline.md).
+
+Reversibility:
+
+- Schema details may receive a new version, but no weaker chain may authorize a
+  CRS-EPS profile. Every correction requires a new clean commit, B0, and review.

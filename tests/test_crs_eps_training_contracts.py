@@ -13,6 +13,10 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
 )
 from opentad.utils.evidence_bundle import EvidenceBundleError
+from opentad.utils.crs_eps_sampling import (
+    canonical_json_sha256,
+    episode_payload_sha256,
+)
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
 
@@ -66,18 +70,41 @@ def _crs_control(
     draw_index=0,
     group_size=1,
 ):
+    def payload(index):
+        return {
+            "draw_index": index,
+            "episode_id": f"episode-{index}",
+            "proposal_component": "uniform",
+            "component_fallback_to_uniform": False,
+            "anchor_bin": supervised[0],
+            "supervised_range": list(supervised),
+            "replay_range": list(replay),
+            "gradient_ranges": [list(value) for value in gradient],
+            "true_left_censored": False,
+            "left_censored_instance_ids": [],
+            "dynamic_extension_instance_ids": [],
+            "video_start_fallback": replay[0] == 0,
+            "q_component": 0.4,
+            "q_anchor_given_component": 1.0,
+            "q_anchor_marginal": 0.1,
+            "rho_by_supervised_bin": [0.4] * (supervised[1] - supervised[0]),
+            "union_pi_by_supervised_bin": [0.4] * (supervised[1] - supervised[0]),
+            "raw_weight_by_bin": [0.25] * (supervised[1] - supervised[0]),
+            "final_weight_by_bin": [0.25] * (supervised[1] - supervised[0]),
+            "rng_key": f"rng-{index}",
+        }
+
+    current = payload(draw_index)
+    current["episode_payload_sha256"] = episode_payload_sha256(current)
     return {
-        "draw_index": draw_index,
-        "episode_id": f"episode-{draw_index}",
-        "supervised_range": list(supervised),
-        "replay_range": list(replay),
-        "gradient_ranges": [list(value) for value in gradient],
-        "raw_weight_by_bin": [0.25] * (supervised[1] - supervised[0]),
-        "final_weight_by_bin": [0.25] * (supervised[1] - supervised[0]),
+        **current,
         "video_group_size": group_size,
         "is_video_group_start": draw_index == 0,
         "is_video_group_end": draw_index + 1 == group_size,
         "episode_manifest_sha256": "b" * 64,
+        "episode_sequence_sha256": canonical_json_sha256(
+            [episode_payload_sha256(payload(index)) for index in range(group_size)]
+        ),
     }
 
 
@@ -186,12 +213,21 @@ class _Scheduler:
 
 
 class _CrsToy(torch.nn.Module):
-    def __init__(self, mutate_buffer=False, slot_exhaustion=0):
+    def __init__(
+        self,
+        mutate_buffer=False,
+        slot_exhaustion=0,
+        fail_on_call=None,
+        nonfinite_on_call=None,
+    ):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(0.0))
         self.register_buffer("audit_buffer", torch.tensor(0))
         self.mutate_buffer = mutate_buffer
         self.slot_exhaustion = int(slot_exhaustion)
+        self.fail_on_call = fail_on_call
+        self.nonfinite_on_call = nonfinite_on_call
+        self.forward_calls = 0
         self.pending = False
         self.commits = 0
         self.rollbacks = 0
@@ -219,7 +255,11 @@ class _CrsToy(torch.nn.Module):
 
     def forward(self, inputs, stream_control, crs_eps, return_loss=False):
         assert return_loss
+        self.forward_calls += 1
         self.pending = True
+        if self.forward_calls == self.fail_on_call:
+            self.audit_buffer.add_(1)
+            raise RuntimeError("injected interior draw failure")
         if self.mutate_buffer:
             self.audit_buffer.add_(1)
         self.last_episode_audit = {
@@ -227,6 +267,8 @@ class _CrsToy(torch.nn.Module):
             "control_unroll_seconds": 0.0,
         }
         cost = (self.weight - inputs).pow(2).mean()
+        if self.forward_calls == self.nonfinite_on_call:
+            cost = cost * cost.new_tensor(float("nan"))
         scale = cost.new_tensor(1.0 / crs_eps[0]["video_group_size"])
         return {
             "cost": cost,
@@ -236,17 +278,43 @@ class _CrsToy(torch.nn.Module):
 
 
 def _engine_crs_control(draw_index, group_size=2):
+    def payload(index):
+        return {
+            "draw_index": index,
+            "episode_id": f"episode-{index}",
+            "proposal_component": "uniform",
+            "component_fallback_to_uniform": False,
+            "anchor_bin": 0,
+            "supervised_range": [0, 1],
+            "replay_range": [0, 1],
+            "gradient_ranges": [[0, 1]],
+            "true_left_censored": False,
+            "left_censored_instance_ids": [],
+            "dynamic_extension_instance_ids": [],
+            "video_start_fallback": True,
+            "q_component": 0.4,
+            "q_anchor_given_component": 1.0,
+            "q_anchor_marginal": 1.0,
+            "rho_by_supervised_bin": [1.0],
+            "union_pi_by_supervised_bin": [1.0],
+            "raw_weight_by_bin": [1.0],
+            "final_weight_by_bin": [1.0],
+            "rng_key": f"rng-{index}",
+        }
+
+    current = payload(draw_index)
+    current["episode_payload_sha256"] = episode_payload_sha256(current)
     return {
+        **current,
         "video_id": "video",
         "video_group_index": 0,
         "video_group_size": group_size,
-        "draw_index": draw_index,
         "is_video_group_start": draw_index == 0,
         "is_video_group_end": draw_index + 1 == group_size,
         "episode_manifest_sha256": "c" * 64,
-        "replay_range": [0, 1],
-        "supervised_range": [0, 1],
-        "gradient_ranges": [[0, 1]],
+        "episode_sequence_sha256": canonical_json_sha256(
+            [episode_payload_sha256(payload(index)) for index in range(group_size)]
+        ),
         "video_covered_unique_bins": 1,
         "video_effective_sample_size": 2.0,
         "video_ipw_weight_sum": 2.0,
@@ -271,6 +339,28 @@ def _crs_loader():
             "crs_eps": [_engine_crs_control(1)],
         },
     ]
+
+
+def _crs_loader_with_indices(indices, *, group_size=4, cross_manifest_at=None):
+    rows = []
+    for position, draw_index in enumerate(indices):
+        control = _engine_crs_control(draw_index, group_size=group_size)
+        if position == cross_manifest_at:
+            control["episode_manifest_sha256"] = "d" * 64
+        rows.append(
+            {
+                "inputs": torch.tensor([float(position + 1)]),
+                "stream_control": [
+                    {
+                        "video_id": "video",
+                        "is_video_start": True,
+                        "is_video_end": True,
+                    }
+                ],
+                "crs_eps": [control],
+            }
+        )
+    return rows
 
 
 def test_engine_applies_one_hh_update_per_video_group_without_double_division():
@@ -311,6 +401,7 @@ def test_engine_fails_closed_on_mutable_buffer_leak_and_rolls_back_group():
 
     assert model.rollbacks == 1
     assert model.weight.item() == 0.0
+    assert model.audit_buffer.item() == 0
 
 
 def test_engine_treats_slot_exhaustion_as_scientific_failure():
@@ -328,6 +419,143 @@ def test_engine_treats_slot_exhaustion_as_scientific_failure():
             logging_interval=100,
         )
 
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+@pytest.mark.parametrize("indices", ([0, 1, 1, 3], [0, 2, 1, 3]))
+def test_engine_rejects_duplicate_or_reordered_manifest_draws(indices):
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="membership/order"):
+        train_one_epoch(
+            _crs_loader_with_indices(indices),
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+def test_engine_rejects_missing_manifest_draw_and_rolls_back_at_epoch_end():
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="epoch ended inside"):
+        train_one_epoch(
+            _crs_loader_with_indices([0, 1, 2]),
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+def test_engine_rejects_cross_manifest_draw_before_optimizer_boundary():
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="escaped its active video group"):
+        train_one_epoch(
+            _crs_loader_with_indices([0, 1, 2, 3], cross_manifest_at=1),
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.rollbacks == 1
+
+
+def test_engine_rejects_tampered_episode_membership_digest_at_boundary():
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    loader = _crs_loader_with_indices([0, 1, 2, 3])
+    loader[2]["crs_eps"][0]["episode_id"] = "substituted-episode"
+    loader[2]["crs_eps"][0]["episode_payload_sha256"] = episode_payload_sha256(
+        loader[2]["crs_eps"][0]
+    )
+
+    with pytest.raises(RuntimeError, match="episode sequence differs"):
+        train_one_epoch(
+            loader,
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+def test_engine_rejects_substituted_draw_payload_even_with_expected_episode_id():
+    model = _CrsToy()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    loader = _crs_loader_with_indices([0, 1, 2, 3])
+    loader[1]["crs_eps"][0]["proposal_component"] = "end"
+
+    with pytest.raises(RuntimeError, match="draw payload differs"):
+        train_one_epoch(
+            loader,
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+def test_interior_forward_exception_restores_group_buffers_and_staged_state():
+    model = _CrsToy(fail_on_call=2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    with pytest.raises(RuntimeError, match="injected interior draw failure"):
+        train_one_epoch(
+            _crs_loader_with_indices([0, 1, 2, 3]),
+            model,
+            optimizer,
+            _Scheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+        )
+
+    assert model.audit_buffer.item() == 0
+    assert model.pending is False
+    assert model.rollbacks == 1
+    assert model.weight.item() == 0.0
+
+
+def test_interior_nonfinite_loss_rolls_back_before_skipping_to_group_end():
+    model = _CrsToy(nonfinite_on_call=2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+
+    stats = train_one_epoch(
+        _crs_loader_with_indices([0, 1, 2, 3]),
+        model,
+        optimizer,
+        _Scheduler(),
+        curr_epoch=0,
+        logger=_Logger(),
+    )
+
+    assert stats["successful_optimizer_events"] == 0
+    assert stats["skipped_optimizer_events"] == 1
+    assert model.pending is False
     assert model.rollbacks == 1
     assert model.weight.item() == 0.0
 

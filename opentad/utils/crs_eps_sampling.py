@@ -8,7 +8,7 @@ import math
 from typing import Mapping, Sequence
 
 
-SCHEMA_VERSION = "full-petal-crs-eps-manifest-v1"
+SCHEMA_VERSION = "full-petal-crs-eps-manifest-v2"
 COMPONENTS = ("uniform", "start", "end", "ongoing", "hardbg")
 DEFAULT_MIXTURE = {
     "uniform": 0.40,
@@ -22,6 +22,28 @@ DEFAULT_SUFFIX_BINS = 8
 DEFAULT_CONTEXT_BINS = 192
 DEFAULT_DETACH_INTERVAL = 64
 WEIGHT_TOLERANCE = 1e-12
+EPISODE_PAYLOAD_FIELDS = (
+    "draw_index",
+    "episode_id",
+    "proposal_component",
+    "component_fallback_to_uniform",
+    "anchor_bin",
+    "supervised_range",
+    "replay_range",
+    "gradient_ranges",
+    "true_left_censored",
+    "left_censored_instance_ids",
+    "dynamic_extension_instance_ids",
+    "video_start_fallback",
+    "q_component",
+    "q_anchor_given_component",
+    "q_anchor_marginal",
+    "rho_by_supervised_bin",
+    "union_pi_by_supervised_bin",
+    "raw_weight_by_bin",
+    "final_weight_by_bin",
+    "rng_key",
+)
 
 
 class CrsEpsSamplingError(ValueError):
@@ -37,6 +59,37 @@ def canonical_json_sha256(value):
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def sampling_specs_sha256(specs):
+    """Hash the exact ordered sampling population used to build a manifest."""
+
+    specs = tuple(sorted(specs, key=lambda item: item.video_id))
+    for spec in specs:
+        validate_video_sampling_spec(spec)
+    return canonical_json_sha256(
+        [
+            {
+                "video_id": spec.video_id,
+                "num_bins": spec.num_bins,
+                "instances": [asdict(instance) for instance in spec.instances],
+            }
+            for spec in specs
+        ]
+    )
+
+
+def episode_payload_sha256(draw):
+    if not isinstance(draw, Mapping):
+        raise CrsEpsSamplingError("CRS-EPS draw payload must be a mapping")
+    missing = [field for field in EPISODE_PAYLOAD_FIELDS if field not in draw]
+    if missing:
+        raise CrsEpsSamplingError(
+            "CRS-EPS draw payload lacks identity fields: " + ", ".join(missing)
+        )
+    return canonical_json_sha256(
+        {field: draw[field] for field in EPISODE_PAYLOAD_FIELDS}
+    )
 
 
 @dataclass(frozen=True)
@@ -440,8 +493,7 @@ def build_video_manifest(
             multiplicity[bin_index] += 1
             exposures.append((bin_index, weight))
         rng_key = canonical_json_sha256(list(rng_parts))
-        draws.append(
-            {
+        draw = {
                 "draw_index": draw_index,
                 "episode_id": f"{spec.video_id}:e{epoch}:d{draw_index}:{rng_key[:16]}",
                 "proposal_component": component,
@@ -463,7 +515,8 @@ def build_video_manifest(
                 "final_weight_by_bin": weights,
                 "rng_key": rng_key,
             }
-        )
+        draw["episode_payload_sha256"] = episode_payload_sha256(draw)
+        draws.append(draw)
     bin_diagnostics = _bin_diagnostics(spec)
     lifecycle_weights = {}
     class_weights = {}
@@ -477,6 +530,9 @@ def build_video_manifest(
         "num_bins": spec.num_bins,
         "instances": [asdict(instance) for instance in spec.instances],
         "draws_per_video": draws_per_video,
+        "episode_sequence_sha256": canonical_json_sha256(
+            [draw["episode_payload_sha256"] for draw in draws]
+        ),
         "proposal_table": table,
         "draws": draws,
         "exposure_multiplicity_by_bin": multiplicity,
@@ -527,6 +583,7 @@ def build_epoch_manifest(
         "context_bins": int(context_bins),
         "detach_interval": int(detach_interval),
         "mixture": mixture_values,
+        "sampling_specs_sha256": sampling_specs_sha256(specs),
         "provenance": dict(provenance or {}),
         "videos": [
             build_video_manifest(
@@ -601,7 +658,9 @@ __all__ = [
     "canonical_json_sha256",
     "component_candidates",
     "episode_geometry",
+    "episode_payload_sha256",
     "probability_table",
+    "sampling_specs_sha256",
     "supervised_window",
     "validate_epoch_manifest",
     "video_sampling_spec_from_schedule",

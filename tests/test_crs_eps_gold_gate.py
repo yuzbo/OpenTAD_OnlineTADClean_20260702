@@ -12,10 +12,14 @@ from opentad.utils.crs_eps_gold_gate import (
 def _margins():
     return {
         "schema_version": MARGIN_SCHEMA_VERSION,
-        "status": "PREREGISTERED_BEFORE_Q2_EFFECTIVENESS",
+        "status": "PREREGISTERED_BEFORE_G0_EXECUTION",
         "commit_sha": "a" * 40,
+        "resolved_config_sha256": "d" * 64,
+        "scientific_config_sha256": "e" * 64,
+        "data_identity_sha256": "f" * 64,
         "episode_manifest_sha256": "b" * 64,
-        "selection_sha256": "c" * 64,
+        "sampling_specs_sha256": "1" * 64,
+        "selection_artifact_sha256": "c" * 64,
         "min_gradient_cosine": 0.90,
         "min_gradient_sign_agreement": 0.90,
         "min_runtime_continuous_cosine": 0.90,

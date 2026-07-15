@@ -131,15 +131,18 @@ def _profile_measurements():
 def _keys(root):
     b0_private = root / "keys" / "b0.pem"
     review_private = root / "keys" / "review.pem"
+    g0_private = root / "keys" / "g0.pem"
     profile_private = root / "keys" / "profile.pem"
     formal_private = root / "keys" / "formal.pem"
     b0_public = generate_private_key(b0_private)
     review_public = generate_private_key(review_private)
+    g0_public = generate_private_key(g0_private)
     profile_public = generate_private_key(profile_private)
     formal_public = generate_private_key(formal_private)
     roots = {
         "b0": {"key_id": "b0-test", "public_key": b0_public},
         "review": {"key_id": REVIEWER, "public_key": review_public},
+        "g0": {"key_id": "g0-test", "public_key": g0_public},
         "profile": {"key_id": "profile-test", "public_key": profile_public},
         "formal": {"key_id": "formal-test", "public_key": formal_public},
     }
@@ -183,6 +186,7 @@ def _config(root, roots, *, formal=False):
                     "train_engine",
                     "runtime_evidence_session",
                     "in_process_attestation_key_material",
+                    "g0_preregistration_and_audit_runner",
                 ],
                 "guarantees": [
                     "fail_closed_lifecycle_wiring",
@@ -409,6 +413,7 @@ def _ticket(
         ),
         "b0_evidence": _reference(b0_path, root),
         "review_evidence": _reference(review_path, root),
+        "g0_evidence": None,
         "profile_evidence": None if profile is None else _reference(profile, root),
     }
     return _write_json(
@@ -810,6 +815,34 @@ def test_ticket_builder_uses_the_same_signed_prerequisites(tmp_path, monkeypatch
     assert ticket["source_tree_sha256"] == SOURCE_SHA
     assert ticket["data_identity"] == DATA_IDENTITY
     assert ticket["runtime_identity"] == _runtime()
+
+
+def test_crs_profile_ticket_cannot_be_built_without_signed_g0_pass(tmp_path, monkeypatch):
+    setup = _profile_setup(tmp_path, monkeypatch)
+    setup["cfg"]["crs_eps_contract"] = {"draws_per_video": 4}
+    setup["cfg"]["profile_contract"]["step_unit"] = "video_group_optimizer_event"
+    setup["cfg"]["profile_contract"]["required_workload_denominators"] = list(
+        launch_module._CRS_EPS_PROFILE_DENOMINATORS
+    )
+
+    with pytest.raises(FullPetalLaunchError, match="requires signed G0 PASS"):
+        build_launch_ticket(
+            setup["cfg"],
+            setup["config_path"],
+            mode="profile",
+            b0_path=setup["b0"],
+            review_path=setup["review"],
+            repository_root=tmp_path,
+            entrypoint="train",
+            seed=705,
+            run_id=0,
+            deterministic=True,
+            not_eval=False,
+            resume_path=None,
+            cfg_overrides={},
+            bundle_root=tmp_path,
+            repository_state=RepositoryState(COMMIT, True),
+        )
 
 
 def test_formal_ticket_rejects_resume_until_trace_continuation_exists(tmp_path, monkeypatch):

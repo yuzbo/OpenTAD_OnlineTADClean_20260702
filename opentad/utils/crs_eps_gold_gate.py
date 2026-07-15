@@ -7,15 +7,33 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
 
-MARGIN_SCHEMA_VERSION = "full-petal-crs-eps-g0-margins-v1"
+SELECTION_SCHEMA_VERSION = "full-petal-crs-eps-g0-selection-v2"
+MARGIN_SCHEMA_VERSION = "full-petal-crs-eps-g0-margins-v2"
 GATE_SCHEMA_VERSION = "full-petal-crs-eps-g0-gate-v1"
+AUDIT_SCHEMA_VERSION = "full-petal-crs-eps-g0-audit-v2"
+SELECTION_ATTESTATION_ROLE = "crs-eps-g0-selection"
+MARGIN_ATTESTATION_ROLE = "crs-eps-g0-margins"
+AUDIT_ATTESTATION_ROLE = "crs-eps-g0-audit"
 REQUIRED_MODES = ("dynamic_birth", "fixed_192", "reset")
+_BINDING_FIELDS = {
+    "commit_sha",
+    "resolved_config_sha256",
+    "scientific_config_sha256",
+    "data_identity_sha256",
+    "episode_manifest_sha256",
+    "sampling_specs_sha256",
+}
+_SELECTION_FIELDS = {
+    "schema_version",
+    "status",
+    "samples",
+    *_BINDING_FIELDS,
+}
 _MARGIN_FIELDS = {
     "schema_version",
     "status",
-    "commit_sha",
-    "episode_manifest_sha256",
-    "selection_sha256",
+    *_BINDING_FIELDS,
+    "selection_artifact_sha256",
     "min_gradient_cosine",
     "min_gradient_sign_agreement",
     "min_runtime_continuous_cosine",
@@ -56,26 +74,58 @@ def _finite(value, label, *, lower=None, upper=None):
     return value
 
 
+def _sha256_text(value, label, *, length=64):
+    if (
+        not isinstance(value, str)
+        or len(value) != length
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise CrsEpsGoldGateError(f"{label} is malformed")
+    return value
+
+
+def validate_gold_selection(selection):
+    if not isinstance(selection, Mapping) or set(selection) != _SELECTION_FIELDS:
+        raise CrsEpsGoldGateError("G0 selection fields differ from the frozen schema")
+    normalized = dict(selection)
+    if normalized["schema_version"] != SELECTION_SCHEMA_VERSION:
+        raise CrsEpsGoldGateError("G0 selection schema is unsupported")
+    if normalized["status"] != "PREREGISTERED_BEFORE_G0_EXECUTION":
+        raise CrsEpsGoldGateError("G0 selection is not preregistered before execution")
+    _sha256_text(normalized["commit_sha"], "G0 selection commit", length=40)
+    for field in _BINDING_FIELDS - {"commit_sha"}:
+        _sha256_text(normalized[field], f"G0 selection {field}")
+    samples = normalized["samples"]
+    if not isinstance(samples, list) or not samples:
+        raise CrsEpsGoldGateError("G0 selection requires at least one sample")
+    seen = set()
+    for sample in samples:
+        if not isinstance(sample, Mapping) or set(sample) != {"video_id", "draw_index"}:
+            raise CrsEpsGoldGateError("G0 selected-sample fields differ")
+        video_id = sample["video_id"]
+        draw_index = sample["draw_index"]
+        if not isinstance(video_id, str) or not video_id:
+            raise CrsEpsGoldGateError("G0 selected video ID is invalid")
+        if isinstance(draw_index, bool) or not isinstance(draw_index, int) or draw_index < 0:
+            raise CrsEpsGoldGateError("G0 selected draw index is invalid")
+        key = (video_id, draw_index)
+        if key in seen:
+            raise CrsEpsGoldGateError("G0 selection contains a duplicate sample")
+        seen.add(key)
+    return normalized
+
+
 def validate_gold_margins(margins):
     if not isinstance(margins, Mapping) or set(margins) != _MARGIN_FIELDS:
         raise CrsEpsGoldGateError("G0 margin fields differ from the frozen schema")
     normalized = dict(margins)
     if normalized["schema_version"] != MARGIN_SCHEMA_VERSION:
         raise CrsEpsGoldGateError("G0 margin schema is unsupported")
-    if normalized["status"] != "PREREGISTERED_BEFORE_Q2_EFFECTIVENESS":
+    if normalized["status"] != "PREREGISTERED_BEFORE_G0_EXECUTION":
         raise CrsEpsGoldGateError("G0 margins are not marked outcome-blind")
-    for field, length in (
-        ("commit_sha", 40),
-        ("episode_manifest_sha256", 64),
-        ("selection_sha256", 64),
-    ):
-        value = normalized[field]
-        if (
-            not isinstance(value, str)
-            or len(value) != length
-            or any(character not in "0123456789abcdef" for character in value)
-        ):
-            raise CrsEpsGoldGateError(f"G0 margin {field} is malformed")
+    _sha256_text(normalized["commit_sha"], "G0 margin commit", length=40)
+    for field in (_BINDING_FIELDS - {"commit_sha"}) | {"selection_artifact_sha256"}:
+        _sha256_text(normalized[field], f"G0 margin {field}")
     for field in (
         "min_gradient_cosine",
         "min_gradient_sign_agreement",
@@ -275,9 +325,15 @@ def evaluate_gold_audit(rows: Sequence[Mapping], margins):
 
 
 __all__ = [
+    "AUDIT_ATTESTATION_ROLE",
+    "AUDIT_SCHEMA_VERSION",
     "CrsEpsGoldGateError",
     "GATE_SCHEMA_VERSION",
+    "MARGIN_ATTESTATION_ROLE",
     "MARGIN_SCHEMA_VERSION",
+    "SELECTION_ATTESTATION_ROLE",
+    "SELECTION_SCHEMA_VERSION",
     "evaluate_gold_audit",
     "validate_gold_margins",
+    "validate_gold_selection",
 ]

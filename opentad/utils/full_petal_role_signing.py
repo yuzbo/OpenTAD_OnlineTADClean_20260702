@@ -23,6 +23,16 @@ from .full_petal_attestation import (
     AttestationError,
     _message,
 )
+from .crs_eps_gold_gate import (
+    AUDIT_ATTESTATION_ROLE,
+    AUDIT_SCHEMA_VERSION,
+    MARGIN_ATTESTATION_ROLE,
+    MARGIN_SCHEMA_VERSION,
+    SELECTION_ATTESTATION_ROLE,
+    SELECTION_SCHEMA_VERSION,
+    validate_gold_margins,
+    validate_gold_selection,
+)
 
 
 def _validated_body(payload, *, fields, schema):
@@ -60,6 +70,113 @@ def _public_digest(key):
         format=serialization.PublicFormat.Raw,
     )
     return hashlib.sha256(raw).hexdigest()
+
+
+def _sign_body(body, *, private_key_path, key_id, role):
+    key_id = _validated_key_id(key_id)
+    key = _load_ed25519_key(private_key_path)
+    signed = copy.deepcopy(dict(body))
+    signed[ATTESTATION_FIELD] = {
+        "schema_version": ATTESTATION_SCHEMA,
+        "algorithm": ATTESTATION_ALGORITHM,
+        "role": role,
+        "key_id": key_id,
+        "public_key_sha256": _public_digest(key),
+        "signature": base64.b64encode(key.sign(_message(body, role))).decode("ascii"),
+    }
+    return signed
+
+
+def sign_crs_eps_g0_selection(payload, *, private_key_path, key_id):
+    body = _validated_body(
+        payload,
+        fields={
+            "schema_version",
+            "status",
+            "commit_sha",
+            "resolved_config_sha256",
+            "scientific_config_sha256",
+            "data_identity_sha256",
+            "episode_manifest_sha256",
+            "sampling_specs_sha256",
+            "samples",
+        },
+        schema=SELECTION_SCHEMA_VERSION,
+    )
+    validate_gold_selection(body)
+    return _sign_body(
+        body,
+        private_key_path=private_key_path,
+        key_id=key_id,
+        role=SELECTION_ATTESTATION_ROLE,
+    )
+
+
+def sign_crs_eps_g0_margins(payload, *, private_key_path, key_id):
+    body = _validated_body(
+        payload,
+        fields={
+            "schema_version",
+            "status",
+            "commit_sha",
+            "resolved_config_sha256",
+            "scientific_config_sha256",
+            "data_identity_sha256",
+            "episode_manifest_sha256",
+            "sampling_specs_sha256",
+            "selection_artifact_sha256",
+            "min_gradient_cosine",
+            "min_gradient_sign_agreement",
+            "min_runtime_continuous_cosine",
+            "max_relative_loss_error",
+            "require_runtime_discrete_equal",
+            "max_mean_dynamic_replay_ratio",
+            "max_video_start_fallback_fraction",
+            "min_dynamic_minus_fixed_gradient_cosine",
+            "min_dynamic_minus_reset_gradient_cosine",
+        },
+        schema=MARGIN_SCHEMA_VERSION,
+    )
+    validate_gold_margins(body)
+    return _sign_body(
+        body,
+        private_key_path=private_key_path,
+        key_id=key_id,
+        role=MARGIN_ATTESTATION_ROLE,
+    )
+
+
+def sign_crs_eps_g0_audit(payload, *, private_key_path, key_id):
+    body = _validated_body(
+        payload,
+        fields={
+            "schema_version",
+            "status",
+            "commit_sha",
+            "source_tree_sha256",
+            "resolved_config_sha256",
+            "scientific_config_sha256",
+            "data_identity_sha256",
+            "config",
+            "checkpoint",
+            "episode_manifest",
+            "selection",
+            "margins",
+            "rows",
+            "gate",
+        },
+        schema=AUDIT_SCHEMA_VERSION,
+    )
+    if body["status"] not in {"PASS", "KILL"}:
+        raise AttestationError("G0 audit signer requires a terminal PASS or KILL")
+    if not isinstance(body["gate"], Mapping) or body["gate"].get("status") != body["status"]:
+        raise AttestationError("G0 audit status differs from its gate")
+    return _sign_body(
+        body,
+        private_key_path=private_key_path,
+        key_id=key_id,
+        role=AUDIT_ATTESTATION_ROLE,
+    )
 
 
 def sign_b0_evidence(payload, *, private_key_path, key_id):
@@ -223,6 +340,9 @@ def sign_fineaction_license_authorization(payload, *, private_key_path, key_id):
 
 
 __all__ = [
+    "sign_crs_eps_g0_audit",
+    "sign_crs_eps_g0_margins",
+    "sign_crs_eps_g0_selection",
     "sign_b0_evidence",
     "sign_fixed_step_profile",
     "sign_fineaction_license_authorization",

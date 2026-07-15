@@ -57,6 +57,7 @@ from opentad.utils.full_petal_launch import (
     PROFILE_SCHEMA,
     REVIEW_ATTESTATION_ROLE,
     REVIEW_SCHEMA,
+    _validate_g0_artifact,
     resolved_config_sha256,
     verify_launch_receipt,
 )
@@ -211,6 +212,7 @@ def _attestation_trust_roots():
     if not isinstance(roots, dict) or set(roots) != {
         "b0",
         "review",
+        "g0",
         "profile",
         "formal",
     }:
@@ -809,6 +811,7 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         "runtime_identity",
         "b0_evidence",
         "review_evidence",
+        "g0_evidence",
         "profile_evidence",
     }
     if (
@@ -856,6 +859,11 @@ def _validate_signed_profile(path, *, ticket, manifest, config_path, label):
         },
         "b0_artifact_sha256": profile_ticket["b0_evidence"]["sha256"],
         "review_artifact_sha256": profile_ticket["review_evidence"]["sha256"],
+        "g0_artifact_sha256": (
+            None
+            if profile_ticket["g0_evidence"] is None
+            else profile_ticket["g0_evidence"]["sha256"]
+        ),
         "profile_artifact_sha256": None,
         "world_size": profile["world_size"],
         "slurm_job_id": profile["slurm_job_id"],
@@ -966,6 +974,7 @@ def _validate_launch_ticket(
         "runtime_identity",
         "b0_evidence",
         "review_evidence",
+        "g0_evidence",
         "profile_evidence",
     }
     if set(ticket) != required or ticket["schema_version"] != LAUNCH_TICKET_SCHEMA:
@@ -1033,6 +1042,26 @@ def _validate_launch_ticket(
             Path(path).parent,
             f"{label}.launch_ticket.{role}",
         )
+    resolved_cfg = _resolved_run_config(paths["resolved_config"], label)
+    if resolved_cfg.get("crs_eps_contract") is not None:
+        if ticket["g0_evidence"] is None:
+            raise ResultGateInputError(f"{label} CRS-EPS launch ticket lacks G0 evidence")
+        try:
+            _validate_g0_artifact(
+                ticket["g0_evidence"],
+                Path(path).parent,
+                commit_sha=manifest["commit_sha"],
+                source_tree_sha256=ticket["source_tree_sha256"],
+                config_file_sha256=ticket["config_file_sha256"],
+                resolved_config_sha256=ticket["resolved_config_sha256"],
+                scientific_config_sha256=ticket["scientific_config_sha256"],
+                data_identity_sha256=ticket["data_identity"]["identity_sha256"],
+                trust_root=_attestation_trust_roots()["g0"],
+            )
+        except FullPetalLaunchError as exc:
+            raise ResultGateInputError(f"{label} G0 evidence is invalid: {exc}") from exc
+    elif ticket["g0_evidence"] is not None:
+        raise ResultGateInputError(f"{label} non-CRS ticket contains G0 evidence")
     _validate_data_identity_artifact(paths["data_identity"], ticket["data_identity"], label)
     _validate_signed_review(
         prerequisite_paths["review"],
@@ -1070,6 +1099,7 @@ def _validate_launch_ticket(
         "launch_ticket",
         "b0_artifact_sha256",
         "review_artifact_sha256",
+        "g0_artifact_sha256",
         "profile_artifact_sha256",
         "world_size",
         "slurm_job_id",
@@ -1092,6 +1122,11 @@ def _validate_launch_ticket(
         },
         "b0_artifact_sha256": prerequisite_hashes["b0"],
         "review_artifact_sha256": prerequisite_hashes["review"],
+        "g0_artifact_sha256": (
+            None
+            if ticket["g0_evidence"] is None
+            else ticket["g0_evidence"]["sha256"]
+        ),
         "profile_artifact_sha256": prerequisite_hashes["profile"],
     }
     for field, expected in expected_receipt_values.items():
@@ -1302,6 +1337,7 @@ def _validate_run_evidence(row, claim, variant, seed, label):
         "data_identity",
         "b0_evidence",
         "review_evidence",
+        "g0_evidence",
         "profile_evidence",
     }
     for field in shared_ticket_fields:

@@ -11,7 +11,7 @@ updated: 2026-07-16
 
 ## Summary
 
-As of 2026-07-15, there is no completed formal multi-seed training result for
+As of 2026-07-16, there is no completed formal multi-seed training result for
 PCEH, CESR, CRS-EPS, persistent event-set, Q2 fixed/rematch binding, LoRA, or
 full visual tower routes. The current Q2 route has CPU/B0 engineering evidence
 only; no fixed-step profile or effectiveness result is accepted.
@@ -19,8 +19,9 @@ only; no fixed-step profile or effectiveness result is accepted.
 ## Current Pre-Training Block
 
 - `P0-LAUNCH-WORKDIR` has a code-level repair, but that repair is not accepted
-  evidence until the exact commit passes regenerated B0 and the locked
-  independent review.
+  experiment permission. Commit `0731f07` passed B0 but its locked review was
+  `REVISE`; the four launch/lifecycle/G0 corrections require a new commit, B0,
+  and same-reviewer PASS.
 - The real-data G0 four-arm replay-fidelity audit has not run, so dynamic replay
   and provisional `M=4` remain unvalidated.
 - Cached-feature extractor provenance and real packet availability clocks are

@@ -22,8 +22,11 @@ from opentad.utils.crs_eps_sampling import (  # noqa: E402
     DEFAULT_SUFFIX_BINS,
     CrsEpsSamplingError,
     build_epoch_manifest,
+    sampling_specs_sha256,
     validate_epoch_manifest,
 )
+from opentad.utils.full_petal_identity import build_data_identity  # noqa: E402
+from opentad.utils.full_petal_launch import resolved_config_sha256  # noqa: E402
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
     publish_exclusive_file,
@@ -103,14 +106,22 @@ def main(argv=None):
     try:
         output = _external_output(args.output)
         commit_sha = _clean_commit()
-        cfg = Config.fromfile(args.config)
+        config_path = args.config.resolve(strict=True)
+        cfg = Config.fromfile(config_path)
         _validate_config_contract(cfg)
         train_dataset = build_dataset(dict(cfg.dataset.train))
-        specs = train_dataset.iter_crs_eps_sampling_specs()
+        specs = tuple(train_dataset.iter_crs_eps_sampling_specs())
+        data_identity = build_data_identity(cfg)
         provenance = {
             "commit_sha": commit_sha,
-            "config_path": str(args.config.resolve()),
-            "config_sha256": _sha256_file(args.config),
+            "config_path": str(config_path),
+            "config_sha256": _sha256_file(config_path),
+            "resolved_config_sha256": resolved_config_sha256(cfg),
+            "scientific_config_sha256": resolved_config_sha256(
+                cfg, scientific=True
+            ),
+            "data_identity_sha256": data_identity["identity_sha256"],
+            "sampling_specs_sha256": sampling_specs_sha256(specs),
             "annotation_sha256": _sha256_file(train_dataset.ann_file),
             "feature_cache_manifest_sha256": train_dataset.cache_manifest_sha256,
             "split_manifest_sha256": train_dataset.split_manifest_sha256,

@@ -7,15 +7,15 @@
   "runner_sources": [
     {
       "path": "FULL_PETAL_TRUST_MODEL.md",
-      "sha256": "b984fe3732e6fdbc35e8f5ad314872f55fac8f0ec949b63e0bbd8861920e73a7"
+      "sha256": "4a17b91235f574986fb700245411f24f4e8e5f6f773e2c50ae3ed8afc1c688b9"
     },
     {
       "path": "FULL_PETAL_EXECUTION_GATES.md",
-      "sha256": "a4fa735442527856ce1f975c4b6019323979f1422c3f31e18c3666d539fbc880"
+      "sha256": "0772b8220c5cc9712e91c2daa2e78eddbc6ccbf291845bfcf1f4c355cf6ad896"
     },
     {
       "path": "configs/causaltad/thumos_pes_q2_base.py",
-      "sha256": "0fbd6e901bf76ffb3d225ac6daf38c6dc3f656d01979af6afa1572f7772069e3"
+      "sha256": "1032ee05322e94b2d16501905d9ec180bbe7aa64706b9a7127aeb36f6b7fb869"
     },
     {
       "path": "configs/causaltad/thumos_pes_q2_crs_eps_base.py",
@@ -39,11 +39,11 @@
     },
     {
       "path": "tools/build_full_petal_b0_manifest.py",
-      "sha256": "27171871c15849dfdda6c254f6da6eca732cbe568240ceafdf7e367dfa9d9a97"
+      "sha256": "3d579f6b9405e4f4eb38a64624b5d4fc0118c1dc5bed6ed376444f7c6fd7dd79"
     },
     {
       "path": "tools/build_full_petal_launch_ticket.py",
-      "sha256": "202d4e8ce4dc5b5903b9f655be3b970d46e163e167691800cc9b3bd6c623d175"
+      "sha256": "a074bf44fdf8dd71e1ae4fdd3bb9eaa321b51db60c68f82257ef9a2ce21aab46"
     },
     {
       "path": "tools/read_full_petal_launch_ticket.py",
@@ -51,11 +51,15 @@
     },
     {
       "path": "tools/build_crs_eps_episode_manifest.py",
-      "sha256": "629ae01a3c6e7095c654c5f6442ec20ea453382367b90caeca33027d75230cda"
+      "sha256": "03629fc2864de0f911d24a5496bb6dd86dea3133d1dc45ba5150eef51649706e"
+    },
+    {
+      "path": "tools/preregister_crs_eps_gold_audit.py",
+      "sha256": "ab8656a07259636247e3bf9f90b78431bde6930f075fb13de6a951f6c3ba8875"
     },
     {
       "path": "tools/run_crs_eps_gold_audit.py",
-      "sha256": "8b6f53b8b991462d412f89ce676b8a259573577ab5c4ecf7dba211f9d38ab096"
+      "sha256": "47b0aac9f9fcc955bd2c7a6f6080f76fab4349c85540b95362ecaccc5be4e8c7"
     },
     {
       "path": "tools/build_full_petal_run_manifest.py",
@@ -99,7 +103,7 @@
     },
     {
       "path": "opentad/utils/full_petal_role_signing.py",
-      "sha256": "cda2716b49ed2d73840b32aa400cda7e717d8323a3c1b32d24e0f3bbfb80a83f"
+      "sha256": "d502588c9d0c496467cbc0e989a556ba03665bdbda61988ebed4eb72242cedef"
     },
     {
       "path": "opentad/utils/full_petal_fineaction_executor.py",
@@ -115,11 +119,11 @@
     },
     {
       "path": "opentad/utils/full_petal_launch.py",
-      "sha256": "7350d6d17f51fb1fd935ca03888b81c1267b76c231e841d911de4ae788f5ec2f"
+      "sha256": "e17966477190762656e070dfad14b92f3179fc48775f5bec55eb3784d9070291"
     },
     {
       "path": "opentad/utils/full_petal_training_evidence.py",
-      "sha256": "4dd141b29d9129248c30522e30eee2e24331aa2cad5d638a49e7efa6b7df48d7"
+      "sha256": "20c7de4f6cf514563267d6d704b7a03abecfdae01f56e6b705171e8cee198c46"
     },
     {
       "path": "opentad/utils/full_petal_data_contract.py",
@@ -135,7 +139,7 @@
     },
     {
       "path": "opentad/utils/crs_eps_sampling.py",
-      "sha256": "b75c546e48916ab719774d314b260072cc3960656e863999a982bc92fec111b0"
+      "sha256": "41152aa65beff3ab278957ac43315def11c504dec76f07765fc706d58cca19c9"
     },
     {
       "path": "opentad/utils/crs_eps_audit.py",
@@ -143,7 +147,11 @@
     },
     {
       "path": "opentad/utils/crs_eps_gold_gate.py",
-      "sha256": "0ee9c3a8198a638a87fd8ee0c61a0c8ee60263cd481a579e5c4233f69d34a4cb"
+      "sha256": "33e2c3972134291b21a72a0bc1015c654775a5eedb06ccdfc473032fc2e8cd26"
+    },
+    {
+      "path": "opentad/utils/crs_eps_gold_evidence.py",
+      "sha256": "bbdd9dec4854205df1729c6b32b137946ed698eda64d58950e5d52deac02560b"
     },
     {
       "path": "opentad/utils/immutable_event_ledger.py",
@@ -179,7 +187,7 @@
     },
     {
       "path": "opentad/datasets/crs_eps_feature.py",
-      "sha256": "69989b034393556ab2ac053f56aeb66cfdd77d2ae5224ac22b6f8ccdacb5867b"
+      "sha256": "34e77cf97e840181da6ea2916898d06854c9e2a7469858ac51f1b94a785533af"
     },
     {
       "path": "opentad/models/dense_heads/persistent_event_set_head.py",
@@ -187,7 +195,7 @@
     },
     {
       "path": "opentad/models/detectors/persistent_trajectory_ontad.py",
-      "sha256": "4472c85fd820c294b909cbf3e518f98304f6d8412678441e1d06ec74a55349cf"
+      "sha256": "56887d2c44a950052b262f6d2e270c74196b1d5c4f0d6fda7dc79e2087a31797"
     },
     {
       "path": "opentad/evaluations/full_petal_metrics.py",
@@ -199,11 +207,11 @@
     },
     {
       "path": "opentad/cores/train_engine.py",
-      "sha256": "6dec671bebbd3525d5f8699a183f60b80be0123e574b0f96cce435a271833b8e"
+      "sha256": "a47d4edb47a4a4efc4cab0511cfe02fdf4e993f21d7acfaded5c9fcbad2ebad9"
     },
     {
       "path": "tools/check_full_petal_results.py",
-      "sha256": "36254a03cf60867073744ea84d02795f88991eb19028e77c8a14501c54222491"
+      "sha256": "12d311ded4206895f0078d5ddfdae747f55e3a85ded9c7c876b3ad44b797d805"
     }
   ],
   "schema_version": "full-petal-b0-manifest-v1",
@@ -226,6 +234,7 @@
         "tests/test_claim_hygiene.py",
         "tests/test_core_single_process_contracts.py",
         "tests/test_crs_eps_config_contracts.py",
+        "tests/test_crs_eps_g0_evidence.py",
         "tests/test_crs_eps_gold_gate.py",
         "tests/test_crs_eps_paired_audit.py",
         "tests/test_crs_eps_sampling.py",
@@ -370,8 +379,18 @@
           ]
         },
         {
+          "path": "tests/test_crs_eps_g0_evidence.py",
+          "sha256": "f52a1f9c7228560b5106c296789625cf5ef85094fdac9fa05ecb8b2206ac17e1",
+          "test_functions": [
+            "test_signed_g0_pass_reproduces_and_binds_exact_launch",
+            "test_g0_kill_or_mismatched_launch_binding_cannot_authorize_profile",
+            "test_post_result_margin_file_substitution_breaks_the_signed_chain",
+            "test_loaded_dataset_bytes_override_self_consistent_false_provenance"
+          ]
+        },
+        {
           "path": "tests/test_crs_eps_gold_gate.py",
-          "sha256": "38cee35e1a879ff17a1ee1653321bbd5d630e0ccf514f7282a4cdc731db148b3",
+          "sha256": "ae3eeff14804af6924f0f3b91a1bcc80f05f0e76fcf61a8b6fa703f3a7c0bd4d",
           "test_functions": [
             "test_gold_gate_passes_only_a_complete_outcome_blind_four_arm_audit",
             "test_gold_gate_kills_dynamic_state_or_gradient_fidelity_failure",
@@ -380,7 +399,7 @@
         },
         {
           "path": "tests/test_crs_eps_paired_audit.py",
-          "sha256": "b38ea673ff942d2144677b5d33bfe3c978c51abc7011d6b2daba2f97e1058b7a",
+          "sha256": "0e6c16ea82deed56ff3f6f92623a1bf0de79e3c3b2017f0432f84f314f0cb99d",
           "test_functions": [
             "test_binding_twin_restores_rng_and_closes_identical_single_instance_trace",
             "test_matched_pair_rejects_parameter_drift_before_forward",
@@ -404,7 +423,7 @@
         },
         {
           "path": "tests/test_crs_eps_training_contracts.py",
-          "sha256": "d6f976b0b4a78a87da85da41f87369769d7fc5dc4b3f9e0ff756d176ff4c07f6",
+          "sha256": "c74d2ad86b71057fba85c976fc1e8fe20a43aaa0197a25e3807c9c8076d32529",
           "test_functions": [
             "test_crs_eps_gradient_starts_at_original_global_detach_boundary",
             "test_crs_eps_rejects_clipped_or_drifted_training_weights",
@@ -412,6 +431,13 @@
             "test_engine_applies_one_hh_update_per_video_group_without_double_division",
             "test_engine_fails_closed_on_mutable_buffer_leak_and_rolls_back_group",
             "test_engine_treats_slot_exhaustion_as_scientific_failure",
+            "test_engine_rejects_duplicate_or_reordered_manifest_draws",
+            "test_engine_rejects_missing_manifest_draw_and_rolls_back_at_epoch_end",
+            "test_engine_rejects_cross_manifest_draw_before_optimizer_boundary",
+            "test_engine_rejects_tampered_episode_membership_digest_at_boundary",
+            "test_engine_rejects_substituted_draw_payload_even_with_expected_episode_id",
+            "test_interior_forward_exception_restores_group_buffers_and_staged_state",
+            "test_interior_nonfinite_loss_rolls_back_before_skipping_to_group_end",
             "test_crs_dataset_rebuilds_epoch_manifest_and_keeps_gt_out_of_model_meta",
             "test_dataset_dataloader_detector_optimizer_cpu_closure",
             "test_gold_audit_replay_arms_are_explicit_and_do_not_mutate_training_manifest"
@@ -522,7 +548,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_contracts.py",
-          "sha256": "dd9bbe20158204c3057dd8b079bc7d824e75a9d40452deca5af9965e342c8a01",
+          "sha256": "3c7941a7dd69ba3e43d7373293e4b689cf781af5d4549b4028fb98c57c08f922",
           "test_functions": [
             "test_q2_bridge_configs_change_only_post_birth_loss_binding",
             "test_q2_bridge_freezes_scientific_and_cost_contracts",
@@ -541,7 +567,7 @@
         },
         {
           "path": "tests/test_full_petal_launch_gate.py",
-          "sha256": "30a2879802db423cd5b2e44e52afb8c4c1ecde038520994af3d32f12956e13f9",
+          "sha256": "903187f073038125bf42bc2116de1bd3ed8757a2c0ed7e5a09cfdd08de11f6be",
           "test_functions": [
             "test_launch_contract_rejects_changed_evidence_trust_boundary",
             "test_non_full_petal_config_does_not_require_a_ticket",
@@ -556,6 +582,7 @@
             "test_b0_validation_consumes_the_same_bytes_after_verified_path_swap",
             "test_profile_rejects_runtime_slurm_dirty_and_signing_key_mismatch",
             "test_ticket_builder_uses_the_same_signed_prerequisites",
+            "test_crs_profile_ticket_cannot_be_built_without_signed_g0_pass",
             "test_formal_ticket_rejects_resume_until_trace_continuation_exists",
             "test_profile_artifact_is_signed_and_binds_exact_authorization",
             "test_formal_launch_accepts_only_later_authorization_only_commit",
@@ -604,7 +631,7 @@
         },
         {
           "path": "tests/test_full_petal_result_gate.py",
-          "sha256": "7d0b6df480a7b53a4ba38c7507db7faafec599c64499d89e19f2a5d061f53e05",
+          "sha256": "e1d7233504ac3d609a7a654fb5a0e425ed01ecf2975ed31a55bbbd851cf05977",
           "test_functions": [
             "test_signed_replay_can_pass_independent_claim_and_project_gates",
             "test_c1_and_c2_remain_independent",

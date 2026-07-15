@@ -58,6 +58,17 @@ from .full_petal_identity import (
 from .full_petal_role_signing import (
     sign_fixed_step_profile,
 )
+from .crs_eps_gold_gate import (
+    AUDIT_ATTESTATION_ROLE,
+    AUDIT_SCHEMA_VERSION,
+    CrsEpsGoldGateError,
+    MARGIN_ATTESTATION_ROLE,
+    SELECTION_ATTESTATION_ROLE,
+    evaluate_gold_audit,
+    validate_gold_margins,
+    validate_gold_selection,
+)
+from .crs_eps_sampling import CrsEpsSamplingError, validate_epoch_manifest
 from .full_petal_runtime_attestation import (
     RuntimeAttestationError,
     issue_runtime_session,
@@ -65,12 +76,12 @@ from .full_petal_runtime_attestation import (
 )
 
 
-LAUNCH_CONTRACT_SCHEMA = "full-petal-launch-contract-v3"
+LAUNCH_CONTRACT_SCHEMA = "full-petal-launch-contract-v4"
 EVIDENCE_TRUST_MODEL_SCHEMA = "full-petal-evidence-trust-model-v1"
-LAUNCH_TICKET_SCHEMA = "full-petal-launch-ticket-v2"
+LAUNCH_TICKET_SCHEMA = "full-petal-launch-ticket-v3"
 REVIEW_SCHEMA = "full-petal-independent-review-v2"
 PROFILE_SCHEMA = "full-petal-fixed-step-profile-v3"
-LAUNCH_RECEIPT_SCHEMA = "full-petal-launch-receipt-v2"
+LAUNCH_RECEIPT_SCHEMA = "full-petal-launch-receipt-v3"
 PROFILE_MODE = "profile"
 FORMAL_MODE = "formal"
 REVIEW_ATTESTATION_ROLE = "independent-reviewer"
@@ -85,12 +96,13 @@ _SCIENTIFIC_DIGEST_EXCLUSIONS = {
     "work_dir",
 }
 _RESOLVED_DIGEST_EXCLUSIONS = {"work_dir"}
-_TRUST_ROLES = {"b0", "review", "profile", "formal"}
+_TRUST_ROLES = {"b0", "review", "g0", "profile", "formal"}
 _EVIDENCE_TRUSTED_COMPUTING_BASE = (
     "launch_validator",
     "train_engine",
     "runtime_evidence_session",
     "in_process_attestation_key_material",
+    "g0_preregistration_and_audit_runner",
 )
 _EVIDENCE_GUARANTEES = (
     "fail_closed_lifecycle_wiring",
@@ -144,6 +156,7 @@ class FullPetalLaunchAuthorization:
     ticket_sha256: str
     b0_artifact_sha256: str
     review_artifact_sha256: str
+    g0_artifact_sha256: str | None
     profile_artifact_sha256: str | None
     warmup_optimizer_events: int
     measured_optimizer_events: int
@@ -222,6 +235,7 @@ def _launch_receipt_body(authorization):
         },
         "b0_artifact_sha256": authorization.b0_artifact_sha256,
         "review_artifact_sha256": authorization.review_artifact_sha256,
+        "g0_artifact_sha256": authorization.g0_artifact_sha256,
         "profile_artifact_sha256": authorization.profile_artifact_sha256,
         "world_size": authorization.world_size,
         "slurm_job_id": authorization.slurm_job_id,
@@ -628,6 +642,162 @@ def _validate_review_artifact(
     return review, path, digest
 
 
+def _validate_g0_artifact(
+    reference,
+    ticket_dir,
+    *,
+    commit_sha,
+    source_tree_sha256,
+    config_file_sha256,
+    resolved_config_sha256,
+    scientific_config_sha256,
+    data_identity_sha256,
+    trust_root,
+):
+    signed, path, digest = _load_reference(
+        reference, ticket_dir, "CRS-EPS G0 audit evidence"
+    )
+    try:
+        audit = verify_payload(
+            signed,
+            trust_root=trust_root,
+            role=AUDIT_ATTESTATION_ROLE,
+        )
+    except AttestationError as exc:
+        raise FullPetalLaunchError(f"CRS-EPS G0 audit attestation is invalid: {exc}") from exc
+    _require_exact_fields(
+        audit,
+        {
+            "schema_version",
+            "status",
+            "commit_sha",
+            "source_tree_sha256",
+            "resolved_config_sha256",
+            "scientific_config_sha256",
+            "data_identity_sha256",
+            "config",
+            "checkpoint",
+            "episode_manifest",
+            "selection",
+            "margins",
+            "rows",
+            "gate",
+        },
+        "CRS-EPS G0 audit artifact",
+    )
+    if audit["schema_version"] != AUDIT_SCHEMA_VERSION or audit["status"] != "PASS":
+        raise FullPetalLaunchError("CRS-EPS G0 audit has not reached PASS")
+    expected_bindings = {
+        "commit_sha": commit_sha,
+        "source_tree_sha256": source_tree_sha256,
+        "resolved_config_sha256": resolved_config_sha256,
+        "scientific_config_sha256": scientific_config_sha256,
+        "data_identity_sha256": data_identity_sha256,
+    }
+    drifted = sorted(
+        key for key, value in expected_bindings.items() if audit[key] != value
+    )
+    if drifted:
+        raise FullPetalLaunchError(
+            "CRS-EPS G0 audit launch bindings differ: " + ", ".join(drifted)
+        )
+    _require_exact_fields(audit["config"], {"path", "sha256"}, "G0 config reference")
+    if audit["config"]["sha256"] != config_file_sha256:
+        raise FullPetalLaunchError("CRS-EPS G0 used a different config file")
+    _require_exact_fields(
+        audit["checkpoint"], {"path", "sha256", "state_key"}, "G0 checkpoint reference"
+    )
+    _require_sha256(audit["checkpoint"]["sha256"], "G0 checkpoint SHA256")
+    if audit["checkpoint"]["state_key"] not in {"state_dict", "state_dict_ema"}:
+        raise FullPetalLaunchError("CRS-EPS G0 checkpoint state key is unsupported")
+    _require_exact_fields(
+        audit["episode_manifest"],
+        {"path", "file_sha256", "manifest_sha256", "sampling_specs_sha256"},
+        "G0 episode-manifest reference",
+    )
+    manifest_reference = {
+        "path": audit["episode_manifest"]["path"],
+        "sha256": audit["episode_manifest"]["file_sha256"],
+    }
+    manifest, _, _ = _load_reference(
+        manifest_reference, path.parent, "G0 episode manifest"
+    )
+    try:
+        validate_epoch_manifest(manifest)
+    except CrsEpsSamplingError as exc:
+        raise FullPetalLaunchError(f"CRS-EPS G0 manifest is invalid: {exc}") from exc
+    if (
+        manifest["manifest_sha256"] != audit["episode_manifest"]["manifest_sha256"]
+        or manifest["sampling_specs_sha256"]
+        != audit["episode_manifest"]["sampling_specs_sha256"]
+    ):
+        raise FullPetalLaunchError("CRS-EPS G0 manifest identity differs from its audit")
+
+    preregistrations = {}
+    for field, role, validator in (
+        ("selection", SELECTION_ATTESTATION_ROLE, validate_gold_selection),
+        ("margins", MARGIN_ATTESTATION_ROLE, validate_gold_margins),
+    ):
+        _require_exact_fields(audit[field], {"path", "sha256"}, f"G0 {field} reference")
+        signed_preregistration, _, artifact_sha256 = _load_reference(
+            audit[field], path.parent, f"G0 signed {field}"
+        )
+        try:
+            body = verify_payload(
+                signed_preregistration,
+                trust_root=trust_root,
+                role=role,
+            )
+            preregistrations[field] = validator(body)
+        except (AttestationError, CrsEpsGoldGateError) as exc:
+            raise FullPetalLaunchError(
+                f"CRS-EPS G0 {field} preregistration is invalid: {exc}"
+            ) from exc
+        if artifact_sha256 != audit[field]["sha256"]:
+            raise FullPetalLaunchError(f"CRS-EPS G0 {field} digest differs")
+    selection = preregistrations["selection"]
+    margins = preregistrations["margins"]
+    common_bindings = {
+        "commit_sha": commit_sha,
+        "resolved_config_sha256": resolved_config_sha256,
+        "scientific_config_sha256": scientific_config_sha256,
+        "data_identity_sha256": data_identity_sha256,
+        "episode_manifest_sha256": manifest["manifest_sha256"],
+        "sampling_specs_sha256": manifest["sampling_specs_sha256"],
+    }
+    for label, preregistration in preregistrations.items():
+        if any(preregistration[key] != value for key, value in common_bindings.items()):
+            raise FullPetalLaunchError(
+                f"CRS-EPS G0 {label} bindings differ from the launch"
+            )
+    if margins["selection_artifact_sha256"] != audit["selection"]["sha256"]:
+        raise FullPetalLaunchError("CRS-EPS G0 margins do not bind the selection")
+    try:
+        recomputed_gate = evaluate_gold_audit(audit["rows"], margins)
+    except CrsEpsGoldGateError as exc:
+        raise FullPetalLaunchError(f"CRS-EPS G0 rows are invalid: {exc}") from exc
+    if recomputed_gate != audit["gate"] or recomputed_gate["status"] != "PASS":
+        raise FullPetalLaunchError("CRS-EPS G0 gate does not reproduce as PASS")
+    selected = {
+        (sample["video_id"], sample["draw_index"])
+        for sample in selection["samples"]
+    }
+    observed = {
+        (row["video_id"], row["draw_index"])
+        for row in audit["rows"]
+    }
+    if observed != selected:
+        raise FullPetalLaunchError("CRS-EPS G0 rows differ from the signed selection")
+    videos = {video["video_id"]: video for video in manifest["videos"]}
+    if any(
+        video_id not in videos
+        or not 0 <= draw_index < videos[video_id]["draws_per_video"]
+        for video_id, draw_index in selected
+    ):
+        raise FullPetalLaunchError("CRS-EPS G0 selection escapes the bound manifest")
+    return audit, path, digest
+
+
 def _profile_dimensions(cfg):
     return {
         "batch_size": _nested_get(cfg, "solver", "train", "batch_size"),
@@ -694,6 +864,7 @@ def _ticket_fields():
         "runtime_identity",
         "b0_evidence",
         "review_evidence",
+        "g0_evidence",
         "profile_evidence",
     }
 
@@ -826,6 +997,11 @@ def _validate_profile_artifact(
         },
         "b0_artifact_sha256": profile_ticket["b0_evidence"]["sha256"],
         "review_artifact_sha256": profile_ticket["review_evidence"]["sha256"],
+        "g0_artifact_sha256": (
+            None
+            if profile_ticket["g0_evidence"] is None
+            else profile_ticket["g0_evidence"]["sha256"]
+        ),
         "profile_artifact_sha256": None,
         "world_size": world_size,
         "slurm_job_id": profile["slurm_job_id"],
@@ -853,6 +1029,22 @@ def _validate_profile_artifact(
         required_scope=required_scope,
         trust_root=trust_roots["review"],
     )
+    if _cfg_get(cfg, "crs_eps_contract") is not None:
+        if profile_ticket["g0_evidence"] is None:
+            raise FullPetalLaunchError("CRS-EPS profile ticket lacks G0 PASS evidence")
+        _validate_g0_artifact(
+            profile_ticket["g0_evidence"],
+            profile_ticket_path.parent,
+            commit_sha=profile_commit,
+            source_tree_sha256=source_tree_sha256,
+            config_file_sha256=profile_ticket["config_file_sha256"],
+            resolved_config_sha256=profile_ticket["resolved_config_sha256"],
+            scientific_config_sha256=scientific_config_sha256,
+            data_identity_sha256=data_identity_sha256,
+            trust_root=trust_roots["g0"],
+        )
+    elif profile_ticket["g0_evidence"] is not None:
+        raise FullPetalLaunchError("non-CRS profile ticket cannot contain G0 evidence")
     if not isinstance(profile["slurm_job_id"], str) or not profile["slurm_job_id"].strip():
         raise FullPetalLaunchError("fixed-step profile lacks a Slurm job ID")
     allocation = profile["slurm_allocation"]
@@ -1261,6 +1453,7 @@ def build_launch_ticket(
     mode,
     b0_path,
     review_path,
+    g0_path=None,
     profile_path=None,
     repository_root,
     entrypoint,
@@ -1341,6 +1534,28 @@ def build_launch_ticket(
         required_scope=contract["required_review_scope"],
         trust_root=trust_roots["review"],
     )
+    g0_reference = None
+    if _cfg_get(cfg, "crs_eps_contract") is not None:
+        if g0_path is None:
+            raise FullPetalLaunchError(
+                "CRS-EPS launch ticket requires signed G0 PASS evidence"
+            )
+        g0_reference = _file_reference(
+            g0_path, bundle_root, "CRS-EPS G0 audit evidence"
+        )
+        _validate_g0_artifact(
+            g0_reference,
+            bundle_root,
+            commit_sha=commit_sha,
+            source_tree_sha256=source_digest,
+            config_file_sha256=sha256_file(config_path),
+            resolved_config_sha256=resolved_digest,
+            scientific_config_sha256=scientific_digest,
+            data_identity_sha256=data_identity["identity_sha256"],
+            trust_root=trust_roots["g0"],
+        )
+    elif g0_path is not None:
+        raise FullPetalLaunchError("non-CRS launch ticket cannot contain G0 evidence")
     profile_reference = None
     if mode == FORMAL_MODE:
         if profile_path is None:
@@ -1379,6 +1594,7 @@ def build_launch_ticket(
         "runtime_identity": runtime_identity,
         "b0_evidence": b0_reference,
         "review_evidence": review_reference,
+        "g0_evidence": g0_reference,
         "profile_evidence": profile_reference,
     }
 
@@ -1533,6 +1749,24 @@ def validate_full_petal_launch(
         trust_root=trust_roots["review"],
     )
 
+    g0_digest = None
+    if _cfg_get(cfg, "crs_eps_contract") is not None:
+        if ticket["g0_evidence"] is None:
+            raise FullPetalLaunchError("CRS-EPS launch ticket lacks G0 PASS evidence")
+        _, _, g0_digest = _validate_g0_artifact(
+            ticket["g0_evidence"],
+            ticket_path.parent,
+            commit_sha=commit_sha,
+            source_tree_sha256=source_digest,
+            config_file_sha256=ticket["config_file_sha256"],
+            resolved_config_sha256=resolved_digest,
+            scientific_config_sha256=scientific_digest,
+            data_identity_sha256=ticket["data_identity"]["identity_sha256"],
+            trust_root=trust_roots["g0"],
+        )
+    elif ticket["g0_evidence"] is not None:
+        raise FullPetalLaunchError("non-CRS launch ticket cannot contain G0 evidence")
+
     profile_digest = None
     if mode == PROFILE_MODE:
         if ticket["profile_evidence"] is not None:
@@ -1573,6 +1807,7 @@ def validate_full_petal_launch(
         "ticket_sha256": hashlib.sha256(ticket_bytes).hexdigest(),
         "b0_artifact_sha256": b0_digest,
         "review_artifact_sha256": review_digest,
+        "g0_artifact_sha256": g0_digest,
         "profile_artifact_sha256": profile_digest,
         "warmup_optimizer_events": warmup,
         "measured_optimizer_events": measured,

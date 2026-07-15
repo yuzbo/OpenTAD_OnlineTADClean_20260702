@@ -72,6 +72,7 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | Private Codex attachment `8713e1a2-f9af-4f39-bcd2-908ba6ff41af/pasted-text.txt` | `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`, `PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md` | Full 1,379-line review archived byte-identically; exact commit `6d88610`; launch-workdir P0; independent accept/qualify/reject decision. |
 | Private Codex attachment `c238c5ad-5124-4b4c-bd3b-0511d2778956/pasted-text.txt` | `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_AUTHOR_RESPONSE_DRAFT_20260715.md` | Round 1 proved current Q2 is complete-video cached truncated-BPTT rather than CRS-EPS and froze Q1-Q12 for Round 2. |
 | Private Codex attachment `d7a3bf31-eaee-4d75-a994-33a6be466079/pasted-text.txt` | `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_REVIEW_20260715.md`, `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md` | Full 2,947-line Round-2 response archived byte-identically; `GO-HYBRID-PROTOCOL`; target-risk mathematics, replay/gold audit, profile replacement, competition matrix, implementation plan, kill rules, and independent amendments. |
+| Same-reviewer exact-commit audit of `0731f070e7d7f982a1df20cfaff801b21bed96fe` and signed B0 `51fb0f...826db` | `PRO_FULL_PETAL_CRS_EPS_IMPLEMENTATION_REVIEW_20260716.md` | `REVISE / PROFILE=BLOCK`; four accepted gaps: mandatory G0 ticket binding, exact-M membership, buffer rollback, and signed byte-reconciled G0 provenance/margins. |
 
 ## Current Code State Sources
 
@@ -169,8 +170,8 @@ If these become active again, create dedicated pages before using them as claims
 | Contract | Implementation Nodes | Evidence Status |
 |---|---|---|
 | Ticket-bound P0 launch identity | `tools/build_full_petal_launch_ticket.py`, `tools/read_full_petal_launch_ticket.py`, `tools/remote/submit_full_petal_q2_n16r4.sh` | CPU/shell contract tested; clean-commit B0 pending |
-| Sampling target and HH/IPW math | `opentad/utils/crs_eps_sampling.py`, `tools/build_crs_eps_episode_manifest.py` | Exhaustive CPU unit tests; real manifest pending |
-| Episode data and optimizer lifecycle | `opentad/datasets/crs_eps_feature.py`, `opentad/cores/train_engine.py`, `opentad/models/detectors/persistent_trajectory_ontad.py` | CPU closure tested; real G0/training pending |
-| Matched stochasticity and G0 | `opentad/utils/crs_eps_audit.py`, `opentad/utils/crs_eps_gold_gate.py`, `tools/run_crs_eps_gold_audit.py` | Synthetic tests only; checkpoint/data evidence pending |
+| Sampling target and HH/IPW math | `opentad/utils/crs_eps_sampling.py`, `tools/build_crs_eps_episode_manifest.py` | CPU tests now bind sampling population and exact per-video episode sequence; real manifest pending |
+| Episode data and optimizer lifecycle | `opentad/datasets/crs_eps_feature.py`, `opentad/cores/train_engine.py`, `opentad/models/detectors/persistent_trajectory_ontad.py` | Exact `0..M-1`, cross-manifest, failure rollback, and CPU closure tested; real G0/training pending |
+| Matched stochasticity and G0 | `opentad/utils/crs_eps_audit.py`, `opentad/utils/crs_eps_gold_gate.py`, `opentad/utils/crs_eps_gold_evidence.py`, `tools/preregister_crs_eps_gold_audit.py`, `tools/run_crs_eps_gold_audit.py` | Signed preregistration, source-byte reconciliation, terminal audit, and launch recomputation tested synthetically; real checkpoint/data evidence pending |
 | Identity metrics | `opentad/evaluations/full_petal_metrics.py`, `opentad/evaluations/online_budgeted_map.py` | Exact contract and hash frozen; effectiveness unknown |
 | Multi-denominator profile | `opentad/utils/fixed_step_profile.py`, `opentad/utils/full_petal_training_evidence.py`, `tools/train.py` | CPU validation tested; GPU profile forbidden pending review |

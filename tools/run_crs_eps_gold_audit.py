@@ -21,8 +21,17 @@ from opentad.datasets import build_dataset  # noqa: E402
 from opentad.models import build_detector  # noqa: E402
 from opentad.utils.crs_eps_audit import run_matched_crs_eps_pair  # noqa: E402
 from opentad.utils.crs_eps_gold_gate import (  # noqa: E402
+    AUDIT_SCHEMA_VERSION,
     CrsEpsGoldGateError,
+    MARGIN_ATTESTATION_ROLE,
+    SELECTION_ATTESTATION_ROLE,
     evaluate_gold_audit,
+    validate_gold_margins,
+    validate_gold_selection,
+)
+from opentad.utils.crs_eps_gold_evidence import (  # noqa: E402
+    CrsEpsGoldEvidenceError,
+    bind_manifest_to_loaded_dataset,
 )
 from opentad.utils.crs_eps_sampling import (  # noqa: E402
     CrsEpsSamplingError,
@@ -33,10 +42,17 @@ from opentad.utils.evidence_bundle import (  # noqa: E402
     publish_exclusive_file,
     strict_json_from_bytes,
 )
+from opentad.utils.full_petal_attestation import (  # noqa: E402
+    AttestationError,
+    public_key_base64,
+    verify_payload,
+)
+from opentad.utils.full_petal_launch import resolved_config_sha256  # noqa: E402
+from opentad.utils.full_petal_role_signing import (  # noqa: E402
+    sign_crs_eps_g0_audit,
+)
 
 
-SELECTION_SCHEMA = "full-petal-crs-eps-g0-selection-v1"
-AUDIT_SCHEMA = "full-petal-crs-eps-g0-audit-v1"
 AUDIT_MODES = ("dynamic_birth", "fixed_192", "reset")
 
 
@@ -95,43 +111,26 @@ def _external_output(path):
     return output
 
 
-def _selection(payload, *, commit_sha, manifest_sha256):
-    if set(payload) != {
-        "schema_version",
-        "status",
+def _verified_preregistration(payload, *, trust_root, role, bindings, label):
+    try:
+        body = verify_payload(payload, trust_root=trust_root, role=role)
+        if role == SELECTION_ATTESTATION_ROLE:
+            body = validate_gold_selection(body)
+        else:
+            body = validate_gold_margins(body)
+    except (AttestationError, CrsEpsGoldGateError) as exc:
+        raise GoldAuditRunnerError(f"{label} is not a valid signed preregistration: {exc}") from exc
+    for key in (
         "commit_sha",
+        "resolved_config_sha256",
+        "scientific_config_sha256",
+        "data_identity_sha256",
         "episode_manifest_sha256",
-        "samples",
-    }:
-        raise GoldAuditRunnerError("G0 selection fields differ")
-    if payload["schema_version"] != SELECTION_SCHEMA:
-        raise GoldAuditRunnerError("G0 selection schema is unsupported")
-    if payload["status"] != "PREREGISTERED_BEFORE_Q2_EFFECTIVENESS":
-        raise GoldAuditRunnerError("G0 selection is not marked outcome-blind")
-    if payload["commit_sha"] != commit_sha:
-        raise GoldAuditRunnerError("G0 selection commit differs from the checkout")
-    if payload["episode_manifest_sha256"] != manifest_sha256:
-        raise GoldAuditRunnerError("G0 selection manifest hash differs")
-    samples = payload["samples"]
-    if not isinstance(samples, list) or not samples:
-        raise GoldAuditRunnerError("G0 selection requires at least one sample")
-    normalized = []
-    seen = set()
-    for sample in samples:
-        if not isinstance(sample, dict) or set(sample) != {"video_id", "draw_index"}:
-            raise GoldAuditRunnerError("G0 selected-sample fields differ")
-        video_id = sample["video_id"]
-        draw_index = sample["draw_index"]
-        if not isinstance(video_id, str) or not video_id:
-            raise GoldAuditRunnerError("G0 selected video ID is invalid")
-        if isinstance(draw_index, bool) or not isinstance(draw_index, int) or draw_index < 0:
-            raise GoldAuditRunnerError("G0 selected draw index is invalid")
-        key = (video_id, draw_index)
-        if key in seen:
-            raise GoldAuditRunnerError("G0 selection contains a duplicate sample")
-        seen.add(key)
-        normalized.append(key)
-    return normalized
+        "sampling_specs_sha256",
+    ):
+        if body.get(key) != bindings[key]:
+            raise GoldAuditRunnerError(f"{label} does not bind the exact {key}")
+    return body
 
 
 def _load_checkpoint(model, checkpoint_path, checkpoint_key):
@@ -175,7 +174,8 @@ def parse_args(argv=None):
     )
     parser.add_argument("--episode-manifest", type=Path, required=True)
     parser.add_argument("--selection", type=Path, required=True)
-    parser.add_argument("--margins", type=Path)
+    parser.add_argument("--margins", type=Path, required=True)
+    parser.add_argument("--signing-key", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser, parser.parse_args(argv)
 
@@ -190,24 +190,60 @@ def main(argv=None):
         checkpoint_path = args.checkpoint.resolve(strict=True)
         manifest_path = args.episode_manifest.resolve(strict=True)
         selection_path = args.selection.resolve(strict=True)
+        margins_path = args.margins.resolve(strict=True)
+        for path, label in (
+            (manifest_path, "episode manifest"),
+            (selection_path, "selection"),
+            (margins_path, "margins"),
+        ):
+            if path.parent != output.parent:
+                raise GoldAuditRunnerError(
+                    f"G0 {label} must share the immutable output evidence bundle"
+                )
         cfg = Config.fromfile(str(config_path))
         if cfg.get("route_stage") != "q2_crs_eps_hh_ipw_implementation_gate":
             raise GoldAuditRunnerError("G0 audit requires a CRS-EPS implementation config")
         manifest = _load_json(manifest_path, "CRS-EPS episode manifest")
         validate_epoch_manifest(manifest)
         manifest_sha256 = manifest["manifest_sha256"]
-        selection_payload = _load_json(selection_path, "G0 selection")
-        selected = _selection(
-            selection_payload,
-            commit_sha=commit_sha,
-            manifest_sha256=manifest_sha256,
-        )
-        provenance_commit = manifest.get("provenance", {}).get("commit_sha")
-        if provenance_commit != commit_sha:
-            raise GoldAuditRunnerError("episode manifest commit differs from the checkout")
         dataset = build_dataset(dict(cfg.dataset.train))
         if getattr(dataset, "sampling_protocol", None) != "crs_eps":
             raise GoldAuditRunnerError("G0 audit dataset is not CRS-EPS")
+        bindings = bind_manifest_to_loaded_dataset(
+            manifest,
+            dataset,
+            cfg=cfg,
+            config_path=config_path,
+            repository_root=ROOT,
+            commit_sha=commit_sha,
+            resolved_config_sha256=resolved_config_sha256(cfg),
+            scientific_config_sha256=resolved_config_sha256(cfg, scientific=True),
+        )
+        trust_root = dict(cfg.launch_contract.attestation_trust_roots.g0)
+        if public_key_base64(args.signing_key) != trust_root["public_key"]:
+            raise GoldAuditRunnerError("G0 audit signing key does not match the trust root")
+        signed_selection = _load_json(selection_path, "G0 selection")
+        selection = _verified_preregistration(
+            signed_selection,
+            trust_root=trust_root,
+            role=SELECTION_ATTESTATION_ROLE,
+            bindings=bindings,
+            label="G0 selection",
+        )
+        selected = [
+            (sample["video_id"], sample["draw_index"])
+            for sample in selection["samples"]
+        ]
+        signed_margins = _load_json(margins_path, "G0 margins")
+        margins = _verified_preregistration(
+            signed_margins,
+            trust_root=trust_root,
+            role=MARGIN_ATTESTATION_ROLE,
+            bindings=bindings,
+            label="G0 margins",
+        )
+        if margins["selection_artifact_sha256"] != _sha256_file(selection_path):
+            raise GoldAuditRunnerError("G0 margins do not bind the signed selection artifact")
         model = build_detector(dict(cfg.model)).cpu().train()
         _load_checkpoint(model, checkpoint_path, args.checkpoint_key)
         videos = {video["video_id"]: video for video in manifest["videos"]}
@@ -249,27 +285,15 @@ def main(argv=None):
                         "trace": trace,
                     }
                 )
-        margins_reference = None
-        gate = None
-        if args.margins is not None:
-            margins_path = args.margins.resolve(strict=True)
-            margins = _load_json(margins_path, "G0 margins")
-            expected_margin_bindings = {
-                "commit_sha": commit_sha,
-                "episode_manifest_sha256": manifest_sha256,
-                "selection_sha256": _sha256_file(selection_path),
-            }
-            if any(margins.get(key) != value for key, value in expected_margin_bindings.items()):
-                raise GoldAuditRunnerError("G0 margins do not bind the exact audit inputs")
-            gate = evaluate_gold_audit(rows, margins)
-            margins_reference = {
-                "path": str(margins_path),
-                "sha256": _sha256_file(margins_path),
-            }
-        artifact = {
-            "schema_version": AUDIT_SCHEMA,
-            "status": gate["status"] if gate is not None else "OBSERVED_UNGATED",
+        gate = evaluate_gold_audit(rows, margins)
+        artifact_body = {
+            "schema_version": AUDIT_SCHEMA_VERSION,
+            "status": gate["status"],
             "commit_sha": commit_sha,
+            "source_tree_sha256": bindings["source_tree_sha256"],
+            "resolved_config_sha256": bindings["resolved_config_sha256"],
+            "scientific_config_sha256": bindings["scientific_config_sha256"],
+            "data_identity_sha256": bindings["data_identity_sha256"],
             "config": {"path": str(config_path), "sha256": _sha256_file(config_path)},
             "checkpoint": {
                 "path": str(checkpoint_path),
@@ -277,23 +301,34 @@ def main(argv=None):
                 "state_key": args.checkpoint_key,
             },
             "episode_manifest": {
-                "path": str(manifest_path),
+                "path": manifest_path.name,
                 "file_sha256": _sha256_file(manifest_path),
                 "manifest_sha256": manifest_sha256,
+                "sampling_specs_sha256": bindings["sampling_specs_sha256"],
             },
             "selection": {
-                "path": str(selection_path),
+                "path": selection_path.name,
                 "sha256": _sha256_file(selection_path),
             },
-            "margins": margins_reference,
+            "margins": {
+                "path": margins_path.name,
+                "sha256": _sha256_file(margins_path),
+            },
             "rows": rows,
             "gate": gate,
         }
+        artifact = sign_crs_eps_g0_audit(
+            artifact_body,
+            private_key_path=args.signing_key,
+            key_id=trust_root["key_id"],
+        )
         encoded = (
             json.dumps(artifact, allow_nan=False, indent=2, sort_keys=True) + "\n"
         ).encode("utf-8")
         publish_exclusive_file(output, encoded)
     except (
+        AttestationError,
+        CrsEpsGoldEvidenceError,
         CrsEpsGoldGateError,
         CrsEpsSamplingError,
         EvidenceBundleError,

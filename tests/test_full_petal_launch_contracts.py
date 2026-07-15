@@ -53,13 +53,14 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
     assert cfg.profile_contract.b1_total_gpu_hour_cap == 2
     assert cfg.profile_contract.b2_total_gpu_hour_cap == 10
     assert cfg.optimizer.audit.fail_on_frozen is True
-    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v3"
+    assert cfg.launch_contract.schema_version == "full-petal-launch-contract-v4"
     assert cfg.launch_contract.required_reviewer_id == (
         "019f5abd-5104-79b3-882e-354ca796f2c1"
     )
     assert set(cfg.launch_contract.attestation_trust_roots) == {
         "b0",
         "formal",
+        "g0",
         "review",
         "profile",
     }
@@ -71,6 +72,7 @@ def test_q2_bridge_freezes_scientific_and_cost_contracts():
             "train_engine",
             "runtime_evidence_session",
             "in_process_attestation_key_material",
+            "g0_preregistration_and_audit_runner",
         ],
         "guarantees": [
             "fail_closed_lifecycle_wiring",
@@ -274,8 +276,10 @@ def test_b0_manifest_hash_locks_evidence_trust_model_sources():
     assert "configs/causaltad/thumos_pes_q2_crs_eps_base.py" in locked_paths
     assert "tools/read_full_petal_launch_ticket.py" in locked_paths
     assert "tools/run_crs_eps_gold_audit.py" in locked_paths
+    assert "tools/preregister_crs_eps_gold_audit.py" in locked_paths
     assert "opentad/utils/crs_eps_sampling.py" in locked_paths
     assert "opentad/utils/crs_eps_gold_gate.py" in locked_paths
+    assert "opentad/utils/crs_eps_gold_evidence.py" in locked_paths
     assert "opentad/datasets/crs_eps_feature.py" in locked_paths
     assert "opentad/models/detectors/persistent_trajectory_ontad.py" in locked_paths
     assert "opentad/evaluations/full_petal_metrics.py" in locked_paths

@@ -14,9 +14,10 @@ This route is fail-closed. The order below is mandatory.
 4. Continue only when that reviewer returns `PASS` with zero blocking findings
    and zero protocol violations.
 5. For CRS-EPS, run the preregistered CPU-only four-arm G0 audit with
-   `tools/run_crs_eps_gold_audit.py`; do not interpret an ungated artifact as a
-   PASS. Freeze any margin file before Q2 effectiveness results and bind it to
-   the exact commit, episode manifest, and selection file.
+   `tools/run_crs_eps_gold_audit.py`. The signed selection and margins must be
+   created first by `tools/preregister_crs_eps_gold_audit.py`; both bind the
+   exact commit, resolved/scientific config, data identity, sampling population,
+   episode manifest, and one another.
 6. Build a profile ticket with `tools/build_full_petal_launch_ticket.py`.
 7. Submit exactly one fixed-step profile through
    `tools/remote/submit_full_petal_q2_n16r4.sh profile ...`.
@@ -66,11 +67,21 @@ their already verified bytes rather than reopening uncommitted data inputs.
 
 `tools/run_crs_eps_gold_audit.py` is deliberately CPU-only. It requires a clean
 commit, a CRS-EPS config, a frozen checkpoint, an immutable episode manifest,
-and an explicit selection JSON with schema
-`full-petal-crs-eps-g0-selection-v1`. It compares each selected draw against
-video-start gold using `dynamic_birth`, `fixed_192`, and `reset` arms under a
-restored RNG snapshot. Without `--margins`, its status is
-`OBSERVED_UNGATED`; with margins, the result is exactly `PASS` or `KILL`.
+and signed preregistration artifacts with schemas
+`full-petal-crs-eps-g0-selection-v2` and
+`full-petal-crs-eps-g0-margins-v2`. Before model construction it rebuilds the
+loaded dataset identity and checks the annotation, feature-cache manifest,
+split files, sampling population, config, and commit against the manifest. It
+compares each selected draw against video-start gold using `dynamic_birth`,
+`fixed_192`, and `reset` arms under a restored RNG snapshot. The final
+`full-petal-crs-eps-g0-audit-v2` artifact is signed and always terminal:
+exactly `PASS` or `KILL`.
+
+The profile ticket schema requires the signed G0 audit for every CRS-EPS route.
+At launch, the validator re-verifies all three signatures, reloads the manifest,
+recomputes the gate from the trace rows and preregistered margins, and requires
+the selected sample set to match exactly. A missing, killed, substituted, or
+cross-commit G0 artifact blocks before CUDA/DDP initialization.
 
 The configured `draws_per_video=4` remains
 `PROVISIONAL_IMPLEMENTATION_PROBE_UNTIL_G0`. It must not silently become the

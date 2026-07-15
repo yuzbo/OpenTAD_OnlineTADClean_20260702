@@ -28,6 +28,7 @@ def parse_args(argv=None):
     parser.add_argument("--mode", choices=("profile", "formal"), required=True)
     parser.add_argument("--b0", type=Path, required=True)
     parser.add_argument("--review", type=Path, required=True)
+    parser.add_argument("--g0", type=Path)
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--entrypoint", choices=("train", "test"), required=True)
@@ -73,6 +74,7 @@ def main(argv=None):
             mode=args.mode,
             b0_path=args.b0,
             review_path=args.review,
+            g0_path=args.g0,
             profile_path=args.profile,
             repository_root=ROOT,
             entrypoint=args.entrypoint,

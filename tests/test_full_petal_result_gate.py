@@ -111,12 +111,14 @@ def _keys(tmp_path, monkeypatch):
     formal_private = tmp_path / "formal.pem"
     b0_private = tmp_path / "b0.pem"
     review_private = tmp_path / "review.pem"
+    g0_private = tmp_path / "g0.pem"
     fineaction_license_private = tmp_path / "fineaction-license.pem"
     fineaction_execution_private = tmp_path / "fineaction-execution.pem"
     profile_public = generate_private_key(profile_private)
     formal_public = generate_private_key(formal_private)
     b0_public = generate_private_key(b0_private)
     review_public = generate_private_key(review_private)
+    g0_public = generate_private_key(g0_private)
     fineaction_license_public = generate_private_key(fineaction_license_private)
     fineaction_execution_public = generate_private_key(fineaction_execution_private)
     fineaction_roots = {
@@ -134,6 +136,7 @@ def _keys(tmp_path, monkeypatch):
         "formal": {"key_id": "formal-test", "public_key": formal_public},
         "b0": {"key_id": "b0-test", "public_key": b0_public},
         "review": {"key_id": "review-test", "public_key": review_public},
+        "g0": {"key_id": "g0-test", "public_key": g0_public},
     }
     monkeypatch.setattr(MODULE, "_attestation_trust_roots", lambda: roots)
     monkeypatch.setattr(
@@ -731,6 +734,7 @@ def _run(
             "runtime_identity": profile_runtime,
             "b0_evidence": profile_b0_reference,
             "review_evidence": profile_review_reference,
+            "g0_evidence": None,
             "profile_evidence": None,
         },
     )
@@ -753,6 +757,7 @@ def _run(
                 "launch_ticket": _reference(profile_ticket, run_dir),
                 "b0_artifact_sha256": profile_b0["sha256"],
                 "review_artifact_sha256": profile_review_reference["sha256"],
+                "g0_artifact_sha256": None,
                 "profile_artifact_sha256": None,
                 "world_size": 1,
                 "slurm_job_id": profile_job,
@@ -887,6 +892,7 @@ def _run(
             "runtime_identity": runtime,
             "b0_evidence": formal_b0_reference,
             "review_evidence": review_reference,
+            "g0_evidence": None,
             "profile_evidence": profile_reference,
         }
         ticket_path = _write_json(run_dir / f"{stage}-launch-ticket.json", ticket)
@@ -904,6 +910,7 @@ def _run(
                 "launch_ticket": _reference(ticket_path, run_dir),
                 "b0_artifact_sha256": b0["sha256"],
                 "review_artifact_sha256": review_reference["sha256"],
+                "g0_artifact_sha256": None,
                 "profile_artifact_sha256": profile_reference["sha256"],
                 "world_size": 1,
                 "slurm_job_id": job_id,

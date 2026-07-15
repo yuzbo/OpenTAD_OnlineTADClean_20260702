@@ -9,6 +9,8 @@ from opentad.utils.crs_eps_sampling import (
     DEFAULT_MIXTURE,
     DEFAULT_SUFFIX_BINS,
     build_epoch_manifest,
+    canonical_json_sha256,
+    episode_payload_sha256,
     validate_epoch_manifest,
 )
 from opentad.utils.evidence_bundle import publish_exclusive_file
@@ -221,6 +223,11 @@ class CrsEpsFeatureDataset(StreamingFeatureDataset):
         group_size = int(
             video["draws_per_video"] if group_size is None else group_size
         )
+        sequence_sha256 = (
+            video["episode_sequence_sha256"]
+            if group_size == video["draws_per_video"] and draw in video["draws"]
+            else canonical_json_sha256([draw["episode_payload_sha256"]])
+        )
         return {
             "inputs": inputs,
             "masks": masks,
@@ -242,6 +249,7 @@ class CrsEpsFeatureDataset(StreamingFeatureDataset):
                 "is_video_group_start": draw_index == 0,
                 "is_video_group_end": draw_index + 1 == group_size,
                 "episode_manifest_sha256": manifest_sha256,
+                "episode_sequence_sha256": sequence_sha256,
                 "video_covered_unique_bins": video["covered_unique_bins"],
                 "video_effective_sample_size": video["effective_sample_size"],
                 "video_ipw_weight_sum": video["ipw_weight_sum"],
@@ -273,6 +281,7 @@ class CrsEpsFeatureDataset(StreamingFeatureDataset):
         )
         if mode == "reset":
             audit_draw["gradient_ranges"] = [[supervised_start, supervised_end]]
+        audit_draw["episode_payload_sha256"] = episode_payload_sha256(audit_draw)
         return self._build_sample(
             video,
             audit_draw,

@@ -88,6 +88,7 @@ _LAUNCH_TICKET_FIELDS = {
     "runtime_identity",
     "b0_evidence",
     "review_evidence",
+    "g0_evidence",
     "profile_evidence",
 }
 _LAUNCH_RECEIPT_FIELDS = {
@@ -102,6 +103,7 @@ _LAUNCH_RECEIPT_FIELDS = {
     "launch_ticket",
     "b0_artifact_sha256",
     "review_artifact_sha256",
+    "g0_artifact_sha256",
     "profile_artifact_sha256",
     "world_size",
     "slurm_job_id",
@@ -1614,6 +1616,11 @@ def _validate_formal_receipt(
         },
         "b0_artifact_sha256": ticket["b0_evidence"].get("sha256"),
         "review_artifact_sha256": ticket["review_evidence"].get("sha256"),
+        "g0_artifact_sha256": (
+            None
+            if ticket["g0_evidence"] is None
+            else ticket["g0_evidence"].get("sha256")
+        ),
         "profile_artifact_sha256": ticket["profile_evidence"].get("sha256"),
         "world_size": 1,
     }

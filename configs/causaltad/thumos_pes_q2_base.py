@@ -56,7 +56,7 @@ profile_contract = dict(
 )
 
 launch_contract = dict(
-    schema_version="full-petal-launch-contract-v3",
+    schema_version="full-petal-launch-contract-v4",
     required_reviewer_id="019f5abd-5104-79b3-882e-354ca796f2c1",
     required_review_scope=[
         "P0_evidence_chain",
@@ -76,6 +76,7 @@ launch_contract = dict(
             "train_engine",
             "runtime_evidence_session",
             "in_process_attestation_key_material",
+            "g0_preregistration_and_audit_runner",
         ],
         guarantees=[
             "fail_closed_lifecycle_wiring",
@@ -96,6 +97,10 @@ launch_contract = dict(
         review=dict(
             key_id="019f5abd-5104-79b3-882e-354ca796f2c1",
             public_key="yjZXBpBY917paABqnDxL15y/eyKECmbhJDQuq4ce7Xk=",
+        ),
+        g0=dict(
+            key_id="full-petal-crs-eps-g0-20260716",
+            public_key="LZm0AGLfiIrtfUbx32sxP+zBwnNdhRp6X6eh57TYWWw=",
         ),
         profile=dict(
             key_id="full-petal-profile-20260713",

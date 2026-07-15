@@ -9,8 +9,8 @@ detectable. It is not a hostile-process remote-attestation system.
 
 ## Trusted Computing Base
 
-The evidence chain trusts these components for the duration of a validated
-launch:
+The evidence chain trusts these components while producing prerequisites and
+during a validated launch:
 
 1. `launch_validator`: validates B0, independent review, launch identity, and
    the applicable profile or formal-training authorization before CUDA/DDP.
@@ -19,6 +19,9 @@ launch:
    transaction-commit boundary receipts before publishing an event.
 4. `in_process_attestation_key_material`: the ephemeral Ed25519 private key
    held by the validated launch process.
+5. `g0_preregistration_and_audit_runner`: verifies the loaded dataset bytes,
+   consumes signed outcome-blind selection/margins, executes the CPU four-arm
+   audit, and signs its terminal result with the external G0 role key.
 
 The exact machine-readable representation is locked in
 `launch_contract.evidence_trust_model`. Launch validation rejects any missing,

@@ -13,6 +13,10 @@ from opentad.utils.crs_eps_audit import (
     rng_snapshot_digest,
     run_matched_crs_eps_pair,
 )
+from opentad.utils.crs_eps_sampling import (
+    canonical_json_sha256,
+    episode_payload_sha256,
+)
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
 
 
@@ -42,6 +46,29 @@ def _model(binding):
 
 def _episode(stream_id="audit"):
     frames = tuple(range(8))
+    payload = {
+        "draw_index": 0,
+        "episode_id": stream_id,
+        "proposal_component": "uniform",
+        "component_fallback_to_uniform": False,
+        "anchor_bin": 4,
+        "supervised_range": [0, 8],
+        "replay_range": [0, 8],
+        "gradient_ranges": [[0, 8]],
+        "true_left_censored": False,
+        "left_censored_instance_ids": [],
+        "dynamic_extension_instance_ids": [],
+        "video_start_fallback": True,
+        "q_component": 0.4,
+        "q_anchor_given_component": 0.125,
+        "q_anchor_marginal": 0.125,
+        "rho_by_supervised_bin": [1.0] * 8,
+        "union_pi_by_supervised_bin": [1.0] * 8,
+        "raw_weight_by_bin": [0.125] * 8,
+        "final_weight_by_bin": [0.125] * 8,
+        "rng_key": "rng-audit",
+    }
+    payload["episode_payload_sha256"] = episode_payload_sha256(payload)
     return {
         "inputs": torch.randn(1, 4, 8),
         "masks": torch.ones(1, 8, dtype=torch.bool),
@@ -62,17 +89,14 @@ def _episode(stream_id="audit"):
             [[1.0, 6.0]], [1], frames, previous_frame=-1
         ),
         "crs_eps_control": {
-            "draw_index": 0,
-            "episode_id": stream_id,
-            "supervised_range": [0, 8],
-            "replay_range": [0, 8],
-            "gradient_ranges": [[0, 8]],
-            "raw_weight_by_bin": [0.125] * 8,
-            "final_weight_by_bin": [0.125] * 8,
+            **payload,
             "video_group_size": 1,
             "is_video_group_start": True,
             "is_video_group_end": True,
             "episode_manifest_sha256": "b" * 64,
+            "episode_sequence_sha256": canonical_json_sha256(
+                [payload["episode_payload_sha256"]]
+            ),
         },
     }
 
@@ -127,6 +151,14 @@ def test_replay_fidelity_pair_reports_state_shape_mismatch_without_false_cosine(
     surrogate_episode = deepcopy(gold_episode)
     surrogate_episode["model_meta"]["stream_id"] = "surrogate"
     surrogate_episode["crs_eps_control"]["episode_id"] = "surrogate"
+    surrogate_episode["crs_eps_control"]["episode_payload_sha256"] = (
+        episode_payload_sha256(surrogate_episode["crs_eps_control"])
+    )
+    surrogate_episode["crs_eps_control"]["episode_sequence_sha256"] = (
+        canonical_json_sha256(
+            [surrogate_episode["crs_eps_control"]["episode_payload_sha256"]]
+        )
+    )
 
     trace = run_matched_crs_eps_pair(
         gold,
