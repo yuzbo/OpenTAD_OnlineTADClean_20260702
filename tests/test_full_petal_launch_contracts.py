@@ -179,7 +179,9 @@ def test_profile_path_exits_before_checkpoint_or_evaluation():
     assert "optimizer_event_recorder.persist(trace_path, commitment_path)" in source
     assert "optimizer_event_trace_path=trace_path" in source
     assert "optimizer_event_commitment_path=commitment_path" in source
-    assert "profiler_measurements=fixed_step_profiler.measurements()" in source
+    assert "profiler_measurements = fixed_step_profiler.measurements()" in source
+    assert "profiler_measurements=profiler_measurements" in source
+    assert "fixed_step_profiler.workload_measurements(" in source
 
 
 def test_test_entrypoint_uses_resolved_amp_dtype():
@@ -198,13 +200,19 @@ def test_legacy_smoke_cannot_launch_full_petal():
 
 def test_ticket_builder_and_slurm_launcher_use_the_locked_gate():
     builder = _entrypoint_source("build_full_petal_launch_ticket.py")
+    reader = _entrypoint_source("read_full_petal_launch_ticket.py")
     launcher = (
         ROOT / "tools" / "remote" / "submit_full_petal_q2_n16r4.sh"
     ).read_text(encoding="utf-8")
 
     assert "build_launch_ticket(" in builder
+    assert 'cfg_overrides["work_dir"] = str(output.parent / "work")' in builder
+    assert 'set(overrides) != {"work_dir"}' in reader
     assert '--launch-mode "${MODE}"' in launcher
     assert '--launch-ticket "${TICKET}"' in launcher
+    assert '--cfg-options work_dir="${WORK_DIR}"' in launcher
+    assert "STAMP=" not in launcher
+    assert "RUNS_ROOT=" not in launcher
     assert "--nproc_per_node=1" in launcher
     assert "ALLOW_FORMAL" in launcher
 
@@ -261,4 +269,13 @@ def test_b0_manifest_hash_locks_evidence_trust_model_sources():
     locked_paths = {item["path"] for item in manifest["runner_sources"]}
 
     assert "FULL_PETAL_TRUST_MODEL.md" in locked_paths
+    assert "FULL_PETAL_EXECUTION_GATES.md" in locked_paths
     assert "configs/causaltad/thumos_pes_q2_base.py" in locked_paths
+    assert "configs/causaltad/thumos_pes_q2_crs_eps_base.py" in locked_paths
+    assert "tools/read_full_petal_launch_ticket.py" in locked_paths
+    assert "tools/run_crs_eps_gold_audit.py" in locked_paths
+    assert "opentad/utils/crs_eps_sampling.py" in locked_paths
+    assert "opentad/utils/crs_eps_gold_gate.py" in locked_paths
+    assert "opentad/datasets/crs_eps_feature.py" in locked_paths
+    assert "opentad/models/detectors/persistent_trajectory_ontad.py" in locked_paths
+    assert "opentad/evaluations/full_petal_metrics.py" in locked_paths

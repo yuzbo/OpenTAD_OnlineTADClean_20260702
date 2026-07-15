@@ -275,17 +275,18 @@ def derive_evaluator_spec(cfg):
         "identity_tiou_threshold",
         "identity_latency_budget_sec",
     }
-    if set(evaluation) != required:
+    optional = {"identity_metric_contract_sha256"}
+    if not required.issubset(evaluation) or set(evaluation) - required - optional:
         raise IdentityError(
             "evaluation config fields differ; "
             f"missing={sorted(required - set(evaluation))}, "
-            f"extra={sorted(set(evaluation) - required)}"
+            f"extra={sorted(set(evaluation) - required - optional)}"
         )
     if evaluation["type"] != "OnlineAPBudgeted":
         raise IdentityError("evaluation type must be OnlineAPBudgeted")
     if evaluation["require_ledger"] is not True or evaluation["require_no_future"] is not True:
         raise IdentityError("evaluation must require an immutable no-future ledger")
-    return {
+    result = {
         "schema_version": EVALUATOR_SPEC_SCHEMA,
         "type": evaluation["type"],
         "subset": evaluation["subset"],
@@ -295,6 +296,11 @@ def derive_evaluator_spec(cfg):
         "identity_tiou_threshold": evaluation["identity_tiou_threshold"],
         "identity_latency_budget_sec": evaluation["identity_latency_budget_sec"],
     }
+    if "identity_metric_contract_sha256" in evaluation:
+        result["identity_metric_contract_sha256"] = evaluation[
+            "identity_metric_contract_sha256"
+        ]
+    return result
 
 
 def validate_evaluation_artifact_bindings(

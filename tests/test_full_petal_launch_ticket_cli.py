@@ -24,9 +24,13 @@ def test_launch_ticket_cli_exclusively_publishes_validated_payload(
 
     def validated_builder(cfg, config_path, **kwargs):
         assert cfg.value == 1
+        assert cfg.work_dir == str(output.parent.resolve() / "work")
         assert Path(config_path).resolve() == config.resolve()
         assert kwargs["mode"] == "profile"
         assert kwargs["entrypoint"] == "train"
+        assert kwargs["cfg_overrides"] == {
+            "work_dir": str(output.parent.resolve() / "work")
+        }
         return expected
 
     monkeypatch.setattr(MODULE, "build_launch_ticket", validated_builder)
@@ -50,6 +54,33 @@ def test_launch_ticket_cli_exclusively_publishes_validated_payload(
 
     assert MODULE.main(argv) == 0
     assert json.loads(output.read_bytes()) == expected
+    with pytest.raises(SystemExit):
+        MODULE.main(argv)
+
+
+def test_launch_ticket_cli_rejects_work_dir_override(tmp_path):
+    config = tmp_path / "config.py"
+    config.write_text("value = 1\n", encoding="utf-8")
+    argv = [
+        str(config),
+        "--mode",
+        "profile",
+        "--b0",
+        str(tmp_path / "b0.json"),
+        "--review",
+        str(tmp_path / "review.json"),
+        "--output",
+        str(tmp_path / "evidence" / "ticket.json"),
+        "--entrypoint",
+        "train",
+        "--seed",
+        "705",
+        "--id",
+        "0",
+        "--cfg-options",
+        "work_dir=/tmp/drifted",
+    ]
+
     with pytest.raises(SystemExit):
         MODULE.main(argv)
 

@@ -1330,6 +1330,9 @@ def derive_fixed_step_profile_measurements(
         "peak_memory_bytes",
         "throughput_optimizer_events_per_second",
     }
+    has_workload = isinstance(profiler_measurements, Mapping) and "workload" in profiler_measurements
+    if has_workload:
+        expected_fields.add("workload")
     if not isinstance(profiler_measurements, Mapping) or set(
         profiler_measurements
     ) != expected_fields:
@@ -1359,6 +1362,127 @@ def derive_fixed_step_profile_measurements(
     normalized["elapsed_seconds"] = elapsed
     normalized["peak_memory_bytes"] = peak
     normalized["throughput_optimizer_events_per_second"] = throughput
+    if has_workload:
+        workload = normalized["workload"]
+        if not isinstance(workload, Mapping) or set(workload) != {
+            "schema_version",
+            "measured_optimizer_events",
+            "totals",
+            "rates",
+        }:
+            raise TrainingEvidenceError("multi-denominator workload fields differ")
+        if (
+            workload["schema_version"]
+            != "full-petal-multi-denominator-profile-v1"
+            or workload["measured_optimizer_events"] != measured
+        ):
+            raise TrainingEvidenceError("multi-denominator workload identity differs")
+        total_fields = {
+            "optimizer_events",
+            "episode_draws",
+            "temporal_forward_tokens",
+            "temporal_backward_tokens",
+            "replay_tokens",
+            "supervised_exposures",
+            "unique_supervised_bins",
+            "ipw_weight_sum",
+            "ipw_weight_squared_sum",
+            "visual_forward_frames",
+            "visual_backward_frames",
+            "data_wait_seconds",
+            "control_unroll_seconds",
+            "wall_seconds",
+            "effective_sample_size",
+            "gpu_hours",
+            "peak_memory_bytes",
+        }
+        rate_fields = {
+            "temporal_forward_tokens_per_second",
+            "temporal_backward_tokens_per_second",
+            "supervised_exposures_per_second",
+            "effective_samples_per_second",
+            "video_groups_per_second",
+        }
+        if set(workload["totals"]) != total_fields or set(workload["rates"]) != rate_fields:
+            raise TrainingEvidenceError("multi-denominator workload metric fields differ")
+        if workload["totals"]["optimizer_events"] != measured:
+            raise TrainingEvidenceError("workload optimizer event count differs")
+        if workload["totals"]["peak_memory_bytes"] != peak:
+            raise TrainingEvidenceError("workload peak memory differs")
+        integer_total_fields = {
+            "optimizer_events",
+            "episode_draws",
+            "temporal_forward_tokens",
+            "temporal_backward_tokens",
+            "replay_tokens",
+            "supervised_exposures",
+            "unique_supervised_bins",
+            "visual_forward_frames",
+            "visual_backward_frames",
+            "peak_memory_bytes",
+        }
+        for field in integer_total_fields:
+            _nonnegative_int(workload["totals"][field], f"workload total {field}")
+        for field in total_fields.difference(integer_total_fields):
+            value = _finite(workload["totals"][field], f"workload total {field}")
+            if value < 0:
+                raise TrainingEvidenceError(f"workload total {field} is negative")
+        for field, value in workload["rates"].items():
+            _finite(value, f"workload rate {field}")
+            if value < 0:
+                raise TrainingEvidenceError(f"workload rate {field} is negative")
+        totals = workload["totals"]
+        if (
+            totals["episode_draws"] <= 0
+            or totals["temporal_forward_tokens"] <= 0
+            or totals["temporal_backward_tokens"] <= 0
+            or totals["supervised_exposures"] <= 0
+            or totals["ipw_weight_sum"] <= 0
+            or totals["ipw_weight_squared_sum"] <= 0
+        ):
+            raise TrainingEvidenceError("workload measured support must be positive")
+        if totals["temporal_backward_tokens"] > totals["temporal_forward_tokens"]:
+            raise TrainingEvidenceError("workload backward tokens exceed forward tokens")
+        if totals["replay_tokens"] > totals["temporal_forward_tokens"]:
+            raise TrainingEvidenceError("workload replay tokens exceed forward tokens")
+        if totals["unique_supervised_bins"] > totals["supervised_exposures"]:
+            raise TrainingEvidenceError("workload unique bins exceed supervised exposures")
+        if (
+            totals["data_wait_seconds"] > totals["wall_seconds"] + 1e-12
+            or totals["control_unroll_seconds"] > totals["wall_seconds"] + 1e-12
+        ):
+            raise TrainingEvidenceError("workload component time exceeds group wall time")
+        expected_ess = (
+            totals["ipw_weight_sum"] ** 2
+            / totals["ipw_weight_squared_sum"]
+            if totals["ipw_weight_squared_sum"] > 0
+            else 0.0
+        )
+        if not math.isclose(
+            totals["effective_sample_size"],
+            expected_ess,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise TrainingEvidenceError("workload effective sample size differs")
+        expected_gpu_hours = elapsed * identity["world_size"] / 3600.0
+        if not math.isclose(
+            totals["gpu_hours"], expected_gpu_hours, rel_tol=1e-12, abs_tol=1e-12
+        ):
+            raise TrainingEvidenceError("workload GPU hours differ")
+        expected_rates = {
+            "temporal_forward_tokens_per_second": totals["temporal_forward_tokens"] / elapsed,
+            "temporal_backward_tokens_per_second": totals["temporal_backward_tokens"] / elapsed,
+            "supervised_exposures_per_second": totals["supervised_exposures"] / elapsed,
+            "effective_samples_per_second": expected_ess / elapsed,
+            "video_groups_per_second": measured / elapsed,
+        }
+        for field, expected in expected_rates.items():
+            if not math.isclose(
+                workload["rates"][field], expected, rel_tol=1e-12, abs_tol=1e-12
+            ):
+                raise TrainingEvidenceError(f"workload rate {field} differs")
+        normalized["workload"] = json.loads(canonical_json(workload))
     return json.loads(canonical_json(normalized))
 
 

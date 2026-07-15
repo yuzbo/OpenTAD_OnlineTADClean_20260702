@@ -1,5 +1,6 @@
 import copy
 from collections.abc import Mapping
+import time
 
 import torch
 import tqdm
@@ -119,6 +120,88 @@ def _optimizer_weight(losses):
     if not torch.isfinite(value.detach()).item() or weight <= 0:
         raise RuntimeError("_optimizer_weight must be positive and finite")
     return weight
+
+
+def _optimizer_denominator(losses, default):
+    value = losses.get("_optimizer_denominator")
+    if value is None:
+        return float(default)
+    if not torch.is_tensor(value) or value.numel() != 1:
+        raise RuntimeError("_optimizer_denominator must be a scalar tensor")
+    denominator = float(value.detach().item())
+    if not torch.isfinite(value.detach()).item() or denominator <= 0:
+        raise RuntimeError("_optimizer_denominator must be positive and finite")
+    return denominator
+
+
+def _crs_eps_control(data_dict):
+    controls = data_dict.get("crs_eps")
+    if controls is None:
+        return None
+    if not isinstance(controls, (list, tuple)) or len(controls) != 1:
+        raise RuntimeError("CRS-EPS training requires one episode-control lane")
+    control = controls[0]
+    if not isinstance(control, Mapping):
+        raise RuntimeError("CRS-EPS episode control must be a mapping")
+    required = {
+        "video_id",
+        "video_group_index",
+        "video_group_size",
+        "draw_index",
+        "is_video_group_start",
+        "is_video_group_end",
+        "episode_manifest_sha256",
+        "replay_range",
+        "supervised_range",
+        "gradient_ranges",
+    }
+    if not required.issubset(control):
+        raise RuntimeError("CRS-EPS episode control lacks video-group fields")
+    return control
+
+
+def _buffer_snapshot(model):
+    return {
+        name: value.detach().clone()
+        for name, value in model.named_buffers()
+    }
+
+
+def _assert_buffer_snapshot(model, snapshot):
+    current = dict(model.named_buffers())
+    if set(current) != set(snapshot):
+        raise RuntimeError("CRS-EPS model buffer set changed within a video group")
+    changed = [
+        name
+        for name, value in current.items()
+        if value.shape != snapshot[name].shape
+        or value.dtype != snapshot[name].dtype
+        or not torch.equal(value.detach(), snapshot[name].to(value.device))
+    ]
+    if changed:
+        raise RuntimeError(
+            "CRS-EPS mutable model buffers leaked across independent draws: "
+            + ", ".join(changed[:8])
+        )
+
+
+def _new_workload():
+    return {
+        "optimizer_events": 1,
+        "episode_draws": 0,
+        "temporal_forward_tokens": 0,
+        "temporal_backward_tokens": 0,
+        "replay_tokens": 0,
+        "supervised_exposures": 0,
+        "unique_supervised_bins": 0,
+        "ipw_weight_sum": 0.0,
+        "ipw_weight_squared_sum": 0.0,
+        "visual_forward_frames": 0,
+        "visual_backward_frames": 0,
+        "data_wait_seconds": 0.0,
+        "control_unroll_seconds": 0.0,
+        "wall_seconds": 0.0,
+    }
 
 
 def _normalize_accumulated_gradients(model, denominator):
@@ -273,7 +356,16 @@ def _input_token_count(data_dict):
     return count
 
 
-def _episode_identity(control, curr_epoch, iter_idx):
+def _episode_identity(control, curr_epoch, iter_idx, crs_eps=None):
+    if isinstance(crs_eps, Mapping):
+        video_id = crs_eps.get("video_id")
+        group_index = crs_eps.get("video_group_index")
+        manifest_hash = crs_eps.get("episode_manifest_sha256")
+        if isinstance(video_id, str) and video_id.strip():
+            return (
+                f"epoch={curr_epoch}|video={video_id}|group={group_index}"
+                f"|manifest={manifest_hash}"
+            )
     if isinstance(control, Mapping):
         video_id = control.get("video_id")
         if isinstance(video_id, str) and video_id.strip():
@@ -324,6 +416,10 @@ def train_one_epoch(
     successful_optimizer_events = 0
     skipped_optimizer_events = 0
     optimizer.zero_grad(set_to_none=True)
+    active_crs_group = None
+    crs_buffer_snapshot = None
+    group_workload = None
+    group_started_at = None
     if fixed_step_profiler is not None:
         fixed_step_profiler.start()
     if visual_parameter_event_recorder is not None and optimizer_event_recorder is None:
@@ -335,21 +431,94 @@ def train_one_epoch(
             "authenticated optimizer evidence requires transactional online state"
         )
 
-    for iter_idx, raw_data_dict in enumerate(train_loader):
+    loader_iterator = iter(train_loader)
+    for iter_idx in range(num_iters):
+        data_wait_started_at = time.perf_counter()
+        raw_data_dict = next(loader_iterator)
+        data_wait_seconds = time.perf_counter() - data_wait_started_at
         control = _transaction_control(raw_data_dict) if transaction is not None else None
-        boundary = True if control is None else bool(
-            control["is_video_end"] or control.get("reset_stream", False)
-        )
+        crs_control = _crs_eps_control(raw_data_dict)
+        if crs_control is not None:
+            group_identity = (
+                str(crs_control["video_id"]),
+                int(crs_control["video_group_index"]),
+                str(crs_control["episode_manifest_sha256"]),
+            )
+            if bool(crs_control["is_video_group_start"]):
+                if active_crs_group is not None:
+                    raise RuntimeError("CRS-EPS video groups overlap")
+                active_crs_group = group_identity
+                crs_buffer_snapshot = _buffer_snapshot(model)
+            elif active_crs_group != group_identity:
+                raise RuntimeError("CRS-EPS draw escaped its active video group")
+            boundary = bool(crs_control["is_video_group_end"])
+            starts_group = bool(crs_control["is_video_group_start"])
+        else:
+            if active_crs_group is not None:
+                raise RuntimeError("non-CRS batch interrupted a CRS-EPS video group")
+            boundary = True if control is None else bool(
+                control["is_video_end"] or control.get("reset_stream", False)
+            )
+            starts_group = control is None or bool(control["is_video_start"])
+        if starts_group:
+            if group_workload is not None:
+                raise RuntimeError("optimizer workload groups overlap")
+            group_workload = _new_workload()
+            group_started_at = data_wait_started_at
+            if crs_control is not None:
+                group_workload["unique_supervised_bins"] = int(
+                    crs_control.get("video_covered_unique_bins", 0)
+                )
+                group_workload["ipw_weight_sum"] = float(
+                    crs_control.get("video_ipw_weight_sum", 0.0)
+                )
+                group_workload["ipw_weight_squared_sum"] = float(
+                    crs_control.get("video_ipw_weight_squared_sum", 0.0)
+                )
+        if group_workload is not None:
+            group_workload["data_wait_seconds"] += data_wait_seconds
         if skip_until_boundary:
-            if control["is_video_start"]:
+            if crs_control is None and control["is_video_start"]:
                 raise RuntimeError("a new stream started before the failed episode boundary")
+            if crs_control is not None and bool(crs_control["is_video_group_start"]):
+                raise RuntimeError("a new CRS-EPS group started before the failed boundary")
             if boundary:
                 skip_until_boundary = False
+                active_crs_group = None
+                crs_buffer_snapshot = None
+                group_workload = None
+                group_started_at = None
             continue
 
+        input_tokens = _input_token_count(raw_data_dict)
+        if crs_control is not None:
+            replay_start, replay_end = (
+                int(value) for value in crs_control["replay_range"]
+            )
+            supervised_start, supervised_end = (
+                int(value) for value in crs_control["supervised_range"]
+            )
+            backward_tokens = sum(
+                int(end) - int(start)
+                for start, end in crs_control["gradient_ranges"]
+            )
+            if replay_end - replay_start != input_tokens:
+                raise RuntimeError("CRS-EPS workload token count differs from replay range")
+            group_workload["episode_draws"] += 1
+            group_workload["temporal_forward_tokens"] += input_tokens
+            group_workload["temporal_backward_tokens"] += backward_tokens
+            group_workload["replay_tokens"] += input_tokens
+            group_workload["supervised_exposures"] += (
+                supervised_end - supervised_start
+            )
+        else:
+            group_workload["temporal_forward_tokens"] += input_tokens
+            group_workload["temporal_backward_tokens"] += input_tokens
+            group_workload["supervised_exposures"] += input_tokens
+            group_workload["unique_supervised_bins"] += input_tokens
         data_dict = move_data_to_device(raw_data_dict, model_device)
         if optimizer_event_recorder is not None:
-            episode_input_tokens += _input_token_count(data_dict)
+            episode_input_tokens += input_tokens
         curr_backbone_lr = None
         if hasattr(target, "backbone") and not getattr(
             target.backbone, "freeze_backbone", True
@@ -364,6 +533,29 @@ def train_one_epoch(
             _rollback_online_transaction(transaction)
             optimizer.zero_grad(set_to_none=True)
             raise
+        if crs_control is not None:
+            try:
+                _assert_buffer_snapshot(model, crs_buffer_snapshot)
+            except Exception:
+                _rollback_online_transaction(transaction)
+                optimizer.zero_grad(set_to_none=True)
+                raise
+            episode_audit = getattr(target, "last_episode_audit", {})
+            if not isinstance(episode_audit, Mapping):
+                _rollback_online_transaction(transaction)
+                optimizer.zero_grad(set_to_none=True)
+                raise RuntimeError("CRS-EPS detector did not publish an episode audit")
+            slot_exhaustion = int(episode_audit.get("slot_exhaustion", 0))
+            if slot_exhaustion:
+                _rollback_online_transaction(transaction)
+                optimizer.zero_grad(set_to_none=True)
+                raise RuntimeError(
+                    "CRS-EPS scientific failure: slot exhaustion invalidates the "
+                    f"training trajectory (count={slot_exhaustion})"
+                )
+            group_workload["control_unroll_seconds"] += float(
+                episode_audit.get("control_unroll_seconds", 0.0)
+            )
 
         cost = losses.get("cost")
         if not torch.is_tensor(cost) or cost.numel() != 1:
@@ -391,20 +583,26 @@ def train_one_epoch(
                 )
             episode_input_tokens = 0
             skip_until_boundary = not boundary
+            if boundary:
+                active_crs_group = None
+                crs_buffer_snapshot = None
+                group_workload = None
+                group_started_at = None
             continue
 
         weight = _optimizer_weight(losses)
+        denominator = _optimizer_denominator(losses, weight)
         weighted_cost = cost * weight
         if scaler is not None:
             scaler.scale(weighted_cost).backward()
         else:
             weighted_cost.backward()
-        episode_weight += weight
+        episode_weight += denominator
         episode_loss_records.append(
             {
                 key: value.detach()
                 for key, value in losses.items()
-                if key != "_optimizer_weight"
+                if not key.startswith("_")
             }
         )
         if not boundary:
@@ -448,6 +646,10 @@ def train_one_epoch(
                     "optimizer boundary"
                 )
             episode_input_tokens = 0
+            active_crs_group = None
+            crs_buffer_snapshot = None
+            group_workload = None
+            group_started_at = None
             continue
 
         mutation_snapshot = None
@@ -505,7 +707,9 @@ def train_one_epoch(
             if optimizer_event_recorder is not None:
                 optimizer_event = optimizer_event_recorder.record(
                     epoch=curr_epoch,
-                    episode_id=_episode_identity(control, curr_epoch, iter_idx),
+                    episode_id=_episode_identity(
+                        control, curr_epoch, iter_idx, crs_eps=crs_control
+                    ),
                     input_tokens=episode_input_tokens,
                     skipped=False,
                     boundary_proof=boundary_proof,
@@ -547,6 +751,9 @@ def train_one_epoch(
             raise
 
         successful_optimizer_events += 1
+        group_workload["wall_seconds"] = time.perf_counter() - group_started_at
+        active_crs_group = None
+        crs_buffer_snapshot = None
         episode_input_tokens = 0
         optimizer.zero_grad(set_to_none=True)
         if fixed_step_profiler is not None:
@@ -554,10 +761,16 @@ def train_one_epoch(
                 raise RuntimeError(
                     "fixed-step profiling requires an authenticated optimizer event"
                 )
-            if fixed_step_profiler.record_optimizer_event(optimizer_event["event_id"]):
+            if fixed_step_profiler.record_optimizer_event(
+                optimizer_event["event_id"], workload=group_workload
+            ):
                 episode_weight = 0.0
                 episode_loss_records.clear()
+                group_workload = None
+                group_started_at = None
                 break
+        group_workload = None
+        group_started_at = None
 
         for loss_record in episode_loss_records:
             reduced = reduce_loss(loss_record)
@@ -615,6 +828,10 @@ def train_one_epoch(
 
     if skip_until_boundary:
         raise RuntimeError("failed online episode ended before its declared boundary")
+    if active_crs_group is not None or crs_buffer_snapshot is not None:
+        raise RuntimeError("CRS-EPS epoch ended inside a video group")
+    if group_workload is not None or group_started_at is not None:
+        raise RuntimeError("training epoch ended inside an optimizer workload group")
     if episode_weight or (
         transaction is not None and transaction.has_pending_online_update()
     ):

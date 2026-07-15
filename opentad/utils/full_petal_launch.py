@@ -101,6 +101,21 @@ _EVIDENCE_OUT_OF_SCOPE = (
     "arbitrary_code_execution_inside_tcb",
     "in_process_private_key_compromise",
 )
+_CRS_EPS_PROFILE_DENOMINATORS = (
+    "temporal_forward_tokens",
+    "temporal_backward_tokens",
+    "replay_tokens",
+    "supervised_exposures",
+    "unique_supervised_bins",
+    "effective_sample_size",
+    "visual_forward_frames",
+    "visual_backward_frames",
+    "data_wait_seconds",
+    "control_unroll_seconds",
+    "wall_seconds",
+    "peak_memory_bytes",
+    "gpu_hours",
+)
 
 
 class FullPetalLaunchError(RuntimeError):
@@ -897,6 +912,11 @@ def _validate_profile_artifact(
             commitment_bytes=commitment_bytes,
             runtime_binding=receipt["execution_session"],
         )
+        _validate_crs_eps_profile_measurements(
+            cfg,
+            derived_measurements,
+            measured_events=measured_events,
+        )
     except (ImportError, ValueError) as exc:
         raise FullPetalLaunchError(
             f"fixed-step optimizer-event evidence is invalid: {exc}"
@@ -961,6 +981,11 @@ def build_fixed_step_profile_artifact(
             trace_bytes=trace_bytes,
             commitment_bytes=commitment_bytes,
             runtime_binding=authorization.execution_session,
+        )
+        _validate_crs_eps_profile_measurements(
+            cfg,
+            measurements,
+            measured_events=authorization.measured_optimizer_events,
         )
     except (ImportError, ValueError, EvidenceBundleError) as exc:
         raise FullPetalLaunchError(
@@ -1113,11 +1138,47 @@ def _profile_contract(cfg):
     world_size = _require_nonnegative_int(
         contract.get("world_size"), "profile world size", positive=True
     )
-    if contract.get("step_unit") != "optimizer_event":
-        raise FullPetalLaunchError("profile step_unit must be optimizer_event")
+    expected_unit = (
+        "video_group_optimizer_event"
+        if _cfg_get(cfg, "crs_eps_contract") is not None
+        else "optimizer_event"
+    )
+    if contract.get("step_unit") != expected_unit:
+        raise FullPetalLaunchError(f"profile step_unit must be {expected_unit}")
+    if _cfg_get(cfg, "crs_eps_contract") is not None and tuple(
+        contract.get("required_workload_denominators", ())
+    ) != _CRS_EPS_PROFILE_DENOMINATORS:
+        raise FullPetalLaunchError(
+            "CRS-EPS profile workload denominators differ from the frozen contract"
+        )
     if contract.get("submit_via_slurm_only") is not True:
         raise FullPetalLaunchError("Full PETAL profile must be submitted through Slurm")
     return warmup, measured, world_size
+
+
+def _validate_crs_eps_profile_measurements(cfg, measurements, *, measured_events):
+    contract = _cfg_get(cfg, "crs_eps_contract")
+    if contract is None:
+        return
+    workload = measurements.get("workload") if isinstance(measurements, Mapping) else None
+    if not isinstance(workload, Mapping) or not isinstance(workload.get("totals"), Mapping):
+        raise FullPetalLaunchError(
+            "CRS-EPS fixed-step profile requires multi-denominator workload evidence"
+        )
+    draws_per_video = _require_nonnegative_int(
+        contract.get("draws_per_video"), "CRS-EPS draws per video", positive=True
+    )
+    totals = workload["totals"]
+    if totals["optimizer_events"] != measured_events:
+        raise FullPetalLaunchError("CRS-EPS workload optimizer-event count differs")
+    if totals["episode_draws"] != measured_events * draws_per_video:
+        raise FullPetalLaunchError("CRS-EPS workload draw count differs from M")
+    if totals["replay_tokens"] != totals["temporal_forward_tokens"]:
+        raise FullPetalLaunchError("cached CRS-EPS replay/forward token counts differ")
+    if totals["visual_forward_frames"] or totals["visual_backward_frames"]:
+        raise FullPetalLaunchError(
+            "cached CRS-EPS profile must report zero visual frame workload"
+        )
 
 
 def _validate_environment(

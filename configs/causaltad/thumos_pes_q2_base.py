@@ -233,6 +233,7 @@ evaluation = dict(
     fps=fps,
     identity_tiou_threshold=0.5,
     identity_latency_budget_sec=1.0,
+    identity_metric_contract_sha256="48905225ab822605e925950348fe036bf8aab8750d60f55aa45abcb05912c069",
     require_ledger=True,
     require_no_future=True,
     ground_truth_filename=annotation_path,

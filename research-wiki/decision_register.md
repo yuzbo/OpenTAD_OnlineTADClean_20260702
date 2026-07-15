@@ -1082,3 +1082,48 @@ Reversibility:
   fidelity, cost, or Q2 identity evidence. Changes after manifest freeze require
   a new version and review. The prohibition on treating a protocol GO as an
   effectiveness or novelty result is not reversible.
+
+## DR-031: Freeze the CRS-EPS Implementation Before Any Experiment
+
+Status: implementation-complete; B0 and independent acceptance pending.
+
+Decision:
+
+> Treat the current CRS-EPS code as a candidate falsification instrument, not
+> as experimental evidence. Freeze it in one clean commit, regenerate the
+> exhaustive source-hash-locked B0, and obtain PASS from reviewer
+> `019f5abd-5104-79b3-882e-354ca796f2c1` before running real-data G0 or a
+> fixed-step profile.
+
+Reasons:
+
+- P0 launch identity now derives run/work/seed identifiers solely from the
+  immutable ticket;
+- the estimator, state lifecycle, optimizer event, metric, and cost contracts
+  now have executable fail-closed tests;
+- G0 has explicit video-start, fixed-192, dynamic-birth, and reset arms, but no
+  real checkpoint/data evidence yet;
+- `M=4` is deliberately provisional and cannot be promoted by implementation
+  convenience;
+- allowing an experiment before B0/review would break the user's frozen gate
+  and contaminate outcome-blind protocol choices.
+
+Rejected alternatives:
+
+- launch a quick profile because the CPU tests pass;
+- call cached-feature CRS-EPS end-to-end raw-video training;
+- select G0 margins or `M` from Q2 effectiveness outcomes;
+- treat code completeness as evidence for efficiency, fidelity, or novelty.
+
+Sources:
+
+- `PRO_FULL_PETAL_CRS_EPS_Q2_ROUND2_ABSORPTION_20260715.md`;
+- `FULL_PETAL_EXECUTION_GATES.md`;
+- [ideas/crs-eps-training.md](ideas/crs-eps-training.md);
+- [discussion_timeline.md#T24-round-2-protocol-reaches-a-cpu-auditable-implementation](discussion_timeline.md).
+
+Reversibility:
+
+- Code may change after a failed B0 or review, but every change requires a new
+  commit, regenerated B0, and another review. The no-experiment-before-PASS
+  ordering is not reversible for this evidence chain.

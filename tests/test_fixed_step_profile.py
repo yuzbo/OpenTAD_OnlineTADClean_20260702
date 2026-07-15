@@ -24,6 +24,27 @@ def _clock(*values):
     return lambda: next(iterator)
 
 
+def _workload(**overrides):
+    values = {
+        "optimizer_events": 1,
+        "episode_draws": 2,
+        "temporal_forward_tokens": 20,
+        "temporal_backward_tokens": 12,
+        "replay_tokens": 20,
+        "supervised_exposures": 8,
+        "unique_supervised_bins": 6,
+        "ipw_weight_sum": 4.0,
+        "ipw_weight_squared_sum": 2.0,
+        "visual_forward_frames": 0,
+        "visual_backward_frames": 0,
+        "data_wait_seconds": 0.1,
+        "control_unroll_seconds": 0.2,
+        "wall_seconds": 1.0,
+    }
+    values.update(overrides)
+    return values
+
+
 def test_fixed_step_profile_measures_exact_events_after_warmup():
     backend = _Backend()
     profiler = FixedStepProfiler(2, 3, backend=backend, clock=_clock(10.0, 12.0))
@@ -69,6 +90,38 @@ def test_profile_state_can_span_multiple_epoch_calls():
     profiler.record_optimizer_event("event-1")
     profiler.start()
     assert profiler.record_optimizer_event("event-2") is True
+
+
+def test_multi_denominator_workload_excludes_warmup_and_reports_pooled_ess():
+    profiler = FixedStepProfiler(1, 2, backend=_Backend(peak=8192), clock=_clock(4.0, 8.0))
+
+    profiler.start()
+    profiler.record_optimizer_event("warmup", workload=_workload(temporal_forward_tokens=999))
+    profiler.record_optimizer_event("measured-0", workload=_workload())
+    assert profiler.record_optimizer_event(
+        "measured-1",
+        workload=_workload(ipw_weight_sum=2.0, ipw_weight_squared_sum=1.0),
+    ) is True
+
+    workload = profiler.workload_measurements(world_size=2)
+    assert workload["measured_optimizer_events"] == 2
+    assert workload["totals"]["optimizer_events"] == 2
+    assert isinstance(workload["totals"]["optimizer_events"], int)
+    assert workload["totals"]["temporal_forward_tokens"] == 40
+    assert workload["totals"]["effective_sample_size"] == pytest.approx(12.0)
+    assert workload["totals"]["gpu_hours"] == pytest.approx(8.0 / 3600.0)
+    assert workload["rates"]["temporal_forward_tokens_per_second"] == 10.0
+    assert workload["rates"]["effective_samples_per_second"] == 3.0
+
+
+@pytest.mark.parametrize("world_size", [0, -1, True, 1.5])
+def test_multi_denominator_workload_rejects_invalid_world_size(world_size):
+    profiler = FixedStepProfiler(0, 1, backend=_Backend(), clock=_clock(1.0, 2.0))
+    profiler.start()
+    profiler.record_optimizer_event("event", workload=_workload())
+
+    with pytest.raises(FixedStepProfileError, match="world size"):
+        profiler.workload_measurements(world_size=world_size)
 
 
 def test_any_skipped_optimizer_event_invalidates_profile():

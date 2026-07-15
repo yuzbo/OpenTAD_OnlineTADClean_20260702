@@ -2,13 +2,48 @@
 type: idea
 node_id: idea:crs-eps-training
 title: "CRS-EPS: Instance-aware Causal Risk-Set Event-Centric Prefix-Episode Training"
-stage: round2-protocol-go-p0-blocked
+stage: p1-code-complete-b0-and-independent-review-pending
 outcome: conditional-go-for-falsification
-updated: 2026-07-15
+updated: 2026-07-16
 target_gaps: ["G3", "G4", "G7"]
 ---
 
 # CRS-EPS Training
+
+## 2026-07-16 Implementation Status
+
+The Round-2 implementation now exists on `codex/full-petal-implementation`, but
+this is an engineering milestone only. No real-data G0, fixed-step GPU profile,
+or effectiveness training result has been accepted.
+
+Implemented and CPU-auditable:
+
+- ticket-root-derived `work_dir`, ticket-bound seed/run ID, non-overwritable
+  Slurm script, and fake-`sbatch`/shell contract coverage;
+- deterministic per-epoch CRS-EPS manifests with the frozen five-component
+  proposal, exact `q`, one-draw coverage `rho`, diagnostic union `pi`, uncapped
+  HH/IPW weights, multiplicity, coverage, and ESS;
+- independent per-draw replay, original global 64-token detach boundaries,
+  `M`-draw gradient accumulation with one optimizer event per video, mutable
+  buffer isolation, and fail-closed slot exhaustion;
+- exact identity metric contract, hash binding, no NMS, and one-token final test
+  stream;
+- matched-RNG fixed/rematch and replay-fidelity traces;
+- explicit G0 arms `video_start_full`, `fixed_192`, `dynamic_birth`, and `reset`,
+  plus an outcome-blind margin gate bound to commit/manifest/selection hashes;
+- a multi-denominator profile schema covering temporal tokens, replay,
+  exposures, ESS, visual frames, data/control/wall time, memory, and GPU-hours.
+
+Still unknown or blocked:
+
+- real THUMOS feature/cache availability and a frozen checkpoint have not been
+  exercised through the new G0 runner;
+- `M=4` is provisional for an implementation probe and is not a scientific
+  choice until G0 precision/fidelity evidence is reviewed;
+- the current commit still needs a regenerated full B0 and a PASS from reviewer
+  `019f5abd-5104-79b3-882e-354ca796f2c1`;
+- GPU profile and formal training remain prohibited;
+- CRS-EPS remains a cost surrogate, not the Full PETAL headline contribution.
 
 ## 2026-07-15 Round-2 Protocol Decision
 

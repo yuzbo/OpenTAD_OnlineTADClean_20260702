@@ -35,19 +35,31 @@ def build_dataloader(
     **kwargs,
 ):
     if streaming:
-        from opentad.utils.stream_packets import ChronologicalStreamBatchSampler
+        from opentad.utils.stream_packets import (
+            ChronologicalStreamBatchSampler,
+            CrsEpsVideoGroupBatchSampler,
+        )
 
         if shuffle:
             raise ValueError("streaming dataloaders cannot shuffle chronological packets")
         if not hasattr(dataset, "packet_manifests"):
             raise TypeError("streaming dataloaders require dataset.packet_manifests")
-        batch_sampler = ChronologicalStreamBatchSampler(
-            dataset.packet_manifests,
-            batch_size=stream_batch_size or batch_size,
-            rank=rank,
-            world_size=world_size,
-            drop_last=drop_last,
-        )
+        if getattr(dataset, "sampling_protocol", None) == "crs_eps":
+            batch_sampler = CrsEpsVideoGroupBatchSampler(
+                dataset,
+                batch_size=stream_batch_size or batch_size,
+                rank=rank,
+                world_size=world_size,
+                drop_last=drop_last,
+            )
+        else:
+            batch_sampler = ChronologicalStreamBatchSampler(
+                dataset.packet_manifests,
+                batch_size=stream_batch_size or batch_size,
+                rank=rank,
+                world_size=world_size,
+                drop_last=drop_last,
+            )
         return torch.utils.data.DataLoader(
             dataset,
             batch_sampler=batch_sampler,

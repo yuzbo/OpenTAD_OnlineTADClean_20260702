@@ -2,6 +2,9 @@ import pytest
 
 from opentad.evaluations import compute_full_petal_metrics
 from opentad.evaluations.full_petal_metrics import FullPetalProtocolError
+from opentad.evaluations.full_petal_metrics import (
+    IDENTITY_METRIC_CONTRACT_SHA256,
+)
 
 
 def _emission(
@@ -123,6 +126,46 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
     assert latency == {"count": 1, "mean": 2.0, "p50": 2.0, "p90": 2.0}
     assert metrics["causal_validation"]["passed"] is True
     assert metrics["causal_validation"]["num_emissions"] == 4
+
+
+def test_identity_contract_freezes_same_class_subsets_and_censored_misses():
+    ground_truth = [
+        {"gt_id": "a0", "stream_key": "s", "label": "a", "segment": [0, 10]},
+        {"gt_id": "a1", "stream_key": "s", "label": "a", "segment": [8, 18]},
+        {"gt_id": "a2", "stream_key": "s", "label": "a", "segment": [30, 40]},
+        {"gt_id": "b0", "stream_key": "s", "label": "b", "segment": [50, 60]},
+    ]
+    emissions = [
+        _emission("a0-hit", [0, 10], label="a", emit_frame=10, sequence_id=0, stream_key="s"),
+        _emission("a2-hit", [30, 40], label="a", emit_frame=40, sequence_id=1, stream_key="s"),
+        _emission("b0-hit", [50, 60], label="b", emit_frame=60, sequence_id=2, stream_key="s"),
+    ]
+
+    metrics = compute_full_petal_metrics(
+        ground_truth,
+        emissions,
+        tiou_threshold=0.5,
+        latency_budget_sec=1.0,
+    )
+
+    assert metrics["schema_version"] == "full_petal_metrics.v3"
+    assert metrics["identity_metric_contract_sha256"] == IDENTITY_METRIC_CONTRACT_SHA256
+    subsets = metrics["identity_subsets"]
+    assert subsets["all"]["ground_truth_count"] == 4
+    assert subsets["all"]["miss_count"] == 1
+    assert subsets["same_class_repeated"]["ground_truth_count"] == 3
+    assert subsets["same_class_repeated"]["matched_count"] == 2
+    assert subsets["same_class_concurrent"]["ground_truth_count"] == 2
+    assert subsets["same_class_concurrent"]["miss_count"] == 1
+    assert subsets["same_class_sequential"]["ground_truth_count"] == 1
+    assert subsets["same_class_sequential"]["matched_count"] == 1
+    assert (
+        subsets["same_class_concurrent"]["endpoint_delay_frames"][
+            "right_censored_miss_count"
+        ]
+        == 1
+    )
+    assert "never imputed" in metrics["identity_metric_contract"]["delay_policy"]
 
 
 def test_fragmentation_requires_multiple_subthreshold_parts_with_joint_coverage():

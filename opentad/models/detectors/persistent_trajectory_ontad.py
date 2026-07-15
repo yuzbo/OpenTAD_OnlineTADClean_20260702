@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import json
 import math
+import time
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -299,6 +300,23 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             ledger=[],
             instance_to_slot={},
             slot_to_instance={},
+        )
+
+    @staticmethod
+    def _detach_head_state(state):
+        return PersistentEventSetState(
+            stream_key=state.stream_key,
+            queries=state.queries.detach(),
+            feature_memory=state.feature_memory.detach(),
+            memory_frames=tuple(state.memory_frames),
+            slot_status=state.slot_status.detach(),
+            refractory=state.refractory.detach(),
+            start_frames=state.start_frames.detach(),
+            peak_class_scores=state.peak_class_scores.detach(),
+            peak_class_labels=state.peak_class_labels.detach(),
+            ledger=list(state.ledger),
+            instance_to_slot=dict(state.instance_to_slot),
+            slot_to_instance=dict(state.slot_to_instance),
         )
 
     def _from_head_state(self, state, ledger_rows, decision_frame):
@@ -865,6 +883,239 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             audit=audit,
         )
 
+    @staticmethod
+    def _validate_crs_eps_control(control, meta, token_count):
+        if not isinstance(control, dict):
+            raise ProtocolViolation("CRS-EPS control must be a mapping")
+        required = {
+            "draw_index",
+            "episode_id",
+            "supervised_range",
+            "replay_range",
+            "gradient_ranges",
+            "raw_weight_by_bin",
+            "final_weight_by_bin",
+            "video_group_size",
+            "is_video_group_start",
+            "is_video_group_end",
+            "episode_manifest_sha256",
+        }
+        missing = sorted(required.difference(control))
+        if missing:
+            raise ProtocolViolation(f"CRS-EPS control is missing fields: {missing}")
+        replay = tuple(int(value) for value in control["replay_range"])
+        supervised = tuple(int(value) for value in control["supervised_range"])
+        if len(replay) != 2 or len(supervised) != 2:
+            raise ProtocolViolation("CRS-EPS ranges must be half-open pairs")
+        if replay != (
+            int(meta.get("packet_start_token", -1)),
+            int(meta.get("packet_end_token", -1)),
+        ):
+            raise ProtocolViolation("CRS-EPS replay range conflicts with causal metadata")
+        if replay[1] - replay[0] != int(token_count):
+            raise ProtocolViolation("CRS-EPS replay range does not match encoded tokens")
+        if not replay[0] <= supervised[0] < supervised[1] <= replay[1]:
+            raise ProtocolViolation("CRS-EPS supervised range escapes replay")
+        weights = tuple(float(value) for value in control["final_weight_by_bin"])
+        raw_weights = tuple(float(value) for value in control["raw_weight_by_bin"])
+        if len(weights) != supervised[1] - supervised[0] or weights != raw_weights:
+            raise ProtocolViolation("CRS-EPS v1 requires uncapped per-bin raw IPW")
+        if any(not math.isfinite(value) or value <= 0 or value > 2.5 + 1e-12 for value in weights):
+            raise ProtocolViolation("CRS-EPS raw weight violates support or 2.5 bound")
+        gradient_ranges = tuple(
+            tuple(int(value) for value in interval)
+            for interval in control["gradient_ranges"]
+        )
+        if not gradient_ranges or any(
+            len(interval) != 2 or interval[1] <= interval[0]
+            for interval in gradient_ranges
+        ):
+            raise ProtocolViolation("CRS-EPS gradient ranges are malformed")
+        if gradient_ranges[-1][1] != supervised[1]:
+            raise ProtocolViolation("CRS-EPS gradient support must end with the suffix")
+        if any(
+            right[0] != left[1]
+            for left, right in zip(gradient_ranges, gradient_ranges[1:])
+        ):
+            raise ProtocolViolation("CRS-EPS gradient ranges must be contiguous")
+        group_size = int(control["video_group_size"])
+        draw_index = int(control["draw_index"])
+        if group_size <= 0 or not 0 <= draw_index < group_size:
+            raise ProtocolViolation("CRS-EPS video-group geometry is invalid")
+        if bool(control["is_video_group_start"]) != (draw_index == 0):
+            raise ProtocolViolation("CRS-EPS group-start marker is inconsistent")
+        if bool(control["is_video_group_end"]) != (draw_index + 1 == group_size):
+            raise ProtocolViolation("CRS-EPS group-end marker is inconsistent")
+        manifest_hash = control["episode_manifest_sha256"]
+        if (
+            not isinstance(manifest_hash, str)
+            or len(manifest_hash) != 64
+            or any(character not in "0123456789abcdef" for character in manifest_hash)
+        ):
+            raise ProtocolViolation("CRS-EPS manifest hash is malformed")
+        return {
+            "replay_range": replay,
+            "supervised_range": supervised,
+            "gradient_ranges": gradient_ranges,
+            "weights": weights,
+            "group_size": group_size,
+            "draw_index": draw_index,
+        }
+
+    def train_crs_eps_episode(
+        self,
+        inputs,
+        masks,
+        model_meta,
+        supervision_schedule,
+        crs_eps_control,
+    ):
+        if self.backbone is not None or self.projection is not None:
+            raise ProtocolViolation(
+                "CRS-EPS v1 is restricted to fixed cached features until visual replay is audited"
+            )
+        meta = self._validate_meta(model_meta)
+        features, masks, source_frames = self._encode(inputs, masks, meta)
+        if len(supervision_schedule) != len(source_frames):
+            raise ProtocolViolation("CRS-EPS schedule must align with replay tokens")
+        control = self._validate_crs_eps_control(
+            crs_eps_control, meta, len(source_frames)
+        )
+        stream_key = _stream_key(meta)
+        runtime = self._initial_runtime_state(features, stream_key)
+        supervision = PrefixTrajectorySupervisionState(
+            num_slots=self.head.num_slots,
+            mode=self.supervision_mode,
+        )
+        valid_mask = tuple(bool(value) for value in masks[0].tolist())
+        if not all(valid_mask):
+            raise ProtocolViolation("CRS-EPS replay does not permit padded or masked bins")
+        replay_start = control["replay_range"][0]
+        supervised_start, supervised_end = control["supervised_range"]
+        gradient_start = control["gradient_ranges"][0][0]
+        gradient_boundaries = {interval[0] for interval in control["gradient_ranges"]}
+        state = self._to_head_state(runtime)
+        weighted_sums = None
+        unweighted_sums = None
+        logits = []
+        birth_trace = []
+        canonical_trace = []
+        loss_binding_trace = []
+        endpoint_trace = []
+        exhaustion = 0
+        rematch_swaps = 0
+        feature_stride = meta.get("feature_stride", meta.get("snippet_stride", 1))
+        weight_index = 0
+        control_unroll_seconds = 0.0
+        for local_index, (source_frame, schedule_step) in enumerate(
+            zip(source_frames, supervision_schedule)
+        ):
+            global_bin = replay_start + local_index
+            self._validate_schedule_step(
+                schedule_step,
+                source_frame,
+                source_frames[local_index - 1] if local_index else source_frame - feature_stride,
+                masked=False,
+            )
+            if global_bin in gradient_boundaries:
+                state = self._detach_head_state(state)
+            retain_graph = global_bin >= gradient_start
+            with torch.set_grad_enabled(retain_graph):
+                available_slots = tuple(
+                    slot
+                    for slot, status in enumerate(state.slot_status.tolist())
+                    if int(status) == SLOT_FREE
+                )
+                outputs, state = self.head.step(
+                    features[:, :, local_index], state, source_frame
+                )
+                control_started_at = time.perf_counter()
+                transition = supervision.transition(
+                    schedule_step,
+                    self._cost_provider(outputs, schedule_step, feature_stride),
+                    available_slots=available_slots,
+                )
+                control_unroll_seconds += time.perf_counter() - control_started_at
+                if supervised_start <= global_bin < supervised_end:
+                    raw = self._step_losses(
+                        outputs, schedule_step, transition, feature_stride
+                    )
+                    weight = control["weights"][weight_index]
+                    weighted = {name: value * weight for name, value in raw.items()}
+                    if weighted_sums is None:
+                        weighted_sums = weighted
+                        unweighted_sums = raw
+                    else:
+                        weighted_sums = {
+                            name: weighted_sums[name] + weighted[name]
+                            for name in weighted_sums
+                        }
+                        unweighted_sums = {
+                            name: unweighted_sums[name] + raw[name]
+                            for name in unweighted_sums
+                        }
+                    weight_index += 1
+                _, state = self.head.decode_step(
+                    outputs,
+                    state,
+                    current_frame=source_frame,
+                    feature_stride=feature_stride,
+                )
+            logits.append(outputs)
+            birth_trace.append(self._binding_rows(transition.birth_assignments))
+            canonical_trace.append(self._binding_rows(transition.canonical_bindings))
+            loss_binding_trace.append(self._binding_rows(transition.loss_bindings))
+            endpoint_trace.append(tuple(int(value) for value in transition.endpoint_slots))
+            exhaustion += int(transition.exhaustion)
+            rematch_swaps = int(transition.audit.rematch_swap_total)
+        if weight_index != len(control["weights"]) or weighted_sums is None:
+            raise ProtocolViolation("CRS-EPS did not consume its exact supervised suffix")
+        losses = dict(weighted_sums)
+        losses["cost"] = sum(
+            losses[name] * self.loss_weights[name] for name in self.loss_weights
+        )
+        group_scale = 1.0 / control["group_size"]
+        losses["_optimizer_weight"] = losses["cost"].new_tensor(group_scale)
+        losses["_optimizer_denominator"] = losses["cost"].new_tensor(group_scale)
+        runtime = self._from_head_state(
+            state,
+            runtime.ledger_rows,
+            source_frames[-1],
+        )
+        audit = {
+            "sampling_protocol": "crs_eps_hh_ipw_v1",
+            "binding_mode": self.trajectory_binding_mode,
+            "episode_id": crs_eps_control["episode_id"],
+            "draw_index": control["draw_index"],
+            "replay_range": control["replay_range"],
+            "supervised_range": control["supervised_range"],
+            "gradient_ranges": control["gradient_ranges"],
+            "raw_weight_by_bin": control["weights"],
+            "per_loss_weighted_numerator": {
+                name: float(value.detach().item()) for name, value in weighted_sums.items()
+            },
+            "per_loss_unweighted_numerator": {
+                name: float(value.detach().item()) for name, value in unweighted_sums.items()
+            },
+            "per_loss_denominator": len(control["weights"]),
+            "birth_assignments": tuple(birth_trace),
+            "canonical_lifecycle": tuple(canonical_trace),
+            "loss_bindings": tuple(loss_binding_trace),
+            "endpoint_slot_trace": tuple(endpoint_trace),
+            "slot_exhaustion": exhaustion,
+            "rematch_swap_count": rematch_swaps,
+            "runtime_state_contains_gt": False,
+            "control_unroll_seconds": control_unroll_seconds,
+        }
+        self.last_episode_audit = audit
+        return TrajectoryEpisodeLossOutput(
+            losses=losses,
+            runtime_state=runtime,
+            supervision_state=supervision,
+            logits=tuple(logits),
+            audit=audit,
+        )
+
     def _prepare_stream(self, inputs, masks, metas, stream_control, *, training):
         if inputs.shape[0] != 1 or len(metas) != 1 or len(stream_control) != 1:
             raise ProtocolViolation("persistent trajectory execution requires one stream lane")
@@ -903,6 +1154,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         return_loss=True,
         prefix_schedule=None,
         stream_control=None,
+        crs_eps=None,
         infer_cfg=None,
         post_cfg=None,
         **kwargs,
@@ -926,20 +1178,33 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         if return_loss:
             if prefix_schedule is None or len(prefix_schedule) != 1:
                 raise ProtocolViolation("training requires one separate prefix schedule")
-            output = self.train_episode(
-                inputs,
-                masks,
-                meta,
-                prefix_schedule[0],
-                initial_runtime_state=runtime,
-                initial_supervision_state=supervision,
-            )
+            if crs_eps is not None:
+                if len(crs_eps) != 1 or runtime is not None or supervision is not None:
+                    raise ProtocolViolation("CRS-EPS requires one independently reset draw")
+                output = self.train_crs_eps_episode(
+                    inputs,
+                    masks,
+                    meta,
+                    prefix_schedule[0],
+                    crs_eps[0],
+                )
+            else:
+                output = self.train_episode(
+                    inputs,
+                    masks,
+                    meta,
+                    prefix_schedule[0],
+                    initial_runtime_state=runtime,
+                    initial_supervision_state=supervision,
+                )
             self._staged_runtime_states[key] = output.runtime_state
             self._staged_supervision_states[key] = output.supervision_state
             if control.get("is_video_end", False) or control.get("reset_stream", False):
                 self._staged_terminal_keys.add(key)
             result = output.losses
         else:
+            if crs_eps is not None:
+                raise ProtocolViolation("inference rejects annotation-guided CRS-EPS control")
             if prefix_schedule is not None:
                 raise ProtocolViolation("inference rejects supervision schedules")
             if "training_targets" in control:

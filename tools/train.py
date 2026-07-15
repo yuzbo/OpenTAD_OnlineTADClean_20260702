@@ -74,10 +74,14 @@ def _streaming_shuffle(loader_cfg):
 
 
 def _set_dataloader_epoch(loader, epoch):
+    sampler_updated_dataset = False
     for sampler in (getattr(loader, "batch_sampler", None), getattr(loader, "sampler", None)):
         if hasattr(sampler, "set_epoch"):
             sampler.set_epoch(epoch)
-            return
+            sampler_updated_dataset = getattr(sampler, "dataset", None) is loader.dataset
+            break
+    if hasattr(loader.dataset, "set_epoch") and not sampler_updated_dataset:
+        loader.dataset.set_epoch(epoch)
 
 
 def _precision_name(amp_dtype):
@@ -161,6 +165,17 @@ def main():
 
     # build dataset
     train_dataset = build_dataset(cfg.dataset.train, default_args=dict(logger=logger))
+    if hasattr(train_dataset, "bind_sampling_seed"):
+        train_dataset.bind_sampling_seed(args.seed)
+    if hasattr(train_dataset, "bind_manifest_provenance"):
+        if launch_authorization is None:
+            raise RuntimeError("CRS-EPS training requires a validated launch authorization")
+        train_dataset.bind_manifest_provenance(
+            commit_sha=launch_authorization.commit_sha,
+            scientific_config_sha256=launch_authorization.scientific_config_sha256,
+            resolved_config_sha256=launch_authorization.resolved_config_sha256,
+            launch_ticket_sha256=launch_authorization.ticket_sha256,
+        )
     train_loader = build_dataloader(
         train_dataset,
         rank=args.rank,
@@ -317,6 +332,13 @@ def main():
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     for epoch in range(resume_epoch + 1, max_epoch):
         _set_dataloader_epoch(train_loader, epoch)
+        if hasattr(train_dataset, "persist_current_manifest"):
+            if args.rank == 0:
+                manifest_path = train_dataset.persist_current_manifest(
+                    Path(cfg.work_dir) / "crs_eps_manifests"
+                )
+                logger.info("Published CRS-EPS epoch manifest: %s", manifest_path)
+            dist.barrier()
 
         # train for one epoch
         train_stats = train_one_epoch(
@@ -347,6 +369,13 @@ def main():
                 )
                 optimizer_event_recorder.persist(trace_path, commitment_path)
                 precision = _precision_name(amp_dtype)
+                profiler_measurements = fixed_step_profiler.measurements()
+                if getattr(cfg, "crs_eps_contract", None) is not None:
+                    profiler_measurements["workload"] = (
+                        fixed_step_profiler.workload_measurements(
+                            world_size=args.world_size
+                        )
+                    )
                 artifact = build_fixed_step_profile_artifact(
                     launch_authorization,
                     cfg,
@@ -357,7 +386,7 @@ def main():
                     gpu_name=torch.cuda.get_device_name(args.local_rank),
                     torch_version=torch.__version__,
                     cuda_version=torch.version.cuda,
-                    profiler_measurements=fixed_step_profiler.measurements(),
+                    profiler_measurements=profiler_measurements,
                 )
                 output = profile_bundle_root / "fixed_step_profile.json"
                 publish_exclusive_file(

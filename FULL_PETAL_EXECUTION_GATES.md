@@ -13,12 +13,16 @@ This route is fail-closed. The order below is mandatory.
    `launch_contract.required_review_scope`.
 4. Continue only when that reviewer returns `PASS` with zero blocking findings
    and zero protocol violations.
-5. Build a profile ticket with `tools/build_full_petal_launch_ticket.py`.
-6. Submit exactly one fixed-step profile through
+5. For CRS-EPS, run the preregistered CPU-only four-arm G0 audit with
+   `tools/run_crs_eps_gold_audit.py`; do not interpret an ungated artifact as a
+   PASS. Freeze any margin file before Q2 effectiveness results and bind it to
+   the exact commit, episode manifest, and selection file.
+6. Build a profile ticket with `tools/build_full_petal_launch_ticket.py`.
+7. Submit exactly one fixed-step profile through
    `tools/remote/submit_full_petal_q2_n16r4.sh profile ...`.
-7. Do not save checkpoints, evaluate results, or continue training from the
+8. Do not save checkpoints, evaluate results, or continue training from the
    profile process. Its only accepted output is `fixed_step_profile.json`.
-8. Formal training requires a later authorization-only commit, a fresh B0 and
+9. Formal training requires a later authorization-only commit, a fresh B0 and
    same-reviewer PASS for that commit, and the hash-bound profile artifact.
 
 ## B0 Example
@@ -57,6 +61,20 @@ launch ticket) and `resolved_config` (the standalone JSON snapshot checked
 against the ticket's resolved and scientific config digests). It must also bind
 `fit_core` and `feature_cache_manifest`; training-order identity is derived from
 their already verified bytes rather than reopening uncommitted data inputs.
+
+## CRS-EPS G0 Inputs
+
+`tools/run_crs_eps_gold_audit.py` is deliberately CPU-only. It requires a clean
+commit, a CRS-EPS config, a frozen checkpoint, an immutable episode manifest,
+and an explicit selection JSON with schema
+`full-petal-crs-eps-g0-selection-v1`. It compares each selected draw against
+video-start gold using `dynamic_birth`, `fixed_192`, and `reset` arms under a
+restored RNG snapshot. Without `--margins`, its status is
+`OBSERVED_UNGATED`; with margins, the result is exactly `PASS` or `KILL`.
+
+The configured `draws_per_video=4` remains
+`PROVISIONAL_IMPLEMENTATION_PROBE_UNTIL_G0`. It must not silently become the
+formal training value.
 
 ## Prohibited Shortcuts
 

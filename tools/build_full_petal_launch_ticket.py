@@ -61,8 +61,12 @@ def main(argv=None):
         output = _external_output(args.output)
         cfg = Config.fromfile(args.config)
         cfg_overrides = dict(args.cfg_options or {})
-        if cfg_overrides:
-            cfg.merge_from_dict(cfg_overrides)
+        if "work_dir" in cfg_overrides:
+            raise FullPetalLaunchError(
+                "work_dir is derived from the immutable ticket artifact root"
+            )
+        cfg_overrides["work_dir"] = str(output.parent / "work")
+        cfg.merge_from_dict(cfg_overrides)
         ticket = build_launch_ticket(
             cfg,
             args.config,

@@ -215,6 +215,15 @@ def test_dataset_constructs_training_only_prefix_observable_schedule(tmp_path):
     assert all(item.end_frame is None for step in schedule for item in step.births + step.active)
     assert "prefix_schedule" not in test[0]
 
+    specs = train.iter_crs_eps_sampling_specs()
+    assert [spec.video_id for spec in specs] == ["train_a", "train_b"]
+    assert [spec.num_bins for spec in specs] == [5, 3]
+    assert [instance.instance_id for instance in specs[0].instances] == [0, 1]
+    assert specs[0].instances[0].birth_bin == 0
+    assert specs[0].instances[0].end_bin is None
+    with pytest.raises(RuntimeError, match="test datasets"):
+        test.iter_crs_eps_sampling_specs()
+
 
 def test_dataset_rejects_cache_manifest_geometry_mismatch(tmp_path):
     ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)

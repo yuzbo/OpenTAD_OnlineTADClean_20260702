@@ -3,6 +3,31 @@
 import time
 
 
+_WORKLOAD_FIELDS = {
+    "optimizer_events",
+    "episode_draws",
+    "temporal_forward_tokens",
+    "temporal_backward_tokens",
+    "replay_tokens",
+    "supervised_exposures",
+    "unique_supervised_bins",
+    "ipw_weight_sum",
+    "ipw_weight_squared_sum",
+    "visual_forward_frames",
+    "visual_backward_frames",
+    "data_wait_seconds",
+    "control_unroll_seconds",
+    "wall_seconds",
+}
+_WORKLOAD_FLOAT_FIELDS = {
+    "ipw_weight_sum",
+    "ipw_weight_squared_sum",
+    "data_wait_seconds",
+    "control_unroll_seconds",
+    "wall_seconds",
+}
+
+
 class FixedStepProfileError(RuntimeError):
     pass
 
@@ -64,6 +89,11 @@ class FixedStepProfiler:
         self._peak_memory_bytes = None
         self._measurement_start_after_event_id = None
         self._measurement_end_event_id = None
+        self._measured_workload = {
+            field: 0.0 if field in _WORKLOAD_FLOAT_FIELDS else 0
+            for field in _WORKLOAD_FIELDS
+        }
+        self._workload_event_count = 0
 
     @property
     def total_optimizer_events(self):
@@ -102,11 +132,28 @@ class FixedStepProfiler:
         self._measurement_end_event_id = end_event_id
         self._complete = True
 
-    def record_optimizer_event(self, event_id):
+    @staticmethod
+    def _validated_workload(workload):
+        if not isinstance(workload, dict) or set(workload) != _WORKLOAD_FIELDS:
+            raise FixedStepProfileError("profile workload fields differ")
+        normalized = {}
+        for field, value in workload.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise FixedStepProfileError(f"profile workload {field} must be numeric")
+            value = float(value) if field in _WORKLOAD_FLOAT_FIELDS else int(value)
+            if value < 0:
+                raise FixedStepProfileError(f"profile workload {field} must be non-negative")
+            normalized[field] = value
+        if normalized["optimizer_events"] != 1:
+            raise FixedStepProfileError("each profile workload must describe one optimizer event")
+        return normalized
+
+    def record_optimizer_event(self, event_id, *, workload=None):
         if self._complete:
             raise FixedStepProfileError("fixed-step profile already completed")
         if not isinstance(event_id, str) or not event_id.strip():
             raise FixedStepProfileError("fixed-step optimizer event ID is invalid")
+        workload = None if workload is None else self._validated_workload(workload)
         self.successful_optimizer_events += 1
         if (
             self.successful_optimizer_events == self.warmup_optimizer_events
@@ -119,6 +166,15 @@ class FixedStepProfiler:
             self._finish_measurement(event_id)
         elif self.successful_optimizer_events > self.total_optimizer_events:
             raise FixedStepProfileError("fixed-step optimizer event budget was exceeded")
+        if (
+            workload is not None
+            and self.warmup_optimizer_events
+            < self.successful_optimizer_events
+            <= self.total_optimizer_events
+        ):
+            for field, value in workload.items():
+                self._measured_workload[field] += value
+            self._workload_event_count += 1
         return self._complete
 
     def record_skipped_optimizer_event(self):
@@ -141,6 +197,51 @@ class FixedStepProfiler:
             "elapsed_seconds": self._elapsed_seconds,
             "peak_memory_bytes": self._peak_memory_bytes,
             "throughput_optimizer_events_per_second": throughput,
+        }
+
+    def workload_measurements(self, *, world_size=1):
+        if not self._complete:
+            raise FixedStepProfileError("fixed-step profile is incomplete")
+        if isinstance(world_size, bool) or not isinstance(world_size, int) or world_size <= 0:
+            raise FixedStepProfileError("profile world size must be a positive integer")
+        if self._workload_event_count != self.measured_optimizer_events:
+            raise FixedStepProfileError(
+                "every measured optimizer event requires a workload record"
+            )
+        totals = dict(self._measured_workload)
+        weight_sum = totals["ipw_weight_sum"]
+        weight_squared_sum = totals["ipw_weight_squared_sum"]
+        effective_sample_size = (
+            weight_sum * weight_sum / weight_squared_sum
+            if weight_squared_sum > 0
+            else 0.0
+        )
+        elapsed = self._elapsed_seconds
+        return {
+            "schema_version": "full-petal-multi-denominator-profile-v1",
+            "measured_optimizer_events": self.measured_optimizer_events,
+            "totals": {
+                **totals,
+                "effective_sample_size": effective_sample_size,
+                "gpu_hours": elapsed * world_size / 3600.0,
+                "peak_memory_bytes": self._peak_memory_bytes,
+            },
+            "rates": {
+                "temporal_forward_tokens_per_second": totals[
+                    "temporal_forward_tokens"
+                ]
+                / elapsed,
+                "temporal_backward_tokens_per_second": totals[
+                    "temporal_backward_tokens"
+                ]
+                / elapsed,
+                "supervised_exposures_per_second": totals[
+                    "supervised_exposures"
+                ]
+                / elapsed,
+                "effective_samples_per_second": effective_sample_size / elapsed,
+                "video_groups_per_second": self.measured_optimizer_events / elapsed,
+            },
         }
 
 

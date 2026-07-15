@@ -5,14 +5,50 @@ or ledger reordering. Input order is the online chronology used for matching.
 """
 
 from collections import Counter, defaultdict
+import hashlib
+import json
 import math
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 
-SCHEMA_VERSION = "full_petal_metrics.v2"
+SCHEMA_VERSION = "full_petal_metrics.v3"
 _EPSILON = 1e-9
+
+IDENTITY_METRIC_CONTRACT = {
+    "schema_version": "full-petal-identity-metric-contract-v1",
+    "input": "all immutable chronological emissions",
+    "post_processing": "none: no NMS, merging, correction, or score filtering",
+    "matching": "maximum cardinality, then total tIoU, with deterministic ties",
+    "score_policy": "raw publication score; score is used only after cardinality and tIoU ties",
+    "parity_point": "shared fixed publication rule; no arm-specific recall matching",
+    "duplicate": "timely unmatched emission matching an already primary-matched same-class GT",
+    "fragmentation": (
+        "unmatched GT with at least two timely same-class sub-threshold positive-overlap "
+        "emissions whose intersection union covers the tIoU threshold"
+    ),
+    "subsets": {
+        "all": "every GT instance",
+        "same_class_repeated": "GT whose stream contains at least two instances of its class",
+        "same_class_sequential": "same_class_repeated excluding any same-class temporal overlap",
+        "same_class_concurrent": "GT with positive temporal overlap with another same-class GT",
+    },
+    "miss_policy": "misses remain in recall, duplicate-per-GT, fragmentation, and delay-censor denominators",
+    "delay_policy": (
+        "matched delay is emit frame minus GT end; misses are reported as right-censored "
+        "and are never imputed into the observed mean"
+    ),
+}
+IDENTITY_METRIC_CONTRACT_SHA256 = hashlib.sha256(
+    json.dumps(
+        IDENTITY_METRIC_CONTRACT,
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+).hexdigest()
 
 
 class FullPetalMetricError(ValueError):
@@ -752,6 +788,7 @@ def compute_full_petal_metrics(
     ]
     fragment_prediction_indexes = set()
     fragmented_targets = []
+    fragmented_target_indexes = set()
     fragment_count = 0
     for target in targets:
         if target["index"] in matched_target_indexes:
@@ -783,6 +820,7 @@ def compute_full_petal_metrics(
             continue
         fragment_ids = [item[0]["id"] for item in candidates]
         fragment_prediction_indexes.update(item[0]["index"] for item in candidates)
+        fragmented_target_indexes.add(target["index"])
         fragment_count += len(candidates)
         fragmented_targets.append(
             {
@@ -863,8 +901,71 @@ def compute_full_petal_metrics(
     false_emission_rate = _rate(unmatched_count, emission_count)
     recall = _rate(matched_count, len(targets))
 
+    grouped_targets = defaultdict(list)
+    for target in targets:
+        grouped_targets[(target["stream_key"], target["label"])].append(target)
+    repeated_indexes = set()
+    concurrent_indexes = set()
+    for group in grouped_targets.values():
+        if len(group) >= 2:
+            repeated_indexes.update(target["index"] for target in group)
+        for left_index, left in enumerate(group):
+            for right in group[left_index + 1 :]:
+                overlap = min(left["segment"][1], right["segment"][1]) - max(
+                    left["segment"][0], right["segment"][0]
+                )
+                if overlap > 0:
+                    concurrent_indexes.update((left["index"], right["index"]))
+    primary_latency_by_target = {
+        item["target"]["index"]: (
+            item["prediction"]["emit_frame"] - item["target"]["segment"][1]
+        )
+        for item in matched_pairs
+    }
+
+    def subset_metrics(indexes):
+        indexes = set(indexes)
+        matched = indexes.intersection(matched_target_indexes)
+        duplicate_emissions = sum(
+            1
+            for index in indexes
+            for assignment in assignments_by_target[index]
+            if assignment["role"] == "duplicate"
+        )
+        latencies = [primary_latency_by_target[index] for index in sorted(matched)]
+        return {
+            "ground_truth_count": len(indexes),
+            "matched_count": len(matched),
+            "miss_count": len(indexes) - len(matched),
+            "recall": _rate(len(matched), len(indexes)),
+            "duplicate_emission_count": duplicate_emissions,
+            "duplicate_per_gt": _rate(duplicate_emissions, len(indexes)),
+            "fragmented_ground_truth_count": len(
+                indexes.intersection(fragmented_target_indexes)
+            ),
+            "fragmentation_rate": _rate(
+                len(indexes.intersection(fragmented_target_indexes)), len(indexes)
+            ),
+            "endpoint_delay_frames": {
+                "observed_matched": _summary(latencies),
+                "right_censored_miss_count": len(indexes) - len(matched),
+                "censoring_policy": IDENTITY_METRIC_CONTRACT["delay_policy"],
+            },
+        }
+
+    identity_subsets = {
+        "all": subset_metrics(target["index"] for target in targets),
+        "same_class_repeated": subset_metrics(repeated_indexes),
+        "same_class_sequential": subset_metrics(
+            repeated_indexes.difference(concurrent_indexes)
+        ),
+        "same_class_concurrent": subset_metrics(concurrent_indexes),
+    }
+
     return {
         "schema_version": SCHEMA_VERSION,
+        "identity_metric_contract": IDENTITY_METRIC_CONTRACT,
+        "identity_metric_contract_sha256": IDENTITY_METRIC_CONTRACT_SHA256,
         "causal_validation": causal_validation,
         "counts": {
             "ground_truth": len(targets),
@@ -929,6 +1030,7 @@ def compute_full_petal_metrics(
             "emission_ids": unmatched_emission_ids,
         },
         "endpoint_detection_latency_frames": _summary(endpoint_latencies),
+        "identity_subsets": identity_subsets,
         "lifecycle": compute_lifecycle_trace_metrics(lifecycle_traces),
         "recall": recall,
         "duplicate_per_gt": duplicate_per_gt,
@@ -943,6 +1045,8 @@ __all__ = [
     "FullPetalInputError",
     "FullPetalMetricError",
     "FullPetalProtocolError",
+    "IDENTITY_METRIC_CONTRACT",
+    "IDENTITY_METRIC_CONTRACT_SHA256",
     "audit_causal_emissions",
     "compute_full_petal_metrics",
     "compute_lifecycle_trace_metrics",

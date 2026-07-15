@@ -782,3 +782,24 @@ Current decision:
 > Fix `P0-LAUNCH-WORKDIR` and its deterministic fake-`sbatch` integration
 > test, then implement only the CPU CRS-EPS manifest/probability path. Do not
 > spend another GPU-hour before a clean commit, complete B0, and fresh PASS.
+
+### T24: Round-2 Protocol Reaches a CPU-Auditable Implementation
+
+The implementation branch now closes the P0 launcher identity, deterministic
+CRS-EPS sampling math, independent replay lifecycle, HH/IPW optimizer
+normalization, exact identity metrics, multi-denominator profiling, and the G0
+four-arm audit path. A real `Dataset -> DataLoader -> detector -> optimizer ->
+transaction commit` CPU test demonstrates one update per video group without
+double division. Slot exhaustion and mutable-buffer leakage fail closed.
+
+This does not change the scientific verdict. The first ordinary full-suite run
+found only environment/registry failures outside the B0 harness; the locked
+isolated runner passed its pre-B0 run after removing the Windows shell-test
+skip. The exact source-hash B0 still has to be regenerated on a clean commit,
+then the same independent reviewer must return PASS before any profile.
+
+Current decision:
+
+> Freeze and commit the implementation, regenerate full B0 evidence, and send
+> the exact commit plus B0 artifact to the locked reviewer. Do not run G0 on
+> real data, profile, or formal training while that gate is pending.

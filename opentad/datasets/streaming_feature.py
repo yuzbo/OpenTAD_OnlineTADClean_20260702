@@ -13,6 +13,7 @@ from opentad.utils.full_petal_data_contract import (
     verify_content_hash,
 )
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
+from opentad.utils.crs_eps_sampling import video_sampling_spec_from_schedule
 
 
 _FORBIDDEN_MODEL_META = {
@@ -99,6 +100,8 @@ class StreamingFeatureDataset:
         self._manifest = self._load_manifest()
         self.data_list = []
         self.packet_manifests = {}
+        self.crs_eps_sampling_specs = {}
+        self.video_records = {}
         self._build_index()
         if self._split_contract is not None:
             selected_ids = sorted(self.packet_manifests)
@@ -343,6 +346,16 @@ class StreamingFeatureDataset:
                 video_info,
             )
             segments, labels = self._annotations(video_info)
+            if not self.test_mode:
+                full_schedule = build_prefix_instance_schedule(
+                    segments,
+                    labels,
+                    decision_frames=source_frames,
+                    previous_frame=source_frames[0] - self.feature_stride,
+                )
+                self.crs_eps_sampling_specs[video_name] = (
+                    video_sampling_spec_from_schedule(video_name, full_schedule)
+                )
             input_provenance_digest = _canonical_json_sha256(
                 {
                     "annotation_sha256": self._manifest["annotation_sha256"],
@@ -356,6 +369,17 @@ class StreamingFeatureDataset:
                     "split_seed": self.split_seed,
                     "video_id": video_name,
                 }
+            )
+            self.video_records[video_name] = dict(
+                video_name=video_name,
+                feature_path=feature_path,
+                feature_dim=feature_dim,
+                fps=float(video_info["frame"])
+                / max(float(video_info["duration"]), 1e-6),
+                source_frames=source_frames,
+                segments=segments,
+                labels=labels,
+                input_provenance_digest=input_provenance_digest,
             )
             packet_indices = []
             for chunk_index, start in enumerate(range(0, len(source_frames), self.chunk_size)):
@@ -380,6 +404,14 @@ class StreamingFeatureDataset:
 
         self.logger(
             f"{len(self.packet_manifests)} videos, {len(self.data_list)} chronological feature chunks"
+        )
+
+    def iter_crs_eps_sampling_specs(self):
+        if self.test_mode:
+            raise RuntimeError("test datasets cannot expose annotation-guided sampling specs")
+        return tuple(
+            self.crs_eps_sampling_specs[video_id]
+            for video_id in sorted(self.crs_eps_sampling_specs)
         )
 
     def __len__(self):

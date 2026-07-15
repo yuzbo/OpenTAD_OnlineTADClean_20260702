@@ -133,3 +133,26 @@ class ChronologicalStreamBatchSampler:
     def set_epoch(self, epoch):
         # Chronological order is deliberately invariant across epochs.
         self.epoch = int(epoch)
+
+
+class CrsEpsVideoGroupBatchSampler:
+    """Keep every sampled draw of a video contiguous and single-lane."""
+
+    def __init__(self, dataset, batch_size, rank=0, world_size=1, drop_last=False):
+        if int(batch_size) != 1 or int(world_size) != 1 or int(rank) != 0:
+            raise ProtocolViolation("CRS-EPS video groups require one rank and one lane")
+        self.dataset = dataset
+        self.drop_last = bool(drop_last)
+        self.epoch = int(getattr(dataset, "current_sampling_epoch", 0))
+
+    def __iter__(self):
+        for indices in self.dataset.packet_manifests.values():
+            for index in indices:
+                yield [index]
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def set_epoch(self, epoch):
+        self.dataset.set_epoch(epoch)
+        self.epoch = int(epoch)

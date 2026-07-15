@@ -14,7 +14,10 @@ from collections import defaultdict
 import numpy as np
 
 from .builder import EVALUATORS
-from .full_petal_metrics import compute_full_petal_metrics
+from .full_petal_metrics import (
+    IDENTITY_METRIC_CONTRACT_SHA256,
+    compute_full_petal_metrics,
+)
 from opentad.utils.online_protocol import (
     verified_emission_result_dict,
     verified_emission_result_dict_bytes,
@@ -96,6 +99,7 @@ class OnlineAPBudgeted:
         include_identity_diagnostics=None,
         identity_tiou_threshold=0.5,
         identity_latency_budget_sec=2.0,
+        identity_metric_contract_sha256=None,
         **kwargs,
     ):
         del kwargs
@@ -137,6 +141,12 @@ class OnlineAPBudgeted:
         )
         if self.identity_latency_budget_sec < 0:
             raise ValueError("identity_latency_budget_sec must be non-negative")
+        if (
+            identity_metric_contract_sha256 is not None
+            and identity_metric_contract_sha256 != IDENTITY_METRIC_CONTRACT_SHA256
+        ):
+            raise ValueError("identity metric contract hash differs from evaluator code")
+        self.identity_metric_contract_sha256 = IDENTITY_METRIC_CONTRACT_SHA256
         self.blocked_videos = self._load_video_set(blocked_videos) or set()
         self.allowed_videos = self._load_video_set(allowed_videos)
         self._video_fps_by_id = {}

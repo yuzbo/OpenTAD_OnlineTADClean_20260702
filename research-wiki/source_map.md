@@ -163,3 +163,14 @@ If these become active again, create dedicated pages before using them as claims
 | STARE 2026 | Latency-aware evaluation and ranking reversal are already strong contributions in streaming perception. | [papers/stare2026-stream-latency.md](papers/stare2026-stream-latency.md) |
 | Multimodal distillation 2023 | Train-time privileged modalities with RGB-only inference are not a PIVOT novelty. | [papers/radevski2023-multimodal-distillation.md](papers/radevski2023-multimodal-distillation.md) |
 | Boundary uncertainty and TAD diagnostics | Distributional boundaries and human annotation disagreement are established; PIVOT needs a different population-measurement object. | [papers/xie2020-boundary-uncertainty.md](papers/xie2020-boundary-uncertainty.md), [papers/alwassel2018-tad-diagnostics.md](papers/alwassel2018-tad-diagnostics.md) |
+
+## CRS-EPS Implementation Evidence Map: 2026-07-16
+
+| Contract | Implementation Nodes | Evidence Status |
+|---|---|---|
+| Ticket-bound P0 launch identity | `tools/build_full_petal_launch_ticket.py`, `tools/read_full_petal_launch_ticket.py`, `tools/remote/submit_full_petal_q2_n16r4.sh` | CPU/shell contract tested; clean-commit B0 pending |
+| Sampling target and HH/IPW math | `opentad/utils/crs_eps_sampling.py`, `tools/build_crs_eps_episode_manifest.py` | Exhaustive CPU unit tests; real manifest pending |
+| Episode data and optimizer lifecycle | `opentad/datasets/crs_eps_feature.py`, `opentad/cores/train_engine.py`, `opentad/models/detectors/persistent_trajectory_ontad.py` | CPU closure tested; real G0/training pending |
+| Matched stochasticity and G0 | `opentad/utils/crs_eps_audit.py`, `opentad/utils/crs_eps_gold_gate.py`, `tools/run_crs_eps_gold_audit.py` | Synthetic tests only; checkpoint/data evidence pending |
+| Identity metrics | `opentad/evaluations/full_petal_metrics.py`, `opentad/evaluations/online_budgeted_map.py` | Exact contract and hash frozen; effectiveness unknown |
+| Multi-denominator profile | `opentad/utils/fixed_step_profile.py`, `opentad/utils/full_petal_training_evidence.py`, `tools/train.py` | CPU validation tested; GPU profile forbidden pending review |

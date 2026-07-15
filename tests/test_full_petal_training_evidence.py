@@ -21,6 +21,7 @@ from opentad.utils.full_petal_runtime_attestation import (
 from opentad.utils.full_petal_training_evidence import (
     OptimizerEventTraceRecorder,
     TrainingEvidenceError,
+    derive_fixed_step_profile_measurements,
     derive_training_cost,
     load_training_trace,
     persist_training_trace,
@@ -96,6 +97,80 @@ def test_training_cost_is_derived_from_committed_optimizer_events(tmp_path):
     assert cost["wall_clock_sec"] == 2.0
     assert cost["gpu_hours"] == pytest.approx(4.0 / 3600.0)
     assert cost["scheduler_config_sha256"] == "2" * 64
+
+
+def test_multi_denominator_profile_is_recomputed_from_raw_counts(tmp_path):
+    trace = tmp_path / "profile.jsonl"
+    commitment = tmp_path / "profile.commitment.json"
+    runtime_session = issue_runtime_session()
+    persist_training_trace(
+        trace,
+        commitment,
+        [_event(index, runtime_session) for index in range(3)],
+    )
+    workload = {
+        "schema_version": "full-petal-multi-denominator-profile-v1",
+        "measured_optimizer_events": 2,
+        "totals": {
+            "optimizer_events": 2,
+            "episode_draws": 8,
+            "temporal_forward_tokens": 100,
+            "temporal_backward_tokens": 60,
+            "replay_tokens": 100,
+            "supervised_exposures": 32,
+            "unique_supervised_bins": 24,
+            "ipw_weight_sum": 16.0,
+            "ipw_weight_squared_sum": 10.0,
+            "visual_forward_frames": 0,
+            "visual_backward_frames": 0,
+            "data_wait_seconds": 0.5,
+            "control_unroll_seconds": 0.25,
+            "wall_seconds": 3.5,
+            "effective_sample_size": 25.6,
+            "gpu_hours": 8.0 / 3600.0,
+            "peak_memory_bytes": 4096,
+        },
+        "rates": {
+            "temporal_forward_tokens_per_second": 25.0,
+            "temporal_backward_tokens_per_second": 15.0,
+            "supervised_exposures_per_second": 8.0,
+            "effective_samples_per_second": 6.4,
+            "video_groups_per_second": 0.5,
+        },
+    }
+    measurements = {
+        "warmup_optimizer_events": 1,
+        "measured_optimizer_events": 2,
+        "total_optimizer_events": 3,
+        "skipped_optimizer_events": 0,
+        "measurement_start_after_event_id": "event-0",
+        "measurement_end_event_id": "event-2",
+        "elapsed_seconds": 4.0,
+        "peak_memory_bytes": 4096,
+        "throughput_optimizer_events_per_second": 0.5,
+        "workload": workload,
+    }
+
+    derived = derive_fixed_step_profile_measurements(
+        trace,
+        commitment,
+        warmup_optimizer_events=1,
+        measured_optimizer_events=2,
+        profiler_measurements=measurements,
+        runtime_binding=runtime_session.binding,
+    )
+    assert derived["workload"]["totals"]["effective_sample_size"] == 25.6
+
+    measurements["workload"]["rates"]["effective_samples_per_second"] = 6.5
+    with pytest.raises(TrainingEvidenceError, match="effective_samples_per_second differs"):
+        derive_fixed_step_profile_measurements(
+            trace,
+            commitment,
+            warmup_optimizer_events=1,
+            measured_optimizer_events=2,
+            profiler_measurements=measurements,
+            runtime_binding=runtime_session.binding,
+        )
 
 
 def test_optimizer_event_recorder_commits_exact_runtime_events(tmp_path):

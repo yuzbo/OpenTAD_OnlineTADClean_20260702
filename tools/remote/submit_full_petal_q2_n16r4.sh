@@ -6,13 +6,12 @@ MODE=${1:-}
 CONFIG=${2:-}
 TICKET=${3:-}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_FullPETAL}
-RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/full_petal_q2}
 PROFILE_TIME=${PROFILE_TIME:-01:00:00}
 FORMAL_TIME=${FORMAL_TIME:-04:00:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
-SEED=${SEED:-705}
-RUN_ID=${RUN_ID:-0}
 ALLOW_FORMAL=${ALLOW_FORMAL:-0}
+PYTHON_BIN=${PYTHON_BIN:-python3}
+SBATCH_BIN=${SBATCH_BIN:-/usr/bin/sbatch}
 
 case "$MODE" in
     profile)
@@ -32,10 +31,10 @@ case "$MODE" in
 esac
 
 case "$CONFIG" in
-    configs/causaltad/thumos_pes_q2_persist_fixed.py|configs/causaltad/thumos_pes_q2_persist_rematch.py)
+    configs/causaltad/thumos_pes_q2_persist_fixed.py|configs/causaltad/thumos_pes_q2_persist_rematch.py|configs/causaltad/thumos_pes_q2_crs_eps_fixed.py|configs/causaltad/thumos_pes_q2_crs_eps_rematch.py)
         ;;
     *)
-        echo "CONFIG must be one of the two locked Full PETAL Q2 variants" >&2
+        echo "CONFIG must be one of the four locked Full PETAL Q2 variants" >&2
         exit 2
         ;;
 esac
@@ -53,16 +52,51 @@ git -C "$BASE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
     exit 2
 }
 
-STAMP=$(date +"%Y%m%d_%H%M%S")
-RUN_DIR="$RUNS_ROOT/${MODE}_$(basename "$CONFIG" .py)_${STAMP}"
-mkdir -p "$RUN_DIR"
+declare -A TICKET_FIELDS=()
+while IFS= read -r -d '' KEY && IFS= read -r -d '' VALUE; do
+    TICKET_FIELDS["$KEY"]=$VALUE
+done < <("$PYTHON_BIN" "$BASE_DIR/tools/read_full_petal_launch_ticket.py" "$TICKET")
+
+[[ "${TICKET_FIELDS[mode]:-}" == "$MODE" ]] || {
+    echo "MODE does not match the launch ticket" >&2
+    exit 2
+}
+[[ "${TICKET_FIELDS[entrypoint]:-}" == "train" ]] || {
+    echo "The Slurm launcher requires a train-entrypoint ticket" >&2
+    exit 2
+}
+[[ "${TICKET_FIELDS[deterministic]:-}" == "true" && \
+   "${TICKET_FIELDS[not_eval]:-}" == "false" && \
+   -z "${TICKET_FIELDS[resume_checkpoint]:-}" ]] || {
+    echo "The ticket violates the locked deterministic fresh-run contract" >&2
+    exit 2
+}
+
+TICKET=$(realpath "$TICKET")
+WORK_DIR=${TICKET_FIELDS[work_dir]:-}
+RUN_DIR=$(dirname "$WORK_DIR")
+[[ "$WORK_DIR" == "$RUN_DIR/work" && "$RUN_DIR" == "$(dirname "$TICKET")" ]] || {
+    echo "Ticket artifact root and work_dir are inconsistent" >&2
+    exit 2
+}
+SEED=${TICKET_FIELDS[seed]:-}
+RUN_ID=${TICKET_FIELDS[run_id]:-}
+[[ "$SEED" =~ ^[0-9]+$ && "$RUN_ID" =~ ^[0-9]+$ ]] || {
+    echo "Ticket seed and run id must be non-negative integers" >&2
+    exit 2
+}
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
+[[ ! -e "$SCRIPT_PATH" ]] || {
+    echo "Refusing to overwrite the ticket-bound Slurm script" >&2
+    exit 2
+}
 
 printf -v Q_MODE '%q' "$MODE"
 printf -v Q_CONFIG '%q' "$CONFIG"
 printf -v Q_TICKET '%q' "$(realpath "$TICKET")"
 printf -v Q_BASE_DIR '%q' "$BASE_DIR"
 printf -v Q_RUN_DIR '%q' "$RUN_DIR"
+printf -v Q_WORK_DIR '%q' "$WORK_DIR"
 printf -v Q_CPUS_PER_TASK '%q' "$CPUS_PER_TASK"
 printf -v Q_SEED '%q' "$SEED"
 printf -v Q_RUN_ID '%q' "$RUN_ID"
@@ -83,6 +117,7 @@ CONFIG=$Q_CONFIG
 TICKET=$Q_TICKET
 BASE_DIR=$Q_BASE_DIR
 RUN_DIR=$Q_RUN_DIR
+WORK_DIR=$Q_WORK_DIR
 CPUS_PER_TASK=$Q_CPUS_PER_TASK
 SEED=$Q_SEED
 RUN_ID=$Q_RUN_ID
@@ -112,7 +147,7 @@ torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
     --id "$RUN_ID" \
     --launch-mode "${MODE}" \
     --launch-ticket "${TICKET}" \
-    --cfg-options work_dir="${RUN_DIR}/work"
+    --cfg-options work_dir="${WORK_DIR}"
 
 if [[ "$MODE" == "profile" ]]; then
     PROFILE_BUNDLE=$(dirname "$TICKET")
@@ -122,7 +157,7 @@ if [[ "$MODE" == "profile" ]]; then
         echo "Profile launch did not publish the complete ticket-bound evidence bundle" >&2
         exit 2
     }
-    if find "$RUN_DIR/work" -type f -name '*.pth' -print -quit | grep -q .; then
+    if find "$WORK_DIR" -type f -name '*.pth' -print -quit | grep -q .; then
         echo "Profile launch unexpectedly produced a checkpoint" >&2
         exit 2
     fi
@@ -130,4 +165,4 @@ fi
 SBATCH
 
 echo "FULL_PETAL_RUN_DIR=$RUN_DIR"
-/usr/bin/sbatch "$SCRIPT_PATH"
+"$SBATCH_BIN" "$SCRIPT_PATH"
