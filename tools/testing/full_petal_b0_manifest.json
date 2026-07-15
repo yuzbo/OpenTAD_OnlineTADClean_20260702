@@ -147,7 +147,7 @@
     },
     {
       "path": "opentad/utils/crs_eps_sampling.py",
-      "sha256": "0adc65a5d6c7828a8148cecec83b248560825fc1d5715d3e9ad740f79e0b5d7e"
+      "sha256": "178a1404b6c314045276c99bd4aa2027879336c21225234d946568061726d940"
     },
     {
       "path": "opentad/utils/crs_eps_audit.py",
@@ -418,7 +418,7 @@
         },
         {
           "path": "tests/test_crs_eps_sampling.py",
-          "sha256": "be22a160383df906ac04814051b271b150c50f111dbf123e52daaf65350f3bc2",
+          "sha256": "79213bbf56fca85d09a2f1a2fda4e97a64cb30d2fd9c49151e2993912278cf6f",
           "test_functions": [
             "test_supervised_window_is_fixed_contains_anchor_and_shifts_at_edges",
             "test_component_candidates_follow_frozen_risk_set_definitions",
@@ -428,6 +428,7 @@
             "test_uniform_floor_makes_2_5_a_derived_invariant_not_a_clip",
             "test_dynamic_context_extends_to_relevant_long_action_birth_and_keeps_global_detach",
             "test_epoch_manifest_is_deterministic_repeated_exposure_and_self_verifying",
+            "test_epoch_manifest_reproduces_after_json_round_trip",
             "test_manifest_union_probability_is_diagnostic_not_exposure_weight"
           ]
         },

@@ -1,4 +1,5 @@
 from copy import deepcopy
+import json
 import math
 
 import pytest
@@ -171,6 +172,20 @@ def test_epoch_manifest_is_deterministic_repeated_exposure_and_self_verifying():
     tampered["videos"][0]["draws"][0]["anchor_bin"] += 1
     with pytest.raises(CrsEpsSamplingError, match="hash"):
         validate_epoch_manifest(tampered)
+
+
+def test_epoch_manifest_reproduces_after_json_round_trip():
+    manifest = build_epoch_manifest(
+        [_spec()],
+        epoch=3,
+        seed=705,
+        draws_per_video=6,
+        provenance={"commit_sha": "a" * 40},
+    )
+    persisted = json.loads(json.dumps(manifest, allow_nan=False, sort_keys=True))
+
+    assert persisted == manifest
+    validate_epoch_manifest(persisted)
 
 
 def test_manifest_union_probability_is_diagnostic_not_exposure_weight():

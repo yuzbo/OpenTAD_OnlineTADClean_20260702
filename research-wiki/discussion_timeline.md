@@ -865,3 +865,31 @@ Current decision:
 > Freeze the correction, generate the signed N16R4/Linux B0 leaf, build the
 > local signed B0 root, and return both to the same reviewer. Do not issue G0,
 > profile, or formal-training permission before exact `PASS / PROFILE=ALLOW`.
+
+### T27: First Real G0 Attempt Exposes a JSON Round-Trip Blocker
+
+Commit `ee439e1647567b4d1a0fec3f5e50498a34588bb8` passed the locked local and
+N16R4/Linux B0 matrix at `578/578`; the same reviewer closed all six prior
+findings and returned `PASS / PROFILE=ALLOW / FORMAL=BLOCK / NEXT_GATE=G0`.
+Before any model replay outcome was executed, G0 sample selection covered four
+video-length quartiles and all preregistered metadata stressors. The
+preregistration then failed closed because the serialized epoch manifest could
+not reproduce exactly.
+
+The failure is a code defect: `InstanceTimeline.active_bins` remained a tuple
+inside the in-memory manifest, while JSON persistence converted it to a list.
+The builder's in-memory self-check therefore passed, but the first persisted
+read failed exact equality. The correction emits JSON-native lists at manifest
+construction and adds an explicit serialize/read/validate regression test. The
+locked isolated runner now passes `579/579` before the replacement commit.
+
+No replay loss, gradient, state, or model-quality output was observed before
+the failure. The metadata-only sample policy and conservative margins remain
+outcome-blind, but every artifact tied to `ee439e1` is superseded for launch
+authorization because the source commit changed.
+
+Current decision:
+
+> Freeze the serialization correction, regenerate the target-Linux leaf and
+> signed B0 root, and obtain a fresh PASS from the same reviewer. Only then
+> rebuild and run G0; profile and formal training remain blocked.

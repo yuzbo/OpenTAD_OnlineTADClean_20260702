@@ -1210,3 +1210,46 @@ Reversibility:
 - Implementation details can change only through a new commit and evidence
   cycle. Manifest ownership, same-byte consumption, exact submitted bytes, and
   a signed target-OS leaf are irreversible requirements for this route.
+
+## DR-034: Require Persisted Manifest Reproduction Before G0
+
+Status: correction implemented; replacement B0 and same-reviewer acceptance
+pending.
+
+Decision:
+
+> Invalidate `ee439e1` as a launch-authorizing commit after its first real G0
+> preregistration exposed a JSON round-trip mismatch. Emit JSON-native instance
+> timelines, test serialize/read/validate reproduction explicitly, and restart
+> the exact-commit B0 and review chain before any G0 outcome or GPU profile.
+
+Reasons:
+
+- an in-memory self-check does not prove that the evidence file consumed by a
+  later process is reproducible;
+- tuple-to-list conversion changed the loaded manifest structure even though
+  the sampling semantics were unchanged;
+- preregistration failed before model execution, so correcting the defect does
+  not condition the sample set or margins on G0 outcomes;
+- reusing the old PASS after a source change would break the signed
+  commit-to-evidence chain.
+
+Rejected alternatives:
+
+- normalize the already-published manifest at preregistration time;
+- weaken exact equality to ignore container types;
+- edit the external G0 artifact in place;
+- reuse the `ee439e1` B0 or reviewer verdict for the corrected commit.
+
+Source:
+
+- fail-closed real-data G0 preregistration on 2026-07-16;
+- `opentad/utils/crs_eps_sampling.py`;
+- `tests/test_crs_eps_sampling.py`;
+- [discussion_timeline.md#T27-first-real-g0-attempt-exposes-a-json-round-trip-blocker](discussion_timeline.md).
+
+Reversibility:
+
+- The concrete list representation may be schema-versioned in the future, but
+  persisted-byte reproduction and a fresh evidence chain after source changes
+  are irreversible requirements.

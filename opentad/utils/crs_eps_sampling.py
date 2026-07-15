@@ -528,7 +528,10 @@ def build_video_manifest(
     return {
         "video_id": spec.video_id,
         "num_bins": spec.num_bins,
-        "instances": [asdict(instance) for instance in spec.instances],
+        "instances": [
+            {**asdict(instance), "active_bins": list(instance.active_bins)}
+            for instance in spec.instances
+        ],
         "draws_per_video": draws_per_video,
         "episode_sequence_sha256": canonical_json_sha256(
             [draw["episode_payload_sha256"] for draw in draws]
