@@ -730,17 +730,39 @@ def train_one_epoch(
             except Exception:
                 _rollback_crs_group(model, transaction, optimizer, crs_buffer_snapshot)
                 raise
-            episode_audit = getattr(target, "last_episode_audit", {})
+        episode_audit = None
+        if hasattr(target, "last_episode_audit"):
+            episode_audit = getattr(target, "last_episode_audit")
             if not isinstance(episode_audit, Mapping):
-                _rollback_crs_group(model, transaction, optimizer, crs_buffer_snapshot)
-                raise RuntimeError("CRS-EPS detector did not publish an episode audit")
+                if crs_control is not None:
+                    _rollback_crs_group(
+                        model, transaction, optimizer, crs_buffer_snapshot
+                    )
+                    route = "CRS-EPS"
+                else:
+                    _rollback_online_transaction(transaction)
+                    optimizer.zero_grad(set_to_none=True)
+                    route = "chronological"
+                raise RuntimeError(f"{route} detector did not publish an episode audit")
             slot_exhaustion = int(episode_audit.get("slot_exhaustion", 0))
             if slot_exhaustion:
-                _rollback_crs_group(model, transaction, optimizer, crs_buffer_snapshot)
+                if crs_control is not None:
+                    _rollback_crs_group(
+                        model, transaction, optimizer, crs_buffer_snapshot
+                    )
+                    route = "CRS-EPS"
+                else:
+                    _rollback_online_transaction(transaction)
+                    optimizer.zero_grad(set_to_none=True)
+                    route = "chronological"
                 raise RuntimeError(
-                    "CRS-EPS scientific failure: slot exhaustion invalidates the "
+                    f"{route} scientific failure: slot exhaustion invalidates the "
                     f"training trajectory (count={slot_exhaustion})"
                 )
+        elif crs_control is not None:
+            _rollback_crs_group(model, transaction, optimizer, crs_buffer_snapshot)
+            raise RuntimeError("CRS-EPS detector did not publish an episode audit")
+        if crs_control is not None:
             group_workload["control_unroll_seconds"] += float(
                 episode_audit.get("control_unroll_seconds", 0.0)
             )

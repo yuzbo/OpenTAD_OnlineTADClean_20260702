@@ -23,6 +23,7 @@ from opentad.utils.prefix_trajectory_supervision import (
     PrefixTrajectorySupervisionState,
     SupervisionMode,
 )
+from opentad.utils.q2_capacity_audit import build_assignment_cost_provider
 from opentad.utils.stream_control import (
     StreamMetadataError,
     validate_model_meta,
@@ -492,37 +493,12 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                         raise ProtocolViolation("endpoint target is not a first-observable crossing")
 
     def _cost_provider(self, outputs, schedule_step, feature_stride):
-        targets = self._targets_by_id(schedule_step)
-        class_log_probs = outputs["class_logits"][0].log_softmax(dim=-1)
-
-        def provider(phase, instance_ids, slot_ids):
-            rows = []
-            for instance_id in instance_ids:
-                target = targets[int(instance_id)]
-                target_offset = (
-                    float(schedule_step.current_frame) - float(target.start_frame)
-                ) / max(float(feature_stride), 1.0)
-                target_offset = min(max(target_offset, 0.0), float(self.head.memory_size))
-                row = []
-                for slot in slot_ids:
-                    class_cost = -class_log_probs[int(slot), int(target.label)]
-                    start_cost = F.smooth_l1_loss(
-                        outputs["start_offset"][0, int(slot)],
-                        outputs["start_offset"].new_tensor(target_offset),
-                        reduction="sum",
-                    )
-                    cost = class_cost + start_cost
-                    if phase == "birth":
-                        cost = cost - F.logsigmoid(outputs["birth_logits"][0, int(slot)])
-                    elif phase != "rematch":
-                        raise ValueError(f"unknown supervision assignment phase {phase!r}")
-                    row.append(cost.detach())
-                rows.append(torch.stack(row))
-            if not rows:
-                return torch.empty((0, len(slot_ids))).numpy()
-            return torch.stack(rows).float().cpu().numpy()
-
-        return provider
+        return build_assignment_cost_provider(
+            outputs,
+            schedule_step,
+            feature_stride=feature_stride,
+            memory_size=self.head.memory_size,
+        )
 
     def _step_losses(self, outputs, schedule_step, transition, feature_stride):
         birth_target = torch.zeros_like(outputs["birth_logits"])
