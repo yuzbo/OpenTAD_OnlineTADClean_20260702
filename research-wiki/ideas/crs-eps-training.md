@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:crs-eps-training
 title: "CRS-EPS: Instance-aware Causal Risk-Set Event-Centric Prefix-Episode Training"
-stage: p1-code-complete-b0-and-independent-review-pending
-outcome: conditional-go-for-falsification
+stage: g0-killed-route-reassessment
+outcome: negative
 updated: 2026-07-16
 target_gaps: ["G3", "G4", "G7"]
 ---
@@ -12,9 +12,12 @@ target_gaps: ["G3", "G4", "G7"]
 
 ## 2026-07-16 Implementation Status
 
-The Round-2 implementation now exists on `codex/full-petal-implementation`, but
-this is an engineering milestone only. No real-data G0, fixed-step GPU profile,
-or effectiveness training result has been accepted.
+The Round-2 implementation exists on `codex/full-petal-implementation`.
+Commit `70df86e` passed signed local/Linux B0 at `588/588` and the same locked
+reviewer returned PASS. Its preregistered real-data G0 then returned a signed
+terminal `KILL`. This closes the current `dynamic_birth` surrogate as an
+acceptable primary training protocol under the frozen contract. No fixed-step
+GPU profile or effectiveness result has been accepted.
 
 Implemented and CPU-auditable:
 
@@ -34,16 +37,23 @@ Implemented and CPU-auditable:
 - a multi-denominator profile schema covering temporal tokens, replay,
   exposures, ESS, visual frames, data/control/wall time, memory, and GPU-hours.
 
-Still unknown or blocked:
+Terminal evidence and remaining blocks:
 
-- real THUMOS feature/cache availability and a frozen checkpoint have not been
-  exercised through the new G0 runner;
-- `M=4` is provisional for an implementation probe and is not a scientific
-  choice until G0 precision/fidelity evidence is reviewed;
-- the current commit still needs a regenerated full B0 and a PASS from reviewer
-  `019f5abd-5104-79b3-882e-354ca796f2c1`;
-- GPU profile and formal training remain prohibited;
-- CRS-EPS remains a cost surrogate, not the Full PETAL headline contribution.
+- the exact target-Linux G0 bundle used four preregistered samples, frozen
+  margins, a deterministic seed-705 checkpoint, and an immutable manifest;
+- three samples produced fourteen absolute fidelity violations, including
+  maximum relative loss error `0.8021`, minimum gradient cosine `0.2831`, and
+  minimum continuous-state cosine `0.1028`;
+- the launch validator rejects the signed terminal `KILL`, so GPU profile and
+  formal training remain prohibited;
+- those four samples are now development-only and cannot confirm a repair;
+- whether the larger episode-training family has a state-faithful replacement
+  is unresolved and requires a Pro mechanism/route adjudication;
+- CRS-EPS was always a cost surrogate, not the Full PETAL headline contribution.
+
+See [the terminal G0 record](../experiments/crs-eps-g0-kill-20260716.md),
+[DR-039](../decision_register.md#dr-039-honor-the-signed-crs-eps-g0-kill-and-reopen-training-route-selection),
+and [T32](../discussion_timeline.md#t32-signed-g0-kills-the-current-crs-eps-training-surrogate).
 
 ## 2026-07-15 Round-2 Protocol Decision
 

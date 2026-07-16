@@ -1434,3 +1434,53 @@ Reversibility:
 - Checkpoint packaging may change under a future schema, but outcome-blind
   byte identity, deterministic generation identity, and recursive launch
   verification are permanent requirements for this G0 route.
+
+## DR-039: Honor the Signed CRS-EPS G0 KILL and Reopen Training-Route Selection
+
+Status: active; profile and formal training blocked.
+
+Decision:
+
+> Accept the terminal `KILL` at implementation commit
+> `70df86ea3d38d70c658ae0ee9e04245d57b834d4`. The current CRS-EPS
+> `dynamic_birth` replay is not an acceptable primary training surrogate under
+> its preregistered fidelity contract. Freeze the negative result, perform
+> zero-GPU causal diagnosis, and obtain a Pro mechanism/route adjudication
+> before implementing a replacement.
+
+Reasons:
+
+- local and target-Linux B0 passed `588/588`, and the same reviewer returned
+  exact `PASS / PROFILE=ALLOW / NEXT_GATE=G0` before the outcome;
+- the exact samples, margins, checkpoint bytes, code, config, and manifest were
+  signed or hash-bound before terminal execution;
+- three of four selected cases violated absolute gradient, loss, and/or
+  runtime-state fidelity, producing fourteen violations;
+- the launch validator independently rejects the signed `KILL` before
+  profile authorization;
+- changing margins, checkpoint, samples, or method after seeing the outcome
+  would convert a confirmatory gate into post-hoc tuning.
+
+Rejected alternatives:
+
+- launch profile because dynamic replay beats reset or fixed replay on average;
+- weaken the `0.90` fidelity margins or relax discrete-state equality;
+- rerun the same exposed samples as fresh confirmatory evidence;
+- call B0 test success scientific validation of CRS-EPS;
+- abandon the On-TAD task or claim that the entire Full PETAL infrastructure
+  was falsified by a training-surrogate gate.
+
+Source:
+
+- [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md);
+- signed external `audit.json`, SHA-256
+  `a08183a8dba4ec5267b5a75eed3501882180a22f28d6b76ce2c7b4e65511009b`;
+- `opentad/utils/crs_eps_gold_gate.py`;
+- `opentad/utils/full_petal_launch.py`;
+- [discussion_timeline.md#T32-signed-g0-kills-the-current-crs-eps-training-surrogate](discussion_timeline.md).
+
+Reversibility:
+
+- A genuinely new training surrogate may be evaluated, but it must use a new
+  scientific design, clean commit, outcome-blind holdout G0, and full evidence
+  chain. The historical `KILL` remains immutable.

@@ -1012,3 +1012,39 @@ Current decision:
 > margins bind that signed selection, and reject replacement bytes, state-key
 > drift, seed drift, or deterministic-state drift before any trace. Restart the
 > complete B0/review chain; G0, profile, and formal training remain blocked.
+
+### T32: Signed G0 Kills the Current CRS-EPS Training Surrogate
+
+Commit `70df86ea3d38d70c658ae0ee9e04245d57b834d4` completed the replacement
+checkpoint-preregistration chain. Local and N16R4/Linux B0 passed `588/588`,
+the signed B0 roots independently validated, and the same locked reviewer
+returned exact `PASS / PROFILE=ALLOW / FORMAL=BLOCK / NEXT_GATE=G0`.
+
+The real-data CPU-only G0 then executed against the preregistered four samples,
+unchanged margins, exact deterministic checkpoint bytes, persisted manifest,
+and fixed CRS-EPS config. The signed terminal audit returned `KILL`: three
+samples produced fourteen absolute-fidelity violations. The worst dynamic
+relative loss error was `0.8021221151`, minimum gradient cosine
+`0.2830554455`, minimum gradient sign agreement `0.5445116162`, and minimum
+continuous runtime-state cosine `0.1027812195`. Runtime discrete state also
+diverged in all three failed dynamic cases.
+
+The result still shows that dynamic replay beats reset and, on average, fixed
+replay in gradient cosine. That relative ordering does not override the frozen
+absolute fidelity requirements. Two failed samples made `dynamic_birth` and
+`fixed_192` numerically identical on the reported fidelity metrics, while the
+one case with a dynamic advantage remained far below the absolute margins.
+
+The signed audit was independently verified on the target Linux platform and
+its gate recomputed to the same `KILL`. Local signature and gate recomputation
+also passed. The launch validator rejects this terminal artifact with
+`CRS-EPS G0 audit has not reached PASS`, so no profile or formal job was
+submitted.
+
+Current decision:
+
+> Freeze the result as a valid negative experiment. Do not tune the gate or
+> reuse the exposed samples as confirmation. First determine whether HH/IPW
+> event sampling is structurally unable to recover omitted state/gradient
+> paths or whether a bounded implementation correction exists. Request a
+> Pro mechanism and route adjudication before any new implementation.

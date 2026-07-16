@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-15
+updated: 2026-07-16
 status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
@@ -13,7 +13,7 @@ The task is fixed to standard fully supervised Online Temporal Action Detection/
 
 PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
 
-Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all tokens with chunk-detached state and steps once/video. Round 2 conditionally accepts an amended hybrid for implementation and falsification only. `P0-LAUNCH-WORKDIR`, profile, effectiveness training, and raw-video Stage 2 remain blocked.
+Current Q2 is a complete-video cached reference: it scans all tokens with chunk-detached state and steps once/video. The conditionally accepted CRS-EPS hybrid was fully implemented and falsified at commit `70df86e`. Signed local/Linux B0 passed `588/588` and locked review passed, but the preregistered real-data G0 returned terminal `KILL` with fourteen fidelity violations across three of four samples. Current dynamic replay is rejected as primary training; profile, effectiveness training, formal training, and raw-video Stage 2 remain blocked.
 
 ## Top Gaps
 
@@ -28,7 +28,8 @@ Current Q2 is a complete-video cached reference, not CRS-EPS: it scans all token
 
 ## Candidate Portfolio
 
-- **Q2 fixed/rematch:** treatment is partially identifiable. Round 2 freezes an amended hybrid protocol for implementation/falsification, while profile and effectiveness remain blocked behind P0, CPU probability closure, replay fidelity, paired traces, exact identity metrics, and multi-denominator cost accounting.
+- **Q2 fixed/rematch:** complete chronological cached training remains the gold/reference route. Its effectiveness and paper value are unproven.
+- **CRS-EPS dynamic replay:** negative for the current protocol. Signed G0 failed absolute state/loss/gradient fidelity. The exposed G0 cases are development-only; any replacement needs a new holdout protocol.
 - **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
 - **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
 - **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
@@ -49,6 +50,7 @@ No raw-video, end-to-end, or novelty claim is currently active. Persistent track
 - Generic causal backbone, generic memory, generic pretraining, LoRA, raw-frame input, or online cache alone: occupied and insufficient.
 - Early proposals or mutable user-visible revisions: outside the fixed standard On-TAD output protocol.
 - Current THUMOS PCEH, full-packet training first, zero-shot wrapper, and offline distillation headline: rejected.
+- Current CRS-EPS `dynamic_birth` as primary training: rejected by its preregistered G0; HH/IPW did not establish state/gradient fidelity.
 - PETAL is also rejected if it reduces to TrackFormer plus a one-dimensional interval head without an On-TAD-specific trajectory mechanism or measurable matched gain.
 
 ## Closest Prior Work
@@ -86,4 +88,4 @@ Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more 
 
 ## Current Final Goal
 
-Do not start profile or training. Round 2 has conditionally accepted an amended hybrid protocol for implementation and falsification only: CRS-EPS HH/IPW training, a tiny video-start full-stream state/loss/gradient gold audit, and complete chronological one-token evaluation. First close `P0-LAUNCH-WORKDIR` with a real deterministic fake-`sbatch` test; then implement only the CPU manifest/probability path (`q`, `rho`, union `pi`, weights, multiplicity, coverage, ESS). Exact identity metrics and matched stochasticity must be frozen before effectiveness work. Token-addressed RNG is a candidate implementation, not the only acceptable mechanism; slot exhaustion remains a scientific failure; a positive LoRA-by-binding interaction is not required. Freeze a clean commit, regenerate B0, and obtain a fresh independent `PASS / PROFILE=ALLOW` before the next GPU-hour.
+Do not start profile or training. Freeze the `70df86e` terminal G0 `KILL` and use its four exposed samples only for zero-GPU development diagnosis. The next gate is a Pro mechanism/route adjudication that distinguishes structural omitted-history bias from bounded implementation defects and compares state-faithful cost-control alternatives. Any retained route requires a new clean commit, unseen holdout G0 preregistration, full B0, independent review, and a new terminal G0 PASS before the next profile GPU-hour.
