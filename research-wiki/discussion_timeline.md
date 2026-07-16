@@ -1141,3 +1141,50 @@ Current decision:
 > cleanup diagnostics. Freeze every scientific and resource constant, commit
 > the correction, and rerun all 160 x 3 units into a fresh external root. R1,
 > GPU profile, and formal training remain blocked.
+
+### T36: Clean Capacity Audit Rejects Current Q2 and Exposes a Degenerate Escape
+
+The clean `1441219` rerun completed the full 160 x 3 CPU audit and published a
+valid `REVISE_REQUIRED` evidence bundle. Actual Q2 exhausted 2,206 of 7,569 GT
+births. The annotation oracle requires only K=2, all causes close, and no case
+is true canonical capacity: 1 is pure false ACTIVE, 1,144 are refractory, and
+1,061 are mixed. Fixed and rematch canonical transitions remain equal.
+
+The same-logits grid rules out simple timing explanations. Refractory zero
+still exhausts 2,199, release-before-birth 1,893, and their combination 228.
+The only eligible zero-exhaustion policy is an additive `-2` birth-logit prior,
+but it reduces emissions from 5,517 to 10 at deterministic initialization.
+That candidate may be a legitimate low-positive-rate initialization, or it may
+merely avoid capacity pressure by suppressing nearly all births. The capacity
+audit was not an effectiveness test and cannot resolve that ambiguity.
+
+Current decision:
+
+> Accept the terminal `REVISE_REQUIRED` and keep R1 blocked. Do not select the
+> `-2` candidate automatically. Send the immutable bundle to one independent
+> max reviewer for a strict choice among one-factor rerun, a predeclared
+> nondegeneracy gate, or Q2/R1 termination. Keep GPU profile and formal training
+> blocked and spend zero GPU hours.
+
+### T37: Independent Review Kills Q2 and R1
+
+The unique read-only max reviewer independently verified the clean commit,
+summary, trace, commitment, checkpoint fingerprints, config/data identity, and
+524,258 strict trace rows. It reproduced the actual and sparse
+counterfactual-exhaustion aggregates and selected `C) KILL_Q2_R1`.
+
+The decisive mechanism is not whether a `-2` bias has a gradient. Runtime slot
+availability is evaluated before GT canonical assignment, so suppressing birth
+keeps slots free while GT births can still be assigned. The progression from
+actual `5517 emissions / 2206 exhaustions`, through `-1` at `1722/80`, to `-2`
+at `10/0` shows that the only zero-exhaustion arm passes by silence. Seeds 705
+and 706 emit no event under `-2`. Training can later raise the logits and bring
+the exhaustion back, so this is not a stable lifecycle contract.
+
+Current decision:
+
+> Terminate Q2 and R1 under the frozen protocol. Do not implement CSFSB, do not
+> add a post-outcome nondegeneracy gate, and do not run another `-2` audit. Keep
+> GPU profile and formal training blocked with zero GPU hours authorized. Any
+> future route must begin with a new mechanism contract and preregistration,
+> not a threshold/prior patch to Q2.

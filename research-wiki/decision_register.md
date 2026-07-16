@@ -1654,3 +1654,109 @@ Reversibility:
 - the portability fix is reversible in code, but this failed run can never be
   promoted to evidence. Only a fresh, complete, atomically published rerun can
   change the capacity gate.
+
+## DR-043: Accept REVISE_REQUIRED Without Promoting the -2 Birth Prior
+
+Status: superseded by terminal DR-044; R1 killed.
+
+Decision:
+
+> Accept the clean `1441219` capacity audit as terminal `REVISE_REQUIRED` for
+> the current Q2 contract. Do not automatically adopt the sole legal
+> zero-exhaustion candidate, additive birth-logit bias `-2`, because its ten
+> emissions may represent degenerate birth suppression. Require one independent
+> max adjudication before any one-factor lifecycle revision. R1, GPU profile,
+> and formal training remain blocked.
+
+Reasons:
+
+- summary, trace, commitment, content hashes, checkpoint/config/data identity,
+  GT-taint audit, cause closure, and fixed/rematch equality all verify;
+- current Q2 exhausts 2,206 births across all three seeds, so it is not a valid
+  shared training contract;
+- annotation-side minimum oracle K is two and true canonical capacity causes
+  zero exhaustions, so increasing K would not address the measured mechanism;
+- refractory-zero and release-order corrections remain nonzero, including 228
+  exhaustions when combined;
+- additive `-2` is the only eligible zero-exhaustion arm, but its emission
+  count collapses from 5,517 to 10, which the capacity-only audit cannot
+  distinguish from a scientifically useful low-prior initialization.
+
+Rejected alternatives:
+
+- call `REVISE_REQUIRED` a PASS because one legal counterfactual reaches zero;
+- implement R1 before a shared contract is frozen;
+- increase K despite zero true-capacity attribution;
+- adopt the privileged canonical-only availability policy;
+- use effectiveness data post hoc to choose a prior, threshold, or lifecycle;
+- spend GPU hours to resolve a CPU-identifiable contract defect.
+
+Source:
+
+- external clean evidence root
+  `q2_capacity_1441219_20260716_rerun/evidence`;
+- summary SHA-256
+  `dad8174f149240d8bba52eff9121b80588a90a4594061f7563fca476af4f30f9`;
+- trace SHA-256
+  `b5ca44d240d22a43365ecaa6e6fe07a5cd564d079b351b8807b970176a46a0ed`;
+- commitment SHA-256
+  `6cf2c0dc66ac6cc2beab9cb2e0eb64f8645914f28b218a47eb6717b93f83abb1`;
+- [experiments/q2-capacity-lifecycle-audit-20260716.md](experiments/q2-capacity-lifecycle-audit-20260716.md);
+- [discussion_timeline.md#t36-clean-capacity-audit-rejects-current-q2-and-exposes-a-degenerate-escape](discussion_timeline.md).
+
+Reversibility:
+
+- a new clean one-factor revision may be tested only after independent review
+  freezes its exact nondegeneracy and rerun contract. The current Q2 failure is
+  permanent evidence and cannot be relabeled.
+
+## DR-044: Kill Q2 and R1 After Independent Degeneracy Adjudication
+
+Status: terminal `KILL`; GPU profile and formal training blocked.
+
+Decision:
+
+> Accept the unique independent max review choice `C) KILL_Q2_R1`. The
+> additive `-2` birth prior is a degenerate birth-suppression escape, not a
+> repaired lifecycle contract. Make no model/config revision, run no further
+> `-2` confirmation gate, do not implement R1/CSFSB, and authorize zero GPU
+> hours. Preserve the clean capacity audit as terminal `REVISE_REQUIRED`
+> evidence rather than relabelling it.
+
+Reasons:
+
+- the reviewer independently verified the complete evidence chain and exactly
+  reproduced actual and sparse counterfactual exhaustion aggregates from
+  524,258 trace rows;
+- emissions and exhaustion move together under stronger birth suppression:
+  actual is `5517/2206`, `-1` is `1722/80`, threshold `0.75` is `1270/33`,
+  and `-2` is `10/0`;
+- seeds 705 and 706 emit nothing under `-2`, while annotation oracle K is two
+  and no exhaustion is true canonical capacity;
+- the gate is therefore non-identifying: a controller that never starts an
+  event can pass capacity while failing the task;
+- training can raise birth logits out of the silent initialization and restore
+  the already measured exhaustion, so `-2` is not a stable shared contract;
+- adding a post-outcome emission floor or another lifecycle factor now would
+  violate the frozen one-factor and capacity-only protocol.
+
+Rejected alternatives:
+
+- promote `birth_prior_bias_m2` because its positive BCE gradient is nonzero;
+- add a post hoc nondegeneracy threshold after observing ten emissions;
+- rerun the already identified suppression mechanism as confirmation;
+- implement R1 behind an unresolved runtime/canonical availability mismatch;
+- start a GPU profile or formal training despite the explicit zero-hour gate.
+
+Source:
+
+- [PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md](../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md);
+- reviewer `019f6b39-277a-7972-8ecb-beeb8a738605`;
+- [experiments/q2-capacity-lifecycle-audit-20260716.md](experiments/q2-capacity-lifecycle-audit-20260716.md);
+- [discussion_timeline.md#t37-independent-review-kills-q2-and-r1](discussion_timeline.md).
+
+Reversibility:
+
+- the Q2/R1 route is terminal under the frozen protocol. A future route would
+  require a new task/mechanism contract and new preregistration; it may cite
+  this evidence but cannot reopen Q2 by changing one threshold or prior.

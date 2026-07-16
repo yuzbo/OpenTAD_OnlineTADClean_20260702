@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:csfsb-training
 title: "Chronological State-Faithful Selective Backward (CSFSB)"
-stage: capacity-gated-implementation-candidate
-outcome: pending
+stage: killed-by-capacity-contract
+outcome: terminal-kill
 updated: 2026-07-16
 target_gaps: ["G3", "G4", "G7"]
 ---
@@ -12,17 +12,24 @@ target_gaps: ["G3", "G4", "G7"]
 
 ## Status
 
-R1/CSFSB is the only successor retained by the 2026-07-16 Round-2 route
-adjudication. It has a conditional implementation GO, not method approval.
-The immediate gate is the zero-GPU Q2 capacity/lifecycle audit. R1 code may be
-implemented only after one non-tainted shared fixed/rematch contract is frozen.
+R1/CSFSB was the only successor conditionally retained by the 2026-07-16
+Round-2 route adjudication. That conditional implementation permission is now
+withdrawn because its prerequisite capacity contract failed.
+
+The clean capacity audit returned terminal `REVISE_REQUIRED`: current Q2
+exhausts 2,206 births, and the sole eligible zero-exhaustion counterfactual is
+an additive `-2` birth-logit prior with only ten emissions. Unique independent
+review diagnosed degenerate birth suppression and selected `KILL_Q2_R1`. No
+shared contract is frozen; R1 implementation is terminated under this
+protocol, with GPU profile and formal training blocked.
 
 ```text
-CAPACITY_AUDIT=ALLOW
-R1_IMPLEMENTATION=CONDITIONAL
+CAPACITY_AUDIT=REVISE_REQUIRED
+INDEPENDENT_DISPOSITION=KILL_Q2_R1
+R1_IMPLEMENTATION=KILL
 PROFILE=BLOCK
 FORMAL=BLOCK
-GPU_HOURS_BEFORE_NEW_G0_PASS=0
+GPU_HOURS_AUTHORIZED=0
 ```
 
 ## Problem
@@ -32,7 +39,7 @@ exposure but cannot reconstruct omitted persistent state, lifecycle ownership,
 or historical Jacobian paths. Complete chronological Q2 preserves those paths
 but may spend excessive backward compute on redundant bins.
 
-## Method
+## Historical Method Design
 
 Run every cached token causally and chronologically. Advance persistent query
 state, feature memory, runtime lifecycle, canonical supervision, births,
@@ -60,15 +67,14 @@ and no realized-sample renormalization, its gradient is unbiased in expectation
 relative to that objective. A single finite-M gradient is not exact and may be
 too noisy for AdamW; G0-B must test practical adequacy.
 
-## Capacity Gate
+## Capacity Gate Outcome
 
-Before R1 implementation, audit all 160 fit-core videos with seeds 705/706/707
-and same-logits lifecycle counterfactuals. Separate canonical occupancy, false
-ACTIVE occupancy, refractory occupancy, and same-bin ordering. Make ordinary
-chronological training fail before optimizer on any exhaustion. Freeze one
-shared policy or kill Q2/R1.
+The required 160-video, seeds 705/706/707 same-logits audit completed. Actual
+Q2 exhausted 2,206 GT births. No case was true canonical capacity, and the sole
+legal zero arm achieved zero by suppressing emissions to ten. The independent
+review therefore took the preregistered kill branch.
 
-## New G0
+## Cancelled G0 Design
 
 - G0-A: exact paired implementation closure between all-graph selected-bin
   gold and selective no-grad execution.
@@ -87,24 +93,20 @@ importance sampling. It becomes an efficiency result only if matched profiling
 shows lower backward time, total wall time, and GPU-hours without quality loss.
 It is not yet Full PETAL's paper-level contribution.
 
-## Ordered Gate
+## Terminated Ordered Gate
 
 ```text
-capacity audit
--> shared lifecycle contract
--> R1 implementation and CPU tests
--> local/target-Linux B0
--> same independent reviewer PASS
--> unseen CPU G0 PASS
--> <=2 GPU-hour profile
--> one-seed fixed/rematch mechanism kill
--> FRESH/TTF/GRU controls
--> multi-seed and second-dataset evidence
+capacity audit: REVISE_REQUIRED
+-> independent review: KILL_Q2_R1
+-> STOP; no R1, B0, G0, profile, or training
 ```
 
 ## Sources
 
 - [`../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md)
 - [`../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md`](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md)
+- [`../../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md`](../../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md)
 - [DR-041](../decision_register.md#dr-041-select-csfsb-conditionally-behind-a-capacity-first-gate)
+- [DR-044](../decision_register.md#dr-044-kill-q2-and-r1-after-independent-degeneracy-adjudication)
 - [T34](../discussion_timeline.md#t34-round-2-selects-csfsb-but-authorizes-capacity-audit-first)
+- [T37](../discussion_timeline.md#t37-independent-review-kills-q2-and-r1)

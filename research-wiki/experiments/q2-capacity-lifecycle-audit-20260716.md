@@ -1,7 +1,7 @@
 # Q2 Capacity and Lifecycle Audit Preregistration
 
 Date: 2026-07-16
-Status: preregistered; portability fix validated; clean rerun pending
+Status: terminal `REVISE_REQUIRED`; independent disposition `KILL_Q2_R1`
 GPU authorization: blocked; this experiment is CPU-only
 
 ## Question
@@ -233,3 +233,62 @@ fails. It does not change data, checkpoints, seed order, logits, policies,
 thresholds, K, lifecycle semantics, attribution, gate rules, or resource caps.
 The complete audit must be rerun from a new clean commit into a new
 non-overwritten run root before any capacity conclusion or R1 implementation.
+
+## Terminal Clean Rerun
+
+The clean rerun bound to commit
+`1441219707b24719c2859f0dfa7c33d4b8190cbf` completed all 160 videos for
+seeds `705/706/707`, atomically published its evidence directory, and exited
+without stderr. The evidence self-hashes, summary/trace commitment, checkpoint
+manifest, config identity, data identity, GT-taint audit, cause closure, and
+fixed/rematch canonical equality all verify.
+
+```text
+STATUS=REVISE_REQUIRED
+ACTUAL_EXHAUSTIONS=2206
+R1_IMPLEMENTATION_ALLOWED=false
+GPU_PROFILE_ALLOWED=false
+FORMAL_TRAINING_ALLOWED=false
+
+summary_sha256=dad8174f149240d8bba52eff9121b80588a90a4594061f7563fca476af4f30f9
+trace_sha256=b5ca44d240d22a43365ecaa6e6fe07a5cd564d079b351b8807b970176a46a0ed
+commitment_sha256=6cf2c0dc66ac6cc2beab9cb2e0eb64f8645914f28b218a47eb6717b93f83abb1
+elapsed_seconds=2251.922
+gpu_hours=0
+```
+
+The annotation census gives `minimum_oracle_free_k=2`; no exhaustion is
+attributed to true canonical capacity. Actual-policy causes are 1 pure false
+ACTIVE, 1,144 refractory, and 1,061 mixed false-ACTIVE/refractory cases. The
+actual policy emits 5,517 events and exhausts 2,206 births. Refractory zero,
+release-before-birth, and their combination still exhaust 2,199, 1,893, and
+228 births respectively. A `-1` birth-logit bias exhausts 80, while the only
+eligible zero-exhaustion candidate, `birth_prior_bias_m2`, emits only 10 events
+over the same trace. The privileged canonical-only diagnostic also reaches
+zero but remains forbidden as a trainer contract.
+
+The result rejects current Q2 capacity readiness. It does not authorize
+automatic adoption of `-2`: zero exhaustion may be achieved by suppressing
+almost every model birth rather than by repairing lifecycle capacity. A unique
+independent max reviewer must adjudicate whether a predeclared one-factor
+birth-prior revision plus a zero-GPU nondegeneracy gate is scientifically
+valid, or whether Q2/R1 must terminate. R1 code remains blocked meanwhile.
+
+## Independent Terminal Disposition
+
+Reviewer `019f6b39-277a-7972-8ecb-beeb8a738605` independently verified the
+entire evidence chain and strictly parsed all 524,258 trace rows. The reviewer
+selected `C) KILL_Q2_R1` with mechanism diagnosis
+`DEGENERATE_BIRTH_SUPPRESSION`.
+
+The zero-exhaustion `-2` arm is rejected because the gate can be passed by
+silencing runtime births while GT canonical assignment still receives free
+slots. Its ten emissions include zero for seeds 705 and 706. The monotonic
+progression from actual, to `-1`, to `-2` demonstrates suppression rather than
+lifecycle repair, and training can move logits back into the measured
+exhaustion regime.
+
+No new nondegeneracy threshold may be selected after observing this result. No
+model/config revision, repeat `-2` audit, R1 implementation, GPU profile, or
+formal training is authorized. The audit status itself remains
+`REVISE_REQUIRED`; the independent scientific disposition is terminal `KILL`.
