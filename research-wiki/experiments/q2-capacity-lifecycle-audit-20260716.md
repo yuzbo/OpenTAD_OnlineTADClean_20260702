@@ -116,7 +116,7 @@ physical/logical cores: 14/20
 OS: Windows x86-64, recorded exactly in the output artifact
 Python: 3.10.20
 PyTorch: 2.6.0+cu124, CPU tensors only
-CUDA_VISIBLE_DEVICES: empty before process start
+CUDA_VISIBLE_DEVICES: -1 before process start
 threads: 8
 runner wall limit: 21,000 seconds
 hard cap: 48 CPU-hours
@@ -142,6 +142,13 @@ The dataset still verifies every selected feature against the original cache
 manifest. No policy, seed, video, threshold, K, cause label, gate, or CPU
 budget changed. The failed Slurm attempt consumed zero GPU-hours and is not an
 experiment result.
+
+The first Windows launch also failed before loading the dataset or producing
+logits because Windows removes an environment variable assigned the empty
+string. The fail-closed runner therefore saw CUDA as visible and stopped after
+checkpoint generation. The frozen value is amended to the runner-supported
+sentinel `-1`; the failed directory is retained and never reused. This is an
+execution preflight correction, not an outcome-dependent policy change.
 
 ## Evidence
 

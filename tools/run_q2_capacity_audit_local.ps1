@@ -59,7 +59,7 @@ $previousCudaVisible = $env:CUDA_VISIBLE_DEVICES
 $previousOmpThreads = $env:OMP_NUM_THREADS
 $previousMklThreads = $env:MKL_NUM_THREADS
 try {
-    $env:CUDA_VISIBLE_DEVICES = ""
+    $env:CUDA_VISIBLE_DEVICES = "-1"
     $env:OMP_NUM_THREADS = "8"
     $env:MKL_NUM_THREADS = "8"
 
