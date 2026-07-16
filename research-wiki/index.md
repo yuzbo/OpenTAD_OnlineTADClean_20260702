@@ -10,14 +10,14 @@ scope: Persistent project memory for the Online/Causal TAD research direction.
 This wiki exists to prevent repeated discussion loops. Before proposing a new task definition, method, training route, or paper story, read:
 
 1. [query_pack.md](query_pack.md) for the compressed current memory.
-2. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md) for the current route verdict and U1-U8 resolution.
-3. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the latest terminal scientific gate and raw-artifact postmortem.
-4. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the question that produced Round 1.
-5. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
-6. [gap_map.md](gap_map.md) for unresolved research gaps.
-7. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
-8. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-9. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+2. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md) for the selected R1/CSFSB route and capacity-first gate.
+3. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md) for the structural-kill diagnosis and U1-U8 resolution.
+4. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the latest terminal scientific gate and raw-artifact postmortem.
+5. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the two-round route question.
+6. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
+7. [gap_map.md](gap_map.md) for unresolved research gaps.
+8. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
+9. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
 10. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
@@ -31,13 +31,18 @@ preregistered real-data G0 returned terminal `KILL`. Current CRS-EPS
 `dynamic_birth` is therefore rejected as the primary training surrogate under
 its frozen contract. Pro Round 1 and local raw-artifact inspection strengthen
 that conclusion specifically for the current empty-state dynamic replay, not
-for every possible event-centric successor. The chronological Q2 route remains
-a gold/reference candidate, not an accepted efficient primary method: no
-profile or effectiveness trajectory exists, and two selected gold controls
-show slot exhaustion. Profile, effectiveness, formal training, novelty, and
-raw-video permissions remain blocked pending same-reviewer Round 2.
+for every possible event-centric successor. Round 2 selected only R1/CSFSB,
+which preserves complete chronological state/lifecycle and samples loss and
+backward contributions only. R1 is a capacity-gated implementation candidate,
+not an accepted method. The immediate authorized change is the zero-GPU
+capacity/lifecycle audit; R1 code follows only after one shared, non-tainted
+capacity contract is frozen. Profile, effectiveness, formal training, novelty,
+and raw-video permissions remain blocked.
 
-Read [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
+Read the current [Round-2 route review](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md),
+its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md),
+[DR-041](decision_register.md#dr-041-select-csfsb-conditionally-behind-a-capacity-first-gate),
+and the historical [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
 its [independent absorption](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md),
 the [CRS-EPS/Q2 Round-1 review](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_REVIEW_20260715.md),
 its [absorption](../PRO_FULL_PETAL_CRS_EPS_Q2_ROUND1_ABSORPTION_20260715.md),
@@ -60,7 +65,8 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [idea:delayed-feedback-continual-events](ideas/delayed-feedback-continual-events.md) | hold | Pro Rank 5; future-only updates after delayed event feedback. |
 | [idea:evidence-risk-ontal](ideas/evidence-risk-ontal.md) | superseded-umbrella | Earlier route combining evidence-ready timing and sequential risk; decomposed into T01/T02. |
 | [idea:cesr-ontad](ideas/cesr-ontad.md) | hold/fallback | Causal identity ledger and revisable hypothesis substrate; no longer the paper headline. |
-| [idea:crs-eps-training](ideas/crs-eps-training.md) | negative/route-reassessment | Current dynamic replay failed signed G0; larger state-faithful training family requires a new decision. |
+| [idea:crs-eps-training](ideas/crs-eps-training.md) | negative/superseded | Current dynamic replay failed signed G0; the conditional successor is the separate CSFSB route. |
+| [idea:csfsb-training](ideas/chronological-state-faithful-selective-backward.md) | capacity-gated-candidate | Full chronological forward with HH-weighted selective loss/backward; first gate is zero-GPU capacity/lifecycle audit. |
 | [idea:active-sensing-ontal](ideas/active-sensing-ontal.md) | secondary-candidate | Allocate observation compute from expected localization-risk reduction. |
 | [idea:continual-openworld-ontal](ideas/continual-openworld-ontal.md) | high-ambition | True continual adaptation under chronological domain/class shifts. |
 | [idea:pceh-ontad](ideas/pceh-ontad.md) | partial | Previous main route; retained as endpoint/commit hazard component inside CESR. |

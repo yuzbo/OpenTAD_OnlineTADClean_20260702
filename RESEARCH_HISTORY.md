@@ -6,14 +6,14 @@ This is the public landing page for the project's multi-round research discussio
 
 ```text
 Repository: https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702
-Branch: codex/online-tad-clean-20260702
-Code baseline before this history publication:
-bfd0608b2996cba30d158d741ee193476a5078df
+Branch: codex/full-petal-implementation
+Frozen scientific implementation:
+70df86ea3d38d70c658ae0ee9e04245d57b834d4
 ```
 
 Branch URL:
 
-https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/codex/online-tad-clean-20260702
+https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/codex/full-petal-implementation
 
 ## Current Decision
 
@@ -27,11 +27,24 @@ The task is fixed to standard fully supervised Online Temporal Action Detection/
 
 PIVOT/Three-Clock Event Observability is rejected as out of scope. PCEH/CESR is retained only as audited infrastructure and negative baselines.
 
-The current lead candidate is **PETAL-OnTAD**:
+The cached-feature Full PETAL infrastructure exists, but the former CRS-EPS
+`dynamic_birth` training surrogate failed its preregistered real-data G0 at
+scientific commit `70df86e`. The negative result is frozen specifically as
+`STRUCTURAL-KILL-CURRENT-EMPTY-STATE-DYNAMIC-BIRTH-CRS-EPS`; it does not kill
+all selective-backward training.
 
-> Jointly train a causal raw-video backbone and persistent action-instance queries, use trajectory-level prefix supervision, and require batched causal training to agree with incremental cached inference.
+The only retained successor is **R1/CSFSB**:
 
-PETAL has not passed novelty review and has not been formally trained. Raw-video training remains on hold until a dedicated Pro review and a matched feature-level persistent-query pilot pass.
+> Run every cached token causally and chronologically, preserve all numerical,
+> lifecycle, and supervision state, and sample only HH-weighted loss/backward
+> contributions under the existing 64-bin TBPTT objective.
+
+R1 is a capacity-gated implementation candidate, not an accepted method or
+paper contribution. Two complete chronological controls exhausted slots. The
+first authorized scientific commit is therefore a zero-GPU capacity/lifecycle
+audit; R1 code follows only if one shared fixed/rematch contract is frozen.
+Profile, formal training, and raw-video Stage 2 remain blocked, with zero GPU
+hours permitted before a new unseen CPU G0 passes.
 
 ## Canonical Navigation
 
@@ -52,18 +65,22 @@ Read these files in order:
 5. [`research-wiki/index.md`](research-wiki/index.md)
    Full entity index for ideas, papers, experiments, claims, and navigation.
 
-6. [`research-wiki/ideas/petal-ontad.md`](research-wiki/ideas/petal-ontad.md)
-   Current candidate, closest-work boundary, method sketch, experiments, and kill criteria.
+6. [`research-wiki/ideas/chronological-state-faithful-selective-backward.md`](research-wiki/ideas/chronological-state-faithful-selective-backward.md)
+   Current capacity-gated route, estimand, implementation boundary, and kill criteria.
 
-## Current Pro Prompt
+## Current Pro Review
 
-Use the complete prompt without deleting its repository audit, novelty search, strongest rejection, reconstructed baselines, or output format:
+The latest two-round route adjudication is preserved as:
 
-[`PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md`](PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md)
+- [`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md)
+- [`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md)
+- [`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md`](PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md)
+- [`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`](PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md)
+- [`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md`](PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md)
 
-Direct GitHub URL:
-
-https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/online-tad-clean-20260702/PRO_PETAL_ONTAD_DEEP_REVIEW_PROMPT_20260712.md
+Round 2 selects R1/CSFSB conditionally and keeps every GPU gate closed. The
+older PETAL deep-review prompt remains historical provenance, not the current
+execution instruction.
 
 ## Review History
 

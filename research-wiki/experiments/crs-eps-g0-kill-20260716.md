@@ -136,3 +136,21 @@ See the archived
 its [independent absorption](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md),
 [DR-040](../decision_register.md#dr-040-accept-the-current-structural-kill-without-promoting-q2-prematurely),
 and [T33](../discussion_timeline.md#t33-pro-round-1-confirms-the-current-structural-kill-but-overstates-q2-readiness).
+
+## Round-2 Route Consequence
+
+The same-reviewer Round-2 adjudication preserves this experiment as the
+irreversible terminal result for empty-state CRS-EPS. The old four samples are
+development-only. It conditionally selects a distinct R1/CSFSB successor that
+keeps complete chronological forward state and samples only loss/backward
+contributions. Before R1 code, a zero-GPU capacity/lifecycle audit must explain
+the one and two gold-control exhaustion events and freeze one shared policy.
+
+The successor requires a new implementation commit, new disjoint holdout,
+new multi-checkpoint CPU G0, full B0, and independent review. Nothing in the
+Round-2 decision converts this historical KILL into positive method evidence.
+
+See the [Round-2 archive](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md),
+its [independent absorption](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md),
+[DR-041](../decision_register.md#dr-041-select-csfsb-conditionally-behind-a-capacity-first-gate),
+and [T34](../discussion_timeline.md#t34-round-2-selects-csfsb-but-authorizes-capacity-audit-first).

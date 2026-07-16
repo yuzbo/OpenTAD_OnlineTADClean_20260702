@@ -9,6 +9,6 @@ Canonical wiki entry points:
 - [`decision_register.md`](decision_register.md): decisions and reversibility;
 - [`source_map.md`](source_map.md): evidence-to-node mapping;
 - [`index.md`](index.md): all ideas, papers, experiments, and claims;
-- [`ideas/petal-ontad.md`](ideas/petal-ontad.md): current lead candidate.
+- [`ideas/chronological-state-faithful-selective-backward.md`](ideas/chronological-state-faithful-selective-backward.md): current capacity-gated training-route candidate.
 
 The wiki deliberately preserves rejected ideas and negative reviews. Use the newest timeline/decision entries to determine current status.

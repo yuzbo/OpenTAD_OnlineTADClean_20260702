@@ -1487,7 +1487,7 @@ Reversibility:
 
 ## DR-040: Accept the Current Structural Kill Without Promoting Q2 Prematurely
 
-Status: active; Round-2 route adjudication pending; zero new GPU hours.
+Status: active historical constraint; route adjudicated by DR-041; zero new GPU hours.
 
 Decision:
 
@@ -1542,3 +1542,71 @@ Reversibility:
   matched cost profile, and scientific effectiveness gate. A successor
   state-faithful sampler may be evaluated only as a new method with a clean,
   outcome-blind evidence chain. The historical G0 result is irreversible.
+
+## DR-041: Select CSFSB Conditionally Behind a Capacity-First Gate
+
+Status: active; capacity audit authorized; R1 conditional; zero GPU hours.
+
+Decision:
+
+> Retain exactly one successor, R1 Chronological State-Faithful Selective
+> Backward (CSFSB). Preserve complete chronological numerical state,
+> lifecycle, supervision, and global 64-bin TBPTT boundaries; sample only
+> HH-weighted loss and backward contributions. Before R1 implementation,
+> perform a zero-GPU full-fit-core capacity/lifecycle audit and freeze exactly
+> one shared fixed/rematch contract. Profile and formal training remain
+> blocked until a new unseen CPU G0 passes.
+
+Reasons:
+
+- R1 removes the omitted-history defect that killed empty-state CRS-EPS;
+- the current Q2 scalar objective is a bin-uniform mean, so the proposed
+  `a_vt=(m_vt/M)*((1/T_v)/rho_vt)` estimator targets the actual chrono-64
+  objective when implemented without realized-sample renormalization;
+- R1 keeps every forward token and lifecycle transition, making state
+  faithfulness directly falsifiable with an all-graph paired execution;
+- exact recomputation adds forward work for the same backward graph extent,
+  while stale runtime checkpoints lose historical Jacobian paths;
+- two complete chronological controls exhausted slots, so capacity readiness
+  must be resolved before training-route code can be trusted;
+- all required pre-profile evidence can be generated with zero GPU hours.
+
+Binding qualifications:
+
+- `IMPLEMENTATION=ALLOW` means capacity audit now and R1 only after a shared
+  capacity contract; it is not profile or training permission;
+- the proposed separate R1 engine filename is non-binding; reuse the existing
+  transactional engine unless a separate engine demonstrably avoids drift;
+- same-logits lifecycle replay is valid only while the head's predictions do
+  not depend on lifecycle tensors;
+- freeze CPU platform, near-zero relative-error behavior, and a hard CPU
+  micro-trajectory budget before outcomes are visible;
+- R1 remains enabling infrastructure with strong prior-art reconstruction
+  risk until matched wall/GPU-hour and mechanism evidence exists.
+
+Rejected alternatives:
+
+- revive `dynamic_birth`, `fixed_192`, reset, or empty-state episode replay;
+- promote chronological Q2 before zero-exhaustion capacity and lifecycle
+  readiness is demonstrated;
+- implement R1 and silently change K, thresholds, refractory, binding, loss,
+  optimizer, or sampling in the same scientific commit;
+- use the old four G0 samples as confirmatory evidence;
+- claim efficiency from fewer backward tokens without lower paired wall time
+  and GPU-hours;
+- spend GPU hours before the new family-wise G0 passes.
+
+Source:
+
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`, SHA-256
+  `2BE3C21E951F68F397CADA468B66820BA08B3FF2F0FFD0A4E59580D784C989EE`;
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md`;
+- [ideas/chronological-state-faithful-selective-backward.md](ideas/chronological-state-faithful-selective-backward.md);
+- [discussion_timeline.md#t34-round-2-selects-csfsb-but-authorizes-capacity-audit-first](discussion_timeline.md).
+
+Reversibility:
+
+- R1 is killed if the capacity audit cannot freeze a legal shared contract,
+  exact G0-A fails, finite-M G0-B fails, any new G0 case exhausts slots, or
+  matched profile does not reduce wall time/GPU-hours. The historical CRS-EPS
+  KILL is not reversible.

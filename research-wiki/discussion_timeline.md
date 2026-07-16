@@ -1081,3 +1081,44 @@ Current decision:
 > backward, exact chronological recomputation, and explicit state checkpoints.
 > Select at most one new route. A new profile remains forbidden until a clean
 > commit, B0, independent review, unseen holdout G0, and terminal PASS.
+
+### T34: Round 2 Selects CSFSB but Authorizes Capacity Audit First
+
+The 3,879-line Round-2 attachment was archived byte-identically as
+`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`, SHA-256
+`2BE3C21E951F68F397CADA468B66820BA08B3FF2F0FFD0A4E59580D784C989EE`.
+The source contains two complete N-Y answers; both return the same machine
+verdict, and the later, more detailed answer is treated as normative without
+discarding the earlier text.
+
+Round 2 retained only R1, Chronological State-Faithful Selective Backward
+(CSFSB). Unlike the killed empty-state replay, R1 executes every cached token
+in chronological order and advances all numerical, runtime, and canonical
+state. The outcome-blind event proposal now selects only per-bin loss and
+backward contributions using an HH coefficient. It preserves the existing
+global 64-bin TBPTT estimand and one optimizer event per video. Exact
+recomputation was dominated on workload, runtime checkpoints were rejected as
+parameter-stale, and chronological-only remains an honest fallback.
+
+The review did not clear Q2 capacity. Complete gold controls had exhaustion
+counts one and two under K=4, random-init logits, 0.5 thresholds, refractory
+two, and runtime-free-constrained birth assignment. Because annotation maximum
+concurrency does not include false ACTIVE or REFRACTORY occupancy, the first
+authorized commit is a zero-GPU capacity/lifecycle audit only. It must test the
+full fit core, seeds 705/706/707, same-logits lifecycle counterfactuals, and
+fail-closed chronological behavior, then freeze one shared fixed/rematch
+contract or terminate Q2/R1.
+
+Local code inspection confirms that current Q2 averages per-step loss over
+valid bins and that the current head does not use lifecycle tensors to produce
+query/memory predictions. Thus the proposed estimator targets the implemented
+objective and same-logits controller replay is valid for this diagnostic. Both
+facts are implementation-specific and must be revalidated after relevant code
+changes.
+
+Current decision:
+
+> `R1=CONDITIONAL_GO`, not method approval. Capacity audit first, then R1 code,
+> CPU tests, local/target-Linux B0, same-reviewer PASS, and a new unseen
+> family-wise CPU G0. Profile, formal training, and raw-video Stage 2 remain
+> blocked; GPU hours before new G0 PASS remain zero.

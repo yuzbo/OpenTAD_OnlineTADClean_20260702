@@ -53,8 +53,8 @@ Terminal evidence and remaining blocks:
 - chronological Q2 remains a gold/reference candidate rather than an accepted
   primary route because no profile/effectiveness trajectory exists and two
   selected gold controls show slot exhaustion;
-- the larger episode-training family requires same-reviewer Round 2 before one
-  state-faithful replacement may be selected;
+- Round 2 selected only the separate R1/CSFSB successor, conditionally behind
+  a capacity-first gate; it did not revive this route;
 - CRS-EPS was always a cost surrogate, not the Full PETAL headline contribution.
 
 See [the terminal G0 record](../experiments/crs-eps-g0-kill-20260716.md),
@@ -246,3 +246,17 @@ forward state and restart the outcome-blind evidence chain.
 - Same-class/rearm behavior fails.
 - Episode state occupancy or calibration differs materially from full chronological training.
 - Utility/commit confidence is miscalibrated because endpoints were oversampled.
+
+## 2026-07-16 Round-2 Successor Decision
+
+Round 2 does not revive CRS-EPS. It selects a distinct successor,
+R1/CSFSB, that abandons episode replay and preserves the complete chronological
+state trajectory. Event sampling survives only as a loss/backward coefficient
+mask. The old `dynamic_birth`, `fixed_192`, reset, and empty-state dataset
+routes remain negative evidence and development diagnostics.
+
+R1 is documented separately in
+[chronological-state-faithful-selective-backward.md](chronological-state-faithful-selective-backward.md).
+Its first gate is a zero-GPU capacity/lifecycle audit, not implementation or
+training. See [DR-041](../decision_register.md#dr-041-select-csfsb-conditionally-behind-a-capacity-first-gate)
+and [T34](../discussion_timeline.md#t34-round-2-selects-csfsb-but-authorizes-capacity-audit-first).
