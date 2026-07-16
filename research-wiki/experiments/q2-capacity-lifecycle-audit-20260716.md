@@ -88,9 +88,8 @@ seed, partial fit core, or malformed trace makes the evidence invalid.
 ## Frozen Resource Contract
 
 ```text
-Slurm allocation: CPU only, no gres/gpu
+execution platform: CPU only
 threads: 8
-Slurm wall limit: 06:00:00
 runner wall limit: 21,000 seconds
 declared maximum: 46.667 CPU-hours
 hard CPU cap: 48 CPU-hours
@@ -100,6 +99,49 @@ GPU hours: 0
 The runner stops fail-closed at its wall limit and reports
 `BUDGET_EXCEEDED`; it may not reduce videos, seeds, policies, or trace fields
 after observing outcomes.
+
+### Pre-outcome platform amendment
+
+The first N16R4 submission attempt failed before queue admission and before
+any checkpoint/logit/capacity outcome existed. N16R4 exposes only a `gpu`
+partition and its submission Lua rejects both an omitted GPU request and
+`--gpus=0`. Allocating an unused GPU would still violate the frozen zero-GPU
+budget. Long execution on the login node is also prohibited.
+
+Therefore the execution platform is amended, before outcomes, to:
+
+```text
+host CPU: 13th Gen Intel Core i5-13600KF
+physical/logical cores: 14/20
+OS: Windows x86-64, recorded exactly in the output artifact
+Python: 3.10.20
+PyTorch: 2.6.0+cu124, CPU tensors only
+CUDA_VISIBLE_DEVICES: empty before process start
+threads: 8
+runner wall limit: 21,000 seconds
+hard cap: 48 CPU-hours
+```
+
+The public THUMOS/Q2 data were copied byte-for-byte from N16R4 to the exact
+Windows resolution of the unchanged Linux-style config paths. Before launch,
+the local runner requires these identities:
+
+```text
+cache manifest:
+bca3528b82858cd47a2f9581158dd192dfa65975d2031d009a1a68ec637f6796
+annotation:
+ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad
+fit-core manifest:
+36ebd89b583d259989b0260ca7314a308a2ba98ab3bc7bcbf79cc8ec40b628bc
+development split:
+847893621aa44cd665429dcdd6b41f4516f1034de2be555ea9b66d5a5384020f
+feature cache inventory: 823 files, 499,846,443 bytes
+```
+
+The dataset still verifies every selected feature against the original cache
+manifest. No policy, seed, video, threshold, K, cause label, gate, or CPU
+budget changed. The failed Slurm attempt consumed zero GPU-hours and is not an
+experiment result.
 
 ## Evidence
 
@@ -154,10 +196,14 @@ authorizes a GPU profile or formal training.
 ## Launch
 
 ```bash
-tools/remote/submit_q2_capacity_audit_n16r4.sh \
-  configs/causaltad/thumos_pes_q2_persist_fixed.py \
-  /data/run01/sczc063/yuzibo/full_petal/q2_capacity_<commit>
+powershell -NoProfile -ExecutionPolicy Bypass \
+  -File tools/run_q2_capacity_audit_local.ps1 \
+  -RunDir C:/data/run01/sczc063/yuzibo/full_petal/q2_capacity_<commit>
 ```
+
+The N16R4 launcher now requires an explicitly named CPU-only partition and
+fails before publication when none exists. It must not fall back to a GPU
+partition.
 
 The next step after a valid capacity contract remains R1 implementation,
 local/target-Linux B0, same-reviewer PASS, and a newly preregistered unseen CPU

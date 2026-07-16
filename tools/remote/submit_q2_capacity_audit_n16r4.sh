@@ -8,6 +8,7 @@ BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_FullPETAL}
 CPU_THREADS=${CPU_THREADS:-8}
 WALL_TIME=${WALL_TIME:-06:00:00}
 MEMORY=${MEMORY:-50G}
+CPU_PARTITION=${CPU_PARTITION:-cpu}
 PYTHON_BIN=/usr/bin/python3
 
 [[ "$CONFIG" == "configs/causaltad/thumos_pes_q2_persist_fixed.py" ]] || {
@@ -39,6 +40,15 @@ git -C "$BASE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
     echo "Missing deployment checkout: $BASE_DIR" >&2
     exit 2
 }
+
+PARTITION_RECORD=$(scontrol show partition "$CPU_PARTITION" -o 2>/dev/null) || {
+    echo "Missing CPU-only Slurm partition: $CPU_PARTITION" >&2
+    exit 2
+}
+[[ "$PARTITION_RECORD" != *"gres/gpu="* ]] || {
+    echo "Refusing a GPU-backed partition for the zero-GPU capacity audit" >&2
+    exit 2
+}
 [[ -z "$(git -C "$BASE_DIR" status --porcelain)" ]] || {
     echo "Capacity audit requires a clean deployment checkout" >&2
     exit 2
@@ -60,6 +70,7 @@ printf -v Q_CPU_THREADS '%q' "$CPU_THREADS"
 cat <<SBATCH
 #!/usr/bin/env bash
 #SBATCH -J q2_capacity_cpu
+#SBATCH --partition=${CPU_PARTITION}
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=${CPU_THREADS}
