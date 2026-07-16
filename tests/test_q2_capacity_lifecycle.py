@@ -1,3 +1,7 @@
+import gzip
+import io
+import os
+
 import pytest
 import torch
 
@@ -30,6 +34,7 @@ from opentad.utils.q2_capacity_audit import (
     frozen_policy_grid,
     replay_lifecycle_step,
 )
+from tools.audit_q2_capacity_lifecycle import close_trace_streams
 
 
 def _outputs(*, birth, alive, end, num_classes=3):
@@ -41,6 +46,46 @@ def _outputs(*, birth, alive, end, num_classes=3):
         "class_logits": torch.zeros((1, num_slots, num_classes)),
         "start_offset": torch.zeros((1, num_slots)),
     }
+
+
+def test_trace_close_releases_raw_handle_before_atomic_directory_publish(tmp_path):
+    partial = tmp_path / ".evidence.partial"
+    partial.mkdir()
+    trace_path = partial / "capacity_trace.jsonl.gz"
+    raw_trace = trace_path.open("wb")
+    gzip_trace = gzip.GzipFile(fileobj=raw_trace, mode="wb", mtime=0)
+    trace_text = io.TextIOWrapper(gzip_trace, encoding="utf-8", newline="\n")
+    trace_text.write('{"record_type":"test"}\n')
+
+    close_trace_streams(trace_text, raw_trace)
+
+    assert trace_text.closed
+    assert raw_trace.closed
+    published = tmp_path / "evidence"
+    os.replace(partial, published)
+    with gzip.open(published / trace_path.name, "rt", encoding="utf-8") as stream:
+        assert stream.read() == '{"record_type":"test"}\n'
+
+
+def test_trace_close_still_releases_raw_handle_when_wrapper_flush_fails():
+    class FailingTrace:
+        closed = False
+
+        @staticmethod
+        def flush():
+            raise OSError("wrapper flush failed")
+
+    class RawTrace:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    raw_trace = RawTrace()
+    with pytest.raises(OSError, match="wrapper flush failed"):
+        close_trace_streams(FailingTrace(), raw_trace)
+    assert raw_trace.closed
 
 
 def test_capacity_slot_constants_remain_frozen_to_production_head():

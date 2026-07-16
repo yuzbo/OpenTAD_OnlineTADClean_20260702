@@ -1610,3 +1610,47 @@ Reversibility:
   exact G0-A fails, finite-M G0-B fails, any new G0 case exhausts slots, or
   matched profile does not reduce wall time/GPU-hours. The historical CRS-EPS
   KILL is not reversible.
+
+## DR-042: Invalidate the First Windows Capacity Run Before Outcome Publication
+
+Status: active execution amendment; rerun required; zero GPU hours.
+
+Decision:
+
+> The `q2_capacity_3e20a01_20260716` partial directory is invalid evidence.
+> Correct only the externally owned gzip raw-handle lifecycle, preserve cleanup
+> diagnostics, add an atomic-publication regression, and rerun the complete
+> frozen audit from a new clean commit and a new non-overwritten output root.
+
+Reasons:
+
+- all 480 replay units completed, but no terminal gate line or atomically
+  published evidence directory exists;
+- Windows correctly prevented directory publication while the raw trace file
+  remained open;
+- cleanup removed the summary before failing on the locked trace, so a valid
+  outcome cannot be recovered from the partial directory;
+- the failure occurs after computation but before outcome publication and does
+  not justify changing any scientific policy or resource constant.
+
+Rejected alternatives:
+
+- infer the in-memory gate from partial files or console progress;
+- reconstruct a new summary from the incomplete retained trace;
+- reuse or overwrite the failed run root;
+- change thresholds, K, lifecycle ordering, seeds, data, or the policy grid;
+- proceed to R1 because all replay units happened to execute.
+
+Source:
+
+- [experiments/q2-capacity-lifecycle-audit-20260716.md](experiments/q2-capacity-lifecycle-audit-20260716.md);
+- [discussion_timeline.md#t35-full-capacity-replay-exposes-a-pre-outcome-windows-handle-defect](discussion_timeline.md);
+- `tools/audit_q2_capacity_lifecycle.py`;
+- external invalid partial root
+  `q2_capacity_3e20a01_20260716/.evidence.partial-*`.
+
+Reversibility:
+
+- the portability fix is reversible in code, but this failed run can never be
+  promoted to evidence. Only a fresh, complete, atomically published rerun can
+  change the capacity gate.

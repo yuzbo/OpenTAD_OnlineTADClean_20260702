@@ -139,7 +139,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 | [exp:crs-eps-g0-kill-20260716](experiments/crs-eps-g0-kill-20260716.md) | terminal `KILL` | Preregistered fidelity gate rejects current empty-state dynamic replay; postmortem adds exact state/lifecycle diagnosis and a separate Q2 capacity blocker. |
-| [exp:q2-capacity-lifecycle-20260716](experiments/q2-capacity-lifecycle-audit-20260716.md) | preregistered | Full 160 x 3 zero-GPU capacity audit with same-logits policy replay, cause closure, and a frozen 48 CPU-hour cap. |
+| [exp:q2-capacity-lifecycle-20260716](experiments/q2-capacity-lifecycle-audit-20260716.md) | clean rerun required | First 160 x 3 computation failed before atomic outcome publication on a Windows raw-handle defect; scientific contract remains frozen and no gate is accepted. |
 
 ## Source Records
 

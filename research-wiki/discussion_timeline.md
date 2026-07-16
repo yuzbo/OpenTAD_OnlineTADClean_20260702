@@ -1122,3 +1122,22 @@ Current decision:
 > CPU tests, local/target-Linux B0, same-reviewer PASS, and a new unseen
 > family-wise CPU G0. Profile, formal training, and raw-video Stage 2 remain
 > blocked; GPU hours before new G0 PASS remain zero.
+
+### T35: Full Capacity Replay Exposes a Pre-outcome Windows Handle Defect
+
+The clean-commit local CPU run at `3e20a01` completed all 480 seed-video replay
+units, but did not publish a terminal capacity status. The deterministic gzip
+writer used an externally opened raw file. Closing the text wrapper finalized
+the gzip stream but deliberately did not close that external file object, so
+Windows rejected the atomic rename of the partial evidence directory. Error
+cleanup then removed the generated summary before encountering the same locked
+trace. The remaining partial directory is invalid evidence, and no scientific
+result from this run is accepted.
+
+Current decision:
+
+> Treat this as a pre-outcome portability failure. Add explicit raw-handle
+> closure, a Windows-capable atomic-publication regression, and non-masking
+> cleanup diagnostics. Freeze every scientific and resource constant, commit
+> the correction, and rerun all 160 x 3 units into a fresh external root. R1,
+> GPU profile, and formal training remain blocked.

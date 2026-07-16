@@ -1,7 +1,7 @@
 # Q2 Capacity and Lifecycle Audit Preregistration
 
 Date: 2026-07-16
-Status: preregistered; implementation validation pending
+Status: preregistered; portability fix validated; clean rerun pending
 GPU authorization: blocked; this experiment is CPU-only
 
 ## Question
@@ -215,3 +215,21 @@ partition.
 The next step after a valid capacity contract remains R1 implementation,
 local/target-Linux B0, same-reviewer PASS, and a newly preregistered unseen CPU
 G0. GPU profile remains blocked until that G0 passes.
+
+## Pre-outcome Windows Finalization Failure
+
+The clean-commit run rooted at
+`q2_capacity_3e20a01_20260716` completed all `160 x 3` replay units before
+failing during evidence publication. No terminal gate line or valid evidence
+directory was published. Windows rejected the atomic directory rename because
+the externally opened raw file beneath `capacity_trace.jsonl.gz` remained open
+after the text and gzip wrappers were closed. Cleanup then deleted the summary
+before failing on the same locked trace, so the retained `.partial-*` directory
+is explicitly invalid and cannot be reconstructed or cited as an outcome.
+
+This is a pre-outcome portability defect. The correction only closes the raw
+trace handle explicitly and preserves the original exception if cleanup also
+fails. It does not change data, checkpoints, seed order, logits, policies,
+thresholds, K, lifecycle semantics, attribution, gate rules, or resource caps.
+The complete audit must be rerun from a new clean commit into a new
+non-overwritten run root before any capacity conclusion or R1 implementation.

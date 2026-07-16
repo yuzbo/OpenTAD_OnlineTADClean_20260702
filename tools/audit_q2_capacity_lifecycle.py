@@ -81,6 +81,26 @@ class CapacityAuditRunnerError(RuntimeError):
     pass
 
 
+def close_trace_streams(trace_text, raw_trace):
+    """Close both gzip layers so Windows can atomically publish the directory."""
+    close_error = None
+    try:
+        if trace_text is not None and not trace_text.closed:
+            trace_text.flush()
+            trace_text.close()
+    except (OSError, ValueError) as exc:
+        close_error = exc
+    finally:
+        if raw_trace is not None and not raw_trace.closed:
+            try:
+                raw_trace.close()
+            except (OSError, ValueError) as exc:
+                if close_error is None:
+                    close_error = exc
+    if close_error is not None:
+        raise close_error
+
+
 class CapacityAuditBudgetExceeded(RuntimeError):
     pass
 
@@ -335,6 +355,7 @@ def main(argv=None):
     parser, args = parse_args(argv)
     partial = None
     trace_text = None
+    raw_trace = None
     try:
         if not 1 <= args.cpu_threads <= 16:
             raise CapacityAuditRunnerError("cpu-threads must lie in [1,16]")
@@ -741,9 +762,11 @@ def main(argv=None):
             budget_exceeded = True
             budget_message = str(exc)
         finally:
-            trace_text.flush()
-            trace_text.close()
-            trace_text = None
+            try:
+                close_trace_streams(trace_text, raw_trace)
+            finally:
+                trace_text = None
+                raw_trace = None
 
         aggregate = aggregate_policy_summaries(by_seed, policies)
         all_closed = all(row["attribution_closed"] for row in aggregate.values())
@@ -909,11 +932,20 @@ def main(argv=None):
         TypeError,
         ValueError,
     ) as exc:
-        if trace_text is not None:
-            trace_text.close()
+        cleanup_errors = []
+        try:
+            close_trace_streams(trace_text, raw_trace)
+        except (OSError, ValueError) as cleanup_exc:
+            cleanup_errors.append(f"trace close failed: {cleanup_exc}")
         if partial is not None and partial.exists():
-            shutil.rmtree(partial)
-        parser.error(str(exc))
+            try:
+                shutil.rmtree(partial)
+            except OSError as cleanup_exc:
+                cleanup_errors.append(f"partial cleanup failed: {cleanup_exc}")
+        message = str(exc)
+        if cleanup_errors:
+            message = f"{message}; cleanup diagnostics: {'; '.join(cleanup_errors)}"
+        parser.error(message)
     print(f"Q2_CAPACITY_AUDIT={output}")
     print(f"Q2_CAPACITY_STATUS={gate_status}")
     print(f"Q2_CAPACITY_SUMMARY_SHA256={sha256_file(output / 'capacity_summary.json')}")
