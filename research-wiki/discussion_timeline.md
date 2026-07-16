@@ -1048,3 +1048,36 @@ Current decision:
 > event sampling is structurally unable to recover omitted state/gradient
 > paths or whether a bounded implementation correction exists. Request a
 > Pro mechanism and route adjudication before any new implementation.
+
+### T33: Pro Round 1 Confirms the Current Structural Kill but Overstates Q2 Readiness
+
+The 1,417-line Pro route review was archived byte-identically as
+`PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`, SHA-256
+`D0AB7B51961E61F9DBD45192743AC61B5522646F2FA1027B96489C8010ADC46F`.
+It independently classified the frozen `70df86e` G0 as a valid terminal KILL,
+the current empty-state `dynamic_birth` surrogate as structurally invalid,
+profile/formal training as blocked, and state-faithful cost control as the
+only replacement family worth discussing.
+
+Local inspection of the raw signed bundle resolved the review's U1-U8 more
+sharply than its repository-only evidence. Two failed samples make
+`dynamic_birth` exactly equal to `fixed_192` in replay range. The single
+selected dynamic-extension sample adds only eight bins and still diverges in
+loss and final runtime state. In the longest sample, canonical lifecycle and
+loss ownership diverge at global bin 209, endpoint-slot ownership at 216, and
+birth assignment at 352. These facts strengthen the state/lifecycle diagnosis.
+
+The local audit also found gold-control slot exhaustion counts of one and two
+in two selected samples. This does not rescue CRS-EPS, but it prevents an
+unqualified promotion of chronological Q2 to primary: Q2 remains the
+gold/reference candidate until a separate capacity/lifecycle gate and matched
+cost profile pass. The structural-kill label is correspondingly narrowed to
+the current empty-state dynamic replay rather than all event-centric training.
+
+Current decision:
+
+> Spend zero GPU hours. Publish the postmortem and U1-U8 answers, then return
+> to the same Pro reviewer for Round 2 over full causal forward plus selective
+> backward, exact chronological recomputation, and explicit state checkpoints.
+> Select at most one new route. A new profile remains forbidden until a clean
+> commit, B0, independent review, unseen holdout G0, and terminal PASS.

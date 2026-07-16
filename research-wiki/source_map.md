@@ -1,6 +1,6 @@
 ---
 type: source_map
-updated: 2026-07-15
+updated: 2026-07-16
 status: active
 scope: Mapping from source records, reviews, attachments, online notes, and code snapshots to wiki nodes.
 ---
@@ -183,3 +183,10 @@ If these become active again, create dedicated pages before using them as claims
 | Signed B0 and same-reviewer audit at `5d27fcad36062a6496f8c330ed15fba623a9667f` | Local/Linux `580/580` and signed B0 validation PASS; reviewer independently reproduced ACTIVE+NaN and inactive+finite states receiving false-perfect runtime agreement | `REVISE / PROFILE=BLOCK / NEXT_GATE=FIX`; lifecycle-gated canonicalization and evidence restart recorded in [DR-037](decision_register.md#dr-037-prove-sentinel-lifecycle-legality-before-canonicalization) and [T30](discussion_timeline.md#t30-same-reviewer-audit-rejects-unconstrained-sentinel-canonicalization) |
 | Signed B0 and same-reviewer audit at `29bc0aee90faef61f16e32130b8c1368fc78e755` | Local/Linux `586/586`; sentinel finding CLOSED; reviewer proved one signed v2 selection/margin pair could execute with multiple compatible checkpoints because checkpoint identity appeared only in the terminal audit | `REVISE / PROFILE=BLOCK / NEXT_GATE=FIX`; checkpoint preregistration v3 and recursive byte verification recorded in [DR-038](decision_register.md#dr-038-preregister-exact-g0-checkpoint-bytes-before-any-replay-outcome) and [T31](discussion_timeline.md#t31-same-reviewer-finds-post-diagnostic-checkpoint-choice-freedom) |
 | Signed B0, same-reviewer PASS, and terminal G0 at `70df86ea3d38d70c658ae0ee9e04245d57b834d4` | Local/Linux `588/588`; exact checkpoint v3 preregistration; target-Linux G0 independently verified; four samples, twelve candidate rows, fourteen violations across three samples | Terminal `KILL`; profile validator blocks before CUDA/DDP. Current CRS-EPS surrogate is rejected under its frozen contract in [DR-039](decision_register.md#dr-039-honor-the-signed-crs-eps-g0-kill-and-reopen-training-route-selection), [T32](discussion_timeline.md#t32-signed-g0-kills-the-current-crs-eps-training-surrogate), and [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) |
+
+## CRS-EPS G0 Route Review and Raw-Artifact Absorption: 2026-07-16
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| Private attachment `114fac36-0177-4867-be85-6750614c6554/pasted-text.txt`, archived byte-identically as `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`, SHA-256 `D0AB7B51961E61F9DBD45192743AC61B5522646F2FA1027B96489C8010ADC46F` | Valid frozen G0 KILL; current empty-state dynamic replay has a structural state/lifecycle defect; common 64-bin TBPTT does not explain the paired divergence; profile/formal blocked; state-faithful cost-control candidates only. | [DR-040](decision_register.md#dr-040-accept-the-current-structural-kill-without-promoting-q2-prematurely), [T33](discussion_timeline.md#t33-pro-round-1-confirms-the-current-structural-kill-but-overstates-q2-readiness), [ideas/crs-eps-training.md](ideas/crs-eps-training.md) |
+| `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md` plus local signed bundle inspection | Accepts the core KILL but narrows its scope; resolves U1-U8; records exact replay ranges, loss components, state mismatches, first lifecycle divergences, sample-selection policy, and evidence hashes; identifies gold-control slot exhaustion and demotes Q2 from primary to gold/reference candidate. | [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md), [DR-040](decision_register.md#dr-040-accept-the-current-structural-kill-without-promoting-q2-prematurely), [query_pack.md](query_pack.md) |

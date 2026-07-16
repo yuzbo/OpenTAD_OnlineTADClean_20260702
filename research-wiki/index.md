@@ -10,14 +10,15 @@ scope: Persistent project memory for the Online/Causal TAD research direction.
 This wiki exists to prevent repeated discussion loops. Before proposing a new task definition, method, training route, or paper story, read:
 
 1. [query_pack.md](query_pack.md) for the compressed current memory.
-2. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the current Pro mechanism and route adjudication.
-3. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the latest terminal scientific gate.
-4. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
-5. [gap_map.md](gap_map.md) for unresolved research gaps.
-6. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
-7. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-8. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
-9. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+2. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md) for the current route verdict and U1-U8 resolution.
+3. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the latest terminal scientific gate and raw-artifact postmortem.
+4. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the question that produced Round 1.
+5. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
+6. [gap_map.md](gap_map.md) for unresolved research gaps.
+7. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
+8. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+9. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+10. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
@@ -28,10 +29,13 @@ Binding reference** and the conditionally approved CRS-EPS falsification
 route. Commit `70df86e` passed signed B0 and locked review, but its
 preregistered real-data G0 returned terminal `KILL`. Current CRS-EPS
 `dynamic_birth` is therefore rejected as the primary training surrogate under
-its frozen contract. The chronological Q2 route remains a gold/reference
-route, not an accepted efficient primary method. Profile, effectiveness,
-formal training, novelty, and raw-video permissions remain blocked pending a
-new state-faithful route decision.
+its frozen contract. Pro Round 1 and local raw-artifact inspection strengthen
+that conclusion specifically for the current empty-state dynamic replay, not
+for every possible event-centric successor. The chronological Q2 route remains
+a gold/reference candidate, not an accepted efficient primary method: no
+profile or effectiveness trajectory exists, and two selected gold controls
+show slot exhaustion. Profile, effectiveness, formal training, novelty, and
+raw-video permissions remain blocked pending same-reviewer Round 2.
 
 Read [`../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md`](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_20260715.md),
 its [independent absorption](../PRO_FULL_PETAL_CODE_SCIENCE_REVIEW_ABSORPTION_20260715.md),
@@ -116,7 +120,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [claim:c1-strict-online-protocol](claims/c1-strict-online-protocol.md) | partially supported | Prefix-causal inference and immutable committed ledger. |
 | [claim:c2-mutable-hypothesis-commit](claims/c2-mutable-hypothesis-commit.md) | unproven | Identity belief trajectory + utility first commit is the narrowed central claim. |
 | [claim:c3-risk-set-hazard](claims/c3-risk-set-hazard.md) | currently false in code | Endpoint/emission hazard must be rebuilt with instance-aware risk sets. |
-| [claim:c4-crs-eps-cost](claims/c4-crs-eps-cost.md) | unproven | Event-centric prefix episodes reduce training cost without breaking online evaluation. |
+| [claim:c4-crs-eps-cost](claims/c4-crs-eps-cost.md) | refuted for current dynamic replay | The frozen empty-state CRS-EPS surrogate failed state/loss/gradient fidelity; a state-faithful successor would be a new claim. |
 | [claim:c5-visual-adaptation](claims/c5-visual-adaptation.md) | unproven | LoRA/adapter visual adaptation helps under online objectives. |
 | [claim:c6-budgeted-eval](claims/c6-budgeted-eval.md) | partially supported | OnlineAPBudgeted + GT-end latency + late FP/FN accounting. |
 
@@ -128,6 +132,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
+| [exp:crs-eps-g0-kill-20260716](experiments/crs-eps-g0-kill-20260716.md) | terminal `KILL` | Preregistered fidelity gate rejects current empty-state dynamic replay; postmortem adds exact state/lifecycle diagnosis and a separate Q2 capacity blocker. |
 
 ## Source Records
 
@@ -140,6 +145,8 @@ Local review records that informed this wiki:
 - `PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`
 - `PRO_PETAL_DEEP_REVIEW_20260712.md`
 - `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md`
 - `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`

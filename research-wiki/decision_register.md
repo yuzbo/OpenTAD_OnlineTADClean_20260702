@@ -1484,3 +1484,61 @@ Reversibility:
 - A genuinely new training surrogate may be evaluated, but it must use a new
   scientific design, clean commit, outcome-blind holdout G0, and full evidence
   chain. The historical `KILL` remains immutable.
+
+## DR-040: Accept the Current Structural Kill Without Promoting Q2 Prematurely
+
+Status: active; Round-2 route adjudication pending; zero new GPU hours.
+
+Decision:
+
+> Accept `STRUCTURAL-KILL-CURRENT-EMPTY-STATE-DYNAMIC-BIRTH-CRS-EPS`, not a
+> blanket kill of all event-centric training. Keep chronological cached Q2 as
+> a gold/reference candidate rather than an accepted primary route. Retain the
+> Full PETAL lifecycle and evidence infrastructure as engineering substrate.
+> Resolve state-faithful cost control and Q2 slot-capacity readiness before any
+> new profile or training.
+
+Reasons:
+
+- local inspection of the signed raw bundle reproduces the terminal `KILL`
+  and shows two failed dynamic arms exactly equal the fixed-192 replay range;
+- the only selected dynamic-extension arm adds eight bins but remains far
+  below the absolute fidelity margins;
+- omitted chronological history changes learned runtime state even when
+  annotation-side lifecycle traces agree, and changes discrete lifecycle,
+  endpoint ownership, and birth assignment in the longest stress case;
+- HH/IPW corrects sampling exposure, not hidden recurrent state or omitted
+  historical Jacobian paths;
+- no chronological Q2 profile, effectiveness result, or checkpoint trajectory
+  exists;
+- full-prefix gold controls record slot exhaustion in two selected cases,
+  which creates a separate capacity/lifecycle blocker under the project's
+  fail-closed training law.
+
+Rejected alternatives:
+
+- relabel the valid G0 `KILL` as a tunable margin failure;
+- infer that every state-faithful event-centric or selective-backward method
+  has already been disproved;
+- call chronological Q2 the primary route before capacity, cost, and
+  effectiveness gates pass;
+- spend GPU hours before the same reviewer adjudicates the replacement
+  estimand and minimum unseen holdout protocol;
+- treat retained infrastructure as a paper contribution.
+
+Source:
+
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`, SHA-256
+  `D0AB7B51961E61F9DBD45192743AC61B5522646F2FA1027B96489C8010ADC46F`;
+- `PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md`;
+- signed external G0 bundle and terminal `audit.json`, SHA-256
+  `a08183a8dba4ec5267b5a75eed3501882180a22f28d6b76ce2c7b4e65511009b`;
+- [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md);
+- [discussion_timeline.md#t33-pro-round-1-confirms-the-current-structural-kill-but-overstates-q2-readiness](discussion_timeline.md).
+
+Reversibility:
+
+- Q2 may become primary only after an explicit capacity/lifecycle audit,
+  matched cost profile, and scientific effectiveness gate. A successor
+  state-faithful sampler may be evaluated only as a new method with a clean,
+  outcome-blind evidence chain. The historical G0 result is irreversible.

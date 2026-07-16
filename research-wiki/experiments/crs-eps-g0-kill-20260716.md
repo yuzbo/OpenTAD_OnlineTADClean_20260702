@@ -104,3 +104,35 @@ of event-centric detached replay from a localized implementation defect. The
 next Pro review must derive the estimand, inspect the exact replay/state/gradient
 path, and decide between `STRUCTURAL_KILL`, `IMPLEMENTATION_FIX_CANDIDATE`, and
 `INSUFFICIENT_EVIDENCE` before any new training route is implemented.
+
+## Post-Review Raw-Artifact Resolution
+
+The subsequent Pro Round-1 review and local raw-bundle inspection resolve the
+open causal question for the **current** implementation:
+
+- `dynamic_birth` begins from an empty persistent runtime and does not carry a
+  sufficient statistic for the chronological prefix;
+- two failed samples use exactly the same replay range as `fixed_192`;
+- the only selected dynamic-extension sample adds eight bins but still has
+  large birth-loss and final discrete-state mismatch;
+- the longest case diverges in canonical lifecycle/loss ownership at global
+  bin 209, endpoint-slot ownership at 216, and birth assignment at 352;
+- HH/IPW cannot repair this state-distribution and historical-gradient
+  mismatch.
+
+The correct terminal label is therefore
+`STRUCTURAL-KILL-CURRENT-EMPTY-STATE-DYNAMIC-BIRTH-CRS-EPS`. This is not a
+blanket rejection of state-faithful selective-backward or checkpointed
+chronological methods.
+
+The same raw inspection found gold-control slot exhaustion counts `1` and `2`
+in two selected samples. This does not alter the G0 KILL, which is a fidelity
+gate, but it blocks treating chronological Q2 as an accepted primary training
+route until a separate capacity/lifecycle audit passes. No profile or formal
+evidence directory exists.
+
+See the archived
+[`../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md),
+its [independent absorption](../../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md),
+[DR-040](../decision_register.md#dr-040-accept-the-current-structural-kill-without-promoting-q2-prematurely),
+and [T33](../discussion_timeline.md#t33-pro-round-1-confirms-the-current-structural-kill-but-overstates-q2-readiness).

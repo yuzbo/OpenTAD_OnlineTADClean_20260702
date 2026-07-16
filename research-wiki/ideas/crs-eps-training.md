@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:crs-eps-training
 title: "CRS-EPS: Instance-aware Causal Risk-Set Event-Centric Prefix-Episode Training"
-stage: g0-killed-route-reassessment
+stage: current-empty-state-route-structurally-killed
 outcome: negative
 updated: 2026-07-16
 target_gaps: ["G3", "G4", "G7"]
@@ -47,8 +47,14 @@ Terminal evidence and remaining blocks:
 - the launch validator rejects the signed terminal `KILL`, so GPU profile and
   formal training remain prohibited;
 - those four samples are now development-only and cannot confirm a repair;
-- whether the larger episode-training family has a state-faithful replacement
-  is unresolved and requires a Pro mechanism/route adjudication;
+- the current empty-state `dynamic_birth` replay is structurally invalid as a
+  chronological surrogate; this finding does not kill state-faithful
+  selective-backward, exact-recomputation, or checkpointed successors;
+- chronological Q2 remains a gold/reference candidate rather than an accepted
+  primary route because no profile/effectiveness trajectory exists and two
+  selected gold controls show slot exhaustion;
+- the larger episode-training family requires same-reviewer Round 2 before one
+  state-faithful replacement may be selected;
 - CRS-EPS was always a cost surrogate, not the Full PETAL headline contribution.
 
 See [the terminal G0 record](../experiments/crs-eps-g0-kill-20260716.md),
@@ -211,7 +217,9 @@ Annotation-guided sampling and oracle commit-cost construction use full training
 - Compare state occupancy, calibration, duplicate rate, and late false positives against the gold subset.
 - Calibrate thresholds on full chronological validation, not sampled episodes.
 
-CRS-EPS is a validated cost surrogate. It is not a headline algorithmic contribution.
+The current CRS-EPS is a falsified cost surrogate. It is not a headline
+algorithmic contribution. Any successor must preserve exact chronological
+forward state and restart the outcome-blind evidence chain.
 
 ## Stage Plan
 
