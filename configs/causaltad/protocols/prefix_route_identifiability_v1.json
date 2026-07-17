@@ -1,0 +1,940 @@
+{
+  "schema_version": "prefix-route-identifiability-protocol-v1",
+  "protocol_id": "prefix-route-identifiability-20260717-v1",
+  "status": "PROTOCOL_REVIEW_PENDING",
+  "task": {
+    "name": "standard_fully_supervised_strict_causal_online_temporal_action_localization",
+    "input_at_decision": [
+      "decoded_rgb_prefix_or_certified_causal_features",
+      "model_only_causal_state",
+      "past_immutable_commits"
+    ],
+    "future_frame_access": false,
+    "formal_output": [
+      "start",
+      "end",
+      "class",
+      "score",
+      "source_frame",
+      "decision_frame",
+      "commit_frame"
+    ],
+    "commit_semantics": "append_only_no_revision_no_merge_no_nms_no_offline_cleanup",
+    "excluded_task_changes": [
+      "zero_shot_or_open_vocabulary_tal",
+      "video_question_answering",
+      "mutable_final_outputs",
+      "physical_observability_task",
+      "extra_sensor_verification"
+    ]
+  },
+  "governance": {
+    "current_authorization": [
+      "EDIT_PROTOCOL_FILES",
+      "RUN_PROTOCOL_VALIDATION_TESTS",
+      "REQUEST_ONE_INDEPENDENT_PROTOCOL_REVIEW"
+    ],
+    "blocked_before_protocol_pass": [
+      "NEW_R0_COLLECTION",
+      "NEW_R1_COLLECTION",
+      "MODEL_OUTCOME_INSPECTION",
+      "B0_B4_MODEL_CONTRACT_FREEZE",
+      "B0_B4_MODEL_IMPLEMENTATION",
+      "MODEL_P0",
+      "REAL_DATA_EFFECTIVENESS",
+      "GPU_PROFILE",
+      "FORMAL_TRAINING",
+      "VISUAL_FINETUNING",
+      "RAW_VIDEO_TRAINING"
+    ],
+    "protocol_pass_verdict": "PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION",
+    "protocol_revise_verdict": "REVISE_PROTOCOL_BEFORE_COLLECTION",
+    "post_pass_scope": [
+      "READ_ONLY_R0_ANNOTATION_CENSUS",
+      "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT"
+    ],
+    "no_automatic_escalation": true,
+    "review_certificate": {
+      "schema_version": "prefix-route-protocol-review-certificate-v1",
+      "required_fields": [
+        "schema_version",
+        "protocol_id",
+        "protocol_sha256",
+        "protocol_commit",
+        "reviewer_id",
+        "review_task_id",
+        "reviewed_at",
+        "verdict",
+        "review_artifact_sha256"
+      ],
+      "allowed_verdicts": [
+        "PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION",
+        "REVISE_PROTOCOL_BEFORE_COLLECTION"
+      ],
+      "minimum_distinct_reviewer_count": 1,
+      "author_may_not_self_certify": true
+    }
+  },
+  "population": {
+    "dataset": "THUMOS14",
+    "development": {
+      "universe_role": "development_universe_200",
+      "expected_count": 200,
+      "fit_core_role": "fit_core_160",
+      "fit_core_expected_count": 160,
+      "calibration_role": "calibration_40",
+      "calibration_expected_count": 40,
+      "split_seed": 20260713,
+      "fit_and_calibration_must_be_disjoint": true
+    },
+    "reporting": {
+      "primary_role": "canonical_reporting_213",
+      "primary_expected_count": 213,
+      "historical_role": "historical_reporting_211_audit_only",
+      "historical_expected_count": 211,
+      "historical_population_may_be_primary": false,
+      "selection_rule": "Use canonical_reporting_213 only after a source-derived comparison certificate binds both ID lists, reports exactly 213 canonical IDs and 211 historical IDs, has status EXPLAINED_MISMATCH, contains no unexplained ID, and supplies one allowed reason code for every differing ID.",
+      "allowed_difference_reason_codes": [
+        "OFFICIAL_CANONICAL_MEMBERSHIP_CORRECTION",
+        "HISTORICAL_LOCAL_FILE_ABSENT",
+        "HISTORICAL_LOCAL_FILE_EXTRA",
+        "DOCUMENTED_VIDEO_ID_ALIAS"
+      ],
+      "required_certificate_fields": [
+        "schema_version",
+        "protocol_id",
+        "protocol_sha256",
+        "protocol_review_certificate_sha256",
+        "historical_ids_sha256",
+        "canonical_ids_sha256",
+        "historical_count",
+        "canonical_count",
+        "missing_from_canonical",
+        "extra_in_canonical",
+        "difference_reasons",
+        "unexplained_ids",
+        "status",
+        "source_artifacts"
+      ],
+      "unresolved_action": "BLOCK_R0_POPULATION_UNRESOLVED",
+      "no_dual_primary_reporting": true,
+      "remote_manifest_access_at_freeze": "UNAVAILABLE_HOST_N16R4_DNS"
+    }
+  },
+  "r0": {
+    "name": "model_outcome_blind_annotation_census",
+    "definitions": {
+      "frame_scale": "alpha_v=frame_count_v/duration_seconds_v",
+      "start_frame": "s_frame=alpha_v*start_seconds",
+      "end_frame": "e_frame=alpha_v*end_seconds",
+      "feature_stride_frames": 8,
+      "decision_frame": "d_j=min((j+1)*8,frame_count_v)-1",
+      "decision_bin": "b_v(x)=min{j:x<=d_j}",
+      "interval_semantics": "half_open_[start,end)",
+      "touching_is_overlap": false,
+      "birth": "d_(j-1)<s_i<=d_j",
+      "active": "s_i<=d_j<e_i",
+      "end": "d_(j-1)<e_i<=d_j",
+      "pair_overlap": "max(0,min(e_i,e_k)-max(s_i,s_k))",
+      "same_class_repeated": "at_least_two_legal_instances_of_same_class_in_one_video",
+      "sequential_gap": "next_start-current_end",
+      "gap_sign": {
+        "positive": "separated",
+        "zero": "touching",
+        "negative": "overlap"
+      },
+      "same_bin_end_start": "i!=k and b_v(e_i)=b_v(s_k)",
+      "direct_complete": "b_v(s_i)=b_v(e_i)",
+      "ambiguous_policy": "report_separately_then_exclude_from_legal_action_statistics",
+      "zero_action_video": "no_legal_action_interval_after_ambiguous_exclusion"
+    },
+    "required_aggregates": [
+      "video_count",
+      "legal_instance_count",
+      "class_count_and_order",
+      "per_class_instance_count",
+      "per_video_instance_count_distribution",
+      "action_duration_seconds_and_bins_distribution",
+      "same_class_repeated_video_and_instance_count",
+      "same_class_sequential_gap_distribution",
+      "same_class_overlap_pair_instance_video_and_duration_count",
+      "cross_class_overlap_pair_instance_video_and_duration_count",
+      "same_class_same_bin_end_start_count",
+      "cross_class_same_bin_end_start_count",
+      "direct_complete_video_and_instance_count",
+      "maximum_total_concurrency",
+      "maximum_same_class_concurrency",
+      "zero_action_video_count",
+      "ambiguous_video_interval_and_duration_count"
+    ],
+    "statistical_unit": "video_cluster",
+    "cluster_uncertainty": {
+      "method": "nonparametric_video_cluster_bootstrap",
+      "resamples": 10000,
+      "seed": 2026071701,
+      "confidence_level": 0.95,
+      "same_resample_indices_for_all_related_statistics": true
+    },
+    "claim_eligibility": {
+      "primary_stress_families": [
+        "same_class_repetition",
+        "same_class_overlap",
+        "same_bin_end_start",
+        "direct_complete"
+      ],
+      "primary_minimums": {
+        "independent_videos": 30,
+        "gt_instances": 100,
+        "fraction_of_positive_videos": 0.05,
+        "classes": 3,
+        "power": 0.8
+      },
+      "secondary_minimums": {
+        "independent_videos": 10,
+        "gt_instances": 30
+      },
+      "labels": [
+        "PRIMARY_ELIGIBLE",
+        "SECONDARY_ONLY",
+        "DESCRIPTIVE_ONLY"
+      ],
+      "power_design": {
+        "method": "conservative_design_effect_normal_two_proportion",
+        "primary_family_count": 4,
+        "family_wise_alpha": 0.05,
+        "per_family_two_sided_alpha": 0.0125,
+        "baseline_rate": 0.5,
+        "target_rate": 0.6,
+        "absolute_effect": 0.1,
+        "intracluster_correlation": 0.2,
+        "cluster_size_cv": "population_standard_deviation_ddof_0_divided_by_mean",
+        "design_effect": "1+(((cluster_size_cv^2+1)*mean_cluster_size)-1)*intracluster_correlation",
+        "effective_n": "gt_instances/design_effect",
+        "standard_error": "sqrt((0.5*(1-0.5)+0.6*(1-0.6))/effective_n)",
+        "z_critical": 2.4977054744123737,
+        "two_sided_power": "1-Phi(z_critical-absolute_effect/standard_error)+Phi(-z_critical-absolute_effect/standard_error)",
+        "required_power": 0.8,
+        "rationale": "The effect is the minimum mechanism-scale recall gain worth a main claim; p=0.5 and ICC=0.2 deliberately make eligibility conservative before model outcomes exist."
+      },
+      "failure_actions": {
+        "primary_failed_secondary_passed": "DEMOTE_TO_SECONDARY_NO_MAIN_CLAIM",
+        "secondary_failed": "DESCRIPTIVE_ONLY",
+        "neither_d1_nor_d2_linked_family_primary": "REVISE_DATASET_OR_KILL_THUMOS_CARRIER_MAIN_CLAIM"
+      }
+    },
+    "prior_exposure_ledger": {
+      "annotation_unseen_claim_allowed": false,
+      "model_outcome_blind_required": true,
+      "known_training_videos": 200,
+      "known_training_instances": 3003,
+      "known_validation_videos": 211,
+      "known_validation_instances": 3325,
+      "known_training_overlap_videos": 23,
+      "known_validation_overlap_videos": 32,
+      "known_training_same_class_overlap_videos": 2,
+      "known_validation_same_class_overlap_videos": 3,
+      "known_maximum_concurrency": 2,
+      "known_source_paths": [
+        "tools/analyze_ontad_instances.py",
+        "research-wiki/experiments/persistent-feature-kill-test-20260712.md"
+      ],
+      "author_seen_hard_case_ids": "NONE_RECORDED",
+      "new_exposures_must_append_before_execution": true
+    },
+    "execution_isolation": {
+      "allowed_inputs": [
+        "annotation_bytes",
+        "class_map_bytes",
+        "bound_split_id_bytes",
+        "frozen_census_source",
+        "protocol_bytes",
+        "protocol_pass_certificate"
+      ],
+      "forbidden_inputs": [
+        "model_predictions",
+        "checkpoints",
+        "run_summaries",
+        "model_threshold_files",
+        "model_work_directories",
+        "model_derived_hard_case_lists"
+      ],
+      "author_output": "aggregate_only",
+      "reviewer_output": "per_video_detail_encrypted_or_access_controlled",
+      "author_may_see_new_hard_case_ids": false,
+      "temporary_directory_then_fsync_hash_atomic_rename": true,
+      "existing_output_root_action": "REFUSE_OVERWRITE"
+    },
+    "artifact_contract": {
+      "schema_version": "prefix-route-r0-evidence-v1",
+      "required_top_level_fields": [
+        "schema_version",
+        "protocol_id",
+        "protocol_sha256",
+        "protocol_review_certificate_sha256",
+        "population_certificate_sha256",
+        "source_hashes",
+        "definitions",
+        "aggregates",
+        "claim_eligibility",
+        "author_disclosure",
+        "reviewer_detail_commitment_sha256",
+        "execution_environment",
+        "status"
+      ],
+      "allowed_statuses": [
+        "PASS_R0_COMPLETE",
+        "FAIL_POPULATION_UNRESOLVED",
+        "FAIL_SOURCE_IDENTITY",
+        "FAIL_EXECUTION_ISOLATION",
+        "FAIL_INCOMPLETE"
+      ]
+    }
+  },
+  "r1": {
+    "name": "decoded_rgb_feature_cache_strict_causality_certificate",
+    "claim_scope": "decoded_rgb_frames_to_feature_token_only",
+    "excluded_scope": [
+      "compressed_bitstream_pts_dts_causality",
+      "b_frame_decode_buffering",
+      "wall_clock_decode_latency"
+    ],
+    "static_code_hypothesis": {
+      "current_source_support": "support(z_vj)={decision_frame_vj}",
+      "motion_branch_required_value": false,
+      "status": "PLAUSIBLE_SOURCE_PATH_NOT_EXISTING_CACHE_CERTIFICATE"
+    },
+    "certificate_schema": {
+      "schema_version": "prefix-route-r1-certificate-v1",
+      "required_top_level_fields": [
+        "schema_version",
+        "protocol_id",
+        "protocol_sha256",
+        "protocol_review_certificate_sha256",
+        "repository_commit",
+        "extractor_source_sha256",
+        "resolved_command_sha256",
+        "environment_lock_sha256",
+        "software_versions",
+        "hf_snapshot_revision",
+        "model_config_sha256",
+        "processor_config_sha256",
+        "weight_shard_sha256",
+        "raw_video_sha256_by_video",
+        "annotation_raw_sha256",
+        "cache_manifest_sha256",
+        "feature_array_sha256_by_video",
+        "support_map_sha256",
+        "decision_time_convention",
+        "decoded_rgb_stream_scope",
+        "motion_branch_enabled",
+        "static_support_audit",
+        "dynamic_perturbation_audit",
+        "existing_cache_linkage",
+        "status"
+      ],
+      "token_support_record_fields": [
+        "video_id",
+        "token_index",
+        "source_frame",
+        "decision_frame",
+        "support_frames",
+        "support_min",
+        "support_max"
+      ],
+      "allowed_statuses": [
+        "PASS_R1_EXISTING_CACHE_CERTIFIED",
+        "FAIL_UNVERIFIABLE",
+        "FAIL_FUTURE_SUPPORT",
+        "FAIL_DYNAMIC_INVARIANCE",
+        "FAIL_INPUT_SENSITIVITY",
+        "FAIL_ARTIFACT_LINKAGE"
+      ],
+      "failure_encoding": "Unavailable identity fields are null or empty; existing_cache_linkage.failure_reasons must be a non-empty array."
+    },
+    "support_rules": {
+      "general": "max(support_frames)<=decision_frame",
+      "current_single_frame_path": "support_frames=[decision_frame]",
+      "source_frame_equals_decision_frame": true,
+      "monotonic_source_metadata_alone_is_sufficient": false
+    },
+    "dynamic_audit": {
+      "execution": "cpu_fp32_deterministic_same_environment",
+      "audit_seed": 2026071702,
+      "selection_rank": "ascending_SHA256(video_id||token_index||audit_seed)",
+      "categories": [
+        "first_token",
+        "interior_token",
+        "last_complete_bin",
+        "last_partial_bin"
+      ],
+      "tokens_per_category": 32,
+      "minimum_unique_videos_overall": 16,
+      "if_category_has_fewer_tokens": "SELECT_ALL_AND_RECORD_SHORTFALL",
+      "future_frame_mutation": "invert_uint8_rgb_for_every_decoded_frame_after_decision_frame",
+      "future_mutation_expected": "target_token_bytes_identical",
+      "other_batch_image_mutation_expected": "target_token_bytes_identical",
+      "batch_order_permutation_expected": "target_token_bytes_identical",
+      "support_frame_mutation": "invert_uint8_rgb_at_decision_frame",
+      "support_mutation_expected": "target_token_linf_difference_strictly_positive",
+      "historical_gpu_fp16_byte_match_required": false
+    },
+    "artifact_linkage": {
+      "static_support_proof_is_separate": true,
+      "same_environment_perturbation_is_separate": true,
+      "existing_cache_identity_is_separate": true,
+      "existing_cache_requires_exact_weight_snapshot": true,
+      "existing_cache_requires_raw_video_hashes": true,
+      "existing_cache_requires_extraction_environment": true,
+      "existing_cache_requires_feature_hashes": true,
+      "missing_any_required_identity_action": "FAIL_UNVERIFIABLE",
+      "replacement_cache_automatically_authorized": false
+    }
+  },
+  "r2": {
+    "name": "unique_b0_b4_route_comparison_contract",
+    "arms": {
+      "B0": {
+        "name": "no_identity_prefix_completion_set",
+        "cross_decision_query_identity": false,
+        "query_policy": "fresh_queries_each_decision",
+        "visual_memory": "same_causal_memory_as_all_arms",
+        "training_assignment": "per_prefix_set_matching",
+        "forbidden": [
+          "persistent_query_tensor",
+          "hard_lifecycle",
+          "uot",
+          "continuous_occupancy",
+          "neural_latch"
+        ]
+      },
+      "B1": {
+        "name": "ordinary_always_persistent_queries",
+        "cross_decision_query_identity": true,
+        "query_policy": "all_queries_always_exist_and_propagate",
+        "forbidden": [
+          "newborn_propagated_query_pools",
+          "hard_free_active_lifecycle",
+          "uot",
+          "continuous_occupancy",
+          "adjacent_prefix_consistency",
+          "latch",
+          "same_bin_reseed"
+        ]
+      },
+      "B2": {
+        "name": "temporal_motr_reconstruction",
+        "cross_decision_query_identity": true,
+        "query_policy": "separate_newborn_and_propagated_track_queries",
+        "training_assignment": "temporal_tracklet_aware_one_to_one_assignment",
+        "shared_heads": "online_tal_start_end_class_completion_score",
+        "shared_ledger": true,
+        "forbidden": [
+          "ephemeral_noncanonical_uot",
+          "continuous_carrier_mass",
+          "atomic_release_mass_then_same_bin_reseed"
+        ]
+      },
+      "B3": {
+        "name": "clean_hard_order_and_risk_set",
+        "old_q2_modified": false,
+        "runtime": "simple_model_only_hard_lifecycle",
+        "order": "shared_train_inference_transition_and_release_before_loss",
+        "training_assignment": "hungarian_plus_dustbin",
+        "gt_persistent_runtime_identity": false,
+        "forbidden": [
+          "uot",
+          "continuous_occupancy"
+        ]
+      },
+      "B4": {
+        "name": "prefix_shared_latent_event_filter",
+        "allowed_route_specific_deltas": [
+          "D1_ATOMIC_RELEASE_BEFORE_SAME_BIN_RESEED",
+          "D2_CONTINUOUS_MASS_EPHEMERAL_NONCANONICAL_UOT"
+        ],
+        "not_route_specific": [
+          "persistent_queries",
+          "causal_memory",
+          "interval_head",
+          "class_head",
+          "completion_head",
+          "immutable_ledger"
+        ]
+      }
+    },
+    "fairness": {
+      "comparison_view": "BOTH_CAPACITY_AND_RESOURCE_MATCHED_REQUIRED",
+      "identical_inputs": [
+        "cache_manifest_sha256",
+        "feature_bytes",
+        "source_frames",
+        "decision_frames",
+        "mask",
+        "split_ids",
+        "video_order",
+        "token_multiplicity"
+      ],
+      "identical_prediction_semantics": [
+        "class",
+        "start",
+        "end",
+        "completion",
+        "score",
+        "coordinate_system"
+      ],
+      "identical_ledger_evaluator": true,
+      "arm_specific_postprocessing_forbidden": true,
+      "capacity_anchor": "B2_trainable_parameter_count_excluding_frozen_encoder",
+      "trainable_parameter_relative_tolerance": 0.05,
+      "dummy_unused_or_frozen_padding_parameters_forbidden": true,
+      "training_mac_relative_tolerance": 0.1,
+      "optimizer_event_count_exactly_equal": true,
+      "effective_token_denominator_exactly_equal": true,
+      "gradient_accumulation_exactly_equal": true,
+      "early_stopping_forbidden": true,
+      "skipped_or_nonfinite_update_action": "INVALIDATE_PAIRED_RUN_SET",
+      "optimizer_family_schedule_shape_precision_clip_equal": true,
+      "hyperparameter_trial_count_equal": true,
+      "hyperparameter_grid_and_selection_rule_equal": true,
+      "manual_arm_specific_tuning_forbidden": true,
+      "architecture_selection_scope": "nested_fit_core_only",
+      "calibration_scope": "threshold_and_score_calibration_only",
+      "model_p0_must_bind_numeric_budgets_before_implementation": true,
+      "comparison_seeds": [
+        705,
+        706,
+        707
+      ]
+    },
+    "threshold_calibration": {
+      "threshold_grid": [
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8,
+        0.85,
+        0.9,
+        0.95
+      ],
+      "calibration_population": "calibration_40",
+      "matched_recall_target": 0.7,
+      "selection": "highest_precision_subject_to_recall_at_least_0.70_else_highest_recall_then_precision_then_higher_threshold",
+      "threshold_free_outputs": [
+        "mOnlineAP",
+        "precision_recall_curve"
+      ],
+      "threshold_sweep_is_sensitivity_not_negative_control": true
+    }
+  },
+  "r3": {
+    "name": "negative_control_contract",
+    "controls": {
+      "count_only": {
+        "may_read": [
+          "decision_bin_index",
+          "fit_core_event_count_prior",
+          "fit_core_class_prior"
+        ],
+        "may_not_read": [
+          "feature_values",
+          "validation_or_reporting_annotations"
+        ],
+        "expected_failure_metrics": [
+          "interval_recall",
+          "class_ap",
+          "instance_consistency"
+        ]
+      },
+      "template_timing": {
+        "may_read": [
+          "decision_bin_index",
+          "fit_core_duration_distribution",
+          "fit_core_gap_distribution"
+        ],
+        "may_not_read": [
+          "feature_values",
+          "validation_or_reporting_annotations"
+        ],
+        "expected_failure_metrics": [
+          "timing_recall",
+          "endpoint_latency",
+          "structural_ood"
+        ]
+      },
+      "feature_time_shuffle": {
+        "construction": "Within each video rank token indices by SHA256(video_id||token_index||2026071703), rotate by the smallest positive offset with no fixed point, and keep the token multiset, annotations, counts, and labels unchanged.",
+        "minimum_sequence_length": 2,
+        "unconstructible_action": "EXCLUDE_ONLY_LENGTH_ONE_VIDEO_AND_REPORT_COUNT",
+        "expected_failure_metrics": [
+          "interval_recall",
+          "endpoint_latency"
+        ]
+      },
+      "semantic_derangement": {
+        "construction": "Keep every feature and interval fixed; order legal GT instances by SHA256(video_id||start_frame||end_frame||class||2026071704), then choose the smallest positive circular label rotation that changes every instance label while preserving the global label multiset.",
+        "global_consistent_class_rename_forbidden": true,
+        "unconstructible_action": "FAIL_CONTROL_UNCONSTRUCTIBLE",
+        "expected_failure_metrics": [
+          "class_ap"
+        ]
+      },
+      "ledger_only": {
+        "input": "same_raw_B0_candidates",
+        "operation": "shared_deterministic_ledger_only",
+        "learning_allowed": false,
+        "expected_failure_metrics": [
+          "event_recall_or_standard_mOnlineAP"
+        ]
+      },
+      "history_off": {
+        "applies_to": [
+          "B1",
+          "B2",
+          "B3",
+          "B4"
+        ],
+        "operation": "clear_cross_decision_model_state_but_keep_current_causal_visual_memory"
+      }
+    },
+    "benchmark_kill_rule": "If count_only, template_timing, or ledger_only is equivalent to the strongest real arm on every primary metric, lifecycle identifiability fails and the benchmark is killed.",
+    "corruption_kill_rule": "If feature_time_shuffle does not worsen any timing metric or semantic_derangement does not worsen class AP beyond its frozen margin, the corresponding identifiability claim is killed."
+  },
+  "r4": {
+    "name": "core_mechanism_deletions",
+    "required_deletions": [
+      {
+        "id": "A1",
+        "full": "ephemeral_noncanonical_uot",
+        "deleted": "hungarian_plus_dustbin",
+        "linked_delta": "D2"
+      },
+      {
+        "id": "A2",
+        "full": "continuous_carrier_mass",
+        "deleted": "binary_validity",
+        "linked_delta": "D2"
+      },
+      {
+        "id": "A3",
+        "full": "adjacent_prefix_consistency",
+        "deleted": "consistency_off",
+        "linked_delta": "D2_SUPPORT_ONLY"
+      },
+      {
+        "id": "A4",
+        "full": "atomic_release_before_same_bin_reseed",
+        "deleted": "no_same_bin_reuse",
+        "linked_delta": "D1"
+      },
+      {
+        "id": "A5",
+        "full": "model_output_only_latch_in_transition",
+        "deleted": "latch_excluded_from_neural_transition",
+        "linked_delta": "D1_SUPPORT_ONLY"
+      }
+    ],
+    "conditional_not_core": {
+      "k_vs_k_plus_1": "R5_CAPACITY_STRESS",
+      "start_posterior_vs_scalar": "ONLY_IF_CLAIMED_AS_DELTA",
+      "direct_complete": "ONLY_IF_R0_PRIMARY_ELIGIBLE",
+      "partial_matching": "ONLY_AFTER_UOT_BEATS_HUNGARIAN"
+    },
+    "necessity_rule": "A mechanism is necessary only when its paired simultaneous confidence interval improves its preregistered lifecycle metric beyond the practical margin while mOnlineAP, event recall, and false emission remain noninferior.",
+    "internal_only_evidence_forbidden": [
+      "training_loss_only",
+      "nonzero_gradient_only",
+      "internal_query_swap_only"
+    ]
+  },
+  "r5": {
+    "name": "structural_ood_generator_contract",
+    "unit": "synthetic_causal_sequence_in_decision_bins",
+    "factor_families": {
+      "event_topology": {
+        "train_iid": {
+          "event_count": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "maximum_concurrency": [
+            1,
+            2
+          ],
+          "overlap_graph": [
+            "disjoint",
+            "nested_pair",
+            "partial_overlap_pair",
+            "same_bin_handoff"
+          ]
+        },
+        "single_shift": {
+          "event_count": [
+            4,
+            6
+          ],
+          "maximum_concurrency": [
+            3
+          ],
+          "overlap_graph": [
+            "chain3",
+            "clique3"
+          ]
+        }
+      },
+      "temporal_geometry": {
+        "train_iid": {
+          "duration_bins": [
+            2,
+            4,
+            8,
+            16
+          ],
+          "signed_gap_bins": [
+            0,
+            2,
+            8
+          ],
+          "endpoint_delay_bins": [
+            0,
+            1
+          ]
+        },
+        "single_shift": {
+          "duration_bins": [
+            1,
+            32
+          ],
+          "signed_gap_bins": [
+            -8,
+            -2,
+            16
+          ],
+          "endpoint_delay_bins": [
+            2,
+            4
+          ]
+        }
+      },
+      "semantic_mapping": {
+        "train_iid": [
+          "identity_prototype_to_class"
+        ],
+        "single_shift": [
+          "heldout_prototype_to_class_derangement"
+        ]
+      },
+      "observation_distribution": {
+        "train_iid": [
+          "identity",
+          "gaussian_noise_sigma_0.05"
+        ],
+        "single_shift": [
+          "seeded_orthogonal_basis_rotation",
+          "two_component_basis_mixture",
+          "student_t_noise_df_3_scaled_0.05"
+        ]
+      }
+    },
+    "sets": {
+      "TRAIN": {
+        "sequence_count": 1000,
+        "public_seed": 2026071705,
+        "factor_support": "train_iid"
+      },
+      "IID_HOLDOUT": {
+        "sequence_count": 400,
+        "public_seed": 2026071706,
+        "factor_support": "train_iid"
+      },
+      "SINGLE_SHIFT_OOD": {
+        "sequence_count_per_family": 400,
+        "factor_support": "exactly_one_single_shift_family"
+      },
+      "COMPOUND_OOD": {
+        "sequence_count": 800,
+        "factor_support": "at_least_two_distinct_single_shift_families",
+        "hidden_combination_count": 8
+      }
+    },
+    "hidden_generation": {
+      "owner": "independent_reviewer",
+      "seed_commitment": "SHA256(protocol_sha256||reviewer_secret||set_name)",
+      "publish_before_model_implementation": [
+        "generator_source_sha256",
+        "factor_grammar_sha256",
+        "sequence_hash_commitment",
+        "set_counts"
+      ],
+      "reveal_after_all_arm_artifacts_hashed": [
+        "hidden_seeds",
+        "combination_table",
+        "sequence_ids"
+      ]
+    },
+    "disjointness": "canonical_sequence_sha256_sets_must_be_pairwise_disjoint",
+    "benchmark_kill_rule": "Kill lifecycle identifiability if any negative control is equivalent to the strongest real arm across every primary COMPOUND_OOD metric."
+  },
+  "r6": {
+    "name": "temporal_motr_exact_delta_and_equivalence",
+    "exact_delta_table": [
+      {
+        "element": "persistent_carriers",
+        "nearest_prior": "track_queries",
+        "delta": "NONE",
+        "verdict": "NO_DELTA"
+      },
+      {
+        "element": "interval_class_completion_heads",
+        "nearest_prior": "TadTR_and_online_TAL_heads",
+        "delta": "NONE",
+        "verdict": "NO_DELTA"
+      },
+      {
+        "element": "immutable_ledger",
+        "nearest_prior": "shared_online_output_protocol",
+        "delta": "NONE",
+        "verdict": "NO_DELTA"
+      },
+      {
+        "element": "D1_ATOMIC_RELEASE_BEFORE_SAME_BIN_RESEED",
+        "nearest_prior": "MOTR_track_termination_then_next_step_newborn_query",
+        "delta": "At decision j compute released_mass=prior_mass*completion_mass, post_release_mass=prior_mass-released_mass, and permit birth allocation against 1-post_release_mass in the same atomic transition. B2 may only allocate against capacity free before decision j.",
+        "target_failure": "same_bin_end_start_fragmentation_or_miss",
+        "isolation": "A4_no_same_bin_reuse",
+        "verdict": "PROVISIONAL_DELTA"
+      },
+      {
+        "element": "D2_CONTINUOUS_MASS_EPHEMERAL_NONCANONICAL_UOT",
+        "nearest_prior": "MOTR_tracklet_aware_one_to_one_assignment",
+        "delta": "Runtime carriers contain only model-generated continuous mass. Training forms a dustbin-capable unbalanced soft coupling between every prefix-visible GT target and every carrier for the current loss, destroys that coupling after loss evaluation, and never stores GT instance identity, coupling rows, or canonical ownership in runtime state.",
+        "target_failure": "gt_target_discard_or_hard_state_misrelease",
+        "isolation": "A1_hungarian_plus_dustbin_and_A2_binary_validity",
+        "verdict": "PROVISIONAL_DELTA"
+      },
+      {
+        "element": "adjacent_prefix_consistency",
+        "nearest_prior": "tracklet_continuity_loss",
+        "delta": "NONE_UNLESS_D2_DEPENDS_ON_IT",
+        "verdict": "WEAK_OR_SUPPORT_ONLY"
+      },
+      {
+        "element": "start_posterior",
+        "nearest_prior": "interval_start_head",
+        "delta": "before_memory_censoring_only",
+        "verdict": "HEAD_DELTA_ONLY"
+      },
+      {
+        "element": "completion_hazard",
+        "nearest_prior": "track_termination_plus_online_endpoint_head",
+        "delta": "task_adaptation_not_carrier_novelty",
+        "verdict": "TASK_ADAPTATION"
+      }
+    ],
+    "delta_failure_rule": "If neither D1 nor D2 remains a different state transition or training estimand after exact B2 reconstruction, KILL_PERSISTENT_CARRIER_ROUTE before model implementation.",
+    "primary_metrics": {
+      "mOnlineAP": "higher_better",
+      "event_recall": "higher_better",
+      "false_emission_per_video": "lower_better",
+      "duplicate_per_gt": "lower_better",
+      "fragmentation_per_gt": "lower_better",
+      "endpoint_latency_bins": "lower_better"
+    },
+    "eligible_stress_metrics": {
+      "same_class_repetition_recall": "higher_better",
+      "same_class_overlap_recall": "higher_better",
+      "same_bin_end_start_recall": "higher_better",
+      "direct_complete_recall": "higher_better"
+    },
+    "equivalence_margins": {
+      "mOnlineAP_absolute": 0.005,
+      "event_recall": "max(0.01,2/N_legal_gt)",
+      "false_emission_per_video": "max(0.01,2/N_reporting_videos)",
+      "duplicate_per_gt": "max(0.01,2/N_legal_gt)",
+      "fragmentation_per_gt": "max(0.01,2/N_legal_gt)",
+      "eligible_stress_recall": "max(0.02,2/N_stress_gt)",
+      "endpoint_latency_bins": 1,
+      "rationale": "Margins combine a fixed practical floor with two denominator events; one decision bin is the irreducible scheduling unit."
+    },
+    "paired_inference": {
+      "bootstrap_resamples": 10000,
+      "bootstrap_seed": 2026071707,
+      "cluster": "video",
+      "seed_handling": "resample_seeds_within_each_resampled_video_using_identical_indices_for_all_arms",
+      "same_video_resamples_for_all_arms": true,
+      "simultaneous_interval": "bonferroni_adjusted_paired_percentile",
+      "family_wise_alpha": 0.05,
+      "metric_count": "six_global_primary_plus_R0_PRIMARY_ELIGIBLE_stress_metrics",
+      "lower_quantile": "alpha/(2*metric_count)",
+      "upper_quantile": "1-alpha/(2*metric_count)"
+    },
+    "b4_survival_rule": [
+      "mOnlineAP_and_event_recall_noninferior_to_B2",
+      "at_least_one_D1_or_D2_linked_lifecycle_metric_improvement_CI_beyond_margin",
+      "all_other_primary_metrics_noninferior",
+      "negative_controls_not_equivalent_to_strongest_real_arm"
+    ],
+    "kill_rules": [
+      "KILL_TEMPORAL_MOTR_EQUIVALENT_if_all_primary_CIs_inside_equivalence_region",
+      "KILL_TEMPORAL_MOTR_INFERIOR_if_B4_is_inferior_on_mOnlineAP_or_event_recall",
+      "KILL_BENCHMARK_NOT_IDENTIFIABLE_if_simple_controls_are_equivalent"
+    ]
+  },
+  "evidence_package": {
+    "required_objects_before_route_re_review": [
+      "route_protocol_manifest_and_review_certificate",
+      "reporting_population_certificate",
+      "r0_aggregate_report",
+      "r0_reviewer_detail_commitment",
+      "r1_cache_causality_certificate",
+      "b0_b4_comparison_contract",
+      "negative_control_contract",
+      "mechanism_deletion_contract",
+      "structural_ood_commitment",
+      "temporal_motr_exact_delta_and_equivalence_object"
+    ],
+    "forbidden_objects": [
+      "model_predictions",
+      "checkpoints",
+      "effectiveness_tables",
+      "gpu_profiles",
+      "formal_training_outputs"
+    ],
+    "route_re_review_verdicts": [
+      "PASS_AUTHORIZE_MODEL_P0_CONTRACT_FREEZE",
+      "REVISE_ROUTE_AND_REVIEW_AGAIN",
+      "KILL_PERSISTENT_CARRIER_ROUTE"
+    ],
+    "route_pass_does_not_authorize_gpu": true
+  },
+  "source_bindings": {
+    "parent_commit": "ef4ba13c8d4fa05296b1cf3fa9259bab6fe1058c",
+    "protocol_review_sha256": "f9064827b05991fd63156770b2a1d6d6d40c3e53a73f4113b31f312b17f82bd0",
+    "protocol_review_absorption_sha256": "73f6c034c05f9fbab37fd8650ecd0152b52fafec55487842ab93e4c4d532d54b",
+    "code_sources": {
+      "configs/causaltad/thumos_pes_q2_base.py": "1032ee05322e94b2d16501905d9ec180bbe7aa64706b9a7127aeb36f6b7fb869",
+      "tools/analyze_ontad_instances.py": "a3e93d7369dc051db335280f51a9e15f161aacc4ea6fcde5baa2bd9dc020c5f8",
+      "tools/cache_ontad_features.py": "32399355075c3b07ad065dfa0e6963a7650609b306b6043373c60ed958513d5c",
+      "opentad/models/backbones/online_siglip_adapter.py": "3fbef911f8c94fad7e4e4a66ac8cc27253e4c87ed9b659a7d3657bd96e34c184",
+      "opentad/utils/prefix_instance_schedule.py": "f9a3ae69460f9d48272bd13e3f3c47e1eac5ec3f7cb3ccc90f3d0e8dff5bdb45",
+      "opentad/utils/online_protocol.py": "2c27e10de880216d312b2dbc7552ed4588adfa1b7aa5f646f8a2a9e606bca9fe",
+      "opentad/evaluations/online_budgeted_map.py": "775dc0cc811126bdcfdd2d2ba1962783df1b2b3e0d670fe9fd0c01c22541f7ba",
+      "opentad/evaluations/full_petal_metrics.py": "979815571aa500f14416f512ef0092004e2a65ccb8c861bbc841455fff3108fd",
+      "opentad/utils/prefix_route_protocol.py": "5b9d4d8e0db8aca25f870e7e65182456852d8895d94c02daf1ad90b282b2de3a",
+      "tools/validate_prefix_route_protocol.py": "270d71f3cd6973e9ca8719a6e2c497d058652d959dc1cec2d970c40f7b48aa27"
+    }
+  }
+}

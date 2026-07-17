@@ -31,16 +31,16 @@ VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
 ## Current Route Decision
 
-`REVISE_PROTOCOL_BEFORE_COLLECTION`.
+Protocol V1: `PROTOCOL_REVIEW_PENDING`.
 
 DR-045 was superseded before implementation. The R-A historical P0 is
 withdrawn; R-A survives only as B4 in a route-level comparison.
 
-The route-gate document is a checklist, not an executable protocol. Only a
-protocol-only revision and independent protocol review are allowed. New R0
-annotation census, R1 cache audit, model-outcome inspection, R-A constants,
-B0-B4 code, P0, effectiveness, profile, formal, visual, and raw-video work are
-blocked. GPU hours: 0.
+DR-048 freezes an executable JSON protocol, validator, CLI, and 16 passing
+contract tests. Local validation returns `PROTOCOL_VALID_REVIEW_REQUIRED`;
+collection returns `BLOCKED_PENDING_INDEPENDENT_PROTOCOL_REVIEW`. Only one
+independent protocol review is now allowed. R0/R1, model outcomes, B0-B4 code,
+P0, effectiveness, profile, training, and GPU work remain blocked.
 
 ## Established vs Unknown
 
@@ -56,11 +56,13 @@ Established:
 - an earlier annotation audit exposed 200/3003 train and 211/3325 validation
   videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
   and maximum concurrency 2;
-- cache code appears to sample the latest stride frame and encode it alone.
+- cache code appears to sample the latest stride frame and encode it alone;
+- Protocol V1 freezes R0-R6 computations and KILL rules, not their outcomes.
 
 Unknown or `NOT_ESTABLISHED`:
 
-- whether reporting 211 or canonical 213 is the correct bound split;
+- the exact source-derived ID difference between historical 211 and canonical
+  213; V1 permits only certified canonical 213 as primary;
 - exact claim-eligible prevalence under a frozen, powered R0 rule;
 - whether the existing cache artifact is linked to the inspected code,
   immutable encoder revision/weights, raw videos, environment, and token
@@ -93,9 +95,8 @@ Internal query swap is diagnostic only. It cannot replace output evidence.
 - **B3:** clean order/risk-set baseline; never reopen old Q2.
 - **B4:** R-A Prefix-Shared Latent Event Filter.
 
-All arms must freeze capacity-matched, resource-matched, or both comparisons,
-plus shared causal inputs, decision times, compatible heads, ledger,
-evaluator, no-future checks, anti-silence, generators, and reporting.
+All arms require both capacity and resource matching, plus shared causal
+inputs, heads, ledger, evaluator, anti-silence, generators, and reporting.
 
 Temporal-MOTR equivalence is a predeclared R-A route `KILL`.
 
@@ -105,9 +106,8 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Route Gates
 
-1. **P protocol PASS:** exact computations, units, denominators, thresholds,
-   failures, schemas, hashes, and prior-exposure ledger. No collection before
-   independent PASS.
+1. **P protocol PASS:** V1 now freezes computations, thresholds, schemas,
+   hashes, and prior exposure. Commit it and obtain one independent PASS.
 2. **R0 annotation census:** reconcile 211/213; freeze split/annotation hashes;
    repetition, overlap, same-bin, duration, concurrency, and zero-action
    statistics. Model-outcome-blind, not annotation-unseen. Signed gap is
@@ -165,9 +165,7 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Immediate Goal
 
-Do not collect evidence or implement a model. Turn
-`experiments/prefix-route-identifiability-gate-20260717.md` into one immutable,
-executable protocol-only commit and obtain an independent protocol PASS.
-Reviewer-proposed sample, power, fairness, and equivalence numbers are
-candidate policies, not frozen constants. Only a PASS may authorize the
-specified read-only R0/R1 collection. GPU hours remain 0.
+Commit and push executable Protocol V1, then obtain one independent protocol
+review. Do not collect R0/R1 or implement a model before PASS. A PASS
+authorizes only hash-bound read-only R0/R1; all model and GPU work stays
+blocked. GPU hours: 0.

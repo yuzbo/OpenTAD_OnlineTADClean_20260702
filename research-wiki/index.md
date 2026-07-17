@@ -10,7 +10,7 @@ scope: Persistent project memory for the Online/Causal TAD research direction.
 This wiki exists to prevent repeated discussion loops. Before proposing a new task definition, method, training route, or paper story, read:
 
 1. [query_pack.md](query_pack.md) for the compressed current memory.
-2. [`../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md), [DR-047](decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1), [T40](discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection), and the [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md) for the current `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+2. [`../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md), the [machine protocol](../configs/causaltad/protocols/prefix_route_identifiability_v1.json), [DR-048](decision_register.md#dr-048-freeze-executable-protocol-v1-without-authorizing-collection), [T41](discussion_timeline.md#t41-executable-protocol-v1-is-ready-for-independent-review), and the [route gate](experiments/prefix-route-identifiability-gate-20260717.md) for the current `PROTOCOL_REVIEW_PENDING`.
 3. [`../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md), and [DR-046](decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation) for the preceding route revision.
 4. [`../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md), its [independent absorption](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md), historical [DR-045](decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0), and the [withdrawn P0 node](experiments/prefix-shared-event-p0-20260717.md) for the superseded R-A authorization.
 5. [`../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md`](../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md), [DR-044](decision_register.md#dr-044-kill-q2-and-r1-after-independent-degeneracy-adjudication), and [the Q2 audit](experiments/q2-capacity-lifecycle-audit-20260716.md) for the permanent `KILL_Q2_R1` boundary.
@@ -30,18 +30,21 @@ The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted aft
 
 CRS-EPS, Q2, and R1/CSFSB retain their terminal negative dispositions. R-A
 remains B4 only, alongside a no-identity prefix set, ordinary persistent
-queries, temporal MOTR, and a clean order/risk-set baseline. The latest review
-returns the evidence route to `REVISE_PROTOCOL_BEFORE_COLLECTION`: the route
-gate is still a checklist, not an executable frozen protocol.
+queries, temporal MOTR, and a clean order/risk-set baseline. DR-048 replaces
+the earlier checklist with executable Protocol V1, whose current state is
+`PROTOCOL_REVIEW_PENDING`.
 
-The immediate work is protocol-only revision and independent protocol review.
-New R0 census and R1 cache-audit collection are also blocked, as are model
-outcomes, B0-B4 code, P0, effectiveness, profile, formal training, visual
-fine-tuning, and raw-video work. GPU authorization is zero. Reviewer-proposed
-sample, power, matching, and equivalence numbers remain candidate policies
-until justified and frozen.
+Local protocol tests pass and the validator still blocks collection. The
+immediate work is one independent protocol review. New R0 census and R1 cache
+audit remain blocked, as do model outcomes, B0-B4 code, P0, effectiveness,
+profile, training, visual fine-tuning, and raw-video work. GPU authorization
+is zero.
 
-Read the current [protocol review](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md),
+Read [Protocol V1](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md), its
+[machine-readable source](../configs/causaltad/protocols/prefix_route_identifiability_v1.json),
+[DR-048](decision_register.md#dr-048-freeze-executable-protocol-v1-without-authorizing-collection),
+[T41](discussion_timeline.md#t41-executable-protocol-v1-is-ready-for-independent-review),
+the current [protocol review](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md),
 its [independent absorption](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md),
 [DR-047](decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1),
 [T40](discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection),
@@ -74,7 +77,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 
 | Node | Status | Role |
 |---|---|---|
-| [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md) | route revision required; B4 only | Persistent-carrier candidate. DR-045 authorization was revoked before implementation; it must survive B0-B4, structural OOD, controls, and temporal-MOTR equivalence review. |
+| [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md) | protocol review pending; B4 only | Protocol V1 is executable but has no independent PASS. R-A must still survive B0-B4, structural OOD, controls, and temporal-MOTR equivalence. |
 | [idea:anytime-semantic-event-alarms](ideas/anytime-semantic-event-alarms.md) | conditional-P0 | Pro Rank 1; direct e-process/video-FAR overlap requires a novelty and validity gate. |
 | [idea:petal-ontad](ideas/petal-ontad.md) | revise/feature-kill-gate | Full raw-video package demoted; only the FRESH/TTF/PES matched-feature falsification study is active. |
 | [idea:three-clock-event-observability](ideas/three-clock-event-observability.md) | rejected-out-of-scope | PIVOT changes the task to physically anchored streaming event verification and must not be revived in this project. |
@@ -160,7 +163,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 | [exp:crs-eps-g0-kill-20260716](experiments/crs-eps-g0-kill-20260716.md) | terminal `KILL` | Preregistered fidelity gate rejects current empty-state dynamic replay; postmortem adds exact state/lifecycle diagnosis and a separate Q2 capacity blocker. |
 | [exp:q2-capacity-lifecycle-20260716](experiments/q2-capacity-lifecycle-audit-20260716.md) | `REVISE_REQUIRED`, disposition `KILL` | Clean 160 x 3 rerun verifies 2,206 actual exhaustions and no true-capacity cause; independent review rejects the zero arm as birth suppression and terminates Q2/R1. |
-| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | not run; `REVISE_PROTOCOL_BEFORE_COLLECTION` | Only protocol revision/review is legal. R0/R1 collection, model outcomes, B0-B4 code, and GPU work are blocked pending independent protocol PASS. |
+| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | V1 locally valid; `PROTOCOL_REVIEW_PENDING` | Protocol JSON, validator, CLI, and 16 tests exist. R0/R1 collection, model outcomes, B0-B4 code, and GPU work remain blocked pending independent PASS. |
 | [exp:prefix-shared-event-p0](experiments/prefix-shared-event-p0-20260717.md) | withdrawn before preregistration | Historical R-A CPU-P0 proposal retained for provenance; DR-046 blocks implementation and execution. |
 
 ## Source Records
@@ -182,6 +185,10 @@ Local review records that informed this wiki:
 - `PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`
 - `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`
 - `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md`
+- `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`
+- `configs/causaltad/protocols/prefix_route_identifiability_v1.json`
+- `opentad/utils/prefix_route_protocol.py`
+- `tools/validate_prefix_route_protocol.py`
 - `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`

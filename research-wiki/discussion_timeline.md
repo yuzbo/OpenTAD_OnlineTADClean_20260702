@@ -1282,3 +1282,35 @@ Current decision:
 > only model-outcome-blind R0/R1 evidence collection. Model contracts, model
 > code, effects, profile, formal, visual, and raw-video work remain blocked;
 > GPU hours authorized remain zero.
+
+### T41: Executable Protocol V1 Is Ready for Independent Review
+
+The nine DR-047 protocol gaps were converted into one machine-readable V1
+candidate plus a fail-closed validator, CLI, human operating note, and 16
+contract tests. The protocol SHA-256 is
+`E49E32E21E5DA10342694637FBBA7ACDD7FDB7DAC5CD6F1C248355A24FD018DC`.
+
+V1 makes canonical 213 the only possible primary population but requires an
+exact source-derived 211/213 difference certificate before R0. The remote
+N16R4 host was not resolvable during implementation, so no ID difference was
+guessed and population evidence remains uncollected. R1 likewise records
+missing cache identity as `FAIL_UNVERIFIABLE` and does not authorize a new
+cache.
+
+R0 formulas, disclosure, power, B0-B4 semantics, dual fairness views,
+negative controls, core deletions, structural OOD, D1/D2, equivalence margins,
+and KILL rules are now executable protocol choices. Model dimensions, UOT
+constants, numeric training budgets, and all model outcomes remain outside
+this protocol and blocked.
+
+Local tests pass `16/16`. Protocol validation returns
+`PROTOCOL_VALID_REVIEW_REQUIRED`; collection authorization without a
+hash-bound independent review artifact and PASS certificate returns
+`BLOCKED_PENDING_INDEPENDENT_PROTOCOL_REVIEW` with exit code 2.
+
+Current decision:
+
+> Commit and push Protocol V1, then give its paths and commit to one
+> independent reviewer. Do not run R0 or R1 unless that reviewer returns
+> `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`. Even after such a
+> PASS, model contracts, model code, P0, GPU work, and training remain blocked.

@@ -2015,3 +2015,90 @@ Reversibility:
 - a new independent protocol PASS may authorize only R0/R1 evidence
   collection. It cannot authorize model-contract freeze, model code, model P0,
   real-data effectiveness, or GPU work.
+
+## DR-048: Freeze Executable Protocol V1 Without Authorizing Collection
+
+Status: active protocol candidate; independent protocol review pending; R0/R1 and model work blocked.
+
+Decision:
+
+> Freeze `prefix-route-identifiability-20260717-v1` as the only current
+> protocol candidate. Its machine-readable JSON, validator, CLI, source
+> bindings, and tests replace the earlier checklist. Local validity is not an
+> independent PASS: collection remains blocked until one reviewer binds the
+> committed protocol bytes and returns
+> `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`.
+
+Frozen choices:
+
+- canonical 213 is the only possible primary reporting population, but only
+  after a source-derived 211/213 certificate explains every differing ID;
+  unavailable or unexplained evidence blocks R0, and historical 211 remains
+  audit-only;
+- R0 uses half-open intervals, stride-8 decision bins, signed gap
+  `next_start-current_end`, video clusters, aggregate-only author disclosure,
+  reviewer-only hard-case details, and no-overwrite publication;
+- primary stress eligibility requires 30 videos, 100 GT, 5% positive-video
+  prevalence, three classes, and conservative power at least 0.8 for a
+  10-point recall effect under family-wise alpha 0.05 and ICC 0.2;
+- R1 separates static support, same-environment perturbation, and historical
+  cache identity; missing identity is a recordable `FAIL_UNVERIFIABLE`, not a
+  reason to synthesize hashes or create a replacement cache;
+- B0-B4 are unique; primary evidence requires both capacity and resource
+  matching, with 5% trainable-parameter and 10% training-MAC tolerances plus
+  equal tokens, updates, trials, calibration, evaluator, and seeds;
+- global class renaming is forbidden as a semantic control; a deterministic
+  instance-label derangement is used instead;
+- R5 freezes four factor families and reviewer-owned compound OOD;
+- D1 and D2 are the only provisional route deltas; all persistent-query,
+  interval-head, memory, and ledger ingredients remain `NO_DELTA`;
+- B4 equivalence or inferiority to temporal MOTR is terminal.
+
+Local verification:
+
+- protocol SHA-256:
+  `E49E32E21E5DA10342694637FBBA7ACDD7FDB7DAC5CD6F1C248355A24FD018DC`;
+- validator source SHA-256:
+  `5B9D4D8E0DB8ACA25F870E7E65182456852D8895D94C02DAF1AD90B282B2DE3A`;
+- CLI source SHA-256:
+  `270D71F3CD6973E9CA8719A6E2C497D058652D959DC1CEC2D970C40F7B48AA27`;
+- `tests/test_prefix_route_protocol.py`: 16 passed;
+- protocol validation returns `PROTOCOL_VALID_REVIEW_REQUIRED`;
+- collection authorization without an independent PASS returns
+  `BLOCKED_PENDING_INDEPENDENT_PROTOCOL_REVIEW` with exit code 2.
+
+Known unresolved evidence:
+
+- the remote N16R4 host could not be resolved while V1 was written, so the
+  exact 211/213 ID difference is not claimed as verified;
+- the existing cache remains unverified and no R1 result has been collected;
+- no annotation aggregate, hard-case ID, model output, checkpoint, or GPU
+  result was opened or produced.
+
+Rejected alternatives:
+
+- call local tests an independent protocol PASS;
+- guess the missing 211/213 IDs or select 213 without a source certificate;
+- make failed R1 evidence structurally impossible to record;
+- use a review certificate without binding the actual review artifact;
+- freeze model dimensions, UOT constants, optimizer budgets, or results in
+  this route-evidence protocol;
+- run R0/R1 before the independent review.
+
+Sources:
+
+- [`../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md);
+- machine protocol
+  [`../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../configs/causaltad/protocols/prefix_route_identifiability_v1.json);
+- validator
+  [`../opentad/utils/prefix_route_protocol.py`](../opentad/utils/prefix_route_protocol.py);
+- CLI
+  [`../tools/validate_prefix_route_protocol.py`](../tools/validate_prefix_route_protocol.py);
+- [route gate](experiments/prefix-route-identifiability-gate-20260717.md);
+- [T41](discussion_timeline.md#t41-executable-protocol-v1-is-ready-for-independent-review).
+
+Reversibility:
+
+- an independent REVISE creates a new version and does not overwrite V1. A
+  PASS authorizes only the hash-bound read-only R0/R1 scope. Model contracts,
+  code, P0, effectiveness, profile, training, and all GPU work remain blocked.

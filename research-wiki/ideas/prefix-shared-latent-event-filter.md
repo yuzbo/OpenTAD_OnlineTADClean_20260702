@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:prefix-shared-latent-event-filter
 title: "Prefix-Shared Latent Event Filter with Immutable Ledger"
-stage: route-revision-required
+stage: protocol-review-pending
 outcome: untested
 updated: 2026-07-17
 target_gaps: ["G2", "G3", "G6", "G7", "G16"]
@@ -19,7 +19,9 @@ intervals to an immutable model-only ledger.
 
 ## Status
 
-`REVISE_PROTOCOL_BEFORE_COLLECTION`.
+Protocol state: `PROTOCOL_REVIEW_PENDING`.
+
+Scientific route state: B4 candidate only.
 
 DR-045's design authorization was superseded by DR-046 before preregistration
 or implementation. R-A is not the default route and has no model-P0
@@ -29,8 +31,9 @@ evidence, and has no GPU permission.
 
 DR-047 further blocks even new R0 annotation census and R1 cache audit
 collection until an executable protocol-only commit receives an independent
-protocol PASS. The current legal work is protocol revision, not evidence
-collection.
+protocol PASS. DR-048 now freezes the V1 protocol candidate and its
+fail-closed validator, but local validation is not a PASS. The current legal
+work is one independent protocol review, not evidence collection.
 
 Q2/R1 remains terminal `KILL`. This route may reuse generic evaluator,
 optimizer-audit, evidence, and causal execution infrastructure, but it may not
@@ -175,7 +178,7 @@ withdrawn before preregistration.
 ## Ordered Gate
 
 ```text
-executable protocol-only revision
+commit executable Protocol V1
 -> independent protocol PASS
 -> model-outcome-blind annotation census and cache certificate
 -> B0-B4/OOD/negative-control route contract
@@ -186,6 +189,10 @@ executable protocol-only revision
 
 ## Sources
 
+- [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md)
+- [`../../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v1.json)
+- [DR-048](../decision_register.md#dr-048-freeze-executable-protocol-v1-without-authorizing-collection)
+- [T41](../discussion_timeline.md#t41-executable-protocol-v1-is-ready-for-independent-review)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md)
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md)
