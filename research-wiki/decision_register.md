@@ -2102,3 +2102,114 @@ Reversibility:
 - an independent REVISE creates a new version and does not overwrite V1. A
   PASS authorizes only the hash-bound read-only R0/R1 scope. Model contracts,
   code, P0, effectiveness, profile, training, and all GPU work remain blocked.
+
+## DR-049: Accept the Independent V1 REVISE and Preserve the Collection Block
+
+Status: terminal for Protocol V1; superseded as a candidate by DR-050; zero GPU hours.
+
+Decision:
+
+> Accept the sole independent review verdict
+> `REVISE_PROTOCOL_BEFORE_COLLECTION` on commit
+> `5e858a161254395488428609b441b64f3c08be76`. Protocol V1 is not an
+> executable evidence authorization contract. Preserve it and the full review
+> as immutable negative protocol evidence; do not collect R0 or R1.
+
+Reasons:
+
+- an author could forge V1's review certificate and pass an unvalidated
+  in-memory authorization dictionary;
+- population, R0, and R1 accepted asserted statuses and dummy identities
+  without re-reading source evidence;
+- eight hostile semantic weakenings passed validation;
+- R0 boundary rules and collector, reporting-label exposure, B0-B4 fairness,
+  D1/D2 isolation, controls, R5, R6 inference, source binding, and adversarial
+  tests were incomplete;
+- the review accessed no model output, checkpoint, R0/R1 result, or GPU.
+
+Rejected alternatives:
+
+- reinterpret the V1 local `60/60` tests as independent approval;
+- patch the certificate text while leaving asserted evidence paths intact;
+- proceed to population or cache collection because those stages are
+  nominally read-only;
+- hide annotation exposure or call THUMOS reporting annotation-unseen.
+
+Sources:
+
+- [`../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md),
+  SHA-256
+  `1FDB36DB2D970D7B044EC26B3366208CD3D3A20BD6CB3544E62AACCBE57C7326`;
+- V1 commit `5e858a161254395488428609b441b64f3c08be76`;
+- [T42](discussion_timeline.md#t42-independent-review-rejects-protocol-v1-before-collection).
+
+Reversibility:
+
+- V1 remains terminal. Only a new immutable protocol version reviewed by the
+  same sole reviewer may supersede it.
+
+## DR-050: Freeze Protocol V2 for Same-Reviewer Reassessment
+
+Status: active protocol candidate; same-reviewer PASS pending; all collection and model work blocked.
+
+Decision:
+
+> Replace V1 only as the active candidate with
+> `prefix-route-identifiability-20260717-v2`. V2 must remain outcome-blind and
+> zero GPU, be committed with an exact source manifest, and return to reviewer
+> `019f6f63-496d-75a0-a77b-91425a8e7ea1`. Until that reviewer verifies the
+> frozen commit and signs canonical attestation bytes with the pre-frozen
+> Ed25519 identity, authorization remains closed.
+
+V2 implementation choices:
+
+- authorization accepts file paths only, re-reads canonical protocol,
+  manifest, signed attestation, signature, commit, and tree, and has no
+  caller-supplied review-dictionary bypass;
+- population/R0/R1 statuses are derived from contained, hash-verified source
+  artifacts;
+- R0 binds one collector and exact interval, endpoint, duplicate, pair,
+  denominator, bootstrap, power, and aggregate-only reporting rules;
+- R1 binds every cache/source object, array geometry, token support, and
+  dynamic perturbation; terminal tokens use a paired synthetic continuation
+  because they have no native future suffix;
+- THUMOS reporting is explicitly
+  `DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK`; an annotation-unseen claim
+  requires a separately frozen prospective dataset;
+- B2 is the faithful temporal tracking attack; fairness covers parameter,
+  MAC, state, memory, latency, optimizer, token, trial, calibration, and seed
+  budgets with no dummy trainable capacity;
+- controls, R5 structural OOD, R6 metric bindings, crossed paired inference,
+  D1/A4, joint D2/A1+A2, and `INDETERMINATE_NO_ROUTE_CLAIM` are executable.
+
+Current evidence:
+
+- dedicated V2 suite: `27 passed`;
+- focused cross-module zero-GPU suite: `133 passed, 2 skipped`; both skips are
+  Torch subprocess imports failing on local `c10.dll`;
+- unsigned validation returns `PROTOCOL_V2_VALID_REVIEW_REQUIRED`;
+- authorization returns
+  `BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW`;
+- no R0/R1 collection, model outcome, checkpoint, profile, training, or GPU
+  access occurred.
+
+Rejected alternatives:
+
+- self-sign or generate a replacement reviewer key;
+- use a different reviewer merely to obtain a PASS;
+- treat V2 code coverage as scientific route evidence;
+- start B0-B4, profile, or training before the signed protocol decision.
+
+Sources:
+
+- [`../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md);
+- machine protocol
+  [`../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../configs/causaltad/protocols/prefix_route_identifiability_v2.json);
+- [V1 independent review](../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md);
+- [T43](discussion_timeline.md#t43-protocol-v2-closes-v1-bypasses-and-awaits-the-same-reviewer).
+
+Reversibility:
+
+- an independent `REVISE` requires V3 or a corrected V2 commit and another
+  same-reviewer pass. A signed `PASS` authorizes only R0/R1 collection, never
+  model implementation or GPU work.

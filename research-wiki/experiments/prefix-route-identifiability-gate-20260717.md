@@ -2,7 +2,7 @@
 type: experiment
 node_id: exp:prefix-route-identifiability-gate
 title: "Persistent-Carrier On-TAL Route Identifiability Gate"
-stage: protocol-review-pending
+stage: protocol-v2-review-pending
 outcome: not-run
 updated: 2026-07-17
 ---
@@ -11,31 +11,36 @@ updated: 2026-07-17
 
 ## Status
 
-Protocol verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+Protocol V1 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+
+Protocol V2 status: `PROTOCOL_REVIEW_PENDING`.
 
 This node records the evidence required before any R-A model P0 contract,
 implementation, or training. It is not a model experiment, has not run, and
-does not authorize B0-B4 implementation. The 2026-07-17 protocol review found
-that this node was still a checklist rather than an executable frozen
-protocol. V1 now has a machine-readable candidate protocol, fail-closed
-validator, CLI, and local contract tests, but no independent protocol PASS.
-Therefore neither R0 nor R1 evidence collection is currently authorized.
+does not authorize B0-B4 implementation. V1 converted the checklist into code
+but its independent review found self-forgeable authorization, asserted
+evidence statuses, and incomplete R0-R6 execution. V2 implements the required
+repairs but has not yet received a same-reviewer PASS. Therefore neither R0 nor
+R1 evidence collection is currently authorized.
 
 GPU authorization: zero hours.
 
 ## Gate P: Independent Protocol Review Before Collection
 
-The next legal artifact is one protocol-only immutable commit containing:
+The next legal artifact is one protocol-only immutable V2 commit containing:
 
-- `configs/causaltad/protocols/prefix_route_identifiability_v1.json`;
-- `opentad/utils/prefix_route_protocol.py`;
-- `tools/validate_prefix_route_protocol.py`;
-- `tests/test_prefix_route_protocol.py`;
-- `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`.
+- `configs/causaltad/protocols/prefix_route_identifiability_v2.json`;
+- `configs/causaltad/protocols/prefix_route_identifiability_v2_manifest.json`;
+- `opentad/utils/prefix_route_protocol_v2.py`;
+- bound R0, R1, controls, fairness, OOD, and R6 implementations;
+- `tools/validate_prefix_route_protocol_v2.py`;
+- `tests/test_prefix_route_protocol_v2.py`;
+- `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`;
+- the archived V1 independent review.
 
-The candidate replaces qualitative terms with exact computations, units,
-denominators, thresholds, failure rules, artifact schemas, and source hashes.
-An independent reviewer may return only:
+The same sole reviewer must verify the exact commit/tree and sign canonical
+attestation bytes using the pre-frozen Ed25519 identity. The reviewer may
+return only:
 
 - `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`;
 - `REVISE_PROTOCOL_BEFORE_COLLECTION`.
@@ -44,11 +49,10 @@ A protocol PASS authorizes only the specified read-only R0/R1 collection. It
 does not authorize inspecting model predictions or checkpoints, selecting
 model constants, implementing B0-B4, running P0, or using a GPU.
 
-Local validation is necessary but not sufficient. The validator must report
-`PROTOCOL_VALID_REVIEW_REQUIRED`, and collection authorization must continue
-to return `BLOCKED_PENDING_INDEPENDENT_PROTOCOL_REVIEW` until a committed
-protocol and independent review artifact are hash-bound to a PASS
-certificate.
+Local validation is necessary but not sufficient. The V2 validator reports
+`PROTOCOL_V2_VALID_REVIEW_REQUIRED`, and collection authorization returns
+`BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW` until the fixed commit,
+manifest, review attestation, and detached signature all verify.
 
 Review-confirmed blockers that the new protocol must close:
 
@@ -65,7 +69,7 @@ Review-confirmed blockers that the new protocol must close:
   differ plausibly from a matched temporal MOTR, and neither delta is yet
   established.
 
-V1 closes these choices at the protocol-definition level. It does not claim
+V2 implements these choices at the protocol-definition level. It does not claim
 that the canonical 213 population certificate exists, that the current cache
 passes R1, or that D1/D2 work. Missing population or cache identity fails
 closed after protocol PASS rather than being filled with an author guess.
@@ -306,7 +310,7 @@ training, visual fine-tuning, or raw-video training.
 
 | Action | Status |
 |---|---|
-| Revise and independently review the R0-R6 protocol | `ALLOW` |
+| Commit V2 and obtain same-reviewer signed protocol decision | `ALLOW` |
 | New annotation census | `BLOCKED_PENDING_PROTOCOL_PASS` |
 | New feature-provenance or causality audit | `BLOCKED_PENDING_PROTOCOL_PASS` |
 | Inspect model outcomes, predictions, or checkpoints | `BLOCKED` |
@@ -319,6 +323,9 @@ training, visual fine-tuning, or raw-video training.
 
 ## Sources
 
+- [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md)
+- [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v1.json)
 - [`../../opentad/utils/prefix_route_protocol.py`](../../opentad/utils/prefix_route_protocol.py)
@@ -330,6 +337,9 @@ training, visual fine-tuning, or raw-video training.
 - [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md)
 - [DR-047](../decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1)
 - [T40](../discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection)
+- [DR-049](../decision_register.md#dr-049-accept-the-independent-v1-revise-and-preserve-the-collection-block)
+- [DR-050](../decision_register.md#dr-050-freeze-protocol-v2-for-same-reviewer-reassessment)
+- [T43](../discussion_timeline.md#t43-protocol-v2-closes-v1-bypasses-and-awaits-the-same-reviewer)
 - [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
 - [T39](../discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status)
 - [idea:prefix-shared-latent-event-filter](../ideas/prefix-shared-latent-event-filter.md)

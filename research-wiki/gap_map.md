@@ -257,8 +257,10 @@ Candidate route: [ideas/petal-ontad.md](ideas/petal-ontad.md).
 
 ## G16: Training and Inference Need One Model-Only Prefix State
 
-Status: candidate gap not established; executable Protocol V1 awaits
-independent review before new route-identifiability evidence may be collected.
+Status: candidate gap not established; Protocol V1 received independent
+`REVISE_PROTOCOL_BEFORE_COLLECTION`. Hardened Protocol V2 awaits reassessment
+by the same sole reviewer before new route-identifiability evidence may be
+collected.
 
 Q2 proved a repository-local contract defect: predicted runtime availability
 gated GT canonical ownership, so false ACTIVE/refractory state permanently
@@ -305,11 +307,13 @@ processor, weights, raw-video hashes, extraction environment, and per-token
 support map are not bound. Existing-cache strict causality therefore remains
 `UNVERIFIED`.
 
-DR-048 now supplies a machine-readable V1 protocol, validator, CLI, and local
-contract tests. This closes definitions, not evidence: the exact 211/213
-certificate and current-cache R1 certificate still do not exist. R0, R1,
-model outcomes, B0-B4 implementation, and GPU use remain blocked until V1 is
-committed and receives an independent protocol PASS.
+DR-050 now supplies machine-readable V2, an exact source manifest,
+cryptographic review binding, source-derived R0/R1 validators, executable
+controls/OOD/R6, and adversarial tests. This closes known V1 protocol
+bypasses, not scientific evidence: the exact 211/213 certificate and
+current-cache R1 certificate still do not exist. R0, R1, model outcomes,
+B0-B4 implementation, and GPU use remain blocked until V2 receives a signed
+same-reviewer protocol PASS.
 
 Candidate:
 [ideas/prefix-shared-latent-event-filter.md](ideas/prefix-shared-latent-event-filter.md),

@@ -24,10 +24,11 @@ GPU authorization: zero hours.
 DR-046 revokes the model-P0 permission because the proposal cannot distinguish
 R-A from simpler no-identity sets, persistent queries, temporal MOTR, or a
 clean order/risk-set baseline. DR-047 also blocks new R0/R1 evidence
-collection until an executable protocol receives an independent PASS. DR-048
-supplies the V1 protocol candidate but does not restore this P0. No model,
-UOT, loss, generator, optimizer, runtime, threshold, comparison, or evidence
-constant may now be frozen for this experiment.
+collection until an executable protocol receives an independent PASS. V1
+received `REVISE_PROTOCOL_BEFORE_COLLECTION`; hardened V2 awaits a signed
+same-reviewer decision and does not restore this P0. No model, UOT, loss,
+generator, optimizer, runtime, threshold, comparison, or evidence constant may
+now be frozen for this experiment.
 
 All remaining sections preserve the prior proposal as decision history only.
 They are not an executable contract. The current legal successor is the

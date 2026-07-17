@@ -2,7 +2,7 @@
 type: idea
 node_id: idea:prefix-shared-latent-event-filter
 title: "Prefix-Shared Latent Event Filter with Immutable Ledger"
-stage: protocol-review-pending
+stage: protocol-v2-review-pending
 outcome: untested
 updated: 2026-07-17
 target_gaps: ["G2", "G3", "G6", "G7", "G16"]
@@ -31,9 +31,10 @@ evidence, and has no GPU permission.
 
 DR-047 further blocks even new R0 annotation census and R1 cache audit
 collection until an executable protocol-only commit receives an independent
-protocol PASS. DR-048 now freezes the V1 protocol candidate and its
-fail-closed validator, but local validation is not a PASS. The current legal
-work is one independent protocol review, not evidence collection.
+protocol PASS. V1 received `REVISE_PROTOCOL_BEFORE_COLLECTION`; DR-050 now
+freezes hardened V2 as the active candidate. Local validation is not a PASS.
+The current legal work is same-reviewer V2 reassessment, not evidence
+collection.
 
 Q2/R1 remains terminal `KILL`. This route may reuse generic evaluator,
 optimizer-audit, evidence, and causal execution infrastructure, but it may not
@@ -178,8 +179,8 @@ withdrawn before preregistration.
 ## Ordered Gate
 
 ```text
-commit executable Protocol V1
--> independent protocol PASS
+commit executable Protocol V2
+-> same-reviewer signed protocol PASS
 -> model-outcome-blind annotation census and cache certificate
 -> B0-B4/OOD/negative-control route contract
 -> temporal-MOTR exact-delta and equivalence-KILL rule
@@ -189,6 +190,11 @@ commit executable Protocol V1
 
 ## Sources
 
+- [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md)
+- [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)
+- [DR-050](../decision_register.md#dr-050-freeze-protocol-v2-for-same-reviewer-reassessment)
+- [T43](../discussion_timeline.md#t43-protocol-v2-closes-v1-bypasses-and-awaits-the-same-reviewer)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v1.json)
 - [DR-048](../decision_register.md#dr-048-freeze-executable-protocol-v1-without-authorizing-collection)

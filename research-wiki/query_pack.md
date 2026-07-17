@@ -31,16 +31,17 @@ VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
 ## Current Route Decision
 
-Protocol V1: `PROTOCOL_REVIEW_PENDING`.
+Protocol V2: `PROTOCOL_REVIEW_PENDING`.
 
 DR-045 was superseded before implementation. The R-A historical P0 is
 withdrawn; R-A survives only as B4 in a route-level comparison.
 
-DR-048 freezes an executable JSON protocol, validator, CLI, and 16 passing
-contract tests. Local validation returns `PROTOCOL_VALID_REVIEW_REQUIRED`;
-collection returns `BLOCKED_PENDING_INDEPENDENT_PROTOCOL_REVIEW`. Only one
-independent protocol review is now allowed. R0/R1, model outcomes, B0-B4 code,
-P0, effectiveness, profile, training, and GPU work remain blocked.
+Protocol V1 received independent `REVISE_PROTOCOL_BEFORE_COLLECTION`: its
+review could be forged and population/R0/R1 statuses were asserted. DR-050
+replaces it as the active candidate with V2: signed reviewer identity, exact
+source/tree binding, derived evidence decisions, and executable R0-R6. Tests
+are not a PASS.
+R0/R1, model outcomes/code, profile, training, and GPU work remain blocked.
 
 ## Established vs Unknown
 
@@ -57,12 +58,12 @@ Established:
   videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
   and maximum concurrency 2;
 - cache code appears to sample the latest stride frame and encode it alone;
-- Protocol V1 freezes R0-R6 computations and KILL rules, not their outcomes.
+- Protocol V2 implements known V1 repairs and freezes R0-R6 rules, not outcomes.
 
 Unknown or `NOT_ESTABLISHED`:
 
 - the exact source-derived ID difference between historical 211 and canonical
-  213; V1 permits only certified canonical 213 as primary;
+  213; V2 permits only certified canonical 213 as primary;
 - exact claim-eligible prevalence under a frozen, powered R0 rule;
 - whether the existing cache artifact is linked to the inspected code,
   immutable encoder revision/weights, raw videos, environment, and token
@@ -106,8 +107,8 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Route Gates
 
-1. **P protocol PASS:** V1 now freezes computations, thresholds, schemas,
-   hashes, and prior exposure. Commit it and obtain one independent PASS.
+1. **P protocol PASS:** commit V2 and obtain a signed fixed-commit decision
+   from the same sole reviewer. No author or in-memory certificate may pass.
 2. **R0 annotation census:** reconcile 211/213; freeze split/annotation hashes;
    repetition, overlap, same-bin, duration, concurrency, and zero-action
    statistics. Model-outcome-blind, not annotation-unseen. Signed gap is
@@ -165,7 +166,7 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Immediate Goal
 
-Commit and push executable Protocol V1, then obtain one independent protocol
-review. Do not collect R0/R1 or implement a model before PASS. A PASS
-authorizes only hash-bound read-only R0/R1; all model and GPU work stays
+Commit and push Protocol V2, then obtain same-reviewer fixed-commit
+reassessment. Do not collect R0/R1 or implement models before signed PASS. A
+PASS authorizes only hash-bound read-only R0/R1; model and GPU work remains
 blocked. GPU hours: 0.

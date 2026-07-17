@@ -1314,3 +1314,45 @@ Current decision:
 > independent reviewer. Do not run R0 or R1 unless that reviewer returns
 > `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`. Even after such a
 > PASS, model contracts, model code, P0, GPU work, and training remain blocked.
+
+### T42: Independent Review Rejects Protocol V1 Before Collection
+
+The sole outcome-blind reviewer audited V1 commit
+`5e858a161254395488428609b441b64f3c08be76` and returned
+`REVISE_PROTOCOL_BEFORE_COLLECTION`. The review is archived as
+`PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`, SHA-256
+`1FDB36DB2D970D7B044EC26B3366208CD3D3A20BD6CB3544E62AACCBE57C7326`.
+
+Two P0 failures were decisive: review authorization was self-forgeable, and
+population/R0/R1 could pass through caller assertions without contained
+source evidence. The reviewer also reproduced eight accepted semantic
+weakenings and found incomplete R0 execution, exposure handling, arm
+fairness, controls/OOD, R6 inference, source binding, and hostile tests.
+
+Current decision:
+
+> Preserve V1 and its REVISE as negative evidence. Do not collect R0/R1 or
+> inspect model outcomes. Build V2 at zero GPU and return it to the same sole
+> reviewer with a pre-frozen signing identity.
+
+### T43: Protocol V2 Closes V1 Bypasses and Awaits the Same Reviewer
+
+Protocol V2 implements cryptographic review binding, an exact source manifest,
+Git commit/tree verification, source-derived population/R0/R1 decisions, a
+bound R0 collector, complete cache-provenance and dynamic-token audits,
+design-exposure disclosure, faithful temporal-MOTR fairness, executable
+controls/OOD, and crossed paired R6 decisions.
+
+The final R1 edge case distinguishes native future-suffix intervention from a
+paired synthetic continuation after end of stream; a terminal token can no
+longer pass through an empty future mutation. Dedicated V2 tests pass `27/27`.
+The focused zero-GPU cross-module suite passes `133`, with two Torch tests
+skipped because local `c10.dll` cannot load. Unsigned authorization remains
+hard-blocked.
+
+Current decision:
+
+> Commit and push V2, then request a fixed-commit reassessment from reviewer
+> `019f6f63-496d-75a0-a77b-91425a8e7ea1`. Only that review can decide whether
+> outcome-blind R0/R1 collection begins. B0-B4, model P0, profile, formal
+> training, raw-video work, and GPU use remain blocked.
