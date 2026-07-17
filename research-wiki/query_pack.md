@@ -31,17 +31,16 @@ VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
 ## Current Route Decision
 
-Protocol V2: `PROTOCOL_REVIEW_PENDING`.
+Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
 DR-045 was superseded before implementation. The R-A historical P0 is
 withdrawn; R-A survives only as B4 in a route-level comparison.
 
-Protocol V1 received independent `REVISE_PROTOCOL_BEFORE_COLLECTION`: its
-review could be forged and population/R0/R1 statuses were asserted. DR-050
-replaces it as the active candidate with V2: signed reviewer identity, exact
-source/tree binding, derived evidence decisions, and executable R0-R6. Tests
-are not a PASS.
-R0/R1, model outcomes/code, profile, training, and GPU work remain blocked.
+DR-051 records V2 false PASS paths in population, R1, R0, fairness, R5, and
+R6. DR-052's zero-GPU remediation closes those known paths locally and awaits
+the same reviewer's fixed-commit decision. Local tests are not a scientific
+PASS. Source registration, R0/R1, model outcomes/code, profile, training, and
+GPU work remain blocked.
 
 ## Established vs Unknown
 
@@ -58,13 +57,15 @@ Established:
   videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
   and maximum concurrency 2;
 - cache code appears to sample the latest stride frame and encode it alone;
-- Protocol V2 implements known V1 repairs and freezes R0-R6 rules, not outcomes.
+- V2 reproduction passed but its scientific paths received `REVISE`. The
+  remediation covers source derivation, R1 reexecution, executable B2/fairness,
+  3,800 R5 sequences, and raw-only R6; re-review is pending.
 
 Unknown or `NOT_ESTABLISHED`:
 
 - the exact source-derived ID difference between historical 211 and canonical
   213; V2 permits only certified canonical 213 as primary;
-- exact claim-eligible prevalence under a frozen, powered R0 rule;
+- exact descriptive R0 prevalence; aligned downstream paired-estimand power;
 - whether the existing cache artifact is linked to the inspected code,
   immutable encoder revision/weights, raw videos, environment, and token
   support map;
@@ -107,8 +108,8 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Route Gates
 
-1. **P protocol PASS:** commit V2 and obtain a signed fixed-commit decision
-   from the same sole reviewer. No author or in-memory certificate may pass.
+1. **P protocol PASS:** obtain a fixed-commit decision from the same reviewer.
+   Current unregistered state permits only source-identity registration.
 2. **R0 annotation census:** reconcile 211/213; freeze split/annotation hashes;
    repetition, overlap, same-bin, duration, concurrency, and zero-action
    statistics. Model-outcome-blind, not annotation-unseen. Signed gap is
@@ -136,8 +137,7 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 - PCEH's current endpoint/emission contract is invalid; component only.
 - CRS-EPS dynamic replay and R1/CSFSB are terminal under frozen protocols.
 - OZ-TAL occupies zero-shot/open-vocabulary On-TAL.
-- Distillation, memory, cache, LoRA/PEFT, pretraining, sampling, and raw frames
-  are ingredients or controls, not standalone novelty.
+- Distillation, cache, PEFT, pretraining, and raw frames are ingredients.
 - Historical R-A P0 is withdrawn because route and protocol identifiability
   were missing.
 
@@ -166,7 +166,6 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Immediate Goal
 
-Commit and push Protocol V2, then obtain same-reviewer fixed-commit
-reassessment. Do not collect R0/R1 or implement models before signed PASS. A
-PASS authorizes only hash-bound read-only R0/R1; model and GPU work remains
+Commit and push the source-manifest-bound remediation candidate, then obtain
+same-reviewer reassessment. Source registration, R0/R1, models, and GPU remain
 blocked. GPU hours: 0.

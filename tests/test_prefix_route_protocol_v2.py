@@ -14,13 +14,16 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+import opentad.evaluations.prefix_route_r6_v2 as r6_module
 from opentad.evaluations.prefix_route_r6_v2 import (
+    INFERENCE_ARMS,
+    R6_RAW_SCHEMA,
+    R6_SEEDS,
     REQUIRED_ARMS,
     PrefixRouteR6Error,
     canonical_emission,
     derive_per_video_cell,
-    paired_crossed_bootstrap,
-    terminal_route_decision,
+    evaluate_r6_raw_evidence,
 )
 from opentad.utils.evidence_bundle import (
     EvidenceBundleError,
@@ -32,11 +35,28 @@ from opentad.utils.prefix_route_controls_v2 import (
     semantic_derangement,
 )
 from opentad.utils.prefix_route_fairness_v2 import (
+    ArmRuntimeAdapter,
+    CALIBRATION_MANIFEST_SCHEMA,
     CORE_ARMS,
+    EXECUTION_TRACE_SCHEMA,
     PrefixRouteFairnessError,
+    SEED_MANIFEST_SCHEMA,
+    TRIAL_MANIFEST_SCHEMA,
     derive_fairness_audit,
+    derive_runtime_budget_evidence,
+)
+from opentad.utils.prefix_route_b2_contract_v2 import (
+    NEWBORN_QUERY_COUNT,
+    TRACK_CAPACITY,
+    PrefixRouteB2Error,
+    build_temporal_tracklet_assignment,
+    instance_aware_risk_set,
+    temporal_motr_transition,
 )
 from opentad.utils.prefix_route_ood_v2 import (
+    EXPECTED_SET_COUNTS,
+    EXPECTED_SET_SEEDS,
+    FACTOR_FAMILIES,
     PrefixRouteOODError,
     audit_sequence_sets,
     generate_sequence,
@@ -44,10 +64,10 @@ from opentad.utils.prefix_route_ood_v2 import (
 )
 import opentad.utils.prefix_route_protocol_v2 as protocol_module
 from opentad.utils.prefix_route_protocol_v2 import (
-    DIFFERENCE_REASON_SCHEMA,
-    ID_LIST_SCHEMA,
+    HISTORICAL_INVENTORY_SCHEMA,
     POPULATION_REQUEST_SCHEMA,
     PROTOCOL_PASS,
+    R0_ENVELOPE_SCHEMA,
     REVIEW_SCHEMA,
     PrefixRouteProtocolV2Error,
     canonical_json_bytes,
@@ -60,11 +80,16 @@ from opentad.utils.prefix_route_protocol_v2 import (
     validate_protocol,
     validate_r0_bundle,
 )
-from opentad.utils.prefix_route_r0_v2 import collect_r0_census
+from opentad.utils.prefix_route_r0_v2 import (
+    PrefixRouteR0Error,
+    collect_r0_census,
+)
 import opentad.utils.prefix_route_r1_v2 as r1_module
 from opentad.utils.prefix_route_r1_v2 import (
+    R1_COMMAND_SCHEMA,
     R1_DYNAMIC_SCHEMA,
     R1_REQUEST_SCHEMA,
+    R1_SOFTWARE_SCHEMA,
     R1_SUPPORT_SCHEMA,
     PrefixRouteR1Error,
     derive_r1_status,
@@ -313,65 +338,106 @@ def test_authorization_api_has_no_unvalidated_dictionary_argument():
     assert "certificate" not in parameters
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows 8.3 path regression")
+def test_evidence_bundle_accepts_equivalent_windows_short_path(tmp_path):
+    import ctypes
+
+    root = tmp_path / "Long Evidence Bundle Directory"
+    root.mkdir()
+    evidence = root / "Long Evidence Filename.txt"
+    evidence.write_bytes(b"bound evidence\n")
+    get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+    required = get_short_path(str(root), None, 0)
+    if not required:
+        pytest.skip("8.3 aliases are disabled on this volume")
+    buffer = ctypes.create_unicode_buffer(required)
+    written = get_short_path(str(root), buffer, required)
+    if not written or "~" not in buffer.value:
+        pytest.skip("this volume did not create an 8.3 alias")
+    reference = bundle_file_reference(evidence, Path(buffer.value))
+    assert reference["path"] == evidence.name
+
+
 def _population_fixture(tmp_path):
-    historical = [f"video_{index:03d}" for index in range(211)]
-    canonical = [f"video_{index:03d}" for index in range(2, 215)]
-    historical_only = sorted(set(historical) - set(canonical))
-    canonical_only = sorted(set(canonical) - set(historical))
-    historical_ref = _write_json(
-        tmp_path,
-        "population/historical.json",
-        {
-            "schema_version": ID_LIST_SCHEMA,
-            "role": "historical_reporting_211_audit_only",
-            "ids": historical,
-        },
-    )
-    canonical_ref = _write_json(
-        tmp_path,
-        "population/canonical.json",
-        {
-            "schema_version": ID_LIST_SCHEMA,
-            "role": "canonical_reporting_213",
-            "ids": canonical,
-        },
-    )
-    source_ref = _write_bytes(
-        tmp_path,
-        "population/official_source.txt",
-        b"official canonical membership source\n",
-    )
-    reasons = [
-        {
-            "video_id": video_id,
-            "side": (
-                "historical_only"
-                if video_id in historical_only
-                else "canonical_only"
-            ),
-            "reason_code": "OFFICIAL_CANONICAL_MEMBERSHIP_CORRECTION",
-            "source_key": "official",
+    canonical = [f"video_{index:03d}" for index in range(213)]
+    annotation = {
+        "database": {
+            video_id: {
+                "subset": "validation",
+                "duration": 1.0,
+                "frame": 8,
+                "annotations": [],
+            }
+            for video_id in canonical
         }
-        for video_id in sorted(historical_only + canonical_only)
-    ]
-    reasons_ref = _write_json(
+    }
+    annotation_ref = _write_json(
         tmp_path,
-        "population/reasons.json",
+        "population/official_annotation.json",
+        annotation,
+    )
+    artifacts = {}
+    entries = []
+    for index, canonical_id in enumerate(canonical[:211]):
+        source_id = "legacy_000" if index == 0 else canonical_id
+        reference = _write_bytes(
+            tmp_path,
+            f"population/videos/{source_id}.mp4",
+            f"video-bytes:{source_id}\n".encode("ascii"),
+        )
+        artifacts[source_id] = reference
+        entries.append(
+            {
+                "source_video_id": source_id,
+                "canonical_video_id": canonical_id,
+                "artifact_path": reference["path"],
+                "artifact_sha256": reference["sha256"],
+            }
+        )
+    entries.sort(key=lambda row: row["source_video_id"])
+    inventory_ref = _write_json(
+        tmp_path,
+        "population/historical_inventory.json",
         {
-            "schema_version": DIFFERENCE_REASON_SCHEMA,
-            "reasons": reasons,
+            "schema_version": HISTORICAL_INVENTORY_SCHEMA,
+            "release_id": "THUMOS14_TEMPORAL_ANNOTATIONS",
+            "release_revision": "OFFICIAL_RELEASE_TO_BE_REGISTERED",
+            "reporting_subset": "validation",
+            "entries": entries,
         },
     )
-    protocol_record = load_protocol(PROTOCOL_PATH)
+    base = load_protocol(PROTOCOL_PATH)
+    protocol = json.loads(json.dumps(base["protocol"]))
+    registration = protocol["population"]["source_registration"]
+    registration.update(
+        {
+            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "authoritative_annotation_sha256": annotation_ref["sha256"],
+            "historical_inventory_sha256": inventory_ref["sha256"],
+            "registration_commit": "1" * 40,
+        }
+    )
+    protocol["governance"]["post_pass_scope"] = [
+        "READ_ONLY_R0_ANNOTATION_CENSUS",
+        "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
+    ]
+    _relock(protocol)
+    validate_protocol(protocol)
+    protocol_bytes = canonical_json_bytes(protocol)
+    protocol_record = {
+        "protocol": protocol,
+        "sha256": hashlib.sha256(protocol_bytes).hexdigest(),
+        "bytes": protocol_bytes,
+        "path": tmp_path / "registered-protocol.json",
+    }
     request = {
         "schema_version": POPULATION_REQUEST_SCHEMA,
         "protocol_id": protocol_record["protocol"]["protocol_id"],
         "protocol_sha256": protocol_record["sha256"],
         "review_attestation_sha256": "a" * 64,
-        "historical_ids": historical_ref,
-        "canonical_ids": canonical_ref,
-        "difference_reasons": reasons_ref,
-        "reason_sources": {"official": source_ref},
+        "authoritative_annotation": annotation_ref,
+        "historical_inventory": inventory_ref,
+        "historical_artifacts": artifacts,
     }
     return protocol_record, request, canonical
 
@@ -386,14 +452,35 @@ def test_population_status_is_derived_from_contained_sources(tmp_path):
     )
     assert result["status"] == "EXPLAINED_MISMATCH"
     assert result["canonical_ids"] == canonical
-    assert len(result["historical_only"]) == 2
-    assert len(result["canonical_only"]) == 4
+    assert result["historical_only"] == []
+    assert len(result["canonical_only"]) == 2
+    assert result["explicit_aliases"] == {"legacy_000": "video_000"}
 
 
-def test_population_source_substitution_and_fabricated_reason_fail(tmp_path):
+def test_unregistered_protocol_blocks_population_before_arbitrary_lists(tmp_path):
+    protocol_record = load_protocol(PROTOCOL_PATH)
+    request = {
+        "schema_version": POPULATION_REQUEST_SCHEMA,
+        "protocol_id": protocol_record["protocol"]["protocol_id"],
+        "protocol_sha256": protocol_record["sha256"],
+        "review_attestation_sha256": "a" * 64,
+        "authoritative_annotation": {"path": "fake.json", "sha256": "0" * 64},
+        "historical_inventory": {"path": "fake.json", "sha256": "0" * 64},
+        "historical_artifacts": {},
+    }
+    with pytest.raises(PrefixRouteProtocolV2Error, match="not frozen"):
+        validate_population_bundle(
+            request,
+            bundle_root=tmp_path,
+            protocol_record=protocol_record,
+            review_record=_review_stub(),
+        )
+
+
+def test_population_source_substitution_and_asserted_membership_fail(tmp_path):
     protocol_record, request, _ = _population_fixture(tmp_path)
-    canonical_path = tmp_path / request["canonical_ids"]["path"]
-    canonical_path.write_bytes(canonical_path.read_bytes() + b" ")
+    annotation_path = tmp_path / request["authoritative_annotation"]["path"]
+    annotation_path.write_bytes(annotation_path.read_bytes() + b" ")
     with pytest.raises(EvidenceBundleError):
         validate_population_bundle(
             request,
@@ -403,16 +490,8 @@ def test_population_source_substitution_and_fabricated_reason_fail(tmp_path):
         )
 
     protocol_record, request, _ = _population_fixture(tmp_path / "second")
-    reason_path = (
-        tmp_path / "second" / request["difference_reasons"]["path"]
-    )
-    value = json.loads(reason_path.read_text(encoding="utf-8"))
-    value["reasons"][0]["reason_code"] = "AUTHOR_GUESS"
-    reason_path.write_bytes(canonical_json_bytes(value))
-    request["difference_reasons"]["sha256"] = hashlib.sha256(
-        reason_path.read_bytes()
-    ).hexdigest()
-    with pytest.raises(PrefixRouteProtocolV2Error, match="reason code"):
+    request["asserted_canonical_ids"] = ["author-selected"]
+    with pytest.raises(PrefixRouteProtocolV2Error, match="fields"):
         validate_population_bundle(
             request,
             bundle_root=tmp_path / "second",
@@ -492,6 +571,26 @@ def test_r0_collector_freezes_first_bin_terminal_duplicates_and_pair_types():
     assert detail["definitions"]["first_previous_observation_count"] == 0
 
 
+def test_r0_rejects_wrong_subset_and_weaker_exposure_disclosure():
+    annotation = _r0_annotation()
+    annotation["database"]["v0"]["subset"] = "test"
+    with pytest.raises(PrefixRouteR0Error, match="registered reporting subset"):
+        collect_r0_census(
+            annotation,
+            ("A", "B", "C"),
+            ["v0", "v1", "v2"],
+            bootstrap_resamples=10,
+        )
+    with pytest.raises(PrefixRouteR0Error, match="exposure status"):
+        collect_r0_census(
+            _r0_annotation(),
+            ("A", "B", "C"),
+            ["v0", "v1", "v2"],
+            bootstrap_resamples=10,
+            annotation_exposure_status="DESIGN_EXPOSED_ROUTE_SELECTION_ONLY",
+        )
+
+
 def _ledger_bytes():
     return (
         ROOT
@@ -518,6 +617,9 @@ def test_r0_author_report_is_recomputed_not_asserted(tmp_path):
         "derived_sha256": "b" * 64,
     }
     annotation_bytes = canonical_json_bytes(_r0_annotation())
+    population["authoritative_annotation_sha256"] = hashlib.sha256(
+        annotation_bytes
+    ).hexdigest()
     class_map_bytes = b"A\nB\nC\n"
     ledger_bytes = _ledger_bytes()
     envelope = derive_r0_envelope(
@@ -615,7 +717,44 @@ def _ood_spec(observation="gaussian_noise_sigma_0.05"):
     }
 
 
-def test_r5_hash_excludes_set_metadata_and_audit_rejects_overlap():
+def _full_r5_package():
+    package = {
+        "TRAIN": list(
+            iter_balanced_public_set(
+                "TRAIN",
+                EXPECTED_SET_COUNTS["TRAIN"],
+                seed=EXPECTED_SET_SEEDS["TRAIN"],
+            )
+        ),
+        "IID_HOLDOUT": list(
+            iter_balanced_public_set(
+                "IID_HOLDOUT",
+                EXPECTED_SET_COUNTS["IID_HOLDOUT"],
+                seed=EXPECTED_SET_SEEDS["IID_HOLDOUT"],
+            )
+        ),
+        "COMPOUND_OOD": list(
+            iter_balanced_public_set(
+                "COMPOUND_OOD",
+                EXPECTED_SET_COUNTS["COMPOUND_OOD"],
+                seed=EXPECTED_SET_SEEDS["COMPOUND_OOD"],
+            )
+        ),
+    }
+    for family in FACTOR_FAMILIES:
+        name = f"SINGLE_SHIFT_OOD:{family}"
+        package[name] = list(
+            iter_balanced_public_set(
+                "SINGLE_SHIFT_OOD",
+                EXPECTED_SET_COUNTS[name],
+                seed=EXPECTED_SET_SEEDS[name],
+                shifted_family=family,
+            )
+        )
+    return package
+
+
+def test_r5_complete_frozen_package_is_executable_disjoint_and_balanced():
     left = generate_sequence(
         _ood_spec(),
         seed=11,
@@ -629,13 +768,28 @@ def test_r5_hash_excludes_set_metadata_and_audit_rejects_overlap():
         set_name="IID_HOLDOUT",
     )
     assert left["sequence_sha256"] == right["sequence_sha256"]
-    with pytest.raises(PrefixRouteOODError, match="overlap"):
-        audit_sequence_sets({"TRAIN": [left], "IID": [right]})
+    with pytest.raises(PrefixRouteOODError, match="names differ"):
+        audit_sequence_sets({"TRAIN": [left], "IID_HOLDOUT": [right]})
 
-    train = list(iter_balanced_public_set("TRAIN", 4, seed=101))
-    iid = list(iter_balanced_public_set("IID_HOLDOUT", 4, seed=202))
-    audit = audit_sequence_sets({"TRAIN": train, "IID": iid})
+    audit = audit_sequence_sets(_full_r5_package())
     assert audit["pairwise_disjoint"] is True
+    assert audit["total_sequence_count"] == 3800
+    assert all(
+        report["maximum_cell_count"] - report["minimum_cell_count"] <= 1
+        for report in audit["sets"].values()
+    )
+    handoff = generate_sequence(
+        {
+            "event_topology": "same_bin_handoff",
+            "temporal_geometry": "duration_2_gap_0_delay_0",
+            "semantic_mapping": "identity_prototype_to_class",
+            "observation_distribution": "identity",
+        },
+        seed=7,
+        sequence_index=0,
+        set_name="diagnostic",
+    )
+    assert handoff["events"][0]["end_bin"] == handoff["events"][1]["start_bin"]
 
 
 def _fairness_fixture():
@@ -674,97 +828,535 @@ def _fairness_fixture():
     return rows, inventories
 
 
-def test_fairness_is_derived_and_rejects_dummy_padding():
+def test_fairness_rejects_serialized_author_assertions_before_torch_import():
     rows, inventories = _fairness_fixture()
-    result = derive_fairness_audit(rows, inventories)
-    assert result["status"] == "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED"
-    inventories["B4"][0]["used_by_forward"] = False
-    with pytest.raises(PrefixRouteFairnessError, match="dummy"):
+    with pytest.raises(PrefixRouteFairnessError, match="live"):
+        derive_fairness_audit(rows)
+    with pytest.raises(TypeError):
         derive_fairness_audit(rows, inventories)
+    assert inspect.signature(derive_fairness_audit).parameters.keys() == {
+        "runtimes"
+    }
 
 
-def _r6_fixture():
-    eligible = ("same_class_repetition", "same_bin_end_start")
-    cells = []
-    dataset = []
-    for arm in REQUIRED_ARMS:
-        for run_seed in (705, 706):
-            dataset.append(
+def test_fairness_budget_is_derived_from_hash_bound_records(tmp_path):
+    execution = _write_json(
+        tmp_path,
+        "fairness/execution.json",
+        {
+            "schema_version": EXECUTION_TRACE_SCHEMA,
+            "arm": "B2",
+            "events": [
+                {
+                    "optimizer_event_index": index,
+                    "gradient_accumulation_steps": 2,
+                    "effective_token_count": 100,
+                    "status": "APPLIED_FINITE",
+                }
+                for index in range(3)
+            ],
+        },
+    )
+    calibration = _write_json(
+        tmp_path,
+        "fairness/calibration.json",
+        {
+            "schema_version": CALIBRATION_MANIFEST_SCHEMA,
+            "video_ids": [f"video_{index:03d}" for index in range(40)],
+        },
+    )
+    trials = _write_json(
+        tmp_path,
+        "fairness/trials.json",
+        {
+            "schema_version": TRIAL_MANIFEST_SCHEMA,
+            "trial_ids": ["trial_00", "trial_01"],
+        },
+    )
+    seeds = _write_json(
+        tmp_path,
+        "fairness/seeds.json",
+        {
+            "schema_version": SEED_MANIFEST_SCHEMA,
+            "seeds": [705, 706, 707],
+        },
+    )
+    adapter = ArmRuntimeAdapter(
+        arm="B2",
+        model=None,
+        optimizer=None,
+        optimizer_event_forwards=lambda: None,
+        inference_forward=lambda: None,
+        reset_runtime_state=lambda: None,
+        budget_evidence_root=tmp_path,
+        execution_trace_reference=execution,
+        calibration_manifest_reference=calibration,
+        trial_manifest_reference=trials,
+        seed_manifest_reference=seeds,
+    )
+    evidence = derive_runtime_budget_evidence(adapter)
+    assert evidence["optimizer_event_count"] == 3
+    assert evidence["effective_token_count"] == 300
+    assert evidence["gradient_accumulation_steps"] == 2
+    assert evidence["hyperparameter_trial_count"] == 2
+    assert evidence["calibration_video_count"] == 40
+    assert evidence["seed_count"] == 3
+
+    (tmp_path / execution["path"]).write_text(
+        "{}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    with pytest.raises(PrefixRouteFairnessError, match="hash mismatch"):
+        derive_runtime_budget_evidence(adapter)
+
+
+def _b2_decoder_rows(previous_tracks, *, complete_previous):
+    propagated = [
+        {
+            "pool": "propagated",
+            "slot": slot,
+            "track_id": track["track_id"],
+            "active_score": 0.9,
+            "completion_score": 0.9 if complete_previous else 0.1,
+            "class_score": 0.9,
+            "start": 0,
+            "end": 8,
+            "label": "A",
+            "state_ref": f"updated-{slot}",
+        }
+        for slot, track in enumerate(previous_tracks)
+    ]
+    newborn = [
+        {
+            "pool": "newborn",
+            "slot": slot,
+            "track_id": None,
+            "active_score": 0.9,
+            "completion_score": 0.1,
+            "class_score": 0.9,
+            "start": 8,
+            "end": 16,
+            "label": "B",
+            "state_ref": f"newborn-{slot}",
+        }
+        for slot in range(NEWBORN_QUERY_COUNT)
+    ]
+    return propagated + newborn
+
+
+def test_b2_risk_set_keeps_delayed_first_emission_target():
+    rows = instance_aware_risk_set(
+        [
+            {
+                "instance_id": "g0",
+                "start_frame": 0,
+                "end_observation_count": 8,
+                "label": "A",
+            }
+        ],
+        previous_observation_count=8,
+        decision_observation_count=16,
+    )
+    assert rows[0]["delayed_unemitted_completion"] is True
+    assert rows[0]["first_emission_target"] == 1
+    assert (
+        instance_aware_risk_set(
+            [
+                {
+                    "instance_id": "g0",
+                    "start_frame": 0,
+                    "end_observation_count": 8,
+                    "label": "A",
+                }
+            ],
+            previous_observation_count=8,
+            decision_observation_count=16,
+            emitted_instance_ids=("g0",),
+        )
+        == []
+    )
+
+
+def test_b2_training_assignment_locks_tracks_then_matches_newborn_one_to_one():
+    risk_set = instance_aware_risk_set(
+        [
+            {
+                "instance_id": "g0",
+                "start_frame": 0,
+                "end_observation_count": 16,
+                "label": "A",
+            },
+            {
+                "instance_id": "g1",
+                "start_frame": 8,
+                "end_observation_count": 24,
+                "label": "B",
+            },
+        ],
+        previous_observation_count=8,
+        decision_observation_count=16,
+    )
+    costs = {
+        slot: {"g1": 1.0 if slot == 3 else 10.0}
+        for slot in range(NEWBORN_QUERY_COUNT)
+    }
+    result = build_temporal_tracklet_assignment(
+        risk_set=risk_set,
+        previous_track_assignments={"track-0": "g0"},
+        newborn_costs=costs,
+    )
+    assert result["propagated_assignment"] == {"track-0": "g0"}
+    assert result["newborn_assignment"][3] == "g1"
+    assert sum(
+        instance_id != "DUSTBIN"
+        for instance_id in result["newborn_assignment"].values()
+    ) == 1
+
+
+def test_b2_executes_all_newborn_queries_but_cannot_reuse_released_slots():
+    previous = sorted(
+        [
+            {
+                "track_id": f"track-{index:02d}",
+                "state_ref": f"state-{index}",
+                "started_at_bin": 0,
+                "last_decision_bin": 0,
+            }
+            for index in range(TRACK_CAPACITY)
+        ],
+        key=lambda row: row["track_id"],
+    )
+    result = temporal_motr_transition(
+        stream_key="v0",
+        decision_bin=1,
+        decision_observation_count=16,
+        calibrated_threshold=0.5,
+        previous_tracks=previous,
+        decoder_rows=_b2_decoder_rows(
+            previous,
+            complete_previous=True,
+        ),
+        next_track_serial=64,
+        next_emission_sequence=0,
+    )
+    assert result["query_counts"]["newborn"] == NEWBORN_QUERY_COUNT
+    assert result["query_counts"]["decoder_total"] == 128
+    assert result["predecision_free_track_slots"] == 0
+    assert result["released_slots_reusable_same_decision"] is False
+    assert len(result["emissions"]) == TRACK_CAPACITY
+    assert result["next_tracks"] == []
+
+    next_result = temporal_motr_transition(
+        stream_key="v0",
+        decision_bin=2,
+        decision_observation_count=24,
+        calibrated_threshold=0.5,
+        previous_tracks=[],
+        decoder_rows=_b2_decoder_rows([], complete_previous=False),
+        next_track_serial=result["next_track_serial"],
+        next_emission_sequence=result["next_emission_sequence"],
+    )
+    assert len(next_result["next_tracks"]) == TRACK_CAPACITY
+
+
+def test_b2_newborn_with_unconfirmed_class_remains_active():
+    rows = _b2_decoder_rows([], complete_previous=False)
+    rows[0]["completion_score"] = 0.9
+    rows[0]["class_score"] = 0.4
+    result = temporal_motr_transition(
+        stream_key="v0",
+        decision_bin=1,
+        decision_observation_count=16,
+        calibrated_threshold=0.5,
+        previous_tracks=[],
+        decoder_rows=rows,
+        next_track_serial=0,
+        next_emission_sequence=0,
+    )
+    assert len(result["next_tracks"]) == TRACK_CAPACITY
+    assert any(
+        track["state_ref"] == "newborn-0" for track in result["next_tracks"]
+    )
+
+
+def _r6_fixture(tmp_path):
+    video_ids = [f"v{index:03d}" for index in range(213)]
+    event_video_ids = set(video_ids)
+    annotation = {
+        "database": {
+            video_id: {
+                "subset": "validation",
+                "duration": 4.0,
+                "frame": 32,
+                "annotations": (
+                    [
+                        {"segment": [0.0, 1.125], "label": "A"},
+                        {"segment": [1.0, 2.0], "label": "A"},
+                        {"segment": [2.0, 2.5], "label": "B"},
+                        {"segment": [3.0, 3.5], "label": "C"},
+                    ]
+                    if video_id in event_video_ids
+                    else []
+                ),
+            }
+            for video_id in video_ids
+        }
+    }
+    report, detail = collect_r0_census(
+        annotation,
+        ("A", "B", "C"),
+        video_ids,
+        bootstrap_resamples=10000,
+        expected_subset="validation",
+        annotation_exposure_status=(
+            "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
+        ),
+    )
+
+    def emissions(video_id, complete):
+        if video_id not in event_video_ids:
+            return []
+        intervals = (
+            [(0, 9, "A"), (8, 16, "A"), (16, 20, "B"), (24, 28, "C")]
+            if complete
+            else [(16, 20, "B")]
+        )
+        return [
+            {
+                "emission_id": f"{video_id}:e{index}",
+                "stream_key": video_id,
+                "sequence_id": index,
+                "start": start,
+                "end": end,
+                "class": label,
+                "score": 0.9,
+                "source_frame": end - 1,
+                "emit_frame": end,
+            }
+            for index, (start, end, label) in enumerate(intervals)
+        ]
+
+    strong = {"B4", "B2"}
+    runs = []
+    for arm in INFERENCE_ARMS:
+        for seed in R6_SEEDS:
+            runs.append(
                 {
                     "arm": arm,
-                    "seed": run_seed,
-                    "mOnlineAP": 0.50 if arm in {"B4", "B2"} else 0.49,
+                    "seed": seed,
+                    "videos": [
+                        {
+                            "video_id": video_id,
+                            "emissions": emissions(video_id, arm in strong),
+                        }
+                        for video_id in video_ids
+                    ],
                 }
             )
-            for video_id in ("v0", "v1"):
-                matched = {
-                    "B4": 9,
-                    "B2": 9,
-                    "B3": 8,
-                    "A1_NO_UOT": 8,
-                    "A2_BINARY_MASS": 8,
-                    "A1_A2_JOINT": 5,
-                    "A3_NO_CONSISTENCY": 8,
-                    "A4_NO_SAME_BIN_REUSE": 5,
-                    "A5_NO_NEURAL_LATCH": 8,
-                }[arm]
-                cells.append(
-                    {
-                        "arm": arm,
-                        "seed": run_seed,
-                        "video_id": video_id,
-                        "ground_truth_count": 10,
-                        "matched_ground_truth_count": matched,
-                        "false_emission_count": 1,
-                        "duplicate_emission_count": 0,
-                        "fragmented_ground_truth_count": 0,
-                        "endpoint_latency_bins_sum": float(matched),
-                        "endpoint_latency_observed_count": matched,
-                        "stress": {
-                            "same_class_repetition": {
-                                "ground_truth_count": 5,
-                                "matched_ground_truth_count": (
-                                    1 if arm == "A1_A2_JOINT" else 5 if arm == "B4" else 4
-                                ),
-                            },
-                            "same_bin_end_start": {
-                                "ground_truth_count": 5,
-                                "matched_ground_truth_count": (
-                                    1
-                                    if arm == "A4_NO_SAME_BIN_REUSE"
-                                    else 5
-                                    if arm == "B4"
-                                    else 4
-                                ),
-                            },
-                        },
-                    }
-                )
-    return cells, dataset, eligible
-
-
-def test_r6_uses_complete_crossed_pairs_and_required_joint_deletions():
-    cells, dataset, eligible = _r6_fixture()
-    inference = paired_crossed_bootstrap(
-        cells,
-        dataset,
-        eligible_stress_families=eligible,
-        resamples=200,
-        seed=17,
+    base = load_protocol(PROTOCOL_PATH)
+    protocol = json.loads(json.dumps(base["protocol"]))
+    protocol["population"]["source_registration"].update(
+        {
+            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "authoritative_annotation_sha256": "a" * 64,
+            "historical_inventory_sha256": "b" * 64,
+            "registration_commit": "1" * 40,
+        }
     )
-    assert inference["simultaneous_comparison_count"] == 8 * 8
-    decision = terminal_route_decision(inference)
-    assert decision["status"] == "PASS_B4_ROUTE_SURVIVES"
-    assert decision["d1_established"] is True
-    assert decision["d2_established"] is True
+    protocol["governance"]["post_pass_scope"] = [
+        "READ_ONLY_R0_ANNOTATION_CENSUS",
+        "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
+    ]
+    _relock(protocol)
+    protocol_path = tmp_path / "registered-r6-protocol.json"
+    protocol_path.write_bytes(canonical_json_bytes(protocol))
+    protocol_record = load_protocol(protocol_path)
+    envelope = {
+        "schema_version": R0_ENVELOPE_SCHEMA,
+        "protocol_id": protocol_record["protocol"]["protocol_id"],
+        "protocol_sha256": protocol_record["sha256"],
+        "review_attestation_sha256": "c" * 64,
+        "population_derived_sha256": "d" * 64,
+        "source_sha256": {
+            "annotation": "a" * 64,
+            "class_map": "e" * 64,
+            "exposure_ledger": "f" * 64,
+        },
+        "report": report,
+        "status": "PASS_R0_COMPLETE",
+    }
+    envelope["derived_sha256"] = canonical_sha256(envelope)
+    raw = {
+        "schema_version": R6_RAW_SCHEMA,
+        "protocol_id": "prefix-route-identifiability-20260717-v2",
+        "protocol_sha256": protocol_record["sha256"],
+        "r0_envelope_sha256": hashlib.sha256(
+            canonical_json_bytes(envelope)
+        ).hexdigest(),
+        "r0_detail_sha256": hashlib.sha256(
+            canonical_json_bytes(detail)
+        ).hexdigest(),
+        "reporting_subset": "validation",
+        "seeds": list(R6_SEEDS),
+        "runs": runs,
+    }
+    return raw, envelope, detail, protocol_path
 
-    with pytest.raises(PrefixRouteR6Error, match="Cartesian"):
-        paired_crossed_bootstrap(
-            cells[:-1],
-            dataset,
-            eligible_stress_families=eligible,
-            resamples=10,
+
+def test_r6_derives_route_pass_only_from_raw_emissions_and_r0_sources(
+    tmp_path,
+    monkeypatch,
+):
+    raw, envelope, detail, protocol_path = _r6_fixture(tmp_path)
+    assert r6_module.BOOTSTRAP_RESAMPLES == 10000
+    monkeypatch.setattr(r6_module, "BOOTSTRAP_RESAMPLES", 64)
+    result = evaluate_r6_raw_evidence(
+        raw,
+        protocol_path=protocol_path,
+        r0_envelope=envelope,
+        r0_detail=detail,
+    )
+    assert result["caller_supplied_metrics_or_intervals"] is False
+    assert result["inference"]["resamples"] == 64
+    assert result["inference"]["contrast_count"] == 14
+    assert result["decision"]["status"] == "PASS_B4_ROUTE_SURVIVES"
+    assert result["decision"]["d1_established"] is True
+    assert result["decision"]["d2_established"] is True
+    assert result["decision"]["temporal_control_established"] is True
+    assert result["decision"]["semantic_control_established"] is True
+
+    forged = dict(raw)
+    forged["intervals"] = {"B4_vs_B2": "author-authored"}
+    with pytest.raises(PrefixRouteR6Error, match="fields"):
+        evaluate_r6_raw_evidence(
+            forged,
+            protocol_path=protocol_path,
+            r0_envelope=envelope,
+            r0_detail=detail,
         )
+
+    unregistered = load_protocol(PROTOCOL_PATH)
+    blocked_envelope = json.loads(json.dumps(envelope))
+    blocked_envelope["protocol_sha256"] = unregistered["sha256"]
+    blocked_unsigned = dict(blocked_envelope)
+    blocked_unsigned.pop("derived_sha256")
+    blocked_envelope["derived_sha256"] = canonical_sha256(blocked_unsigned)
+    blocked_raw = json.loads(json.dumps(raw))
+    blocked_raw["protocol_sha256"] = unregistered["sha256"]
+    blocked_raw["r0_envelope_sha256"] = hashlib.sha256(
+        canonical_json_bytes(blocked_envelope)
+    ).hexdigest()
+    with pytest.raises(PrefixRouteR6Error, match="source identity"):
+        evaluate_r6_raw_evidence(
+            blocked_raw,
+            protocol_path=PROTOCOL_PATH,
+            r0_envelope=blocked_envelope,
+            r0_detail=detail,
+        )
+
+    short_detail = json.loads(json.dumps(detail))
+    short_detail["videos"].pop()
+    short_envelope = json.loads(json.dumps(envelope))
+    short_envelope["report"]["reviewer_detail_commitment_sha256"] = (
+        hashlib.sha256(canonical_json_bytes(short_detail)).hexdigest()
+    )
+    short_unsigned = dict(short_envelope)
+    short_unsigned.pop("derived_sha256")
+    short_envelope["derived_sha256"] = canonical_sha256(short_unsigned)
+    short_raw = json.loads(json.dumps(raw))
+    short_raw["r0_envelope_sha256"] = hashlib.sha256(
+        canonical_json_bytes(short_envelope)
+    ).hexdigest()
+    short_raw["r0_detail_sha256"] = hashlib.sha256(
+        canonical_json_bytes(short_detail)
+    ).hexdigest()
+    with pytest.raises(PrefixRouteR6Error, match="population differs"):
+        evaluate_r6_raw_evidence(
+            short_raw,
+            protocol_path=protocol_path,
+            r0_envelope=short_envelope,
+            r0_detail=short_detail,
+        )
+
+
+def test_r6_negative_control_kill_is_reachable_from_raw_outputs(
+    tmp_path,
+    monkeypatch,
+):
+    raw, envelope, detail, protocol_path = _r6_fixture(tmp_path)
+    monkeypatch.setattr(r6_module, "BOOTSTRAP_RESAMPLES", 64)
+    b4_runs = {
+        run["seed"]: run["videos"]
+        for run in raw["runs"]
+        if run["arm"] == "B4"
+    }
+    for run in raw["runs"]:
+        if run["arm"] in {"COUNT_ONLY", "TEMPLATE_TIMING", "LEDGER_ONLY"}:
+            run["videos"] = json.loads(json.dumps(b4_runs[run["seed"]]))
+    result = evaluate_r6_raw_evidence(
+        raw,
+        protocol_path=protocol_path,
+        r0_envelope=envelope,
+        r0_detail=detail,
+    )
+    assert result["decision"]["status"] == "KILL_BENCHMARK_NOT_IDENTIFIABLE"
+    assert set(result["decision"]["equivalent_simple_controls"]) == {
+        "COUNT_ONLY",
+        "TEMPLATE_TIMING",
+        "LEDGER_ONLY",
+    }
+    parameters = inspect.signature(evaluate_r6_raw_evidence).parameters
+    assert set(parameters) == {
+        "raw_evidence",
+        "protocol_path",
+        "r0_envelope",
+        "r0_detail",
+    }
+
+
+def _r6_interval(lower, upper, margin=0.01):
+    return {
+        "observed": (lower + upper) / 2.0,
+        "lower": lower,
+        "upper": upper,
+        "practical_margin": margin,
+    }
+
+
+def _r6_global_intervals(lower=0.1, upper=0.2):
+    return {
+        metric: _r6_interval(lower, upper)
+        for metric in r6_module.GLOBAL_METRICS
+    }
+
+
+def test_r6_simple_control_dominance_kills_the_benchmark():
+    intervals = {
+        "B4_vs_COUNT_ONLY": _r6_global_intervals(-0.2, -0.1),
+        "B4_vs_TEMPLATE_TIMING": _r6_global_intervals(),
+        "B4_vs_LEDGER_ONLY": _r6_global_intervals(),
+    }
+    decision = r6_module._terminal_route_decision({"intervals": intervals})
+    assert decision["status"] == "KILL_BENCHMARK_NOT_IDENTIFIABLE"
+    assert decision["dominating_simple_controls"] == ["COUNT_ONLY"]
+
+
+def test_r6_any_clear_global_inferiority_to_b2_kills_the_route():
+    intervals = {
+        "B4_vs_COUNT_ONLY": _r6_global_intervals(),
+        "B4_vs_TEMPLATE_TIMING": _r6_global_intervals(),
+        "B4_vs_LEDGER_ONLY": _r6_global_intervals(),
+        "B4_vs_FEATURE_TIME_SHUFFLE": _r6_global_intervals(),
+        "B4_vs_SEMANTIC_DERANGEMENT": {
+            "class_mOnlineAP": _r6_interval(0.1, 0.2),
+        },
+        "B4_vs_B2": _r6_global_intervals(),
+    }
+    intervals["B4_vs_B2"]["duplicate_per_gt"] = _r6_interval(-0.2, -0.1)
+    decision = r6_module._terminal_route_decision({"intervals": intervals})
+    assert decision["status"] == "KILL_TEMPORAL_MOTR_INFERIOR"
+    assert decision["automatic_extra_seeds_allowed"] is False
 
 
 def test_formal_output_uses_evaluator_field_names_only():
@@ -1046,30 +1638,152 @@ def test_r1_dynamic_runner_uses_native_and_paired_eos_future_modes():
     )
 
 
-def test_r1_reloads_sources_arrays_support_and_dynamic_tokens(tmp_path):
-    request, canonical_ids = _r1_fixture(tmp_path)
-    result = validate_r1_bundle(
-        request,
-        bundle_root=tmp_path,
-        protocol_id=request["protocol_id"],
-        protocol_sha256=request["protocol_sha256"],
-        review_attestation_sha256="a" * 64,
-        canonical_video_ids=canonical_ids,
+def test_r1_execution_runtime_rejects_opaque_command_before_import():
+    source_records = {
+        "resolved_command": (
+            Path("command.txt"),
+            b"python extractor.py --local-only\n",
+            "0" * 64,
+        ),
+        "software_versions": (
+            Path("software.json"),
+            canonical_json_bytes(
+                {
+                    "schema_version": R1_SOFTWARE_SCHEMA,
+                    "python": "fixture",
+                    "packages": {
+                        "numpy": "fixture",
+                        "opencv": "fixture",
+                        "torch": "fixture",
+                        "transformers": "fixture",
+                    },
+                }
+            ),
+            "1" * 64,
+        ),
+    }
+    binding = {
+        "device": "cpu",
+        "image_size": 224,
+        "batch_size": 64,
+        "local_files_only": True,
+    }
+    with pytest.raises(PrefixRouteR1Error, match="valid UTF-8 JSON"):
+        r1_module._validate_execution_runtime(
+            source_records,
+            binding,
+            {"hf_snapshot_revision": "fixture"},
+        )
+    assert R1_COMMAND_SCHEMA == "prefix-route-r1-resolved-command-v2"
+
+
+def test_r1_core_reexecutes_real_decode_cache_and_dynamic_transcript(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    video_path = tmp_path / "v0.avi"
+    writer = cv2.VideoWriter(
+        str(video_path),
+        cv2.VideoWriter_fourcc(*"MJPG"),
+        5.0,
+        (8, 8),
     )
-    assert result["status"] == "PASS_R1_EXISTING_CACHE_CERTIFIED"
-    assert result["existing_cache_linkage"]["cache_key_sets_equal"] is True
-    assert result["dynamic_perturbation_audit"]["record_count"] > 0
+    assert writer.isOpened()
+    for value in (20, 80, 140, 220):
+        writer.write(np.full((8, 8, 3), value, dtype=np.uint8))
+    writer.release()
+    decoded = r1_module._decode_rgb_video(video_path, image_size=8)
+
+    def encode_batch(batch):
+        batch = np.asarray(batch, dtype=np.float32)
+        return np.stack(
+            (
+                batch.mean(axis=(1, 2, 3)),
+                batch[:, 0, 0, 0],
+            ),
+            axis=1,
+        ).astype(np.float32)
+
+    feature_path = tmp_path / "v0.npy"
+    np.save(feature_path, encode_batch(decoded))
+    tokens = [
+        {
+            "token_index": index,
+            "source_frame": index,
+            "decision_frame": index,
+            "support_frames": [index],
+        }
+        for index in range(len(decoded))
+    ]
+    support = {
+        "v0": {
+            "video_id": "v0",
+            "frame_count": len(decoded),
+            "tokens": tokens,
+            "source_frames": list(range(len(decoded))),
+        }
+    }
+    selection = [
+        {"category": "first_token", "video_id": "v0", "token_index": 0}
+    ]
+    supplied = {
+        "schema_version": R1_DYNAMIC_SCHEMA,
+        "audit_seed": 2026071702,
+        "records": [
+            run_dynamic_token_record(
+                encode_batch=encode_batch,
+                selected_rgb_frames=decoded,
+                video_id="v0",
+                token_index=0,
+                category="first_token",
+            )
+        ],
+    }
+    result = r1_module._recompute_cache_and_dynamic(
+        encode_batch=encode_batch,
+        binding={"image_size": 8, "batch_size": 2},
+        canonical_ids=("v0",),
+        raw_paths={"v0": video_path},
+        feature_paths={"v0": feature_path},
+        support_by_id=support,
+        expected_selection=selection,
+        supplied_dynamic=supplied,
+    )
+    assert result["cache_rows_byte_identical_to_reexecution"] is True
+    assert result["dynamic_transcript_byte_identical_to_reexecution"] is True
+
+    tampered = np.load(feature_path)
+    tampered[0, 0] += 1.0
+    np.save(feature_path, tampered)
+    with pytest.raises(PrefixRouteR1Error, match="cache rows"):
+        r1_module._recompute_cache_and_dynamic(
+            encode_batch=encode_batch,
+            binding={"image_size": 8, "batch_size": 2},
+            canonical_ids=("v0",),
+            raw_paths={"v0": video_path},
+            feature_paths={"v0": feature_path},
+            support_by_id=support,
+            expected_selection=selection,
+            supplied_dynamic=supplied,
+        )
 
 
-def test_r1_noop_or_key_substitution_is_recordable_failure(tmp_path):
+def test_r1_unregistered_binding_blocks_fabricated_bytes_before_pass(tmp_path):
     request, canonical_ids = _r1_fixture(tmp_path)
-    dynamic_path = tmp_path / request["dynamic_audit"]["path"]
-    dynamic = json.loads(dynamic_path.read_text(encoding="utf-8"))
-    dynamic["records"][0]["future_mutated_input_sha256"] = "0" * 64
-    dynamic_path.write_bytes(canonical_json_bytes(dynamic))
-    request["dynamic_audit"]["sha256"] = hashlib.sha256(
-        dynamic_path.read_bytes()
-    ).hexdigest()
+    protocol_r1 = load_protocol(PROTOCOL_PATH)["protocol"]["r1"]
+    with pytest.raises(PrefixRouteR1Error, match="not registered"):
+        validate_r1_bundle(
+            request,
+            bundle_root=tmp_path,
+            protocol_id=request["protocol_id"],
+            protocol_sha256=request["protocol_sha256"],
+            review_attestation_sha256="a" * 64,
+            canonical_video_ids=canonical_ids,
+            protocol_r1=protocol_r1,
+        )
+
+
+def test_r1_unregistered_binding_is_recordable_failure(tmp_path):
+    request, canonical_ids = _r1_fixture(tmp_path)
+    protocol_r1 = load_protocol(PROTOCOL_PATH)["protocol"]["r1"]
     result = derive_r1_status(
         request,
         bundle_root=tmp_path,
@@ -1077,24 +1791,10 @@ def test_r1_noop_or_key_substitution_is_recordable_failure(tmp_path):
         protocol_sha256=request["protocol_sha256"],
         review_attestation_sha256="a" * 64,
         canonical_video_ids=canonical_ids,
+        protocol_r1=protocol_r1,
     )
     assert result["status"] == "FAIL_UNVERIFIABLE"
-    assert "no-op" in result["failure_reasons"][0]
-
-    request, canonical_ids = _r1_fixture(tmp_path / "keys")
-    request["feature_arrays"].pop(canonical_ids[-1])
-    request["feature_arrays"]["unrelated"] = next(
-        iter(request["feature_arrays"].values())
-    )
-    with pytest.raises(PrefixRouteR1Error, match="cover"):
-        validate_r1_bundle(
-            request,
-            bundle_root=tmp_path / "keys",
-            protocol_id=request["protocol_id"],
-            protocol_sha256=request["protocol_sha256"],
-            review_attestation_sha256="a" * 64,
-            canonical_video_ids=canonical_ids,
-        )
+    assert "not registered" in result["failure_reasons"][0]
 
 
 def test_cli_blocks_collection_without_signed_review():

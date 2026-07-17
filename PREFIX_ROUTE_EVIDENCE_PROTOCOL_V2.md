@@ -9,15 +9,28 @@ Protocol V1 received the independent verdict:
 The full review is archived in
 `PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`.
 
-Protocol V2 is therefore still:
+The same reviewer then reassessed commit
+`18cc27b8496f5effa7e4e93abca58da4e7ea3d0b` and again returned:
+
+`REVISE_PROTOCOL_BEFORE_COLLECTION`
+
+That review is archived byte-identically in
+`PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`.
+
+The current remediation candidate remains:
 
 `PROTOCOL_REVIEW_PENDING`
 
-It does not authorize R0, R1, model implementation, profiling, or training.
+It does not authorize population evidence, R0, R1, model implementation,
+profiling, or training. Even a future protocol PASS can initially authorize
+only read-only source-identity registration because the authoritative THUMOS14
+annotation, historical 211-file inventory, and R1 extractor snapshot have not
+yet been registered in a reviewed commit.
 
-## What V2 Changes
+## What The Remediation Changes
 
-V2 closes the two P0 defects found in V1.
+The current candidate retains V2's cryptographic review and Git/source binding,
+then removes the scientific false-PASS paths found in the V2 reassessment.
 
 First, collection authorization cannot consume a caller-created dictionary.
 The public authorization function must re-read:
@@ -31,22 +44,29 @@ The public authorization function must re-read:
 The reviewer identity and public key were fixed before V2 review. The same sole
 reviewer retains the private key outside the repository.
 
-Second, population, R0, and R1 status values are computed from contained source
-evidence. A submitted `PASS` string is never sufficient.
+The key changes are:
 
-## V1 Review Response Map
-
-| V1 finding | V2 disposition |
-|---|---|
-| P0-1, self-forgeable review | Freeze one reviewer ID and Ed25519 public key; sign canonical attestation bytes; bind protocol, manifest, commit, and tree; re-read files in every authorization path. |
-| P0-2, asserted evidence | Re-read contained ID lists, reasons, annotations, class maps, raw videos, arrays, support rows, and perturbations; derive all statuses. |
-| P1-1, shallow semantics | Validate exact nested policy values, lock all policy sections by hash, and reject each forbidden relaxation in adversarial tests. |
-| P1-2, ambiguous R0 | Bind an executable collector with fixed interval, endpoint, duplicate, tie, pair, denominator, bootstrap, and power rules plus synthetic edge cases. |
-| P1-3, annotation exposure | Mark THUMOS reporting annotations as design-exposed, maintain an append-only exposure ledger, and require a separately frozen annotation-unseen confirmatory dataset for such a claim. |
-| P1-4, weak fairness/isolation | Make B2 a faithful newborn-plus-propagated-query attack; derive capacity/resource fairness; require A4 for D1 and joint A1+A2 for D2. |
-| P1-5, nonconstructive controls/OOD | Bind executable shuffle, derangement, and R5 generators with seeds, valid-cross rules, content hashes, and failure actions. |
-| P1-6, incomplete R6 | Bind evaluator fields and metric sources, use crossed paired resampling with full multiplicity, and define an indeterminate terminal result. |
-| P2-1, incomplete source binding/tests | Bind all dependencies in an exact source manifest and frozen Git tree; use real temporary artifacts and hostile substitution tests. |
+1. Population membership is derived only from registered authoritative
+   annotation bytes, a registered historical file inventory, and every actual
+   historical artifact. Caller-supplied 211/213 lists and reason prose no
+   longer exist.
+2. R0 is fixed to the `validation` subset and the exact
+   `DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK` disclosure. Its former
+   heuristic power label is removed; R0 prevalence is descriptive only.
+3. R1 must recreate the registered local-only SigLIP snapshot, decode every
+   video, verify the canonical command and active software versions, rerun
+   every cache row, and rerun the dynamic transcript. The current unregistered
+   binding blocks R1 before reading author-crafted evidence.
+4. B2 is an executable temporal-MOTR state machine, not a prose baseline.
+   Fairness is measured from live parameters, gradients, Torch profiler output,
+   CUDA memory, latency events, and actual state tensors.
+5. R5 is one public 3,800-sequence package with exact counts, seeds, compound
+   table, valid cells, and sequence-set hash commitments.
+6. R6 accepts raw immutable emissions only. It requires the registered-source
+   R0 envelope and its committed 213-video detail, invokes the real evaluators,
+   runs fixed 10,000-resample inference, and computes all PASS/KILL states
+   internally. Caller metrics, confidence intervals, alpha, seeds, and
+   resample counts are not accepted.
 
 These are protocol implementations, not positive scientific evidence. R0, R1,
 B0-B4, D1, D2, and route effectiveness remain unknown.
@@ -88,15 +108,24 @@ The append-only exposure ledger is:
 
 ## Population Gate
 
-The historical 211-video set remains audit-only. The canonical 213-video set
-can become the sole reporting population only after the validator re-reads:
+The source identity is currently:
 
-- the sorted historical ID list;
-- the sorted canonical ID list;
-- one reason row for every differing ID;
-- every cited reason-source artifact.
+`UNREGISTERED_BLOCK_POPULATION_R0_R1`
 
-Counts, differences, reason coverage, and status are derived by the validator.
+A reviewed registration commit must bind:
+
+- the authoritative THUMOS14 temporal-annotation bytes;
+- release identity and revision;
+- the `validation` reporting subset;
+- a canonical 211-entry historical inventory;
+- all 211 actual historical video artifacts and hashes;
+- explicit source-video to canonical-video aliases.
+
+The canonical 213 set is derived from annotation rows whose subset equals
+`validation`. The historical set is derived from the inventory and actual
+artifacts. The two absent historical files and their
+`HISTORICAL_LOCAL_FILE_ABSENT` reasons are computed as annotation-minus-
+inventory. There is no API for author-supplied membership lists or explanations.
 
 ## R0 Gate
 
@@ -120,10 +149,24 @@ Its fixed boundary rules include:
 The author report contains aggregates and no video IDs. Validation recomputes
 the complete report and requires exact canonical-byte equality.
 
+R0 family coverage is descriptive support only. The earlier heuristic
+single-proportion power calculation was not aligned with the paired video/seed
+estimand and has been removed.
+
 ## R1 Gate
 
 R1 is limited to decoded RGB frames through one feature token. It does not
 claim compressed-stream or wall-clock decoding causality.
+
+The extractor execution identity is currently:
+
+`UNREGISTERED_BLOCK_R1`
+
+Before R1 can run, one reviewed protocol commit must bind the repository
+commit, exact extractor source hash, Hugging Face snapshot revision, snapshot
+manifest hash, configs, weight shard filenames, CPU device, image size 224,
+batch size 64, local-files-only execution, the canonical resolved-command
+schema, and the canonical active-software-version schema.
 
 The validator re-reads:
 
@@ -137,9 +180,14 @@ The validator re-reads:
 - the complete support map;
 - the dynamic perturbation record.
 
-It loads each NumPy feature array and checks its geometry, dtype, source frames,
-and hash. It derives the perturbation sample from the support map and compares
-the actual float32 token bytes. Missing identity or a no-op mutation yields
+It loads each NumPy feature array, decodes every bound raw video, selects the
+registered source frames, reconstructs the bound encoder from the snapshot,
+and reruns every token. Cache rows must be byte-identical after conversion to
+the cache dtype. The resolved command must describe the same direct execution
+path, and Python, NumPy, OpenCV, Torch, and Transformers versions must equal
+the registered runtime record. It also derives the perturbation sample from
+the support map and reruns every transcript record. Missing identity, runtime
+drift, cache drift, transcript drift, or a no-op mutation yields
 `FAIL_UNVERIFIABLE`.
 
 For every nonterminal token, the future intervention inverts the native decoded
@@ -152,9 +200,20 @@ frame must still change that token.
 
 ## Arm Fairness
 
-B2 is a faithful temporal tracking attack with newborn object queries and
-propagated track queries present at each decision. It is not restricted to
-capacity that happened to be free before the decision.
+B2 is now executable in
+`opentad/utils/prefix_route_b2_contract_v2.py`. It has 64 propagated-track
+slots and executes all 64 newborn queries at every decision, for at most 128
+decoder queries. Propagated identities are locked before quantized Hungarian
+matching of newborn queries. Completed but un-emitted instances remain in the
+instance-aware risk set and keep a first-emission target.
+
+B2 can create persistent newborn tracks only from slots that were free before
+the current decision. A slot released by completion or drop becomes reusable
+at the next decision, not in the same decision. All newborn queries are still
+executed, and a direct-complete newborn may emit immediately. This precise
+restriction is the predeclared D1 difference: B4 must earn value from atomic
+release and same-bin reseeding rather than from a vague "persistent query"
+description.
 
 All B0-B4 arms must match B2 on:
 
@@ -171,8 +230,17 @@ All B0-B4 arms must match B2 on:
 - calibration population;
 - seed count.
 
-Unused trainable padding is forbidden. Every trainable parameter must appear in
-the forward path and receive a gradient in the contract smoke test.
+Serialized rows that merely assert these values are rejected. The production
+fairness function accepts live runtime adapters only. It counts actual
+trainable parameters, runs backward, requires finite nonzero smoke gradients,
+requires the optimizer parameter set to equal the model trainable parameter
+set, replays every microbatch in one trace-bound optimizer event, measures
+FLOPs with Torch profiler, reads CUDA peak allocation, measures 20 warmup plus
+100 timed decisions, and recursively counts live causal-state tensor bytes.
+Optimizer events, effective tokens, accumulation, calibration videos, trials,
+and seeds are derived from four canonical hash-verified execution records;
+adapters cannot submit aggregate budget scalars. Production measurement
+remains blocked until a separate model-P0 contract is authorized.
 
 ## Controls and OOD
 
@@ -185,14 +253,38 @@ Semantic derangement:
 - forbids a global consistent class rename;
 - fails if no legal construction exists.
 
-The R5 generator fixes 64-bin sequences, 16-dimensional observations, four
-classes, event topology, temporal geometry, semantic mapping, observation
-distribution, valid crosses, balancing, seeds, and canonical scientific-content
-hashes.
+The R5 generator fixes 64 bins with eight ticks per bin, 16-dimensional
+observations, four classes, event topology, temporal geometry, semantic
+mapping, observation distribution, valid crosses, balancing, and seeds. The
+full package contains:
+
+- 1,000 training sequences;
+- 400 IID holdout sequences;
+- 400 sequences for each of four single-shift families;
+- 800 public compound-OOD sequences over eight frozen combinations.
+
+All 3,800 scientific-content hashes must be pairwise disjoint. Every shifted
+factor must change scientific content relative to an IID counterfactual, every
+cell count differs by at most one, and each complete set must match its frozen
+sequence-set SHA-256.
+
+Because the grammar, seeds, and compound table are public, R5 is explicitly a
+design-exposed protocol stress test, not hidden confirmatory OOD evidence. A
+final hidden-OOD claim requires a separately committed unseen grammar or seed
+before any model artifact exists.
 
 ## R6 Decision
 
-R6 uses exact evaluator field names and crossed paired resampling:
+R6 has one public entry point:
+
+`opentad.evaluations.prefix_route_r6_v2.evaluate_r6_raw_evidence`
+
+It accepts only per-video immutable emissions for all 15 model/control arms and
+the fixed seeds 705, 706, and 707. It verifies that the R0 evidence envelope
+binds the same protocol and registered annotation source, checks its fixed R0
+bootstrap and complete canonical 213-video detail commitment, derives GT and
+stress-family IDs, invokes `compute_full_petal_metrics` and `OnlineAPBudgeted`,
+and then performs crossed paired resampling:
 
 - one global seed resample is shared across every video and arm;
 - one video resample is shared across every arm;
@@ -205,7 +297,10 @@ B4 survives only when:
 1. it is noninferior to B2 on all global metrics; and
 2. D1 is established by the A4 deletion, or D2 is established by the joint
    A1+A2 deletion; and
-3. negative controls do not identify an uninformative benchmark.
+3. count-only, template-timing, and ledger-only controls are not equivalent to
+   B4; and
+4. feature-time shuffle establishes temporal dependence and semantic
+   derangement establishes at least a 0.05 `class_mOnlineAP` drop.
 
 An inconclusive interval gives `INDETERMINATE_NO_ROUTE_CLAIM`. It does not
 automatically authorize additional seeds.
@@ -238,4 +333,7 @@ python tools/validate_prefix_route_protocol_v2.py authorize-collection `
   --review-signature <review.sig>
 ```
 
-Even a valid PASS authorizes only outcome-blind R0 and R1.
+With the current unregistered source state, even a valid PASS authorizes only
+read-only source-identity registration. R0/R1 require a second fixed,
+independently reviewed protocol commit containing the registered identities.
+Model work, profiling, and training remain blocked.

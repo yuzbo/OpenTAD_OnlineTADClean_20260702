@@ -20,6 +20,12 @@ from .evidence_bundle import (
     strict_json_from_bytes,
 )
 from .prefix_route_r0_v2 import collect_r0_census, parse_class_map_bytes
+from .prefix_route_ood_v2 import (
+    COMPOUND_SPECS,
+    EXPECTED_SET_SEEDS,
+    EXPECTED_SET_SHA256,
+    GENERATOR_VERSION,
+)
 
 
 PROTOCOL_SCHEMA = "prefix-route-identifiability-protocol-v2"
@@ -27,8 +33,7 @@ PROTOCOL_ID = "prefix-route-identifiability-20260717-v2"
 MANIFEST_SCHEMA = "prefix-route-source-manifest-v2"
 REVIEW_SCHEMA = "prefix-route-signed-review-attestation-v2"
 POPULATION_REQUEST_SCHEMA = "prefix-route-population-request-v2"
-ID_LIST_SCHEMA = "prefix-route-video-id-list-v2"
-DIFFERENCE_REASON_SCHEMA = "prefix-route-population-reasons-v2"
+HISTORICAL_INVENTORY_SCHEMA = "prefix-route-historical-inventory-v2"
 R0_REQUEST_SCHEMA = "prefix-route-r0-request-v2"
 R0_ENVELOPE_SCHEMA = "prefix-route-r0-evidence-envelope-v2"
 EXPOSURE_LEDGER_SCHEMA = "prefix-route-exposure-ledger-entry-v2"
@@ -305,10 +310,21 @@ def _validate_governance(protocol):
     )
     if blocked != mandatory_blocks:
         raise PrefixRouteProtocolV2Error("pre-PASS block set differs")
-    if governance["post_pass_scope"] != [
-        "READ_ONLY_R0_ANNOTATION_CENSUS",
-        "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
-    ]:
+    source_state = _mapping(
+        _mapping(protocol["population"], "population").get(
+            "source_registration"
+        ),
+        "source registration",
+    ).get("state")
+    expected_post_pass = (
+        ["READ_ONLY_SOURCE_IDENTITY_REGISTRATION"]
+        if source_state == "UNREGISTERED_BLOCK_POPULATION_R0_R1"
+        else [
+            "READ_ONLY_R0_ANNOTATION_CENSUS",
+            "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
+        ]
+    )
+    if governance["post_pass_scope"] != expected_post_pass:
         raise PrefixRouteProtocolV2Error("post-PASS scope differs")
     if governance["pass_verdict"] != PROTOCOL_PASS:
         raise PrefixRouteProtocolV2Error("PASS token differs")
@@ -350,7 +366,13 @@ def _validate_governance(protocol):
 def _validate_population_policy(protocol):
     population = _exact(
         protocol["population"],
-        {"dataset", "development", "reporting", "exposure_policy"},
+        {
+            "dataset",
+            "development",
+            "reporting",
+            "exposure_policy",
+            "source_registration",
+        },
         "population",
     )
     if population["dataset"] != "THUMOS14":
@@ -398,7 +420,55 @@ def _validate_population_policy(protocol):
         or reporting["unresolved_action"] != "BLOCK_R0_POPULATION_UNRESOLVED"
     ):
         raise PrefixRouteProtocolV2Error("reporting population policy differs")
-    _unique_strings(reporting["allowed_reason_codes"], "allowed reason codes")
+    if reporting["allowed_reason_codes"] != [
+        "HISTORICAL_LOCAL_FILE_ABSENT"
+    ]:
+        raise PrefixRouteProtocolV2Error("allowed reason codes differ")
+    registration = _exact(
+        population["source_registration"],
+        {
+            "state",
+            "release_id",
+            "release_revision",
+            "annotation_schema",
+            "reporting_subset",
+            "authoritative_annotation_sha256",
+            "historical_inventory_sha256",
+            "registration_commit",
+        },
+        "source registration",
+    )
+    if (
+        registration["release_id"] != "THUMOS14_TEMPORAL_ANNOTATIONS"
+        or registration["release_revision"] != "OFFICIAL_RELEASE_TO_BE_REGISTERED"
+        or registration["annotation_schema"] != "thumos_database_json_v1"
+        or registration["reporting_subset"] != "validation"
+    ):
+        raise PrefixRouteProtocolV2Error("source registration identity differs")
+    if registration["state"] == "UNREGISTERED_BLOCK_POPULATION_R0_R1":
+        if (
+            registration["authoritative_annotation_sha256"] != "UNREGISTERED"
+            or registration["historical_inventory_sha256"] != "UNREGISTERED"
+            or registration["registration_commit"] != "UNREGISTERED"
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "unregistered source identity contains asserted hashes"
+            )
+    elif registration["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        _sha256(
+            registration["authoritative_annotation_sha256"],
+            "registered annotation hash",
+        )
+        _sha256(
+            registration["historical_inventory_sha256"],
+            "registered historical inventory hash",
+        )
+        _git_sha1(
+            registration["registration_commit"],
+            "source registration commit",
+        )
+    else:
+        raise PrefixRouteProtocolV2Error("source registration state differs")
     exposure = _exact(
         population["exposure_policy"],
         {
@@ -435,6 +505,8 @@ def _validate_r0_r1(protocol):
             "pair_rules",
             "bootstrap",
             "claim_eligibility",
+            "reporting_subset",
+            "annotation_exposure_status",
             "author_output",
             "status_derivation",
         },
@@ -444,6 +516,14 @@ def _validate_r0_r1(protocol):
         raise PrefixRouteProtocolV2Error("R0 collector binding differs")
     if r0["feature_stride_frames"] != 8:
         raise PrefixRouteProtocolV2Error("R0 feature stride differs")
+    if (
+        r0["reporting_subset"] != "validation"
+        or r0["annotation_exposure_status"]
+        != "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "R0 subset or exposure status differs"
+        )
     preprocessing = r0["interval_preprocessing"]
     required_preprocessing = {
         "interval": "half_open_[start_sec,end_sec)",
@@ -506,23 +586,15 @@ def _validate_r0_r1(protocol):
             "gt_instances": 100,
             "fraction_positive_videos": 0.05,
             "classes": 3,
-            "power": 0.8,
         },
         "secondary_minimums": {
             "independent_videos": 10,
             "gt_instances": 30,
         },
-        "power": {
-            "family_wise_alpha": 0.05,
-            "family_count": 4,
-            "two_sided_alpha_each": 0.0125,
-            "baseline_rate": 0.5,
-            "target_rate": 0.6,
-            "absolute_effect": 0.1,
-            "intracluster_correlation": 0.2,
-            "cluster_vector_includes_zero_videos": True,
-            "cluster_cv_ddof": 0,
-        },
+        "role": "DESCRIPTIVE_SUPPORT_ONLY_NOT_DOWNSTREAM_POWER_OR_CLAIM",
+        "downstream_power_status": (
+            "REMOVED_UNTIL_PAIRED_VIDEO_SEED_ESTIMAND_IS_DEFINED"
+        ),
     }:
         raise PrefixRouteProtocolV2Error("R0 claim eligibility differs")
     if (
@@ -542,6 +614,7 @@ def _validate_r0_r1(protocol):
             "dynamic_selection",
             "dynamic_mutations",
             "cache_linkage",
+            "execution_binding",
             "status_derivation",
         },
         "r1",
@@ -623,6 +696,80 @@ def _validate_r0_r1(protocol):
         "replacement_cache_automatically_authorized": False,
     }:
         raise PrefixRouteProtocolV2Error("R1 cache linkage differs")
+    binding = _exact(
+        r1["execution_binding"],
+        {
+            "state",
+            "backend",
+            "repository_commit",
+            "hf_snapshot_revision",
+            "extractor_source_sha256",
+            "snapshot_manifest_sha256",
+            "resolved_command_sha256",
+            "resolved_command_schema",
+            "environment_lock_sha256",
+            "software_versions_sha256",
+            "software_versions_schema",
+            "annotation_sha256",
+            "cache_manifest_sha256",
+            "support_map_sha256",
+            "raw_video_manifest_sha256",
+            "image_size",
+            "batch_size",
+            "device",
+            "local_files_only",
+        },
+        "R1 execution binding",
+    )
+    if (
+        binding["backend"] != "online_siglip_frame_encoder_v1"
+        or binding["image_size"] != 224
+        or binding["batch_size"] != 64
+        or binding["device"] != "cpu"
+        or binding["local_files_only"] is not True
+        or binding["resolved_command_schema"]
+        != "prefix-route-r1-resolved-command-v2"
+        or binding["software_versions_schema"]
+        != "prefix-route-r1-software-versions-v2"
+    ):
+        raise PrefixRouteProtocolV2Error("R1 execution runtime differs")
+    if binding["state"] == "UNREGISTERED_BLOCK_R1":
+        if any(
+            binding[field] != "UNREGISTERED"
+            for field in (
+                "repository_commit",
+                "hf_snapshot_revision",
+                "extractor_source_sha256",
+                "snapshot_manifest_sha256",
+                "resolved_command_sha256",
+                "environment_lock_sha256",
+                "software_versions_sha256",
+                "annotation_sha256",
+                "cache_manifest_sha256",
+                "support_map_sha256",
+                "raw_video_manifest_sha256",
+            )
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "unregistered R1 binding contains asserted identity"
+            )
+    elif binding["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        _git_sha1(binding["repository_commit"], "R1 extractor commit")
+        _nonempty(binding["hf_snapshot_revision"], "R1 HF revision")
+        _sha256(binding["extractor_source_sha256"], "R1 extractor source hash")
+        _sha256(binding["snapshot_manifest_sha256"], "R1 snapshot manifest hash")
+        for field in (
+            "resolved_command_sha256",
+            "environment_lock_sha256",
+            "software_versions_sha256",
+            "annotation_sha256",
+            "cache_manifest_sha256",
+            "support_map_sha256",
+            "raw_video_manifest_sha256",
+        ):
+            _sha256(binding[field], f"R1 {field}")
+    else:
+        raise PrefixRouteProtocolV2Error("R1 execution binding state differs")
     if r1["status_derivation"] != "computed_from_evidence_no_boolean_pass_inputs":
         raise PrefixRouteProtocolV2Error("R1 status derivation differs")
 
@@ -679,12 +826,35 @@ def _validate_r2_to_r6(protocol):
     b2 = r2["b2_canonical_attack"]
     if b2 != {
         "query_pools": "newborn_object_queries_plus_propagated_track_queries",
-        "newborn_availability": "present_at_every_decision_not_predecision_free_only",
+        "track_capacity": 64,
+        "newborn_query_count": 64,
+        "decoder_query_capacity_max": 128,
+        "newborn_availability": "exactly_64_executed_at_every_decision",
+        "predecision_free_slot_rule": (
+            "64-minus-number_of_tracks_entering_decision"
+        ),
+        "released_slots_reusable_same_decision": False,
         "propagation": "surviving_track_queries_propagate_across_decisions",
-        "assignment": "temporal_tracklet_aware_one_to_one",
-        "termination": "model_generated_track_score_and_endpoint_policy",
+        "risk_set": (
+            "all_started_unemitted_instances_including_delayed_completed_instances"
+        ),
+        "training_target": "instance_aware_first_emission_target",
+        "assignment": (
+            "locked_propagated_identity_then_quantized_hungarian_newborn_plus_dustbin"
+        ),
+        "single_calibrated_threshold_grid": [
+            index / 20.0 for index in range(1, 20)
+        ],
+        "termination": (
+            "completion_and_class_above_threshold_emit_else_active_above_"
+            "threshold_propagate_else_drop"
+        ),
+        "direct_complete_newborn_emission": True,
         "shared_heads_and_ledger": True,
         "route_specific_d1_d2_forbidden": True,
+        "implementation_path": (
+            "opentad.utils.prefix_route_b2_contract_v2.temporal_motr_transition"
+        ),
         "implementation_gate": (
             "source_cited_reconstruction_tests_pass_before_B4_comparison"
         ),
@@ -701,6 +871,7 @@ def _validate_r2_to_r6(protocol):
         "train_macs_relative_tolerance": 0.1,
         "inference_macs_relative_tolerance": 0.1,
         "live_state_bytes_relative_tolerance": 0.1,
+        "mac_definition": "torch_profiler_flops_divided_by_two",
         "peak_training_memory_relative_tolerance": 0.1,
         "peak_inference_memory_relative_tolerance": 0.1,
         "latency_median_and_p95_upper_ratio": 1.1,
@@ -714,6 +885,25 @@ def _validate_r2_to_r6(protocol):
         ],
         "unused_or_dummy_trainable_parameters": "FORBIDDEN",
         "every_trainable_parameter_requires_forward_use_and_smoke_gradient": True,
+        "evidence_source": (
+            "LIVE_MODEL_GRADIENT_PROFILER_CUDA_AND_STATE_MEASUREMENT_PLUS_"
+            "HASH_VERIFIED_BUDGET_RECORDS"
+        ),
+        "budget_evidence_source": (
+            "CANONICAL_HASH_VERIFIED_EXECUTION_CALIBRATION_TRIAL_AND_SEED_RECORDS"
+        ),
+        "budget_record_schemas": [
+            "prefix-route-fairness-execution-trace-v2",
+            "prefix-route-fairness-calibration-manifest-v2",
+            "prefix-route-fairness-trial-manifest-v2",
+            "prefix-route-fairness-seed-manifest-v2",
+        ],
+        "serialized_scalar_or_boolean_input_allowed": False,
+        "warmup_decisions": 20,
+        "timed_decisions": 100,
+        "production_measurement_state": (
+            "BLOCKED_UNTIL_MODEL_P0_CONTRACT_IS_SEPARATELY_AUTHORIZED"
+        ),
         "early_stopping": "FORBIDDEN",
         "nonfinite_or_skipped_update": "INVALIDATE_PAIRED_RUN_SET",
     }:
@@ -796,7 +986,7 @@ def _validate_r2_to_r6(protocol):
     }:
         raise PrefixRouteProtocolV2Error("semantic derangement differs")
     if r3["semantic_margin"] != {
-        "metric": "class_ap",
+        "metric": "class_mOnlineAP",
         "required_absolute_drop": 0.05,
         "failure": "KILL_SEMANTIC_IDENTIFIABILITY_CLAIM",
     }:
@@ -867,11 +1057,13 @@ def _validate_r2_to_r6(protocol):
         protocol["r5"],
         {
             "generator",
+            "generator_version",
+            "exposure_policy",
             "sequence",
             "factor_levels",
             "sets",
             "valid_cross",
-            "hidden_compound",
+            "public_compound_table",
             "disjointness",
             "failure_actions",
         },
@@ -881,14 +1073,26 @@ def _validate_r2_to_r6(protocol):
         "opentad.utils.prefix_route_ood_v2.generate_sequence"
     ):
         raise PrefixRouteProtocolV2Error("R5 generator binding differs")
+    if r5["generator_version"] != GENERATOR_VERSION:
+        raise PrefixRouteProtocolV2Error("R5 generator version differs")
+    if r5["exposure_policy"] != {
+        "status": "DESIGN_EXPOSED_PROTOCOL_STRESS_NOT_HIDDEN_CONFIRMATORY",
+        "hidden_ood_claim_allowed": False,
+        "final_confirmatory_requires": (
+            "SEPARATELY_COMMITTED_UNSEEN_GRAMMAR_OR_SEED_BEFORE_MODEL_ARTIFACTS"
+        ),
+    }:
+        raise PrefixRouteProtocolV2Error("R5 exposure policy differs")
     if r5["sequence"] != {
         "length_bins": 64,
+        "ticks_per_bin": 8,
         "feature_dim": 16,
         "class_count": 4,
         "interval": "half_open_bins",
         "observation_equation": (
             "active_prototype_sum+birth_impulse+delayed_completion_cue+"
-            "normalized_time+active_count_then_frozen_distribution"
+            "normalized_time+active_count+sequence_context_then_"
+            "frozen_distribution"
         ),
         "float_serialization": "round_8_decimal_canonical_json",
     }:
@@ -962,6 +1166,7 @@ def _validate_r2_to_r6(protocol):
         },
         "COMPOUND_OOD": {
             "count": 800,
+            "seed": 2026071712,
             "combination_count": 8,
             "support": "at_least_two_shifted_families",
         },
@@ -973,23 +1178,24 @@ def _validate_r2_to_r6(protocol):
         "round_robin_balancing": True,
         "minimum_and_maximum_cell_counts_reported": True,
         "no_posthoc_resampling": True,
+        "expected_sequence_set_sha256": EXPECTED_SET_SHA256,
     }:
         raise PrefixRouteProtocolV2Error("R5 valid-cross rules differ")
     if r5["disjointness"] != (
         "scientific_content_sha256_sets_pairwise_disjoint_excluding_set_metadata"
     ):
         raise PrefixRouteProtocolV2Error("R5 disjointness differs")
-    if r5["hidden_compound"] != {
-        "owner": "same_independent_reviewer",
-        "seed_commitment": "SHA256(protocol_sha256||reviewer_secret||COMPOUND_OOD)",
-        "signed_commitment_before_model_implementation": True,
-        "combination_table_reveal": "after_all_arm_artifacts_hashed",
-    }:
-        raise PrefixRouteProtocolV2Error("R5 hidden compound contract differs")
+    if r5["public_compound_table"] != list(COMPOUND_SPECS):
+        raise PrefixRouteProtocolV2Error("R5 public compound table differs")
+    if r5["sets"]["COMPOUND_OOD"]["seed"] != (
+        EXPECTED_SET_SEEDS["COMPOUND_OOD"]
+    ):
+        raise PrefixRouteProtocolV2Error("R5 compound seed differs")
     if r5["failure_actions"] != {
         "invalid_cross": "FAIL_R5_GENERATION",
         "cell_balance_mismatch": "FAIL_R5_GENERATION",
         "set_hash_overlap": "FAIL_R5_GENERATION",
+        "shift_no_scientific_effect": "FAIL_R5_GENERATION",
     }:
         raise PrefixRouteProtocolV2Error("R5 failure actions differ")
 
@@ -999,9 +1205,12 @@ def _validate_r2_to_r6(protocol):
             "implementation",
             "metric_sources",
             "global_metrics",
+            "control_metrics",
             "stress_metrics",
             "registered_arms",
+            "control_arms",
             "registered_contrasts",
+            "run_seeds",
             "paired_inference",
             "margins",
             "b4_survival",
@@ -1010,7 +1219,7 @@ def _validate_r2_to_r6(protocol):
         "r6",
     )
     if r6["implementation"] != (
-        "opentad.evaluations.prefix_route_r6_v2.paired_crossed_bootstrap"
+        "opentad.evaluations.prefix_route_r6_v2.evaluate_r6_raw_evidence"
     ):
         raise PrefixRouteProtocolV2Error("R6 implementation differs")
     if r6["metric_sources"] != {
@@ -1025,6 +1234,13 @@ def _validate_r2_to_r6(protocol):
         ),
         "per_video_cell": (
             "opentad.evaluations.prefix_route_r6_v2.derive_per_video_cell"
+        ),
+        "raw_evidence": (
+            "immutable_emissions_only_no_caller_metrics_intervals_or_"
+            "bootstrap_parameters"
+        ),
+        "r0_evidence": (
+            "registered_source_bound_R0_envelope_plus_committed_213_video_detail"
         ),
         "stress_membership": "source_derived_R0_ground_truth_ID_membership",
     }:
@@ -1045,6 +1261,8 @@ def _validate_r2_to_r6(protocol):
         "direct_complete_recall",
     ]:
         raise PrefixRouteProtocolV2Error("R6 stress metrics differ")
+    if r6["control_metrics"] != ["class_mOnlineAP"]:
+        raise PrefixRouteProtocolV2Error("R6 control metrics differ")
     if r6["registered_arms"] != [
         "B2",
         "B3",
@@ -1057,6 +1275,15 @@ def _validate_r2_to_r6(protocol):
         "A5_NO_NEURAL_LATCH",
     ]:
         raise PrefixRouteProtocolV2Error("R6 registered arms differ")
+    if r6["control_arms"] != [
+        "COUNT_ONLY",
+        "TEMPLATE_TIMING",
+        "LEDGER_ONLY",
+        "HISTORY_OFF",
+        "FEATURE_TIME_SHUFFLE",
+        "SEMANTIC_DERANGEMENT",
+    ]:
+        raise PrefixRouteProtocolV2Error("R6 control arms differ")
     if r6["registered_contrasts"] != [
         "B4_vs_B2",
         "B4_vs_B3",
@@ -1066,8 +1293,16 @@ def _validate_r2_to_r6(protocol):
         "B4_vs_A3_NO_CONSISTENCY",
         "B4_vs_A4_NO_SAME_BIN_REUSE",
         "B4_vs_A5_NO_NEURAL_LATCH",
+        "B4_vs_COUNT_ONLY",
+        "B4_vs_TEMPLATE_TIMING",
+        "B4_vs_LEDGER_ONLY",
+        "B4_vs_HISTORY_OFF",
+        "B4_vs_FEATURE_TIME_SHUFFLE",
+        "B4_vs_SEMANTIC_DERANGEMENT",
     ]:
         raise PrefixRouteProtocolV2Error("R6 registered contrasts differ")
+    if r6["run_seeds"] != [705, 706, 707]:
+        raise PrefixRouteProtocolV2Error("R6 run seeds differ")
     if r6["paired_inference"] != {
         "fixed_reporting_population_estimand": True,
         "bootstrap_resamples": 10000,
@@ -1094,11 +1329,15 @@ def _validate_r2_to_r6(protocol):
             "beyond_margin_and_global_noninferior"
         ),
         "mechanism_requirement": "D1_or_D2_must_be_established",
-        "controls": "negative_controls_not_equivalent",
+        "controls": (
+            "simple_controls_not_equivalent_and_temporal_and_semantic_"
+            "controls_established"
+        ),
     }:
         raise PrefixRouteProtocolV2Error("B4 survival rule differs")
     if r6["margins"] != {
         "mOnlineAP": 0.005,
+        "class_mOnlineAP": 0.05,
         "event_recall": "max(0.01,2/N_legal_gt)",
         "false_emission_per_video": "max(0.01,2/N_reporting_videos)",
         "duplicate_per_gt": "max(0.01,2/N_legal_gt)",
@@ -1113,6 +1352,8 @@ def _validate_r2_to_r6(protocol):
         "KILL_D1_D2_NOT_ESTABLISHED",
         "INDETERMINATE_NO_ROUTE_CLAIM",
         "KILL_BENCHMARK_NOT_IDENTIFIABLE",
+        "KILL_TEMPORAL_IDENTIFIABILITY_CLAIM",
+        "KILL_SEMANTIC_IDENTIFIABILITY_CLAIM",
     }:
         raise PrefixRouteProtocolV2Error("R6 terminal statuses differ")
 
@@ -1183,6 +1424,8 @@ def validate_protocol(protocol):
             "required_paths",
             "v1_revise_review_path",
             "v1_revise_review_sha256",
+            "v2_revise_review_path",
+            "v2_revise_review_sha256",
         },
         "source bindings",
     )
@@ -1196,6 +1439,7 @@ def validate_protocol(protocol):
     mandatory_sources = {
         ".gitattributes",
         "opentad/utils/evidence_bundle.py",
+        "opentad/utils/prefix_route_b2_contract_v2.py",
         "opentad/utils/prefix_route_protocol_v2.py",
         "opentad/utils/prefix_route_r0_v2.py",
         "opentad/utils/prefix_route_r1_v2.py",
@@ -1212,6 +1456,19 @@ def validate_protocol(protocol):
         raise PrefixRouteProtocolV2Error("validator dependencies are not all bound")
     _relative_repo_path(sources["v1_revise_review_path"], "V1 review path")
     _sha256(sources["v1_revise_review_sha256"], "V1 review hash")
+    _relative_repo_path(sources["v2_revise_review_path"], "V2 review path")
+    _sha256(sources["v2_revise_review_sha256"], "V2 review hash")
+    if (
+        sources["v1_revise_review_path"]
+        != "PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md"
+        or sources["v1_revise_review_sha256"]
+        != "1fdb36db2d970d7b044ec26b3366208cd3d3a20bd6cb3544e62aaccbe57c7326"
+        or sources["v2_revise_review_path"]
+        != "PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md"
+        or sources["v2_revise_review_sha256"]
+        != "e411804f5bb744cbbe776a77b63701957ec607a3ca2293b4d523a23a656ec4cf"
+    ):
+        raise PrefixRouteProtocolV2Error("review archive binding differs")
     return protocol
 
 
@@ -1483,12 +1740,21 @@ def authorize_collection(
             "status": PROTOCOL_REVISE,
             "allowed": [],
         }
+    source_registered = (
+        protocol_record["protocol"]["population"]["source_registration"]["state"]
+        == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    )
+    allowed = list(
+        protocol_record["protocol"]["governance"]["post_pass_scope"]
+    )
     return {
         "authorized": True,
-        "status": "AUTHORIZED_OUTCOME_BLIND_R0_R1_COLLECTION_ONLY",
-        "allowed": list(
-            protocol_record["protocol"]["governance"]["post_pass_scope"]
+        "status": (
+            "AUTHORIZED_OUTCOME_BLIND_R0_R1_COLLECTION_ONLY"
+            if source_registered
+            else "AUTHORIZED_READ_ONLY_SOURCE_IDENTITY_REGISTRATION_ONLY"
         ),
+        "allowed": allowed,
         "review_attestation_sha256": review["attestation_sha256"],
         "protocol_sha256": protocol_record["sha256"],
         "protocol_commit": review["attestation"]["protocol_commit"],
@@ -1498,7 +1764,11 @@ def authorize_collection(
                     "blocked_before_signed_pass"
                 ]
             )
-            - {"NEW_R0_COLLECTION", "NEW_R1_COLLECTION"}
+            - (
+                {"NEW_R0_COLLECTION", "NEW_R1_COLLECTION"}
+                if source_registered
+                else set()
+            )
         ),
     }
 
@@ -1508,18 +1778,6 @@ def _read_canonical_bundle_json(reference, bundle_root, label):
     return payload, _require_canonical_json(payload, label)
 
 
-def _parse_id_list(value, role, expected_count):
-    _exact(value, {"schema_version", "role", "ids"}, f"{role} ID list")
-    if value["schema_version"] != ID_LIST_SCHEMA or value["role"] != role:
-        raise PrefixRouteProtocolV2Error(f"{role} ID-list identity differs")
-    ids = _unique_strings(value["ids"], f"{role} IDs")
-    if ids != sorted(ids):
-        raise PrefixRouteProtocolV2Error(f"{role} IDs must be sorted")
-    if len(ids) != expected_count:
-        raise PrefixRouteProtocolV2Error(f"{role} ID count differs")
-    return ids
-
-
 def validate_population_bundle(
     request,
     *,
@@ -1527,7 +1785,7 @@ def validate_population_bundle(
     protocol_record,
     review_record,
 ):
-    """Re-read ID lists and reason sources, then derive the 211/213 decision."""
+    """Derive 211/213 membership from registered annotation and inventory bytes."""
 
     _exact(
         request,
@@ -1536,10 +1794,9 @@ def validate_population_bundle(
             "protocol_id",
             "protocol_sha256",
             "review_attestation_sha256",
-            "historical_ids",
-            "canonical_ids",
-            "difference_reasons",
-            "reason_sources",
+            "authoritative_annotation",
+            "historical_inventory",
+            "historical_artifacts",
         },
         "population request",
     )
@@ -1553,100 +1810,179 @@ def validate_population_bundle(
         review_record["attestation_sha256"]
     ):
         raise PrefixRouteProtocolV2Error("population review binding differs")
-    reporting = protocol_record["protocol"]["population"]["reporting"]
-    historical_bytes, historical_value = _read_canonical_bundle_json(
-        request["historical_ids"],
-        bundle_root,
-        "historical ID list",
-    )
-    canonical_bytes, canonical_value = _read_canonical_bundle_json(
-        request["canonical_ids"],
-        bundle_root,
-        "canonical ID list",
-    )
-    historical = _parse_id_list(
-        historical_value,
-        reporting["historical_role"],
-        reporting["historical_count"],
-    )
-    canonical = _parse_id_list(
-        canonical_value,
-        reporting["canonical_role"],
-        reporting["canonical_count"],
-    )
-    reason_bytes, reason_value = _read_canonical_bundle_json(
-        request["difference_reasons"],
-        bundle_root,
-        "population difference reasons",
-    )
-    _exact(
-        reason_value,
-        {"schema_version", "reasons"},
-        "population difference reasons",
-    )
-    if reason_value["schema_version"] != DIFFERENCE_REASON_SCHEMA:
-        raise PrefixRouteProtocolV2Error("population reason schema differs")
-    historical_only = sorted(set(historical) - set(canonical))
-    canonical_only = sorted(set(canonical) - set(historical))
-    difference_ids = historical_only + canonical_only
-    if not difference_ids:
-        raise PrefixRouteProtocolV2Error("211/213 mismatch has no differing IDs")
-    reason_rows = reason_value["reasons"]
-    if not isinstance(reason_rows, list):
-        raise PrefixRouteProtocolV2Error("population reasons must be an array")
-    if [row.get("video_id") for row in reason_rows if isinstance(row, dict)] != (
-        sorted(
-            row.get("video_id")
-            for row in reason_rows
-            if isinstance(row, dict)
+    population = protocol_record["protocol"]["population"]
+    reporting = population["reporting"]
+    registration = population["source_registration"]
+    if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
         )
+    annotation_path, annotation_bytes = read_verified_bundle_bytes(
+        request["authoritative_annotation"],
+        bundle_root,
+        "authoritative reporting annotation",
+    )
+    if hashlib.sha256(annotation_bytes).hexdigest() != (
+        registration["authoritative_annotation_sha256"]
     ):
         raise PrefixRouteProtocolV2Error(
-            "population reason rows must be sorted by video ID"
+            "authoritative annotation differs from registered bytes"
         )
-    reasons = {}
-    source_keys = set()
-    allowed_codes = set(reporting["allowed_reason_codes"])
-    for row in reason_rows:
+    annotation = strict_json_from_bytes(
+        annotation_bytes,
+        "authoritative reporting annotation",
+        require_object=True,
+    )
+    if set(annotation) != {"database"} or not isinstance(
+        annotation["database"],
+        dict,
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "authoritative annotation schema differs"
+        )
+    reporting_subset = registration["reporting_subset"]
+    canonical = []
+    for video_id, video in sorted(annotation["database"].items()):
+        _nonempty(video_id, "authoritative annotation video ID")
+        if not isinstance(video, dict):
+            raise PrefixRouteProtocolV2Error(
+                "authoritative annotation video row must be an object"
+            )
+        subset = _nonempty(
+            video.get("subset"),
+            f"authoritative annotation subset for {video_id}",
+        )
+        if subset == reporting_subset:
+            canonical.append(video_id)
+    if len(canonical) != reporting["canonical_count"]:
+        raise PrefixRouteProtocolV2Error(
+            "registered annotation reporting population count differs"
+        )
+    inventory_bytes, inventory = _read_canonical_bundle_json(
+        request["historical_inventory"],
+        bundle_root,
+        "registered historical inventory",
+    )
+    if hashlib.sha256(inventory_bytes).hexdigest() != (
+        registration["historical_inventory_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "historical inventory differs from registered bytes"
+        )
+    _exact(
+        inventory,
+        {
+            "schema_version",
+            "release_id",
+            "release_revision",
+            "reporting_subset",
+            "entries",
+        },
+        "historical inventory",
+    )
+    if (
+        inventory["schema_version"] != HISTORICAL_INVENTORY_SCHEMA
+        or inventory["release_id"] != registration["release_id"]
+        or inventory["release_revision"] != registration["release_revision"]
+        or inventory["reporting_subset"] != reporting_subset
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "historical inventory identity differs"
+        )
+    entries = inventory["entries"]
+    if not isinstance(entries, list):
+        raise PrefixRouteProtocolV2Error("historical inventory entries differ")
+    source_ids = []
+    historical = []
+    aliases = {}
+    artifact_by_source = _mapping(
+        request["historical_artifacts"],
+        "historical artifacts",
+    )
+    for row in entries:
         _exact(
             row,
-            {"video_id", "side", "reason_code", "source_key"},
-            "population reason row",
+            {
+                "source_video_id",
+                "canonical_video_id",
+                "artifact_path",
+                "artifact_sha256",
+            },
+            "historical inventory entry",
         )
-        video_id = _nonempty(row["video_id"], "population reason video ID")
-        if video_id in reasons:
-            raise PrefixRouteProtocolV2Error("duplicate population reason")
-        expected_side = (
-            "historical_only"
-            if video_id in historical_only
-            else "canonical_only"
-            if video_id in canonical_only
-            else None
+        source_id = _nonempty(
+            row["source_video_id"],
+            "historical source video ID",
         )
-        if row["side"] != expected_side:
-            raise PrefixRouteProtocolV2Error("population reason side differs")
-        if row["reason_code"] not in allowed_codes:
-            raise PrefixRouteProtocolV2Error("population reason code is forbidden")
-        source_key = _nonempty(row["source_key"], "reason source key")
-        source_keys.add(source_key)
-        reasons[video_id] = dict(row)
-    if sorted(reasons) != sorted(difference_ids):
-        raise PrefixRouteProtocolV2Error("population reasons do not cover differences")
-    reason_sources = _mapping(request["reason_sources"], "reason sources")
-    if set(reason_sources) != source_keys:
-        raise PrefixRouteProtocolV2Error("population reason-source set differs")
-    reason_source_hashes = {}
-    for source_key, reference in sorted(reason_sources.items()):
+        canonical_id = _nonempty(
+            row["canonical_video_id"],
+            "historical canonical video ID",
+        )
+        _relative_repo_path(row["artifact_path"], "historical artifact path")
+        _sha256(row["artifact_sha256"], "historical artifact hash")
+        if source_id in source_ids or canonical_id in historical:
+            raise PrefixRouteProtocolV2Error(
+                "historical inventory IDs must be unique"
+            )
+        if source_id not in artifact_by_source:
+            raise PrefixRouteProtocolV2Error(
+                "historical inventory artifact is missing"
+            )
+        reference = artifact_by_source[source_id]
+        if (
+            not isinstance(reference, dict)
+            or reference.get("path") != row["artifact_path"]
+            or reference.get("sha256") != row["artifact_sha256"]
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "historical artifact reference differs from registered inventory"
+            )
         _, payload = read_verified_bundle_bytes(
             reference,
             bundle_root,
-            f"population reason source {source_key}",
+            f"historical artifact {source_id}",
         )
         if not payload:
-            raise PrefixRouteProtocolV2Error("population reason source is empty")
-        reason_source_hashes[source_key] = hashlib.sha256(payload).hexdigest()
-    if len(historical) - len(historical_only) + len(canonical_only) != len(canonical):
-        raise PrefixRouteProtocolV2Error("211/213 cardinality does not reconcile")
+            raise PrefixRouteProtocolV2Error("historical artifact is empty")
+        if canonical_id not in canonical:
+            raise PrefixRouteProtocolV2Error(
+                "historical canonical ID is outside authoritative reporting subset"
+            )
+        source_ids.append(source_id)
+        historical.append(canonical_id)
+        if source_id != canonical_id:
+            aliases[source_id] = canonical_id
+    if source_ids != sorted(source_ids):
+        raise PrefixRouteProtocolV2Error(
+            "historical inventory entries must be sorted by source video ID"
+        )
+    if len(historical) != reporting["historical_count"]:
+        raise PrefixRouteProtocolV2Error("historical inventory count differs")
+    if set(artifact_by_source) != set(source_ids):
+        raise PrefixRouteProtocolV2Error(
+            "historical artifact set differs from registered inventory"
+        )
+    historical_only = sorted(set(historical) - set(canonical))
+    if historical_only:
+        raise PrefixRouteProtocolV2Error(
+            "historical inventory contains noncanonical reporting IDs"
+        )
+    canonical_only = sorted(set(canonical) - set(historical))
+    if len(canonical_only) != (
+        reporting["canonical_count"] - reporting["historical_count"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "registered 211/213 difference cardinality differs"
+        )
+    reasons = {
+        video_id: {
+            "video_id": video_id,
+            "side": "canonical_only",
+            "reason_code": "HISTORICAL_LOCAL_FILE_ABSENT",
+            "derived_from": "registered_annotation_minus_registered_inventory",
+        }
+        for video_id in canonical_only
+    }
     result = {
         "schema_version": "prefix-route-population-derived-v2",
         "status": "EXPLAINED_MISMATCH",
@@ -1654,13 +1990,18 @@ def validate_population_bundle(
         "canonical_role": reporting["canonical_role"],
         "historical_count": len(historical),
         "canonical_count": len(canonical),
-        "historical_ids_sha256": hashlib.sha256(historical_bytes).hexdigest(),
-        "canonical_ids_sha256": hashlib.sha256(canonical_bytes).hexdigest(),
-        "difference_reasons_sha256": hashlib.sha256(reason_bytes).hexdigest(),
-        "reason_source_sha256": reason_source_hashes,
+        "authoritative_annotation_path": annotation_path.name,
+        "authoritative_annotation_sha256": hashlib.sha256(
+            annotation_bytes
+        ).hexdigest(),
+        "historical_inventory_sha256": hashlib.sha256(
+            inventory_bytes
+        ).hexdigest(),
         "historical_only": historical_only,
         "canonical_only": canonical_only,
         "canonical_ids": canonical,
+        "historical_canonical_ids": historical,
+        "explicit_aliases": aliases,
         "reasons": reasons,
     }
     result["derived_sha256"] = canonical_sha256(result)
@@ -1739,6 +2080,13 @@ def derive_r0_envelope(
     review_record,
     frozen_ledger_prefix=None,
 ):
+    annotation_sha256 = hashlib.sha256(annotation_bytes).hexdigest()
+    if annotation_sha256 != population_record.get(
+        "authoritative_annotation_sha256"
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "R0 annotation differs from registered population source"
+        )
     annotation = strict_json_from_bytes(
         annotation_bytes,
         "R0 annotation",
@@ -1756,6 +2104,12 @@ def derive_r0_envelope(
         feature_stride_frames=8,
         bootstrap_resamples=10000,
         bootstrap_seed=2026071701,
+        expected_subset=protocol_record["protocol"]["population"][
+            "source_registration"
+        ]["reporting_subset"],
+        annotation_exposure_status=protocol_record["protocol"]["population"][
+            "exposure_policy"
+        ]["thumos_reporting_status"],
     )
     envelope = {
         "schema_version": R0_ENVELOPE_SCHEMA,
@@ -1764,7 +2118,7 @@ def derive_r0_envelope(
         "review_attestation_sha256": review_record["attestation_sha256"],
         "population_derived_sha256": population_record["derived_sha256"],
         "source_sha256": {
-            "annotation": hashlib.sha256(annotation_bytes).hexdigest(),
+            "annotation": annotation_sha256,
             "class_map": hashlib.sha256(class_map_bytes).hexdigest(),
             "exposure_ledger": hashlib.sha256(exposure_ledger_bytes).hexdigest(),
         },
@@ -1851,9 +2205,8 @@ def validate_r0_bundle(
 
 
 __all__ = [
-    "DIFFERENCE_REASON_SCHEMA",
     "EXPOSURE_LEDGER_SCHEMA",
-    "ID_LIST_SCHEMA",
+    "HISTORICAL_INVENTORY_SCHEMA",
     "MANIFEST_SCHEMA",
     "POPULATION_REQUEST_SCHEMA",
     "PROTOCOL_ID",

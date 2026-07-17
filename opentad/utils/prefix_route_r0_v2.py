@@ -122,10 +122,6 @@ def _summary(values):
     }
 
 
-def _normal_cdf(value):
-    return 0.5 * (1.0 + math.erf(float(value) / math.sqrt(2.0)))
-
-
 def _decision_bin_for_start(start_frame, stride):
     return int(start_frame) // int(stride)
 
@@ -178,7 +174,7 @@ def _max_concurrency(instances, *, same_class):
     return maximum
 
 
-def _parse_video(video_id, video, class_order, stride):
+def _parse_video(video_id, video, class_order, stride, expected_subset):
     if not isinstance(video, dict):
         raise PrefixRouteR0Error(f"video {video_id} must be an object")
     duration = _finite(video.get("duration"), f"{video_id}.duration")
@@ -186,8 +182,11 @@ def _parse_video(video_id, video, class_order, stride):
         raise PrefixRouteR0Error(f"{video_id}.duration must be positive")
     frame_count = _positive_int(video.get("frame"), f"{video_id}.frame")
     subset = video.get("subset")
-    if not isinstance(subset, str) or not subset:
-        raise PrefixRouteR0Error(f"{video_id}.subset must be non-empty text")
+    if subset != expected_subset:
+        raise PrefixRouteR0Error(
+            f"{video_id}.subset must equal registered reporting subset "
+            f"{expected_subset!r}"
+        )
     annotations = video.get("annotations", [])
     if not isinstance(annotations, list):
         raise PrefixRouteR0Error(f"{video_id}.annotations must be an array")
@@ -432,52 +431,24 @@ def _family_eligibility(details, family):
         for label in row["family_classes"][family]
     }
     positive_fraction = positive_videos / len(details) if details else 0.0
-    mean_cluster = instances / len(details) if details else 0.0
-    if mean_cluster > 0:
-        variance = sum(
-            (size - mean_cluster) ** 2 for size in cluster_sizes
-        ) / len(cluster_sizes)
-        cluster_cv = math.sqrt(variance) / mean_cluster
-        design_effect = (
-            1.0
-            + (((cluster_cv**2 + 1.0) * mean_cluster) - 1.0) * 0.2
-        )
-        design_effect = max(1.0, design_effect)
-        effective_n = instances / design_effect
-    else:
-        cluster_cv = None
-        design_effect = None
-        effective_n = 0.0
-    if effective_n > 0:
-        standard_error = math.sqrt((0.5 * 0.5 + 0.6 * 0.4) / effective_n)
-        effect_z = 0.1 / standard_error
-        critical = 2.4977054744123737
-        power = (
-            1.0
-            - _normal_cdf(critical - effect_z)
-            + _normal_cdf(-critical - effect_z)
-        )
-    else:
-        standard_error = None
-        power = 0.0
     primary_checks = {
         "independent_videos": positive_videos >= 30,
         "gt_instances": instances >= 100,
         "fraction_of_positive_videos": positive_fraction >= 0.05,
         "classes": len(classes) >= 3,
-        "power": power >= 0.8,
     }
     secondary_checks = {
         "independent_videos": positive_videos >= 10,
         "gt_instances": instances >= 30,
     }
     if all(primary_checks.values()):
-        label = "PRIMARY_ELIGIBLE"
+        label = "DESCRIPTIVE_PRIMARY_COVERAGE"
     elif all(secondary_checks.values()):
-        label = "SECONDARY_ONLY"
+        label = "DESCRIPTIVE_SECONDARY_COVERAGE"
     else:
-        label = "DESCRIPTIVE_ONLY"
+        label = "DESCRIPTIVE_SPARSE"
     return {
+        "role": "DESCRIPTIVE_SUPPORT_ONLY_NOT_DOWNSTREAM_POWER_OR_CLAIM",
         "label": label,
         "independent_videos": positive_videos,
         "gt_instances": instances,
@@ -485,12 +456,6 @@ def _family_eligibility(details, family):
         "classes": len(classes),
         "class_names": sorted(classes),
         "cluster_size_vector_includes_zero_videos": True,
-        "cluster_size_mean": mean_cluster,
-        "cluster_size_cv_ddof0": cluster_cv,
-        "design_effect": design_effect,
-        "effective_n": effective_n,
-        "standard_error": standard_error,
-        "power": power,
         "primary_checks": primary_checks,
         "secondary_checks": secondary_checks,
     }
@@ -553,6 +518,10 @@ def collect_r0_census(
     feature_stride_frames=FEATURE_STRIDE_FRAMES,
     bootstrap_resamples=BOOTSTRAP_RESAMPLES,
     bootstrap_seed=BOOTSTRAP_SEED,
+    expected_subset="validation",
+    annotation_exposure_status=(
+        "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
+    ),
 ):
     """Derive aggregate R0 evidence and reviewer detail from source objects."""
 
@@ -581,8 +550,20 @@ def collect_r0_census(
             f"annotation database misses reporting IDs: {missing[:5]}"
         )
     stride = _positive_int(feature_stride_frames, "feature_stride_frames")
+    if expected_subset != "validation":
+        raise PrefixRouteR0Error("registered reporting subset must be validation")
+    if annotation_exposure_status != (
+        "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
+    ):
+        raise PrefixRouteR0Error("R0 annotation exposure status differs")
     details = [
-        _parse_video(video_id, database[video_id], class_order, stride)
+        _parse_video(
+            video_id,
+            database[video_id],
+            class_order,
+            stride,
+            expected_subset,
+        )
         for video_id in video_ids
     ]
 
@@ -767,7 +748,7 @@ def collect_r0_census(
         "collector_version": R0_COLLECTOR_VERSION,
         "status": "PASS_R0_COMPLETE",
         "reporting_population_role": "canonical_reporting_213",
-        "annotation_exposure_status": "DESIGN_EXPOSED_ROUTE_SELECTION_ONLY",
+        "annotation_exposure_status": annotation_exposure_status,
         "author_disclosure": "aggregate_only_no_video_ids",
         "feature_stride_frames": stride,
         "aggregate": aggregate,

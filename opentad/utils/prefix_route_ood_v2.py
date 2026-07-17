@@ -10,8 +10,9 @@ import math
 
 
 GENERATOR_SCHEMA = "prefix-route-structural-ood-sequence-v2"
-GENERATOR_VERSION = "20260717.2"
+GENERATOR_VERSION = "20260717.3"
 SEQUENCE_LENGTH_BINS = 64
+TICKS_PER_BIN = 8
 FEATURE_DIM = 16
 CLASS_COUNT = 4
 
@@ -55,6 +56,93 @@ FACTOR_FAMILIES = (
     "temporal_geometry",
     "semantic_mapping",
     "observation_distribution",
+)
+EXPECTED_SET_COUNTS = {
+    "TRAIN": 1000,
+    "IID_HOLDOUT": 400,
+    "SINGLE_SHIFT_OOD:event_topology": 400,
+    "SINGLE_SHIFT_OOD:temporal_geometry": 400,
+    "SINGLE_SHIFT_OOD:semantic_mapping": 400,
+    "SINGLE_SHIFT_OOD:observation_distribution": 400,
+    "COMPOUND_OOD": 800,
+}
+EXPECTED_SET_SEEDS = {
+    "TRAIN": 2026071705,
+    "IID_HOLDOUT": 2026071706,
+    "SINGLE_SHIFT_OOD:event_topology": 2026071708,
+    "SINGLE_SHIFT_OOD:temporal_geometry": 2026071709,
+    "SINGLE_SHIFT_OOD:semantic_mapping": 2026071710,
+    "SINGLE_SHIFT_OOD:observation_distribution": 2026071711,
+    "COMPOUND_OOD": 2026071712,
+}
+EXPECTED_SET_SHA256 = {
+    "TRAIN": "83df0f4d098e7d5009b849ebab3e48adb76ef0823d038bf53cdff7d7cf8499a1",
+    "IID_HOLDOUT": "70e794a9f4b3a2c628f52710bcd2e880fce928cd7f3e59118c57fb9e5a7246d0",
+    "SINGLE_SHIFT_OOD:event_topology": (
+        "440b17cfa0faf68fc5176eb18a2812b957dc246575988860585762d51c875ef6"
+    ),
+    "SINGLE_SHIFT_OOD:temporal_geometry": (
+        "9b875de07757d8518a020cd90e135d492877b0dc8301bf807579f21354fc5041"
+    ),
+    "SINGLE_SHIFT_OOD:semantic_mapping": (
+        "07b139085d677808b5ca33a96be299b67c2fb3fda171240dc1dacf30e8618195"
+    ),
+    "SINGLE_SHIFT_OOD:observation_distribution": (
+        "810c815f4a83f35ad83a40108cd927a991aed06b2f95d667504e032b80c541c3"
+    ),
+    "COMPOUND_OOD": (
+        "7030d35c9bc5e916371b7a4785422d3a579d7f64b5cd8b9a6d1773781a71d9ce"
+    ),
+}
+COMPOUND_SPECS = (
+    {
+        "event_topology": "disjoint_four",
+        "temporal_geometry": "duration_2_gap_0_delay_0",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "identity",
+    },
+    {
+        "event_topology": "chain_three",
+        "temporal_geometry": "duration_4_gap_2_delay_0",
+        "semantic_mapping": "identity_prototype_to_class",
+        "observation_distribution": "seeded_orthogonal_signed_permutation",
+    },
+    {
+        "event_topology": "single",
+        "temporal_geometry": "duration_1_gap_16_delay_2",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "identity",
+    },
+    {
+        "event_topology": "partial_overlap_pair",
+        "temporal_geometry": "duration_8_gap_8_delay_1",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "student_t_noise_df_3_scaled_0.05",
+    },
+    {
+        "event_topology": "disjoint_four",
+        "temporal_geometry": "duration_1_gap_16_delay_2",
+        "semantic_mapping": "identity_prototype_to_class",
+        "observation_distribution": "gaussian_noise_sigma_0.05",
+    },
+    {
+        "event_topology": "clique_three",
+        "temporal_geometry": "duration_16_gap_neg8_delay_4",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "two_component_basis_mixture",
+    },
+    {
+        "event_topology": "nested_pair",
+        "temporal_geometry": "duration_32_gap_16_delay_4",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "seeded_orthogonal_signed_permutation",
+    },
+    {
+        "event_topology": "same_bin_handoff",
+        "temporal_geometry": "duration_1_gap_16_delay_2",
+        "semantic_mapping": "heldout_prototype_to_class_derangement",
+        "observation_distribution": "student_t_noise_df_3_scaled_0.05",
+    },
 )
 
 
@@ -156,11 +244,31 @@ def _fit_events(topology, duration, gap):
         starts = [first, first + max(1, duration // 2)]
         durations = [duration, duration]
     elif topology == "same_bin_handoff":
-        if duration * 2 > SEQUENCE_LENGTH_BINS - 2:
+        duration_ticks = duration * TICKS_PER_BIN
+        shared_bin = (SEQUENCE_LENGTH_BINS // 2) - 1
+        handoff_tick = shared_bin * TICKS_PER_BIN + (TICKS_PER_BIN // 2)
+        first_start = handoff_tick - duration_ticks
+        second_end = handoff_tick + duration_ticks
+        if first_start < 0 or second_end > SEQUENCE_LENGTH_BINS * TICKS_PER_BIN:
             raise PrefixRouteOODError("invalid cross: handoff events do not fit")
-        first = max(1, (SEQUENCE_LENGTH_BINS - 2 * duration) // 2)
-        starts = [first, first + duration]
-        durations = [duration, duration]
+        return [
+            {
+                "event_id": 0,
+                "start_tick": first_start,
+                "end_tick": handoff_tick,
+                "start_bin": first_start // TICKS_PER_BIN,
+                "end_bin": (handoff_tick - 1) // TICKS_PER_BIN,
+                "prototype_id": 0,
+            },
+            {
+                "event_id": 1,
+                "start_tick": handoff_tick,
+                "end_tick": second_end,
+                "start_bin": handoff_tick // TICKS_PER_BIN,
+                "end_bin": (second_end - 1) // TICKS_PER_BIN,
+                "prototype_id": 1,
+            },
+        ]
     elif topology == "chain_three":
         if duration < 2:
             raise PrefixRouteOODError("invalid cross: chain requires duration >= 2")
@@ -188,11 +296,15 @@ def _fit_events(topology, duration, gap):
         end = start + event_duration
         if not 0 <= start < end <= SEQUENCE_LENGTH_BINS:
             raise PrefixRouteOODError("generated event escapes sequence")
+        start_tick = start * TICKS_PER_BIN
+        end_tick = end * TICKS_PER_BIN
         events.append(
             {
                 "event_id": index,
-                "start_bin": start,
-                "end_bin": end,
+                "start_tick": start_tick,
+                "end_tick": end_tick,
+                "start_bin": start_tick // TICKS_PER_BIN,
+                "end_bin": (end_tick - 1) // TICKS_PER_BIN,
                 "prototype_id": index % CLASS_COUNT,
             }
         )
@@ -265,9 +377,13 @@ def _apply_observation_distribution(
 def _maximum_concurrency(events):
     maximum = 0
     for time_bin in range(SEQUENCE_LENGTH_BINS):
+        observation_tick = (time_bin + 1) * TICKS_PER_BIN - 1
         maximum = max(
             maximum,
-            sum(event["start_bin"] <= time_bin < event["end_bin"] for event in events),
+            sum(
+                event["start_tick"] <= observation_tick < event["end_tick"]
+                for event in events
+            ),
         )
     return maximum
 
@@ -312,10 +428,11 @@ def generate_sequence(spec, *, seed, sequence_index, set_name):
     ]
     observations = []
     for time_bin in range(SEQUENCE_LENGTH_BINS):
+        observation_tick = (time_bin + 1) * TICKS_PER_BIN - 1
         active = [
             event
             for event in event_rows
-            if event["start_bin"] <= time_bin < event["end_bin"]
+            if event["start_tick"] <= observation_tick < event["end_tick"]
         ]
         vector = [0.0] * FEATURE_DIM
         for event in active:
@@ -328,6 +445,17 @@ def generate_sequence(spec, *, seed, sequence_index, set_name):
         )
         vector[6] = time_bin / (SEQUENCE_LENGTH_BINS - 1)
         vector[7] = len(active) / max(1, CLASS_COUNT)
+        for dimension in range(8, FEATURE_DIM):
+            vector[dimension] = 0.01 * (
+                2.0
+                * _uniform(
+                    seed,
+                    sequence_index,
+                    "sequence_context",
+                    dimension,
+                )
+                - 1.0
+            )
         transformed = _apply_observation_distribution(
             vector,
             observation,
@@ -343,12 +471,14 @@ def generate_sequence(spec, *, seed, sequence_index, set_name):
         "sequence_index": int(sequence_index),
         "seed": int(seed),
         "sequence_length_bins": SEQUENCE_LENGTH_BINS,
+        "ticks_per_bin": TICKS_PER_BIN,
         "feature_dim": FEATURE_DIM,
         "class_count": CLASS_COUNT,
         "factor_spec": dict(spec),
         "observation_equation": (
             "active_prototype_sum+birth_impulse+delayed_completion_cue+"
-            "normalized_time+active_count_then_frozen_distribution"
+            "normalized_time+active_count+sequence_context_then_"
+            "frozen_distribution"
         ),
         "events": event_rows,
         "observations": observations,
@@ -369,9 +499,9 @@ def _scientific_content_sha256(sequence):
             "schema_version",
             "generator_version",
             "sequence_length_bins",
+            "ticks_per_bin",
             "feature_dim",
             "class_count",
-            "factor_spec",
             "observation_equation",
             "events",
             "observations",
@@ -436,6 +566,10 @@ def _single_shift_specs(family):
                 "observation_distribution": observation,
             }
         )
+        and not (
+            topology == "empty"
+            and family in {"temporal_geometry", "semantic_mapping"}
+        )
     )
 
 
@@ -448,21 +582,66 @@ def _valid_spec(spec):
     return True
 
 
+def _shifted_families(spec):
+    pools = {
+        "event_topology": OOD_TOPOLOGIES,
+        "temporal_geometry": OOD_TEMPORAL,
+        "semantic_mapping": OOD_SEMANTIC,
+        "observation_distribution": OOD_OBSERVATION,
+    }
+    return tuple(
+        family for family in FACTOR_FAMILIES if spec[family] in pools[family]
+    )
+
+
+def _iid_counterfactual_spec(spec, family):
+    pools = {
+        "event_topology": IID_TOPOLOGIES,
+        "temporal_geometry": IID_TEMPORAL,
+        "semantic_mapping": IID_SEMANTIC,
+        "observation_distribution": IID_OBSERVATION,
+    }
+    for candidate in pools[family]:
+        value = dict(spec)
+        value[family] = candidate
+        if _valid_spec(value):
+            return value
+    raise PrefixRouteOODError(
+        f"no valid IID counterfactual exists for {family}"
+    )
+
+
 def iter_balanced_public_set(set_name, count, *, seed, shifted_family=None):
     """Yield a deterministic round-robin set with exact auditable cell counts."""
 
     if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
         raise PrefixRouteOODError("set count must be a positive integer")
+    output_name = (
+        set_name
+        if shifted_family is None
+        else f"{set_name}:{shifted_family}"
+    )
+    if output_name not in EXPECTED_SET_COUNTS:
+        raise PrefixRouteOODError("set identity is outside the frozen package")
+    if (
+        count != EXPECTED_SET_COUNTS[output_name]
+        or seed != EXPECTED_SET_SEEDS[output_name]
+    ):
+        raise PrefixRouteOODError("set count or seed differs from frozen package")
     if set_name in {"TRAIN", "IID_HOLDOUT"}:
         if shifted_family is not None:
             raise PrefixRouteOODError("IID set may not name a shifted family")
         specs = _iid_specs()
     elif set_name == "SINGLE_SHIFT_OOD":
         specs = _single_shift_specs(shifted_family)
+    elif set_name == "COMPOUND_OOD":
+        if shifted_family is not None:
+            raise PrefixRouteOODError(
+                "compound OOD may not name one shifted family"
+            )
+        specs = COMPOUND_SPECS
     else:
-        raise PrefixRouteOODError(
-            "compound OOD requires reviewer-owned explicit combination table"
-        )
+        raise PrefixRouteOODError("unknown frozen sequence set")
     if not specs:
         raise PrefixRouteOODError("no valid factor cells exist")
     offset = int.from_bytes(_digest_bytes(seed, set_name, shifted_family)[:8], "big")
@@ -473,25 +652,67 @@ def iter_balanced_public_set(set_name, count, *, seed, shifted_family=None):
             spec,
             seed=seed,
             sequence_index=index,
-            set_name=(
-                set_name
-                if shifted_family is None
-                else f"{set_name}:{shifted_family}"
-            ),
+            set_name=output_name,
         )
 
 
 def audit_sequence_sets(named_sequences):
-    """Check hashes, pairwise disjointness, and factor-cell accounting."""
+    """Validate the complete frozen R5 package and its scientific content."""
 
-    if not isinstance(named_sequences, dict) or not named_sequences:
-        raise PrefixRouteOODError("named sequence sets must be a non-empty object")
+    if not isinstance(named_sequences, dict) or set(named_sequences) != set(
+        EXPECTED_SET_COUNTS
+    ):
+        raise PrefixRouteOODError("named sequence set names differ")
     all_hashes = {}
     reports = {}
     for set_name, sequences in sorted(named_sequences.items()):
+        if not isinstance(sequences, list):
+            raise PrefixRouteOODError(f"{set_name} sequences must be an array")
+        if len(sequences) != EXPECTED_SET_COUNTS[set_name]:
+            raise PrefixRouteOODError(f"{set_name} sequence count differs")
         hashes = []
         cells = Counter()
+        expected_seed = EXPECTED_SET_SEEDS[set_name]
+        observed_indexes = []
         for sequence in sequences:
+            required = {
+                "schema_version",
+                "generator_version",
+                "set_name",
+                "sequence_index",
+                "seed",
+                "sequence_length_bins",
+                "ticks_per_bin",
+                "feature_dim",
+                "class_count",
+                "factor_spec",
+                "observation_equation",
+                "events",
+                "observations",
+                "derived",
+                "sequence_sha256",
+            }
+            if not isinstance(sequence, dict) or set(sequence) != required:
+                raise PrefixRouteOODError(
+                    f"sequence fields differ in set {set_name}"
+                )
+            if (
+                sequence["schema_version"] != GENERATOR_SCHEMA
+                or sequence["generator_version"] != GENERATOR_VERSION
+                or sequence["set_name"] != set_name
+                or sequence["seed"] != expected_seed
+                or sequence["sequence_length_bins"] != SEQUENCE_LENGTH_BINS
+                or sequence["ticks_per_bin"] != TICKS_PER_BIN
+                or sequence["feature_dim"] != FEATURE_DIM
+                or sequence["class_count"] != CLASS_COUNT
+            ):
+                raise PrefixRouteOODError(
+                    f"sequence identity differs in set {set_name}"
+                )
+            index = sequence["sequence_index"]
+            if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+                raise PrefixRouteOODError("sequence index is invalid")
+            observed_indexes.append(index)
             supplied = sequence.get("sequence_sha256")
             derived = _scientific_content_sha256(sequence)
             if supplied != derived:
@@ -504,15 +725,66 @@ def audit_sequence_sets(named_sequences):
                 )
             all_hashes[supplied] = set_name
             hashes.append(supplied)
+            spec = sequence["factor_spec"]
+            shifted = _shifted_families(spec)
+            if set_name in {"TRAIN", "IID_HOLDOUT"}:
+                if shifted:
+                    raise PrefixRouteOODError(f"{set_name} contains a shift")
+            elif set_name.startswith("SINGLE_SHIFT_OOD:"):
+                expected_family = set_name.split(":", 1)[1]
+                if shifted != (expected_family,):
+                    raise PrefixRouteOODError(
+                        f"{set_name} does not contain exactly its named shift"
+                    )
+            elif len(shifted) < 2 or spec not in COMPOUND_SPECS:
+                raise PrefixRouteOODError(
+                    "COMPOUND_OOD row is outside the frozen compound table"
+                )
+            for family in shifted:
+                counterfactual = generate_sequence(
+                    _iid_counterfactual_spec(spec, family),
+                    seed=sequence["seed"],
+                    sequence_index=index,
+                    set_name=set_name,
+                )
+                if counterfactual["sequence_sha256"] == supplied:
+                    raise PrefixRouteOODError(
+                        f"{family} shift leaves scientific content unchanged"
+                    )
             cell = tuple(
-                sequence["factor_spec"][family] for family in FACTOR_FAMILIES
+                spec[family] for family in FACTOR_FAMILIES
             )
             cells[cell] += 1
+        if sorted(observed_indexes) != list(
+            range(EXPECTED_SET_COUNTS[set_name])
+        ):
+            raise PrefixRouteOODError(f"{set_name} sequence indexes differ")
+        if set_name in {"TRAIN", "IID_HOLDOUT"}:
+            expected_specs = _iid_specs()
+        elif set_name.startswith("SINGLE_SHIFT_OOD:"):
+            expected_specs = _single_shift_specs(set_name.split(":", 1)[1])
+        else:
+            expected_specs = COMPOUND_SPECS
+        expected_cells = {
+            tuple(spec[family] for family in FACTOR_FAMILIES)
+            for spec in expected_specs
+        }
+        if set(cells) != expected_cells:
+            raise PrefixRouteOODError(
+                f"{set_name} factor-cell support differs"
+            )
+        if max(cells.values()) - min(cells.values()) > 1:
+            raise PrefixRouteOODError(f"{set_name} factor cells are imbalanced")
+        set_sha256 = hashlib.sha256(
+            canonical_json_bytes(sorted(hashes))
+        ).hexdigest()
+        if set_sha256 != EXPECTED_SET_SHA256[set_name]:
+            raise PrefixRouteOODError(
+                f"{set_name} sequence-set commitment differs"
+            )
         reports[set_name] = {
             "sequence_count": len(hashes),
-            "sequence_set_sha256": hashlib.sha256(
-                canonical_json_bytes(sorted(hashes))
-            ).hexdigest(),
+            "sequence_set_sha256": set_sha256,
             "factor_cell_count": len(cells),
             "minimum_cell_count": min(cells.values(), default=0),
             "maximum_cell_count": max(cells.values(), default=0),
@@ -520,10 +792,16 @@ def audit_sequence_sets(named_sequences):
     return {
         "pairwise_disjoint": True,
         "total_sequence_count": len(all_hashes),
+        "complete_frozen_set_contract": True,
+        "all_shifted_factors_change_scientific_content": True,
         "sets": reports,
     }
 __all__ = [
     "CLASS_COUNT",
+    "COMPOUND_SPECS",
+    "EXPECTED_SET_COUNTS",
+    "EXPECTED_SET_SEEDS",
+    "EXPECTED_SET_SHA256",
     "FACTOR_FAMILIES",
     "FEATURE_DIM",
     "GENERATOR_SCHEMA",
@@ -538,6 +816,7 @@ __all__ = [
     "OOD_TOPOLOGIES",
     "PrefixRouteOODError",
     "SEQUENCE_LENGTH_BINS",
+    "TICKS_PER_BIN",
     "audit_sequence_sets",
     "canonical_json_bytes",
     "generate_sequence",

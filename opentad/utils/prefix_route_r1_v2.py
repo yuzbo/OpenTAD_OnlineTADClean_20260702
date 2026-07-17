@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 import math
 from pathlib import Path
+import platform
 import struct
+import tempfile
 
 from .evidence_bundle import (
+    read_stable_file_bytes,
     read_verified_bundle_bytes,
     read_verified_bundle_json,
 )
@@ -19,6 +23,8 @@ R1_REQUEST_SCHEMA = "prefix-route-r1-request-v2"
 R1_SUPPORT_SCHEMA = "prefix-route-r1-support-map-v2"
 R1_DYNAMIC_SCHEMA = "prefix-route-r1-dynamic-audit-v2"
 R1_DERIVED_SCHEMA = "prefix-route-r1-derived-certificate-v2"
+R1_COMMAND_SCHEMA = "prefix-route-r1-resolved-command-v2"
+R1_SOFTWARE_SCHEMA = "prefix-route-r1-software-versions-v2"
 R1_AUDIT_SEED = 2026071702
 TOKENS_PER_CATEGORY = 32
 MINIMUM_UNIQUE_VIDEOS = 16
@@ -243,6 +249,93 @@ def _read_json_reference(reference, bundle_root, label):
         require_object=True,
     )
     return path, payload, value
+
+
+def _canonical_payload_object(payload, label):
+    try:
+        value = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PrefixRouteR1Error(f"{label} is not valid UTF-8 JSON") from exc
+    if not isinstance(value, dict) or canonical_json_bytes(value) != payload:
+        raise PrefixRouteR1Error(f"{label} must be one canonical JSON object")
+    return value
+
+
+def _validate_execution_runtime(source_records, binding, request):
+    command = _canonical_payload_object(
+        source_records["resolved_command"][1],
+        "resolved extraction command",
+    )
+    _exact(
+        command,
+        {
+            "schema_version",
+            "entrypoint",
+            "operation",
+            "device",
+            "image_size",
+            "batch_size",
+            "local_files_only",
+            "hf_snapshot_revision",
+        },
+        "resolved extraction command",
+    )
+    if command != {
+        "schema_version": R1_COMMAND_SCHEMA,
+        "entrypoint": "tools/cache_ontad_features.py",
+        "operation": "packet_recent_frame_cache",
+        "device": binding["device"],
+        "image_size": binding["image_size"],
+        "batch_size": binding["batch_size"],
+        "local_files_only": binding["local_files_only"],
+        "hf_snapshot_revision": request["hf_snapshot_revision"],
+    }:
+        raise PrefixRouteR1Error(
+            "resolved extraction command differs from registered execution"
+        )
+
+    software = _canonical_payload_object(
+        source_records["software_versions"][1],
+        "software version record",
+    )
+    _exact(
+        software,
+        {"schema_version", "python", "packages"},
+        "software version record",
+    )
+    packages = software["packages"]
+    _exact(
+        packages,
+        {"numpy", "opencv", "torch", "transformers"},
+        "software package versions",
+    )
+    try:
+        import cv2
+        import numpy as np
+        import torch
+        import transformers
+    except Exception as exc:
+        raise PrefixRouteR1Error(
+            "registered extraction runtime packages are unavailable"
+        ) from exc
+    actual = {
+        "schema_version": R1_SOFTWARE_SCHEMA,
+        "python": platform.python_version(),
+        "packages": {
+            "numpy": np.__version__,
+            "opencv": cv2.__version__,
+            "torch": torch.__version__,
+            "transformers": transformers.__version__,
+        },
+    }
+    if software != actual:
+        raise PrefixRouteR1Error(
+            "active extraction software differs from registered versions"
+        )
+    return {
+        "resolved_command_matches_executed_path": True,
+        "software_versions_match_active_process": True,
+    }
 
 
 def _parse_support_map(value, canonical_ids, feature_stride):
@@ -476,6 +569,199 @@ def _validate_dynamic(value, expected_selection, support_by_id):
     }
 
 
+def _decode_rgb_video(path, *, image_size):
+    import cv2
+    import numpy as np
+
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        raise PrefixRouteR1Error(f"failed to decode raw video: {path.name}")
+    frames = []
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(
+                frame,
+                (image_size, image_size),
+                interpolation=cv2.INTER_LINEAR,
+            )
+            frames.append(np.ascontiguousarray(frame, dtype=np.uint8))
+    finally:
+        capture.release()
+    if not frames:
+        raise PrefixRouteR1Error(f"raw video decoded no frames: {path.name}")
+    return np.stack(frames, axis=0)
+
+
+def _encode_in_chunks(encode_batch, frames, batch_size):
+    import numpy as np
+
+    outputs = []
+    for start in range(0, len(frames), batch_size):
+        batch = np.ascontiguousarray(frames[start : start + batch_size])
+        encoded = np.asarray(encode_batch(batch))
+        if encoded.ndim != 2 or encoded.shape[0] != len(batch):
+            raise PrefixRouteR1Error(
+                "bound extractor must return [batch, feature_dim]"
+            )
+        if not np.isfinite(encoded).all():
+            raise PrefixRouteR1Error("bound extractor returned non-finite values")
+        outputs.append(encoded)
+    return np.concatenate(outputs, axis=0)
+
+
+def _snapshot_manifest_digest(
+    *,
+    model_config,
+    processor_config,
+    weight_shards,
+):
+    value = {
+        "model_config": {
+            "name": model_config[0].name,
+            "sha256": model_config[2],
+        },
+        "processor_config": {
+            "name": processor_config[0].name,
+            "sha256": processor_config[2],
+        },
+        "weight_shards": [
+            {"name": path.name, "sha256": digest}
+            for path, _, digest in weight_shards
+        ],
+    }
+    names = [
+        value["model_config"]["name"],
+        value["processor_config"]["name"],
+        *(row["name"] for row in value["weight_shards"]),
+    ]
+    if len(names) != len(set(names)):
+        raise PrefixRouteR1Error("snapshot filenames are duplicated")
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest(), value
+
+
+def _build_bound_siglip_encoder(
+    *,
+    binding,
+    model_config,
+    processor_config,
+    weight_shards,
+):
+    from tools.cache_ontad_features import build_siglip_encoder
+
+    with tempfile.TemporaryDirectory(prefix="prefix-r1-snapshot-") as directory:
+        snapshot = Path(directory)
+        for path, payload, _ in (
+            model_config,
+            processor_config,
+            *weight_shards,
+        ):
+            (snapshot / path.name).write_bytes(payload)
+        encoder = build_siglip_encoder(
+            str(snapshot),
+            device=binding["device"],
+            image_size=binding["image_size"],
+            batch_size=binding["batch_size"],
+            local_files_only=binding["local_files_only"],
+        )
+    return encoder
+
+
+def _recompute_cache_and_dynamic(
+    *,
+    encode_batch,
+    binding,
+    canonical_ids,
+    raw_paths,
+    feature_paths,
+    support_by_id,
+    expected_selection,
+    supplied_dynamic,
+):
+    import numpy as np
+
+    decoded_video_count = 0
+    recomputed_records = []
+    selection_by_video = {}
+    for row in expected_selection:
+        selection_by_video.setdefault(row["video_id"], []).append(row)
+    for video_id in canonical_ids:
+        decoded = _decode_rgb_video(
+            raw_paths[video_id],
+            image_size=binding["image_size"],
+        )
+        support = support_by_id[video_id]
+        if len(decoded) != support["frame_count"]:
+            raise PrefixRouteR1Error(
+                f"decoded frame count differs for {video_id}"
+            )
+        selected = np.ascontiguousarray(
+            decoded[support["source_frames"]],
+            dtype=np.uint8,
+        )
+        decoded_video_count += 1
+        recomputed = _encode_in_chunks(
+            encode_batch,
+            selected,
+            binding["batch_size"],
+        )
+        cached = np.load(
+            feature_paths[video_id],
+            mmap_mode="r",
+            allow_pickle=False,
+        )
+        recomputed_cache_dtype = np.ascontiguousarray(
+            recomputed,
+            dtype=cached.dtype,
+        )
+        cached_bytes = np.ascontiguousarray(cached).tobytes(order="C")
+        if recomputed_cache_dtype.tobytes(order="C") != cached_bytes:
+            raise PrefixRouteR1Error(
+                f"recomputed extractor tokens differ from cache rows for {video_id}"
+            )
+        for selection in selection_by_video.get(video_id, ()):
+            recomputed_records.append(
+                run_dynamic_token_record(
+                    encode_batch=encode_batch,
+                    selected_rgb_frames=selected,
+                    video_id=video_id,
+                    token_index=selection["token_index"],
+                    category=selection["category"],
+                )
+            )
+    recomputed_records.sort(
+        key=lambda row: (
+            CATEGORIES.index(row["category"]),
+            _selection_rank(
+                row["video_id"],
+                row["token_index"],
+                row["category"],
+            ),
+            row["video_id"],
+            row["token_index"],
+        )
+    )
+    recomputed_dynamic = {
+        "schema_version": R1_DYNAMIC_SCHEMA,
+        "audit_seed": R1_AUDIT_SEED,
+        "records": recomputed_records,
+    }
+    if canonical_json_bytes(recomputed_dynamic) != canonical_json_bytes(
+        supplied_dynamic
+    ):
+        raise PrefixRouteR1Error(
+            "submitted dynamic transcript differs from executed perturbations"
+        )
+    return {
+        "decoded_video_count": decoded_video_count,
+        "cache_rows_byte_identical_to_reexecution": True,
+        "dynamic_transcript_byte_identical_to_reexecution": True,
+    }
+
+
 def validate_r1_bundle(
     request,
     *,
@@ -484,6 +770,7 @@ def validate_r1_bundle(
     protocol_sha256,
     review_attestation_sha256,
     canonical_video_ids,
+    protocol_r1,
 ):
     """Re-read every R1 source and derive the existing-cache disposition."""
 
@@ -517,15 +804,19 @@ def validate_r1_bundle(
         raise PrefixRouteR1Error("R1 protocol hash differs")
     if request["review_attestation_sha256"] != review_attestation_sha256:
         raise PrefixRouteR1Error("R1 review attestation hash differs")
-    _commit(request["repository_commit"], "R1 repository commit")
-    if (
-        not isinstance(request["hf_snapshot_revision"], str)
-        or not request["hf_snapshot_revision"]
-    ):
-        raise PrefixRouteR1Error("HF snapshot revision is missing")
+    binding = protocol_r1["execution_binding"]
+    if binding["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        raise PrefixRouteR1Error(
+            "R1 extractor execution identity is not registered"
+        )
+    if request["repository_commit"] != binding["repository_commit"]:
+        raise PrefixRouteR1Error("R1 repository commit differs from binding")
+    if request["hf_snapshot_revision"] != binding["hf_snapshot_revision"]:
+        raise PrefixRouteR1Error("HF snapshot revision differs from binding")
     root = Path(bundle_root)
-    source_digests = {}
-    for field in (
+    source_records = {
+        field: _read_reference(request[field], root, f"R1 {field}")
+        for field in (
         "extractor_source",
         "resolved_command",
         "environment_lock",
@@ -536,16 +827,68 @@ def validate_r1_bundle(
         "cache_manifest",
         "support_map",
         "dynamic_audit",
+        )
+    }
+    source_digests = {
+        field: record[2] for field, record in source_records.items()
+    }
+    if source_digests["extractor_source"] != binding["extractor_source_sha256"]:
+        raise PrefixRouteR1Error("R1 extractor source differs from binding")
+    for field in (
+        "resolved_command",
+        "environment_lock",
+        "software_versions",
+        "annotation",
+        "cache_manifest",
+        "support_map",
     ):
-        _, _, digest = _read_reference(request[field], root, f"R1 {field}")
-        source_digests[field] = digest
+        if source_digests[field] != binding[f"{field}_sha256"]:
+            raise PrefixRouteR1Error(
+                f"R1 {field} differs from execution binding"
+            )
+    from tools.cache_ontad_features import build_siglip_encoder
+
+    imported_source_path = inspect.getsourcefile(build_siglip_encoder)
+    if imported_source_path is None:
+        raise PrefixRouteR1Error("bound extractor source path is unavailable")
+    _, imported_source_bytes = read_stable_file_bytes(
+        imported_source_path,
+        "executed R1 extractor source",
+    )
+    if imported_source_bytes != source_records["extractor_source"][1]:
+        raise PrefixRouteR1Error(
+            "executed extractor module differs from submitted bound source"
+        )
+    runtime_identity = _validate_execution_runtime(
+        source_records,
+        binding,
+        request,
+    )
     weights = request["weight_shards"]
     if not isinstance(weights, list) or not weights:
         raise PrefixRouteR1Error("R1 weight shard references are missing")
-    weight_digests = [
-        _read_reference(reference, root, f"weight shard {index}")[2]
+    weight_records = [
+        _read_reference(reference, root, f"weight shard {index}")
         for index, reference in enumerate(weights)
     ]
+    weight_digests = [record[2] for record in weight_records]
+    model_config_record = _read_reference(
+        request["model_config"],
+        root,
+        "R1 model config",
+    )
+    processor_config_record = _read_reference(
+        request["processor_config"],
+        root,
+        "R1 processor config",
+    )
+    snapshot_digest, _ = _snapshot_manifest_digest(
+        model_config=model_config_record,
+        processor_config=processor_config_record,
+        weight_shards=weight_records,
+    )
+    if snapshot_digest != binding["snapshot_manifest_sha256"]:
+        raise PrefixRouteR1Error("R1 snapshot manifest differs from binding")
 
     canonical_ids = tuple(canonical_video_ids)
     if (
@@ -559,6 +902,13 @@ def validate_r1_bundle(
         raise PrefixRouteR1Error("raw-video references do not cover canonical IDs")
     if not isinstance(feature_refs, dict) or sorted(feature_refs) != list(canonical_ids):
         raise PrefixRouteR1Error("feature references do not cover canonical IDs")
+    raw_manifest_sha256 = hashlib.sha256(
+        canonical_json_bytes(raw_refs)
+    ).hexdigest()
+    if raw_manifest_sha256 != binding["raw_video_manifest_sha256"]:
+        raise PrefixRouteR1Error(
+            "R1 raw-video manifest differs from execution binding"
+        )
 
     _, annotation_bytes, _ = _read_reference(
         request["annotation"],
@@ -614,6 +964,8 @@ def validate_r1_bundle(
     )
     raw_digests = {}
     feature_digests = {}
+    raw_paths = {}
+    feature_paths = {}
     for video_id in canonical_ids:
         raw_path, _, raw_digest = _read_reference(
             raw_refs[video_id],
@@ -622,6 +974,7 @@ def validate_r1_bundle(
         )
         if raw_path.stem != video_id:
             raise PrefixRouteR1Error("raw video basename differs from video ID")
+        raw_paths[video_id] = raw_path
         raw_digests[video_id] = raw_digest
         feature_path, _, feature_digest = _read_reference(
             feature_refs[video_id],
@@ -662,6 +1015,7 @@ def validate_r1_bundle(
         ):
             raise PrefixRouteR1Error("feature array geometry or dtype differs")
         feature_digests[video_id] = feature_digest
+        feature_paths[video_id] = feature_path
 
     expected_selection, shortfalls = _category_candidates(support_by_id)
     unique_videos = {
@@ -683,6 +1037,24 @@ def validate_r1_bundle(
     )
     if dynamic["feature_dim"] != feature_dim:
         raise PrefixRouteR1Error("dynamic token dimension differs from cache")
+    if binding["backend"] != "online_siglip_frame_encoder_v1":
+        raise PrefixRouteR1Error("registered R1 extractor backend differs")
+    encode_batch = _build_bound_siglip_encoder(
+        binding=binding,
+        model_config=model_config_record,
+        processor_config=processor_config_record,
+        weight_shards=weight_records,
+    )
+    executed = _recompute_cache_and_dynamic(
+        encode_batch=encode_batch,
+        binding=binding,
+        canonical_ids=canonical_ids,
+        raw_paths=raw_paths,
+        feature_paths=feature_paths,
+        support_by_id=support_by_id,
+        expected_selection=expected_selection,
+        supplied_dynamic=dynamic_value,
+    )
     return {
         "schema_version": R1_DERIVED_SCHEMA,
         "protocol_id": protocol_id,
@@ -695,6 +1067,7 @@ def validate_r1_bundle(
         "weight_shard_sha256": weight_digests,
         "hf_snapshot_revision": request["hf_snapshot_revision"],
         "raw_video_sha256_by_video": raw_digests,
+        "raw_video_manifest_sha256": raw_manifest_sha256,
         "feature_array_sha256_by_video": feature_digests,
         "static_support_audit": {
             "video_count": len(support_by_id),
@@ -704,6 +1077,7 @@ def validate_r1_bundle(
         },
         "dynamic_perturbation_audit": {
             **dynamic,
+            **executed,
             "category_shortfalls": shortfalls,
             "unique_video_count": len(unique_videos),
         },
@@ -711,6 +1085,7 @@ def validate_r1_bundle(
             "exact_weight_snapshot_bound": True,
             "raw_video_hashes_bound": True,
             "extraction_environment_bound": True,
+            **runtime_identity,
             "feature_arrays_bound": True,
             "cache_key_sets_equal": (
                 sorted(raw_digests)
@@ -742,10 +1117,12 @@ __all__ = [
     "CATEGORIES",
     "MINIMUM_UNIQUE_VIDEOS",
     "R1_AUDIT_SEED",
+    "R1_COMMAND_SCHEMA",
     "R1_DERIVED_SCHEMA",
     "R1_DYNAMIC_SCHEMA",
     "R1_REQUEST_SCHEMA",
     "R1_SUPPORT_SCHEMA",
+    "R1_SOFTWARE_SCHEMA",
     "TOKENS_PER_CATEGORY",
     "PrefixRouteR1Error",
     "canonical_json_bytes",

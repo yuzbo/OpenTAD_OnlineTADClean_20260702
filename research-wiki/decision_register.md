@@ -2150,7 +2150,7 @@ Reversibility:
 
 ## DR-050: Freeze Protocol V2 for Same-Reviewer Reassessment
 
-Status: active protocol candidate; same-reviewer PASS pending; all collection and model work blocked.
+Status: terminal REVISE at commit `18cc27b`; remediation superseded by DR-051; all collection and model work blocked.
 
 Decision:
 
@@ -2213,3 +2213,151 @@ Reversibility:
 - an independent `REVISE` requires V3 or a corrected V2 commit and another
   same-reviewer pass. A signed `PASS` authorizes only R0/R1 collection, never
   model implementation or GPU work.
+
+## DR-051: Reject V2 False-PASS Paths and Rebuild the Scientific Evidence Boundary
+
+Status: active zero-GPU remediation; V2 collection authorization remains denied.
+
+Decision:
+
+> Accept the same reviewer's fixed-commit V2 verdict
+> `REVISE_PROTOCOL_BEFORE_COLLECTION`. Preserve V2 commit `18cc27b` as a
+> reproducible but scientifically insufficient protocol. Rebuild the
+> population, R1, fairness, R5, and R6 paths so no caller-authored summary can
+> create a scientific PASS.
+
+Accepted findings:
+
+- arbitrary 211/213 lists plus opaque nonempty provenance can still produce
+  `EXPLAINED_MISMATCH`;
+- one-byte pseudo-videos and caller-selected token bytes can still certify R1;
+- R0 accepts the training subset and emits a weaker exposure label than the
+  protocol;
+- B2 is not uniquely instantiated and fairness is derived from asserted
+  scalars/booleans;
+- protocol-required R5 TRAIN fails its own audit, no-effect shifts can evade
+  detection, same-bin handoff is geometrically wrong, and compound OOD is not
+  executable;
+- R6 parameters and intervals are caller-controlled, negative controls are
+  disconnected, and arbitrary intervals can yield route PASS;
+- Windows 8.3 aliases can make contained evidence unusable.
+
+Preserved V2 closures:
+
+- independent review identity and collection authorization;
+- exact nested semantic lock;
+- fixed commit/tree/20-blob manifest and LF reproduction;
+- most R0 interval/pair/bootstrap mechanics;
+- literal no-op terminal-future rejection;
+- semantic derangement construction;
+- crossed seed/video pairing and multiplicity structure.
+
+Required remediation:
+
+1. independently freeze authoritative source identities, then derive
+   population membership and reasons from parsed annotation/inventory bytes;
+2. decode videos and re-execute the bound extractor, recomputing perturbations
+   and cache-row identity;
+3. enforce reporting subset and exact exposure, and keep R0 eligibility
+   descriptive unless aligned downstream power is defined;
+4. bind exact arm contracts and derive fairness only through executable
+   instrumentation;
+5. make every R5 set/count/support/balance/compound rule self-consistent;
+6. seal one raw-artifact R6 entry point with fixed inference parameters,
+   source-derived controls, and complete terminal schema;
+7. add every reproduced false accept as a regression and repair Windows path
+   canonicalization.
+
+Sources:
+
+- [`../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`](../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md),
+  SHA-256
+  `E411804F5BB744CBBE776A77B63701957EC607A3CA2293B4D523A23A656EC4CF`;
+- fixed V2 commit `18cc27b8496f5effa7e4e93abca58da4e7ea3d0b`;
+- [T44](discussion_timeline.md#t44-v2-reassessment-closes-reproducibility-but-rejects-scientific-evidence-derivation).
+
+Reversibility:
+
+- none of the false-PASS closures may be relaxed after source or model outcomes
+  are observed. Only another same-reviewer fixed-commit PASS can advance the
+  authorized scope.
+
+## DR-052: Freeze the V2 Remediation Candidate Without Starting Collection
+
+Status: zero-GPU implementation complete; same-reviewer fixed-commit
+reassessment pending; all collection, model, profile, and training gates
+remain blocked.
+
+Decision:
+
+> Treat the current V2 remediation as a review candidate only. Its local
+> tests establish that the known V2 false-PASS paths are rejected; they do not
+> establish source provenance, cache validity, model fairness, D1/D2 value, or
+> route effectiveness. Commit and push the exact source-manifest-bound
+> candidate, then return it to the same sole reviewer
+> `019f6f63-496d-75a0-a77b-91425a8e7ea1`.
+
+Implemented closures:
+
+- population membership and 211/213 reasons are derived from registered
+  annotation, inventory, alias, and artifact bytes; the current unregistered
+  state blocks population, R0, and R1;
+- R0 requires the `validation` subset, emits the exact design-exposure label,
+  and is descriptive rather than a mismatched downstream power claim;
+- R1 binds the exact extraction identity, canonical resolved command, and
+  active software versions; it decodes every video, recreates the local-only
+  encoder, reruns every cache row and perturbation, and compares transcript
+  and cache bytes;
+- B2 has one executable 64-track/64-newborn temporal-MOTR lifecycle, while
+  fairness rejects serialized assertions and requires live model, gradient,
+  profiler, CUDA, latency, and state measurements; exact budgets come from
+  hash-verified records, the profiled event covers every accumulation
+  microbatch, and the optimizer must contain exactly all trainable parameters;
+- R5 generates and validates the exact public 3,800-sequence package,
+  including no-effect counterfactuals, same-bin geometry, compound cells,
+  balance, disjointness, and frozen set commitments;
+- R6 accepts raw immutable emissions only, rereads the canonical protocol and
+  registered-source R0 envelope plus committed 213-video detail, derives all
+  metrics, fixes 10,000 resamples and alpha 0.05, and makes benchmark,
+  temporal, semantic, any-global B2 inferiority, and D1/D2 terminal decisions
+  reachable;
+- Windows 8.3 and long-path containment are canonicalized consistently.
+
+Local evidence:
+
+- protocol SHA-256:
+  `77DAC32A878A07316E3384B7BAE2D7768D57830479A3916EAF0273B788C8ECF8`;
+- policy-lock SHA-256:
+  `291FB2405D73B1AC2D7A64E773B583BFD9B558E4C851949AC9F87A249F4F5259`;
+- source manifest: 22 entries, SHA-256
+  `DDD2DBAFF706D12E8EBAED7E40AA53919B0836E623ACE9EFA5DFD80E1B1CDC27`;
+- dedicated hostile suite: `40 passed`;
+- focused zero-GPU cross-module suite: `135 passed, 6 skipped`; all six skips
+  are local Torch import failures, not converted to PASS;
+- unsigned protocol status:
+  `PROTOCOL_V2_VALID_REVIEW_REQUIRED`;
+- GPU hours and model outcomes inspected: zero.
+
+Remaining unknowns:
+
+- authoritative THUMOS14 annotation/inventory and R1 execution identities are
+  intentionally unregistered;
+- no real R0 or R1 evidence has been collected;
+- no B0-B4 model contract or live fairness measurement is authorized;
+- R5 is design-exposed stress, not hidden confirmatory OOD;
+- D1, D2, B4 noninferiority, and the paper route remain untested.
+
+Sources:
+
+- [Protocol V2](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md);
+- [machine protocol](../configs/causaltad/protocols/prefix_route_identifiability_v2.json);
+- [V2 REVISE review](../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md);
+- [T45](discussion_timeline.md#t45-v2-remediation-closes-known-false-pass-paths-but-remains-review-only).
+
+Reversibility:
+
+- a same-reviewer `REVISE` returns to zero-GPU protocol repair;
+- a valid signed PASS authorizes only the protocol's current
+  `READ_ONLY_SOURCE_IDENTITY_REGISTRATION` scope;
+- no local test result can authorize source collection, model code, profile,
+  or training.

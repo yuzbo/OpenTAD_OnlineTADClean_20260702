@@ -1356,3 +1356,56 @@ Current decision:
 > `019f6f63-496d-75a0-a77b-91425a8e7ea1`. Only that review can decide whether
 > outcome-blind R0/R1 collection begins. B0-B4, model P0, profile, formal
 > training, raw-video work, and GPU use remain blocked.
+
+### T44: V2 Reassessment Closes Reproducibility but Rejects Scientific Evidence Derivation
+
+The same sole reviewer reassessed fixed V2 commit `18cc27b` and returned
+`REVISE_PROTOCOL_BEFORE_COLLECTION`. The report is archived as
+`PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`, SHA-256
+`E411804F5BB744CBBE776A77B63701957EC607A3CA2293B4D523A23A656EC4CF`.
+
+V2's review identity, semantic policy lock, commit/tree, 20 source blobs,
+checkout bytes, LF policy, and rebuilt manifest are reproducible. Those
+engineering closures do not establish scientific provenance. Temporary
+negative tests reproduced false PASS for arbitrary population provenance,
+fabricated R1, wrong-subset R0, asserted fairness, undersized R5, and
+caller-created R6 intervals.
+
+Current decision:
+
+> Keep R0/R1, model code, B0-B4, profile, training, and GPU blocked. Repair
+> source registration and executed evidence first, then exact arm/fairness,
+> R5, sealed R6, and Windows path handling. Submit a new fixed commit to the
+> same reviewer; do not change reviewer or reinterpret V2 tests as approval.
+
+### T45: V2 Remediation Closes Known False-PASS Paths but Remains Review-Only
+
+The zero-GPU remediation replaced caller-authored scientific summaries with
+source- or runtime-derived evidence. Population and R1 now fail before
+collection while their authoritative identities are unregistered. R0 is fixed
+to validation with exact design-exposure disclosure and descriptive coverage.
+R1 additionally binds a canonical command and the active software versions.
+B2 is an executable temporal-MOTR lifecycle; fairness requires live
+instrumentation, trace-bound full optimizer-event replay, and an exact
+optimizer/trainable-parameter set. R5 validates one exact public
+3,800-sequence package. R6 derives all metrics, intervals, controls, and
+terminal decisions from raw immutable emissions plus a registered-source R0
+envelope and committed 213-video detail. Windows 8.3 containment is covered by
+a native regression.
+
+The canonical protocol SHA-256 is
+`77DAC32A878A07316E3384B7BAE2D7768D57830479A3916EAF0273B788C8ECF8`.
+Its 22-entry source manifest SHA-256 is
+`DDD2DBAFF706D12E8EBAED7E40AA53919B0836E623ACE9EFA5DFD80E1B1CDC27`.
+The dedicated suite passes `40/40`; the focused zero-GPU suite passes `135`
+with six local Torch-import skips. No skip is treated as positive evidence.
+No real R0/R1 source, model output, checkpoint, profile, training run, or GPU
+was accessed.
+
+Current decision:
+
+> Commit and push the exact candidate, then request reassessment from the same
+> sole reviewer `019f6f63-496d-75a0-a77b-91425a8e7ea1`. Until a valid signed
+> PASS, every collection and model gate remains blocked. Even a PASS initially
+> authorizes only read-only source-identity registration, not R0/R1
+> collection, model implementation, profile, or training.

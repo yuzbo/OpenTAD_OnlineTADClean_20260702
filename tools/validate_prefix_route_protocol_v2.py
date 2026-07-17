@@ -274,6 +274,7 @@ def main():
                     protocol_sha256=protocol["sha256"],
                     review_attestation_sha256=review["attestation_sha256"],
                     canonical_video_ids=population["canonical_ids"],
+                    protocol_r1=protocol["protocol"]["r1"],
                 )
                 if result["status"] != "PASS_R1_EXISTING_CACHE_CERTIFIED":
                     print(json.dumps(result, indent=2, sort_keys=True))

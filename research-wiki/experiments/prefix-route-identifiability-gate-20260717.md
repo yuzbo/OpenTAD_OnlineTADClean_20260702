@@ -2,7 +2,7 @@
 type: experiment
 node_id: exp:prefix-route-identifiability-gate
 title: "Persistent-Carrier On-TAL Route Identifiability Gate"
-stage: protocol-v2-review-pending
+stage: protocol-v2-revise-remediation
 outcome: not-run
 updated: 2026-07-17
 ---
@@ -13,15 +13,27 @@ updated: 2026-07-17
 
 Protocol V1 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
-Protocol V2 status: `PROTOCOL_REVIEW_PENDING`.
+Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
 This node records the evidence required before any R-A model P0 contract,
 implementation, or training. It is not a model experiment, has not run, and
 does not authorize B0-B4 implementation. V1 converted the checklist into code
 but its independent review found self-forgeable authorization, asserted
-evidence statuses, and incomplete R0-R6 execution. V2 implements the required
-repairs but has not yet received a same-reviewer PASS. Therefore neither R0 nor
+evidence statuses, and incomplete R0-R6 execution. Fixed V2 commit `18cc27b`
+also received `REVISE`: its Git/source reproduction passed, but population,
+R1, R0 disclosure, B2/fairness, R5, R6, tests, and Windows path semantics
+still contained false-PASS or unusable paths. The active candidate is the
+zero-GPU remediation of those findings. Neither source registration, R0, nor
 R1 evidence collection is currently authorized.
+
+The remediation implementation is locally complete and awaiting the same
+reviewer's fixed-commit reassessment. Protocol SHA-256 is
+`77DAC32A878A07316E3384B7BAE2D7768D57830479A3916EAF0273B788C8ECF8`;
+the 22-entry source-manifest SHA-256 is
+`DDD2DBAFF706D12E8EBAED7E40AA53919B0836E623ACE9EFA5DFD80E1B1CDC27`.
+Dedicated tests pass `40/40`; focused zero-GPU tests pass `135` with six
+local Torch-import skips. These are engineering checks, not scientific
+outcomes or authorization.
 
 GPU authorization: zero hours.
 
@@ -36,7 +48,7 @@ The next legal artifact is one protocol-only immutable V2 commit containing:
 - `tools/validate_prefix_route_protocol_v2.py`;
 - `tests/test_prefix_route_protocol_v2.py`;
 - `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`;
-- the archived V1 independent review.
+- the archived V1 and V2 independent reviews.
 
 The same sole reviewer must verify the exact commit/tree and sign canonical
 attestation bytes using the pre-frozen Ed25519 identity. The reviewer may
@@ -45,16 +57,19 @@ return only:
 - `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`;
 - `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
-A protocol PASS authorizes only the specified read-only R0/R1 collection. It
-does not authorize inspecting model predictions or checkpoints, selecting
-model constants, implementing B0-B4, running P0, or using a GPU.
+Because authoritative source identities are currently unregistered, a
+protocol PASS authorizes only read-only source-identity registration. A later
+fixed and independently reviewed registration commit may authorize the
+specified R0/R1 audits. Neither PASS authorizes inspecting model predictions
+or checkpoints, selecting model constants, implementing B0-B4, running P0, or
+using a GPU.
 
 Local validation is necessary but not sufficient. The V2 validator reports
 `PROTOCOL_V2_VALID_REVIEW_REQUIRED`, and collection authorization returns
 `BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW` until the fixed commit,
 manifest, review attestation, and detached signature all verify.
 
-Review-confirmed blockers that the new protocol must close:
+Review-confirmed blockers that the remediation must close:
 
 - the reporting split has 211 videos while the canonical expectation is 213;
 - earlier annotation audits already exposed counts, overlap, and concurrency,
@@ -63,16 +78,19 @@ Review-confirmed blockers that the new protocol must close:
   independently, but the existing cache artifact lacks sufficient provenance
   to bind that code path, encoder revision, weights, environment, and raw
   videos;
-- arm semantics, capacity/resource fairness, negative controls, structural
-  OOD, and equivalence regions are not executable definitions;
+- B2 was prose rather than an exact lifecycle, fairness accepted asserted
+  scalars/booleans, R5 contradicted its own count/shift/compound rules, and R6
+  accepted caller-authored intervals;
 - only the proposed atomic same-bin transition and noncanonical transport
   differ plausibly from a matched temporal MOTR, and neither delta is yet
   established.
 
-V2 implements these choices at the protocol-definition level. It does not claim
-that the canonical 213 population certificate exists, that the current cache
-passes R1, or that D1/D2 work. Missing population or cache identity fails
-closed after protocol PASS rather than being filled with an author guess.
+The remediation derives 213 from registered annotation bytes and 211 from a
+registered inventory plus actual artifacts; fully re-executes R1; fixes exact
+R0 subset/exposure; implements B2 and runtime fairness; executes one public
+3,800-sequence R5 package; and makes R6 raw-emission-only. It does not claim
+that source registration exists, that the current cache passes R1, or that
+D1/D2 work.
 
 ## Scientific Question
 
@@ -125,13 +143,15 @@ videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
 and maximum concurrency 2. The new census therefore cannot be described as
 annotation-unseen. Any claim-eligibility rule must predeclare the statistical
 unit, denominator, minimum support, multiplicity treatment, target effect,
-power method, and terminal action. Values proposed by the reviewer are
-candidate policies until independently justified and frozen.
+power method, and terminal action. R0 currently provides descriptive support
+only. Its earlier single-proportion power heuristic was removed because it did
+not match the downstream paired video/seed estimand.
 
 Kill or revise conditions:
 
 - the exact split cannot be bound;
-- the intended hard cases fail the frozen support and power rule;
+- the intended hard cases have inadequate descriptive support for the planned
+  downstream estimand;
 - K or direct-complete assumptions were chosen before the census;
 - census definitions are altered after model results.
 
@@ -239,8 +259,8 @@ an equivalent amount.
 
 ## Gate R5: Structural OOD
 
-Random seeds under one generator are insufficient. Hidden validation must
-include combinations not observed in training:
+Random seeds under one generator are insufficient. The public protocol stress
+must include combinations not observed in its training set:
 
 - event counts;
 - action lengths;
@@ -253,8 +273,10 @@ include combinations not observed in training:
 - endpoint-delay distributions;
 - multiple simultaneous shifts.
 
-The validation generator, distributions, hidden seeds, and content hashes must
-be frozen independently before model implementation.
+The generator, distributions, public seeds, and content hashes must be frozen
+before model implementation. This package is
+`DESIGN_EXPOSED_PROTOCOL_STRESS_NOT_HIDDEN_CONFIRMATORY`; any hidden-OOD claim
+requires a separately committed unseen grammar or seed before model artifacts.
 
 The protocol must separate four factor families: lifecycle geometry, semantic
 mapping, representation/noise, and endpoint observation delay. A seed change
@@ -326,6 +348,7 @@ training, visual fine-tuning, or raw-video training.
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v1.json)
 - [`../../opentad/utils/prefix_route_protocol.py`](../../opentad/utils/prefix_route_protocol.py)

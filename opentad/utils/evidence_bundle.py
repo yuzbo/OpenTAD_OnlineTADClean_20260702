@@ -62,7 +62,7 @@ def strict_json_from_bytes(payload, label="JSON evidence", *, require_object=Fal
 
 def _root(path):
     try:
-        root = Path(path).expanduser().resolve(strict=True)
+        root = _lexical_absolute(Path(path).expanduser()).resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise EvidenceBundleError(f"evidence bundle root is invalid: {path}") from exc
     if not root.is_dir():
@@ -71,7 +71,21 @@ def _root(path):
 
 
 def _lexical_absolute(path):
-    return Path(os.path.abspath(os.fspath(path)))
+    value = os.path.abspath(os.fspath(path))
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            get_long_path = ctypes.windll.kernel32.GetLongPathNameW
+            required = get_long_path(value, None, 0)
+            if required:
+                buffer = ctypes.create_unicode_buffer(required)
+                written = get_long_path(value, buffer, required)
+                if written and written < required:
+                    value = buffer.value
+        except (AttributeError, OSError):
+            pass
+    return Path(value)
 
 
 def _contained_regular_file(path, bundle_root, label):
