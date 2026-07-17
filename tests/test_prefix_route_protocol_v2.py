@@ -16,17 +16,13 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 import opentad.evaluations.prefix_route_r6_v2 as r6_module
 from opentad.evaluations.prefix_route_r6_v2 import (
-    INFERENCE_ARMS,
-    R6_RAW_SCHEMA,
-    R6_SEEDS,
-    REQUIRED_ARMS,
+    REQUIRED_CONTRASTS,
     PrefixRouteR6Error,
     canonical_emission,
     derive_per_video_cell,
     evaluate_r6_raw_evidence,
 )
 from opentad.utils.evidence_bundle import (
-    EvidenceBundleError,
     bundle_file_reference,
 )
 from opentad.utils.prefix_route_controls_v2 import (
@@ -34,6 +30,7 @@ from opentad.utils.prefix_route_controls_v2 import (
     feature_time_shuffle_permutation,
     semantic_derangement,
 )
+import opentad.utils.prefix_route_fairness_v2 as fairness_module
 from opentad.utils.prefix_route_fairness_v2 import (
     ArmRuntimeAdapter,
     CALIBRATION_MANIFEST_SCHEMA,
@@ -67,12 +64,10 @@ from opentad.utils.prefix_route_protocol_v2 import (
     HISTORICAL_INVENTORY_SCHEMA,
     POPULATION_REQUEST_SCHEMA,
     PROTOCOL_PASS,
-    R0_ENVELOPE_SCHEMA,
     REVIEW_SCHEMA,
     PrefixRouteProtocolV2Error,
     canonical_json_bytes,
     canonical_sha256,
-    derive_r0_envelope,
     load_protocol,
     load_signed_review,
     validate_exposure_ledger_bytes,
@@ -161,6 +156,56 @@ def test_protocol_v2_is_canonical_and_semantically_valid():
     assert PROTOCOL_PATH.read_bytes() == canonical_json_bytes(record["protocol"])
 
 
+def _synthetic_registered_protocol():
+    value = _protocol_value()
+    registration = value["population"]["source_registration"]
+    registration.update(
+        {
+            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "authoritative_annotation_sha256": "a" * 64,
+            "historical_inventory_sha256": "b" * 64,
+            "registration_commit": "1" * 40,
+        }
+    )
+    binding = value["r1"]["execution_binding"]
+    binding.update(
+        {
+            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "repository_commit": "2" * 40,
+            "hf_snapshot_revision": "fixture-snapshot",
+            "extractor_source_sha256": "3" * 64,
+            "snapshot_manifest_sha256": "4" * 64,
+            "resolved_command_sha256": "5" * 64,
+            "environment_lock_sha256": "6" * 64,
+            "software_versions_sha256": "7" * 64,
+            "annotation_sha256": "a" * 64,
+            "cache_manifest_sha256": "8" * 64,
+            "support_map_sha256": "9" * 64,
+            "raw_video_manifest_sha256": "0" * 64,
+        }
+    )
+    value["governance"]["post_pass_scope"] = [
+        "READ_ONLY_R0_ANNOTATION_CENSUS",
+        "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
+    ]
+    return value
+
+
+def test_registered_protocol_rejects_placeholder_and_cross_source_annotation():
+    placeholder = _relock(_synthetic_registered_protocol())
+    with pytest.raises(PrefixRouteProtocolV2Error, match="placeholder"):
+        validate_protocol(placeholder)
+
+    cross_source = _synthetic_registered_protocol()
+    cross_source["population"]["source_registration"]["release_revision"] = (
+        "THUMOS14_TEMPORAL_ANNOTATIONS_RELEASE_2014"
+    )
+    cross_source["r1"]["execution_binding"]["annotation_sha256"] = "f" * 64
+    _relock(cross_source)
+    with pytest.raises(PrefixRouteProtocolV2Error, match="annotation differs"):
+        validate_protocol(cross_source)
+
+
 def _mutate_future(value):
     value["task"]["future_frame_access"] = True
 
@@ -216,14 +261,28 @@ def test_relocked_forbidden_protocol_mutations_are_rejected(mutation):
         validate_protocol(value)
 
 
-def _signed_review_fixture(tmp_path, monkeypatch, *, verdict=PROTOCOL_PASS):
+def _signed_review_fixture(
+    tmp_path,
+    monkeypatch,
+    *,
+    verdict=PROTOCOL_PASS,
+    registered=False,
+):
     private = Ed25519PrivateKey.generate()
     public = private.public_key().public_bytes(Encoding.OpenSSH, PublicFormat.OpenSSH)
     public_text = public.decode("ascii") + " test-reviewer"
     fingerprint = protocol_module._public_key_fingerprint(public_text)
     monkeypatch.setattr(protocol_module, "REVIEWER_PUBLIC_KEY", public_text)
     monkeypatch.setattr(protocol_module, "REVIEWER_FINGERPRINT", fingerprint)
-    protocol = _protocol_value()
+    protocol = (
+        _synthetic_registered_protocol()
+        if registered
+        else _protocol_value()
+    )
+    if registered:
+        protocol["population"]["source_registration"]["release_revision"] = (
+            "THUMOS14_TEMPORAL_ANNOTATIONS_RELEASE_2014"
+        )
     trust = protocol["governance"]["reviewer_trust"]
     trust["public_key_openssh"] = public_text
     trust["public_key_fingerprint"] = fingerprint
@@ -332,10 +391,35 @@ def test_random_or_author_generated_signature_cannot_forge_pass(tmp_path, monkey
         )
 
 
+def test_signed_registered_source_commit_must_be_reviewed_commit_parent(
+    tmp_path,
+    monkeypatch,
+):
+    fixture = _signed_review_fixture(
+        tmp_path,
+        monkeypatch,
+        registered=True,
+    )
+    monkeypatch.setattr(
+        protocol_module,
+        "_git",
+        lambda *args: ("4" * 40 + "\n").encode("ascii"),
+    )
+    with pytest.raises(PrefixRouteProtocolV2Error, match="direct parent"):
+        load_signed_review(
+            attestation_path=fixture["attestation_path"],
+            signature_path=fixture["signature_path"],
+            protocol_record=fixture["protocol_record"],
+            manifest_record=fixture["manifest_record"],
+            repo_root=tmp_path,
+        )
+
+
 def test_authorization_api_has_no_unvalidated_dictionary_argument():
     parameters = inspect.signature(protocol_module.authorize_collection).parameters
     assert "review_record" not in parameters
     assert "certificate" not in parameters
+    assert not hasattr(protocol_module, "derive_r0_envelope")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows 8.3 path regression")
@@ -401,7 +485,7 @@ def _population_fixture(tmp_path):
         {
             "schema_version": HISTORICAL_INVENTORY_SCHEMA,
             "release_id": "THUMOS14_TEMPORAL_ANNOTATIONS",
-            "release_revision": "OFFICIAL_RELEASE_TO_BE_REGISTERED",
+            "release_revision": "THUMOS14_TEMPORAL_ANNOTATIONS_RELEASE_2014",
             "reporting_subset": "validation",
             "entries": entries,
         },
@@ -412,9 +496,26 @@ def _population_fixture(tmp_path):
     registration.update(
         {
             "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "release_revision": "THUMOS14_TEMPORAL_ANNOTATIONS_RELEASE_2014",
             "authoritative_annotation_sha256": annotation_ref["sha256"],
             "historical_inventory_sha256": inventory_ref["sha256"],
             "registration_commit": "1" * 40,
+        }
+    )
+    protocol["r1"]["execution_binding"].update(
+        {
+            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
+            "repository_commit": "2" * 40,
+            "hf_snapshot_revision": "fixture-snapshot",
+            "extractor_source_sha256": "3" * 64,
+            "snapshot_manifest_sha256": "4" * 64,
+            "resolved_command_sha256": "5" * 64,
+            "environment_lock_sha256": "6" * 64,
+            "software_versions_sha256": "7" * 64,
+            "annotation_sha256": annotation_ref["sha256"],
+            "cache_manifest_sha256": "8" * 64,
+            "support_map_sha256": "9" * 64,
+            "raw_video_manifest_sha256": "a" * 64,
         }
     )
     protocol["governance"]["post_pass_scope"] = [
@@ -424,11 +525,13 @@ def _population_fixture(tmp_path):
     _relock(protocol)
     validate_protocol(protocol)
     protocol_bytes = canonical_json_bytes(protocol)
+    protocol_path = tmp_path / "registered-protocol.json"
+    protocol_path.write_bytes(protocol_bytes)
     protocol_record = {
         "protocol": protocol,
         "sha256": hashlib.sha256(protocol_bytes).hexdigest(),
         "bytes": protocol_bytes,
-        "path": tmp_path / "registered-protocol.json",
+        "path": protocol_path,
     }
     request = {
         "schema_version": POPULATION_REQUEST_SCHEMA,
@@ -442,19 +545,15 @@ def _population_fixture(tmp_path):
     return protocol_record, request, canonical
 
 
-def test_population_status_is_derived_from_contained_sources(tmp_path):
-    protocol_record, request, canonical = _population_fixture(tmp_path)
-    result = validate_population_bundle(
-        request,
-        bundle_root=tmp_path,
-        protocol_record=protocol_record,
-        review_record=_review_stub(),
-    )
-    assert result["status"] == "EXPLAINED_MISMATCH"
-    assert result["canonical_ids"] == canonical
-    assert result["historical_only"] == []
-    assert len(result["canonical_only"]) == 2
-    assert result["explicit_aliases"] == {"legacy_000": "video_000"}
+def test_population_requires_cryptographically_verified_pass(tmp_path):
+    protocol_record, request, _ = _population_fixture(tmp_path)
+    with pytest.raises(PrefixRouteProtocolV2Error, match="verified review"):
+        validate_population_bundle(
+            request,
+            bundle_root=tmp_path,
+            protocol_record=protocol_record,
+            review_record=_review_stub(),
+        )
 
 
 def test_unregistered_protocol_blocks_population_before_arbitrary_lists(tmp_path):
@@ -481,7 +580,7 @@ def test_population_source_substitution_and_asserted_membership_fail(tmp_path):
     protocol_record, request, _ = _population_fixture(tmp_path)
     annotation_path = tmp_path / request["authoritative_annotation"]["path"]
     annotation_path.write_bytes(annotation_path.read_bytes() + b" ")
-    with pytest.raises(EvidenceBundleError):
+    with pytest.raises(PrefixRouteProtocolV2Error, match="verified review"):
         validate_population_bundle(
             request,
             bundle_root=tmp_path,
@@ -489,14 +588,25 @@ def test_population_source_substitution_and_asserted_membership_fail(tmp_path):
             review_record=_review_stub(),
         )
 
-    protocol_record, request, _ = _population_fixture(tmp_path / "second")
     request["asserted_canonical_ids"] = ["author-selected"]
-    with pytest.raises(PrefixRouteProtocolV2Error, match="fields"):
+    with pytest.raises(PrefixRouteProtocolV2Error):
         validate_population_bundle(
             request,
-            bundle_root=tmp_path / "second",
+            bundle_root=tmp_path,
             protocol_record=protocol_record,
             review_record=_review_stub(),
+        )
+
+
+def test_population_rejects_nonvideo_mp4_placeholder(tmp_path):
+    path = tmp_path / "placeholder.mp4"
+    payload = b"video-bytes:not-an-mp4\n"
+    path.write_bytes(payload)
+    with pytest.raises(PrefixRouteProtocolV2Error, match="decodable"):
+        protocol_module._validate_historical_video_artifact(
+            path,
+            payload,
+            "historical artifact fixture",
         )
 
 
@@ -611,74 +721,13 @@ def test_exposure_ledger_is_canonical_hash_chained_and_append_only():
 
 def test_r0_author_report_is_recomputed_not_asserted(tmp_path):
     protocol_record = load_protocol(PROTOCOL_PATH)
-    review = _review_stub()
-    population = {
-        "canonical_ids": ["v0", "v1", "v2"],
-        "derived_sha256": "b" * 64,
-    }
-    annotation_bytes = canonical_json_bytes(_r0_annotation())
-    population["authoritative_annotation_sha256"] = hashlib.sha256(
-        annotation_bytes
-    ).hexdigest()
-    class_map_bytes = b"A\nB\nC\n"
-    ledger_bytes = _ledger_bytes()
-    envelope = derive_r0_envelope(
-        annotation_bytes=annotation_bytes,
-        class_map_bytes=class_map_bytes,
-        exposure_ledger_bytes=ledger_bytes,
-        population_record=population,
-        protocol_record=protocol_record,
-        review_record=review,
-        frozen_ledger_prefix=ledger_bytes,
-    )
-    refs = {
-        "annotation": _write_bytes(
-            tmp_path,
-            "r0/annotation.json",
-            annotation_bytes,
-        ),
-        "class_map": _write_bytes(tmp_path, "r0/classes.txt", class_map_bytes),
-        "exposure_ledger": _write_bytes(
-            tmp_path,
-            "r0/exposure.jsonl",
-            ledger_bytes,
-        ),
-        "author_report": _write_json(tmp_path, "r0/report.json", envelope),
-    }
-    request = {
-        "schema_version": "prefix-route-r0-request-v2",
-        "protocol_id": protocol_record["protocol"]["protocol_id"],
-        "protocol_sha256": protocol_record["sha256"],
-        "review_attestation_sha256": review["attestation_sha256"],
-        "population_derived_sha256": population["derived_sha256"],
-        **refs,
-    }
-    validated = validate_r0_bundle(
-        request,
-        bundle_root=tmp_path,
-        protocol_record=protocol_record,
-        review_record=review,
-        population_record=population,
-        frozen_ledger_prefix=ledger_bytes,
-    )
-    assert validated["status"] == "PASS_R0_COMPLETE"
-
-    forged = dict(envelope)
-    forged["report"] = dict(forged["report"])
-    forged["report"]["aggregate"] = {}
-    report_path = tmp_path / refs["author_report"]["path"]
-    report_path.write_bytes(canonical_json_bytes(forged))
-    request["author_report"]["sha256"] = hashlib.sha256(
-        report_path.read_bytes()
-    ).hexdigest()
-    with pytest.raises(PrefixRouteProtocolV2Error, match="differs"):
+    with pytest.raises(PrefixRouteProtocolV2Error, match="not frozen"):
         validate_r0_bundle(
-            request,
+            {},
             bundle_root=tmp_path,
             protocol_record=protocol_record,
-            review_record=review,
-            population_record=population,
-            frozen_ledger_prefix=ledger_bytes,
+            review_record=_review_stub(),
+            population_record={},
         )
 
 
@@ -768,10 +817,12 @@ def test_r5_complete_frozen_package_is_executable_disjoint_and_balanced():
         set_name="IID_HOLDOUT",
     )
     assert left["sequence_sha256"] == right["sequence_sha256"]
+    assert left["row_commitment_sha256"] != right["row_commitment_sha256"]
     with pytest.raises(PrefixRouteOODError, match="names differ"):
         audit_sequence_sets({"TRAIN": [left], "IID_HOLDOUT": [right]})
 
-    audit = audit_sequence_sets(_full_r5_package())
+    package = _full_r5_package()
+    audit = audit_sequence_sets(package)
     assert audit["pairwise_disjoint"] is True
     assert audit["total_sequence_count"] == 3800
     assert all(
@@ -790,6 +841,18 @@ def test_r5_complete_frozen_package_is_executable_disjoint_and_balanced():
         set_name="diagnostic",
     )
     assert handoff["events"][0]["end_bin"] == handoff["events"][1]["start_bin"]
+    left = package["TRAIN"][0]
+    right = package["TRAIN"][1]
+    for field in (
+        "events",
+        "observations",
+        "derived",
+        "sequence_sha256",
+        "row_commitment_sha256",
+    ):
+        left[field], right[field] = right[field], left[field]
+    with pytest.raises(PrefixRouteOODError, match="frozen regeneration"):
+        audit_sequence_sets(package)
 
 
 def _fairness_fixture():
@@ -839,7 +902,7 @@ def test_fairness_rejects_serialized_author_assertions_before_torch_import():
     }
 
 
-def test_fairness_budget_is_derived_from_hash_bound_records(tmp_path):
+def test_fairness_budget_records_cannot_pass_without_live_runtime(tmp_path):
     execution = _write_json(
         tmp_path,
         "fairness/execution.json",
@@ -852,6 +915,10 @@ def test_fairness_budget_is_derived_from_hash_bound_records(tmp_path):
                     "gradient_accumulation_steps": 2,
                     "effective_token_count": 100,
                     "status": "APPLIED_FINITE",
+                    "input_batches_sha256": "a" * 64,
+                    "model_state_before_sha256": f"{index + 1:064x}",
+                    "model_state_after_sha256": f"{index + 2:064x}",
+                    "optimizer_state_after_sha256": "b" * 64,
                 }
                 for index in range(3)
             ],
@@ -894,21 +961,38 @@ def test_fairness_budget_is_derived_from_hash_bound_records(tmp_path):
         trial_manifest_reference=trials,
         seed_manifest_reference=seeds,
     )
-    evidence = derive_runtime_budget_evidence(adapter)
-    assert evidence["optimizer_event_count"] == 3
-    assert evidence["effective_token_count"] == 300
-    assert evidence["gradient_accumulation_steps"] == 2
-    assert evidence["hyperparameter_trial_count"] == 2
-    assert evidence["calibration_video_count"] == 40
-    assert evidence["seed_count"] == 3
-
-    (tmp_path / execution["path"]).write_text(
-        "{}\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    with pytest.raises(PrefixRouteFairnessError, match="hash mismatch"):
+    with pytest.raises(PrefixRouteFairnessError, match="standalone"):
         derive_runtime_budget_evidence(adapter)
+    budget, _, _ = fairness_module._runtime_budget(adapter)
+    assert budget["optimizer_event_count"] == 3
+    assert budget["effective_token_count"] == 300
+
+    broken = json.loads(
+        (tmp_path / execution["path"]).read_text(encoding="utf-8")
+    )
+    broken["events"][1]["model_state_before_sha256"] = "f" * 64
+    broken_reference = _write_json(
+        tmp_path,
+        "fairness/broken-execution.json",
+        broken,
+    )
+    broken_adapter = ArmRuntimeAdapter(
+        arm="B2",
+        model=None,
+        optimizer=None,
+        optimizer_event_forwards=lambda: None,
+        inference_forward=lambda: None,
+        reset_runtime_state=lambda: None,
+        budget_evidence_root=tmp_path,
+        execution_trace_reference=broken_reference,
+        calibration_manifest_reference=calibration,
+        trial_manifest_reference=trials,
+        seed_manifest_reference=seeds,
+    )
+    with pytest.raises(PrefixRouteFairnessError, match="model-state chain"):
+        fairness_module._runtime_budget(broken_adapter)
+    with pytest.raises(PrefixRouteFairnessError, match="standalone"):
+        derive_runtime_budget_evidence(broken_adapter)
 
 
 def _b2_decoder_rows(previous_tracks, *, complete_previous):
@@ -1014,6 +1098,28 @@ def test_b2_training_assignment_locks_tracks_then_matches_newborn_one_to_one():
     ) == 1
 
 
+def test_b2_hungarian_contains_optional_dustbins_during_optimization():
+    risk_set = [{"instance_id": "A"}, {"instance_id": "B"}]
+    costs = {}
+    for slot in range(NEWBORN_QUERY_COUNT):
+        if slot == 0:
+            costs[slot] = {"A": 0.0, "B": 10.0}
+        elif slot == 1:
+            costs[slot] = {"A": 1.0, "B": 100.0}
+        else:
+            costs[slot] = {"A": 100.0, "B": 100.0}
+    assignment = build_temporal_tracklet_assignment(
+        risk_set=risk_set,
+        previous_track_assignments={},
+        newborn_costs=costs,
+    )
+    assert assignment["newborn_assignment"][0] == "A"
+    assert all(
+        instance_id != "B"
+        for instance_id in assignment["newborn_assignment"].values()
+    )
+
+
 def test_b2_executes_all_newborn_queries_but_cannot_reuse_released_slots():
     previous = sorted(
         [
@@ -1078,283 +1184,256 @@ def test_b2_newborn_with_unconfirmed_class_remains_active():
     assert any(
         track["state_ref"] == "newborn-0" for track in result["next_tracks"]
     )
-
-
-def _r6_fixture(tmp_path):
-    video_ids = [f"v{index:03d}" for index in range(213)]
-    event_video_ids = set(video_ids)
-    annotation = {
-        "database": {
-            video_id: {
-                "subset": "validation",
-                "duration": 4.0,
-                "frame": 32,
-                "annotations": (
-                    [
-                        {"segment": [0.0, 1.125], "label": "A"},
-                        {"segment": [1.0, 2.0], "label": "A"},
-                        {"segment": [2.0, 2.5], "label": "B"},
-                        {"segment": [3.0, 3.5], "label": "C"},
-                    ]
-                    if video_id in event_video_ids
-                    else []
-                ),
-            }
-            for video_id in video_ids
-        }
-    }
-    report, detail = collect_r0_census(
-        annotation,
-        ("A", "B", "C"),
-        video_ids,
-        bootstrap_resamples=10000,
-        expected_subset="validation",
-        annotation_exposure_status=(
-            "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
-        ),
-    )
-
-    def emissions(video_id, complete):
-        if video_id not in event_video_ids:
-            return []
-        intervals = (
-            [(0, 9, "A"), (8, 16, "A"), (16, 20, "B"), (24, 28, "C")]
-            if complete
-            else [(16, 20, "B")]
+    with pytest.raises(PrefixRouteB2Error, match="observation coordinate"):
+        temporal_motr_transition(
+            stream_key="v0",
+            decision_bin=999,
+            decision_observation_count=8,
+            calibrated_threshold=0.5,
+            previous_tracks=[],
+            decoder_rows=_b2_decoder_rows([], complete_previous=False),
+            next_track_serial=0,
+            next_emission_sequence=0,
         )
-        return [
-            {
-                "emission_id": f"{video_id}:e{index}",
-                "stream_key": video_id,
-                "sequence_id": index,
-                "start": start,
-                "end": end,
-                "class": label,
-                "score": 0.9,
-                "source_frame": end - 1,
-                "emit_frame": end,
-            }
-            for index, (start, end, label) in enumerate(intervals)
-        ]
-
-    strong = {"B4", "B2"}
-    runs = []
-    for arm in INFERENCE_ARMS:
-        for seed in R6_SEEDS:
-            runs.append(
-                {
-                    "arm": arm,
-                    "seed": seed,
-                    "videos": [
-                        {
-                            "video_id": video_id,
-                            "emissions": emissions(video_id, arm in strong),
-                        }
-                        for video_id in video_ids
-                    ],
-                }
-            )
-    base = load_protocol(PROTOCOL_PATH)
-    protocol = json.loads(json.dumps(base["protocol"]))
-    protocol["population"]["source_registration"].update(
-        {
-            "state": "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL",
-            "authoritative_annotation_sha256": "a" * 64,
-            "historical_inventory_sha256": "b" * 64,
-            "registration_commit": "1" * 40,
-        }
-    )
-    protocol["governance"]["post_pass_scope"] = [
-        "READ_ONLY_R0_ANNOTATION_CENSUS",
-        "READ_ONLY_R1_CACHE_CAUSALITY_AUDIT",
-    ]
-    _relock(protocol)
-    protocol_path = tmp_path / "registered-r6-protocol.json"
-    protocol_path.write_bytes(canonical_json_bytes(protocol))
-    protocol_record = load_protocol(protocol_path)
-    envelope = {
-        "schema_version": R0_ENVELOPE_SCHEMA,
-        "protocol_id": protocol_record["protocol"]["protocol_id"],
-        "protocol_sha256": protocol_record["sha256"],
-        "review_attestation_sha256": "c" * 64,
-        "population_derived_sha256": "d" * 64,
-        "source_sha256": {
-            "annotation": "a" * 64,
-            "class_map": "e" * 64,
-            "exposure_ledger": "f" * 64,
-        },
-        "report": report,
-        "status": "PASS_R0_COMPLETE",
-    }
-    envelope["derived_sha256"] = canonical_sha256(envelope)
-    raw = {
-        "schema_version": R6_RAW_SCHEMA,
-        "protocol_id": "prefix-route-identifiability-20260717-v2",
-        "protocol_sha256": protocol_record["sha256"],
-        "r0_envelope_sha256": hashlib.sha256(
-            canonical_json_bytes(envelope)
-        ).hexdigest(),
-        "r0_detail_sha256": hashlib.sha256(
-            canonical_json_bytes(detail)
-        ).hexdigest(),
-        "reporting_subset": "validation",
-        "seeds": list(R6_SEEDS),
-        "runs": runs,
-    }
-    return raw, envelope, detail, protocol_path
 
 
-def test_r6_derives_route_pass_only_from_raw_emissions_and_r0_sources(
-    tmp_path,
-    monkeypatch,
-):
-    raw, envelope, detail, protocol_path = _r6_fixture(tmp_path)
-    assert r6_module.BOOTSTRAP_RESAMPLES == 10000
-    monkeypatch.setattr(r6_module, "BOOTSTRAP_RESAMPLES", 64)
-    result = evaluate_r6_raw_evidence(
-        raw,
-        protocol_path=protocol_path,
-        r0_envelope=envelope,
-        r0_detail=detail,
-    )
-    assert result["caller_supplied_metrics_or_intervals"] is False
-    assert result["inference"]["resamples"] == 64
-    assert result["inference"]["contrast_count"] == 14
-    assert result["decision"]["status"] == "PASS_B4_ROUTE_SURVIVES"
-    assert result["decision"]["d1_established"] is True
-    assert result["decision"]["d2_established"] is True
-    assert result["decision"]["temporal_control_established"] is True
-    assert result["decision"]["semantic_control_established"] is True
-
-    forged = dict(raw)
-    forged["intervals"] = {"B4_vs_B2": "author-authored"}
-    with pytest.raises(PrefixRouteR6Error, match="fields"):
+def test_r6_public_entry_is_canonical_source_bound_and_currently_blocked(tmp_path):
+    reference = {"path": "missing.json", "sha256": "0" * 64}
+    with pytest.raises(PrefixRouteR6Error, match="source registration"):
         evaluate_r6_raw_evidence(
-            forged,
-            protocol_path=protocol_path,
-            r0_envelope=envelope,
-            r0_detail=detail,
+            reference,
+            bundle_root=tmp_path,
+            population_request_reference=reference,
+            r0_request_reference=reference,
+            r0_detail_reference=reference,
+            fairness_audit_reference=reference,
+            review_attestation_path=tmp_path / "missing-review.json",
+            review_signature_path=tmp_path / "missing-review.sig",
         )
-
-    unregistered = load_protocol(PROTOCOL_PATH)
-    blocked_envelope = json.loads(json.dumps(envelope))
-    blocked_envelope["protocol_sha256"] = unregistered["sha256"]
-    blocked_unsigned = dict(blocked_envelope)
-    blocked_unsigned.pop("derived_sha256")
-    blocked_envelope["derived_sha256"] = canonical_sha256(blocked_unsigned)
-    blocked_raw = json.loads(json.dumps(raw))
-    blocked_raw["protocol_sha256"] = unregistered["sha256"]
-    blocked_raw["r0_envelope_sha256"] = hashlib.sha256(
-        canonical_json_bytes(blocked_envelope)
-    ).hexdigest()
-    with pytest.raises(PrefixRouteR6Error, match="source identity"):
-        evaluate_r6_raw_evidence(
-            blocked_raw,
-            protocol_path=PROTOCOL_PATH,
-            r0_envelope=blocked_envelope,
-            r0_detail=detail,
-        )
-
-    short_detail = json.loads(json.dumps(detail))
-    short_detail["videos"].pop()
-    short_envelope = json.loads(json.dumps(envelope))
-    short_envelope["report"]["reviewer_detail_commitment_sha256"] = (
-        hashlib.sha256(canonical_json_bytes(short_detail)).hexdigest()
-    )
-    short_unsigned = dict(short_envelope)
-    short_unsigned.pop("derived_sha256")
-    short_envelope["derived_sha256"] = canonical_sha256(short_unsigned)
-    short_raw = json.loads(json.dumps(raw))
-    short_raw["r0_envelope_sha256"] = hashlib.sha256(
-        canonical_json_bytes(short_envelope)
-    ).hexdigest()
-    short_raw["r0_detail_sha256"] = hashlib.sha256(
-        canonical_json_bytes(short_detail)
-    ).hexdigest()
-    with pytest.raises(PrefixRouteR6Error, match="population differs"):
-        evaluate_r6_raw_evidence(
-            short_raw,
-            protocol_path=protocol_path,
-            r0_envelope=short_envelope,
-            r0_detail=short_detail,
-        )
-
-
-def test_r6_negative_control_kill_is_reachable_from_raw_outputs(
-    tmp_path,
-    monkeypatch,
-):
-    raw, envelope, detail, protocol_path = _r6_fixture(tmp_path)
-    monkeypatch.setattr(r6_module, "BOOTSTRAP_RESAMPLES", 64)
-    b4_runs = {
-        run["seed"]: run["videos"]
-        for run in raw["runs"]
-        if run["arm"] == "B4"
-    }
-    for run in raw["runs"]:
-        if run["arm"] in {"COUNT_ONLY", "TEMPLATE_TIMING", "LEDGER_ONLY"}:
-            run["videos"] = json.loads(json.dumps(b4_runs[run["seed"]]))
-    result = evaluate_r6_raw_evidence(
-        raw,
-        protocol_path=protocol_path,
-        r0_envelope=envelope,
-        r0_detail=detail,
-    )
-    assert result["decision"]["status"] == "KILL_BENCHMARK_NOT_IDENTIFIABLE"
-    assert set(result["decision"]["equivalent_simple_controls"]) == {
-        "COUNT_ONLY",
-        "TEMPLATE_TIMING",
-        "LEDGER_ONLY",
-    }
     parameters = inspect.signature(evaluate_r6_raw_evidence).parameters
     assert set(parameters) == {
-        "raw_evidence",
-        "protocol_path",
-        "r0_envelope",
-        "r0_detail",
+        "raw_evidence_reference",
+        "bundle_root",
+        "population_request_reference",
+        "r0_request_reference",
+        "r0_detail_reference",
+        "fairness_audit_reference",
+        "review_attestation_path",
+        "review_signature_path",
     }
+
+
+def test_r6_control_construction_binds_source_population_and_emissions(
+    tmp_path,
+):
+    protocol_record = {"sha256": "a" * 64}
+    manifest_record = {"sha256": "b" * 64}
+    videos = [{"video_id": "v0", "emissions": []}]
+    source_reference = _write_json(
+        tmp_path,
+        "r6/count-only-source.json",
+        {
+            "schema_version": r6_module.R6_CONTROL_TRANSCRIPT_SCHEMA,
+            "protocol_sha256": protocol_record["sha256"],
+            "source_manifest_sha256": manifest_record["sha256"],
+            "control": "COUNT_ONLY",
+            "seed": 705,
+            "reporting_video_ids": ["v0"],
+            "records": [
+                {
+                    "video_id": "v0",
+                    "source_sha256": "c" * 64,
+                    "constructed_sha256": "d" * 64,
+                }
+            ],
+        },
+    )
+    source_path = tmp_path / source_reference["path"]
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    emissions_sha256 = hashlib.sha256(canonical_json_bytes(videos)).hexdigest()
+    construction = {
+        "schema_version": r6_module.R6_CONTROL_CONSTRUCTION_SCHEMA,
+        "protocol_sha256": protocol_record["sha256"],
+        "source_manifest_sha256": manifest_record["sha256"],
+        "control": "COUNT_ONLY",
+        "seed": 705,
+        "algorithm": "fit_core_count_and_class_priors_plus_decision_bin",
+        "parameters": {
+            "feature_access": False,
+            "sources": [
+                "fit_core_event_count_prior",
+                "fit_core_class_prior",
+                "decision_bin_index",
+            ],
+        },
+        "reporting_video_ids_sha256": hashlib.sha256(
+            canonical_json_bytes(["v0"])
+        ).hexdigest(),
+        "source_artifact": source_reference,
+        "source_artifact_sha256": source_sha256,
+        "emissions_sha256": emissions_sha256,
+    }
+    construction_reference = _write_json(
+        tmp_path,
+        "r6/count-only-construction.json",
+        construction,
+    )
+    expected = hashlib.sha256(
+        (tmp_path / construction_reference["path"]).read_bytes()
+    ).hexdigest()
+    assert r6_module._validate_control_construction(
+        construction_reference,
+        bundle_root=tmp_path,
+        arm="COUNT_ONLY",
+        seed=705,
+        videos=videos,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        emissions_sha256=emissions_sha256,
+    ) == expected
+
+    construction["algorithm"] = "self_authored_control"
+    broken_reference = _write_json(
+        tmp_path,
+        "r6/count-only-broken.json",
+        construction,
+    )
+    with pytest.raises(PrefixRouteR6Error, match="identity differs"):
+        r6_module._validate_control_construction(
+            broken_reference,
+            bundle_root=tmp_path,
+            arm="COUNT_ONLY",
+            seed=705,
+            videos=videos,
+            protocol_record=protocol_record,
+            manifest_record=manifest_record,
+            emissions_sha256=emissions_sha256,
+        )
 
 
 def _r6_interval(lower, upper, margin=0.01):
     return {
-        "observed": (lower + upper) / 2.0,
+        "orientation": "positive_means_left_arm_is_better",
+        "estimate": (lower + upper) / 2.0,
         "lower": lower,
         "upper": upper,
         "practical_margin": margin,
     }
 
 
+def _r6_unit_margin(metric):
+    if metric == "mOnlineAP":
+        return 0.005
+    if metric == "class_mOnlineAP":
+        return 0.05
+    if metric == "endpoint_latency_bins":
+        return 1.0
+    if metric in r6_module.STRESS_METRICS:
+        return 0.02
+    return 0.01
+
+
 def _r6_global_intervals(lower=0.1, upper=0.2):
     return {
-        metric: _r6_interval(lower, upper)
+        metric: _r6_interval(lower, upper, _r6_unit_margin(metric))
         for metric in r6_module.GLOBAL_METRICS
     }
 
 
-def test_r6_simple_control_dominance_kills_the_benchmark():
-    intervals = {
-        "B4_vs_COUNT_ONLY": _r6_global_intervals(-0.2, -0.1),
-        "B4_vs_TEMPLATE_TIMING": _r6_global_intervals(),
-        "B4_vs_LEDGER_ONLY": _r6_global_intervals(),
+def _complete_r6_inference():
+    eligible = []
+    metrics = r6_module.GLOBAL_METRICS + r6_module.CONTROL_METRICS
+    margins = {metric: _r6_unit_margin(metric) for metric in metrics}
+    comparison_count = len(REQUIRED_CONTRASTS) * len(metrics)
+    alpha_each = 0.05 / comparison_count
+    return {
+        "schema_version": "prefix-route-r6-inference-v2",
+        "method": "paired_crossed_video_and_global_seed_percentile_bootstrap",
+        "fixed_population_estimand": True,
+        "mOnlineAP_resampling_unit": "paired_global_training_seed",
+        "additive_metric_resampling_units": [
+            "video",
+            "paired_global_training_seed",
+        ],
+        "resamples": 10000,
+        "seed": 2026071707,
+        "family_wise_alpha": 0.05,
+        "contrast_count": len(REQUIRED_CONTRASTS),
+        "metric_count": len(metrics),
+        "simultaneous_comparison_count": comparison_count,
+        "per_comparison_two_sided_alpha": alpha_each,
+        "lower_probability": alpha_each / 2.0,
+        "upper_probability": 1.0 - alpha_each / 2.0,
+        "eligible_stress_families": eligible,
+        "margins": margins,
+        "arm_estimates": {
+            arm: {metric: 0.0 for metric in metrics}
+            for arm in r6_module.INFERENCE_ARMS
+        },
+        "intervals": {
+            f"{left}_vs_{right}": {
+                metric: _r6_interval(0.1, 0.2, margins[metric])
+                for metric in metrics
+            }
+            for left, right in REQUIRED_CONTRASTS
+        },
     }
-    decision = r6_module._terminal_route_decision({"intervals": intervals})
+
+
+def test_r6_terminal_rejects_arbitrary_intervals_and_mutable_resample_globals(
+    monkeypatch,
+):
+    with pytest.raises(PrefixRouteR6Error, match="inference fields"):
+        r6_module._terminal_route_decision(
+            {"intervals": {"B4_vs_B2": _r6_global_intervals()}}
+        )
+    monkeypatch.setattr(r6_module, "BOOTSTRAP_RESAMPLES", 1)
+    valid = _complete_r6_inference()
+    assert r6_module._terminal_route_decision(valid)["route_claim_allowed"] is False
+    valid["resamples"] = 1
+    with pytest.raises(PrefixRouteR6Error, match="frozen inference"):
+        r6_module._terminal_route_decision(valid)
+
+
+def test_r6_negative_control_equivalence_kills_the_benchmark():
+    inference = _complete_r6_inference()
+    for arm in ("COUNT_ONLY", "TEMPLATE_TIMING", "LEDGER_ONLY"):
+        inference["intervals"][f"B4_vs_{arm}"].update(
+            {
+                metric: _r6_interval(
+                    -0.005,
+                    0.005,
+                    _r6_unit_margin(metric),
+                )
+                for metric in r6_module.GLOBAL_METRICS
+            }
+        )
+    decision = r6_module._terminal_route_decision(inference)
+    assert decision["status"] == "KILL_BENCHMARK_NOT_IDENTIFIABLE"
+    assert set(decision["equivalent_simple_controls"]) == {
+        "COUNT_ONLY",
+        "TEMPLATE_TIMING",
+        "LEDGER_ONLY",
+    }
+
+
+def test_r6_simple_control_dominance_kills_the_benchmark():
+    inference = _complete_r6_inference()
+    inference["intervals"]["B4_vs_COUNT_ONLY"].update(
+        _r6_global_intervals(-0.2, -0.1)
+    )
+    decision = r6_module._terminal_route_decision(inference)
     assert decision["status"] == "KILL_BENCHMARK_NOT_IDENTIFIABLE"
     assert decision["dominating_simple_controls"] == ["COUNT_ONLY"]
 
 
 def test_r6_any_clear_global_inferiority_to_b2_kills_the_route():
-    intervals = {
-        "B4_vs_COUNT_ONLY": _r6_global_intervals(),
-        "B4_vs_TEMPLATE_TIMING": _r6_global_intervals(),
-        "B4_vs_LEDGER_ONLY": _r6_global_intervals(),
-        "B4_vs_FEATURE_TIME_SHUFFLE": _r6_global_intervals(),
-        "B4_vs_SEMANTIC_DERANGEMENT": {
-            "class_mOnlineAP": _r6_interval(0.1, 0.2),
-        },
-        "B4_vs_B2": _r6_global_intervals(),
-    }
-    intervals["B4_vs_B2"]["duplicate_per_gt"] = _r6_interval(-0.2, -0.1)
-    decision = r6_module._terminal_route_decision({"intervals": intervals})
+    inference = _complete_r6_inference()
+    inference["intervals"]["B4_vs_B2"]["duplicate_per_gt"] = _r6_interval(
+        -0.2,
+        -0.1,
+    )
+    decision = r6_module._terminal_route_decision(inference)
     assert decision["status"] == "KILL_TEMPORAL_MOTR_INFERIOR"
     assert decision["automatic_extra_seeds_allowed"] is False
 

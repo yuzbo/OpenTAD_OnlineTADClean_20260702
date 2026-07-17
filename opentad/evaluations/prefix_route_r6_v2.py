@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from pathlib import Path
 import random
 
 from .full_petal_metrics import compute_full_petal_metrics
@@ -84,10 +85,73 @@ BOOTSTRAP_SEED = 2026071707
 FAMILY_WISE_ALPHA = 0.05
 R6_RAW_SCHEMA = "prefix-route-r6-raw-evidence-v2"
 R6_RESULT_SCHEMA = "prefix-route-r6-derived-result-v2"
+R6_RUN_PROVENANCE_SCHEMA = "prefix-route-r6-run-provenance-v2"
+R6_EXECUTION_LEDGER_SCHEMA = "prefix-route-r6-execution-ledger-v2"
+R6_CONTROL_CONSTRUCTION_SCHEMA = "prefix-route-r6-control-construction-v2"
+R6_CONTROL_TRANSCRIPT_SCHEMA = "prefix-route-r6-control-transcript-v2"
 R6_SEEDS = (705, 706, 707)
 R6_TIOU_THRESHOLD = 0.5
 R6_LATENCY_BUDGET_SEC = 2.0
 R6_FEATURE_STRIDE_FRAMES = 8
+CONTROL_CONSTRUCTION_SPECS = {
+    "COUNT_ONLY": {
+        "algorithm": "fit_core_count_and_class_priors_plus_decision_bin",
+        "parameters": {
+            "feature_access": False,
+            "sources": [
+                "fit_core_event_count_prior",
+                "fit_core_class_prior",
+                "decision_bin_index",
+            ],
+        },
+    },
+    "TEMPLATE_TIMING": {
+        "algorithm": "fit_core_duration_and_gap_template_plus_decision_bin",
+        "parameters": {
+            "feature_access": False,
+            "sources": [
+                "fit_core_duration_distribution",
+                "fit_core_gap_distribution",
+                "decision_bin_index",
+            ],
+        },
+    },
+    "LEDGER_ONLY": {
+        "algorithm": "shared_deterministic_ledger_over_raw_B0_candidates",
+        "parameters": {
+            "input": "same_raw_B0_candidates",
+            "learning": False,
+        },
+    },
+    "HISTORY_OFF": {
+        "algorithm": "clear_cross_decision_state_before_every_decision",
+        "parameters": {
+            "clear_cross_decision_model_state": True,
+            "keep_current_causal_visual_memory": True,
+        },
+    },
+    "FEATURE_TIME_SHUFFLE": {
+        "algorithm": "sha256_rank_then_positive_circular_token_rotation",
+        "parameters": {
+            "length_one": "exclude_and_report",
+            "seed": 2026071703,
+        },
+    },
+    "SEMANTIC_DERANGEMENT": {
+        "algorithm": (
+            "sha256_rank_then_max_frequency_multiset_rotation_with_"
+            "non_global_swap"
+        ),
+        "parameters": {
+            "change_every_instance_label": True,
+            "global_consistent_class_rename": "FORBIDDEN",
+            "preserve_global_label_multiset": True,
+            "scope": "within_one_frozen_evaluation_split",
+            "seed": 2026071704,
+            "unconstructible": "FAIL_CONTROL_UNCONSTRUCTIBLE",
+        },
+    },
+}
 
 
 class PrefixRouteR6Error(ValueError):
@@ -681,9 +745,9 @@ def _sealed_paired_crossed_bootstrap(
         per_video_cells,
         dataset_metrics,
         eligible_stress_families=eligible_stress_families,
-        resamples=BOOTSTRAP_RESAMPLES,
-        seed=BOOTSTRAP_SEED,
-        family_wise_alpha=FAMILY_WISE_ALPHA,
+        resamples=10000,
+        seed=2026071707,
+        family_wise_alpha=0.05,
     )
 
 
@@ -694,10 +758,156 @@ def _all_noninferior(intervals, metric_names):
     )
 
 
+def _validate_inference_schema(inference):
+    required = {
+        "schema_version",
+        "method",
+        "fixed_population_estimand",
+        "mOnlineAP_resampling_unit",
+        "additive_metric_resampling_units",
+        "resamples",
+        "seed",
+        "family_wise_alpha",
+        "contrast_count",
+        "metric_count",
+        "simultaneous_comparison_count",
+        "per_comparison_two_sided_alpha",
+        "lower_probability",
+        "upper_probability",
+        "eligible_stress_families",
+        "margins",
+        "arm_estimates",
+        "intervals",
+    }
+    if not isinstance(inference, dict) or set(inference) != required:
+        raise PrefixRouteR6Error("R6 inference fields differ")
+    eligible = inference["eligible_stress_families"]
+    stress_order = (
+        "same_class_repetition",
+        "same_class_overlap",
+        "same_bin_end_start",
+        "direct_complete",
+    )
+    if (
+        not isinstance(eligible, list)
+        or len(eligible) != len(set(eligible))
+        or any(family not in stress_order for family in eligible)
+    ):
+        raise PrefixRouteR6Error("R6 eligible stress families differ")
+    if eligible != sorted(eligible, key=stress_order.index):
+        raise PrefixRouteR6Error("R6 eligible stress family order differs")
+    metrics = GLOBAL_METRICS + CONTROL_METRICS + tuple(
+        f"{family}_recall" for family in eligible
+    )
+    comparison_count = len(REQUIRED_CONTRASTS) * len(metrics)
+    expected_alpha = 0.05 / comparison_count
+    if (
+        inference["schema_version"] != "prefix-route-r6-inference-v2"
+        or inference["method"]
+        != "paired_crossed_video_and_global_seed_percentile_bootstrap"
+        or inference["fixed_population_estimand"] is not True
+        or inference["mOnlineAP_resampling_unit"]
+        != "paired_global_training_seed"
+        or inference["additive_metric_resampling_units"]
+        != ["video", "paired_global_training_seed"]
+        or inference["resamples"] != 10000
+        or inference["seed"] != 2026071707
+        or inference["family_wise_alpha"] != 0.05
+        or inference["contrast_count"] != len(REQUIRED_CONTRASTS)
+        or inference["metric_count"] != len(metrics)
+        or inference["simultaneous_comparison_count"] != comparison_count
+        or not math.isclose(
+            inference["per_comparison_two_sided_alpha"],
+            expected_alpha,
+            rel_tol=0.0,
+            abs_tol=1e-18,
+        )
+        or not math.isclose(
+            inference["lower_probability"],
+            expected_alpha / 2.0,
+            rel_tol=0.0,
+            abs_tol=1e-18,
+        )
+        or not math.isclose(
+            inference["upper_probability"],
+            1.0 - expected_alpha / 2.0,
+            rel_tol=0.0,
+            abs_tol=1e-18,
+        )
+    ):
+        raise PrefixRouteR6Error("R6 frozen inference identity differs")
+    margins = inference["margins"]
+    if not isinstance(margins, dict) or set(margins) != set(metrics):
+        raise PrefixRouteR6Error("R6 practical-margin fields differ")
+    for metric, margin in margins.items():
+        if _finite(margin, f"R6 margin {metric}") < 0:
+            raise PrefixRouteR6Error("R6 practical margin must be non-negative")
+    if (
+        margins["mOnlineAP"] != 0.005
+        or margins["class_mOnlineAP"] != 0.05
+        or margins["endpoint_latency_bins"] != 1.0
+        or margins["event_recall"] < 0.01
+        or margins["false_emission_per_video"] < 0.01
+        or margins["duplicate_per_gt"] < 0.01
+        or margins["fragmentation_per_gt"] < 0.01
+        or any(
+            margins[f"{family}_recall"] < 0.02 for family in eligible
+        )
+    ):
+        raise PrefixRouteR6Error("R6 practical-margin policy differs")
+    estimates = inference["arm_estimates"]
+    if not isinstance(estimates, dict) or set(estimates) != set(INFERENCE_ARMS):
+        raise PrefixRouteR6Error("R6 arm-estimate fields differ")
+    for arm, row in estimates.items():
+        if not isinstance(row, dict) or set(row) != set(metrics):
+            raise PrefixRouteR6Error(f"R6 arm estimates differ for {arm}")
+        for metric, value in row.items():
+            _finite(value, f"R6 estimate {arm}.{metric}")
+    intervals = inference["intervals"]
+    expected_contrasts = {
+        f"{left}_vs_{right}" for left, right in REQUIRED_CONTRASTS
+    }
+    if not isinstance(intervals, dict) or set(intervals) != expected_contrasts:
+        raise PrefixRouteR6Error("R6 interval contrast fields differ")
+    interval_fields = {
+        "orientation",
+        "estimate",
+        "lower",
+        "upper",
+        "practical_margin",
+    }
+    for contrast, rows in intervals.items():
+        if not isinstance(rows, dict) or set(rows) != set(metrics):
+            raise PrefixRouteR6Error(f"R6 interval metrics differ for {contrast}")
+        for metric, interval in rows.items():
+            if not isinstance(interval, dict) or set(interval) != interval_fields:
+                raise PrefixRouteR6Error(
+                    f"R6 interval fields differ for {contrast}.{metric}"
+                )
+            if (
+                interval["orientation"]
+                != "positive_means_left_arm_is_better"
+                or interval["practical_margin"] != margins[metric]
+            ):
+                raise PrefixRouteR6Error(
+                    f"R6 interval identity differs for {contrast}.{metric}"
+                )
+            for field in ("estimate", "lower", "upper", "practical_margin"):
+                _finite(
+                    interval[field],
+                    f"R6 interval {contrast}.{metric}.{field}",
+                )
+            if interval["lower"] > interval["upper"]:
+                raise PrefixRouteR6Error(
+                    f"R6 interval bounds differ for {contrast}.{metric}"
+                )
+    return intervals
+
+
 def _terminal_route_decision(inference):
     """Compute the frozen B4 survival decision from sealed inference."""
 
-    intervals = inference["intervals"]
+    intervals = _validate_inference_schema(inference)
     global_metrics = tuple(GLOBAL_METRICS)
     equivalent_controls = []
     dominating_controls = []
@@ -864,6 +1074,426 @@ def _sha256_text(value, label):
     ):
         raise PrefixRouteR6Error(f"{label} must be a lowercase SHA-256")
     return value
+
+
+def _validate_control_construction(
+    reference,
+    *,
+    bundle_root,
+    arm,
+    seed,
+    videos,
+    protocol_record,
+    manifest_record,
+    emissions_sha256,
+):
+    if arm not in CONTROL_ARMS:
+        if reference is not None:
+            raise PrefixRouteR6Error(
+                "non-control run may not carry a control construction"
+            )
+        return "NOT_APPLICABLE_MODEL_ARM"
+    from opentad.utils.evidence_bundle import (
+        EvidenceBundleError,
+        read_verified_bundle_json,
+    )
+
+    try:
+        _, record_bytes, record = read_verified_bundle_json(
+            reference,
+            bundle_root,
+            f"R6 {arm}/{seed} control construction",
+            require_object=True,
+        )
+    except EvidenceBundleError as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
+    if record_bytes != _canonical_json_bytes(record):
+        raise PrefixRouteR6Error(
+            "R6 control construction is not canonical JSON"
+        )
+    fields = {
+        "schema_version",
+        "protocol_sha256",
+        "source_manifest_sha256",
+        "control",
+        "seed",
+        "algorithm",
+        "parameters",
+        "reporting_video_ids_sha256",
+        "source_artifact",
+        "source_artifact_sha256",
+        "emissions_sha256",
+    }
+    if not isinstance(record, dict) or set(record) != fields:
+        raise PrefixRouteR6Error("R6 control construction fields differ")
+    expected = CONTROL_CONSTRUCTION_SPECS[arm]
+    video_ids_sha256 = hashlib.sha256(
+        _canonical_json_bytes([video["video_id"] for video in videos])
+    ).hexdigest()
+    if (
+        record["schema_version"] != R6_CONTROL_CONSTRUCTION_SCHEMA
+        or record["protocol_sha256"] != protocol_record["sha256"]
+        or record["source_manifest_sha256"] != manifest_record["sha256"]
+        or record["control"] != arm
+        or record["seed"] != seed
+        or record["algorithm"] != expected["algorithm"]
+        or record["parameters"] != expected["parameters"]
+        or record["reporting_video_ids_sha256"] != video_ids_sha256
+        or record["emissions_sha256"] != emissions_sha256
+    ):
+        raise PrefixRouteR6Error("R6 control construction identity differs")
+    _sha256_text(
+        record["source_artifact_sha256"],
+        "R6 control source artifact",
+    )
+    try:
+        _, source_bytes, source = read_verified_bundle_json(
+            record["source_artifact"],
+            bundle_root,
+            f"R6 {arm}/{seed} control source artifact",
+            require_object=True,
+        )
+    except EvidenceBundleError as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
+    if (
+        not source_bytes
+        or hashlib.sha256(source_bytes).hexdigest()
+        != record["source_artifact_sha256"]
+    ):
+        raise PrefixRouteR6Error("R6 control source artifact differs")
+    if source_bytes != _canonical_json_bytes(source):
+        raise PrefixRouteR6Error(
+            "R6 control source transcript is not canonical JSON"
+        )
+    source_fields = {
+        "schema_version",
+        "protocol_sha256",
+        "source_manifest_sha256",
+        "control",
+        "seed",
+        "reporting_video_ids",
+        "records",
+    }
+    if not isinstance(source, dict) or set(source) != source_fields:
+        raise PrefixRouteR6Error("R6 control source transcript fields differ")
+    video_ids = [video["video_id"] for video in videos]
+    if (
+        source["schema_version"] != R6_CONTROL_TRANSCRIPT_SCHEMA
+        or source["protocol_sha256"] != protocol_record["sha256"]
+        or source["source_manifest_sha256"] != manifest_record["sha256"]
+        or source["control"] != arm
+        or source["seed"] != seed
+        or source["reporting_video_ids"] != video_ids
+        or not isinstance(source["records"], list)
+        or len(source["records"]) != len(video_ids)
+    ):
+        raise PrefixRouteR6Error("R6 control source transcript identity differs")
+    for index, row in enumerate(source["records"]):
+        if not isinstance(row, dict) or set(row) != {
+            "video_id",
+            "source_sha256",
+            "constructed_sha256",
+        }:
+            raise PrefixRouteR6Error("R6 control transcript row fields differ")
+        if row["video_id"] != video_ids[index]:
+            raise PrefixRouteR6Error("R6 control transcript video order differs")
+        source_hash = _sha256_text(
+            row["source_sha256"],
+            f"R6 control transcript source {index}",
+        )
+        constructed_hash = _sha256_text(
+            row["constructed_sha256"],
+            f"R6 control transcript construction {index}",
+        )
+        if source_hash == constructed_hash:
+            raise PrefixRouteR6Error("R6 control construction is a no-op")
+    return hashlib.sha256(record_bytes).hexdigest()
+
+
+def _validate_run_provenance(
+    provenance,
+    *,
+    bundle_root,
+    arm,
+    seed,
+    videos,
+    protocol_record,
+    manifest_record,
+    review_record,
+    fairness_audit,
+    fairness_audit_sha256,
+):
+    fields = {
+        "schema_version",
+        "protocol_sha256",
+        "source_manifest_sha256",
+        "review_attestation_sha256",
+        "protocol_commit",
+        "protocol_tree_sha1",
+        "arm",
+        "seed",
+        "initial_model_artifact",
+        "final_model_artifact",
+        "model_config",
+        "resolved_command",
+        "environment_lock",
+        "execution_trace",
+        "execution_ledger",
+        "control_construction",
+        "fairness_audit_sha256",
+        "emissions_sha256",
+        "run_identity_sha256",
+    }
+    if not isinstance(provenance, dict) or set(provenance) != fields:
+        raise PrefixRouteR6Error("R6 run provenance fields differ")
+    attestation = review_record["attestation"]
+    emissions_sha256 = hashlib.sha256(_canonical_json_bytes(videos)).hexdigest()
+    if (
+        provenance["schema_version"] != R6_RUN_PROVENANCE_SCHEMA
+        or provenance["protocol_sha256"] != protocol_record["sha256"]
+        or provenance["source_manifest_sha256"] != manifest_record["sha256"]
+        or provenance["review_attestation_sha256"]
+        != review_record["attestation_sha256"]
+        or provenance["protocol_commit"] != attestation["protocol_commit"]
+        or provenance["protocol_tree_sha1"] != attestation["protocol_tree_sha1"]
+        or provenance["arm"] != arm
+        or provenance["seed"] != seed
+        or provenance["fairness_audit_sha256"] != fairness_audit_sha256
+        or provenance["emissions_sha256"] != emissions_sha256
+    ):
+        raise PrefixRouteR6Error("R6 run provenance identity differs")
+    from opentad.utils.evidence_bundle import (
+        EvidenceBundleError,
+        read_verified_bundle_bytes,
+        read_verified_bundle_json,
+    )
+
+    payloads = {}
+    for field in (
+        "initial_model_artifact",
+        "final_model_artifact",
+        "model_config",
+        "resolved_command",
+        "environment_lock",
+    ):
+        try:
+            _, payloads[field] = read_verified_bundle_bytes(
+                provenance[field],
+                bundle_root,
+                f"R6 {arm}/{seed} {field}",
+            )
+        except EvidenceBundleError as exc:
+            raise PrefixRouteR6Error(str(exc)) from exc
+        if not payloads[field]:
+            raise PrefixRouteR6Error(f"R6 {arm}/{seed} {field} is empty")
+    try:
+        _, trace_bytes, trace = read_verified_bundle_json(
+            provenance["execution_trace"],
+            bundle_root,
+            f"R6 {arm}/{seed} execution trace",
+            require_object=True,
+        )
+        _, ledger_bytes, ledger = read_verified_bundle_json(
+            provenance["execution_ledger"],
+            bundle_root,
+            f"R6 {arm}/{seed} execution ledger",
+            require_object=True,
+        )
+    except EvidenceBundleError as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
+    if trace_bytes != _canonical_json_bytes(trace):
+        raise PrefixRouteR6Error("R6 execution trace is not canonical JSON")
+    if ledger_bytes != _canonical_json_bytes(ledger):
+        raise PrefixRouteR6Error("R6 execution ledger is not canonical JSON")
+    control_construction_sha256 = _validate_control_construction(
+        provenance["control_construction"],
+        bundle_root=bundle_root,
+        arm=arm,
+        seed=seed,
+        videos=videos,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        emissions_sha256=emissions_sha256,
+    )
+    trace_fields = {"schema_version", "arm", "events"}
+    if not isinstance(trace, dict) or set(trace) != trace_fields:
+        raise PrefixRouteR6Error("R6 execution trace fields differ")
+    events = trace["events"]
+    event_fields = {
+        "optimizer_event_index",
+        "gradient_accumulation_steps",
+        "effective_token_count",
+        "status",
+        "input_batches_sha256",
+        "model_state_before_sha256",
+        "model_state_after_sha256",
+        "optimizer_state_after_sha256",
+    }
+    if (
+        trace["schema_version"] != "prefix-route-fairness-execution-trace-v2"
+        or trace["arm"] != arm
+        or not isinstance(events, list)
+        or not events
+    ):
+        raise PrefixRouteR6Error("R6 execution trace identity differs")
+    previous_model_after = None
+    effective_token_count = 0
+    accumulation_steps = set()
+    for index, event in enumerate(events):
+        if not isinstance(event, dict) or set(event) != event_fields:
+            raise PrefixRouteR6Error("R6 optimizer event fields differ")
+        if (
+            event["optimizer_event_index"] != index
+            or event["status"] != "APPLIED_FINITE"
+            or (
+                previous_model_after is not None
+                and event["model_state_before_sha256"] != previous_model_after
+            )
+        ):
+            raise PrefixRouteR6Error("R6 optimizer event chain differs")
+        for field in (
+            "gradient_accumulation_steps",
+            "effective_token_count",
+        ):
+            if (
+                isinstance(event[field], bool)
+                or not isinstance(event[field], int)
+                or event[field] <= 0
+            ):
+                raise PrefixRouteR6Error(
+                    f"R6 optimizer event {field} differs"
+                )
+        accumulation_steps.add(event["gradient_accumulation_steps"])
+        effective_token_count += event["effective_token_count"]
+        if event["model_state_before_sha256"] == event["model_state_after_sha256"]:
+            raise PrefixRouteR6Error("R6 optimizer event did not update the model")
+        for field in (
+            "input_batches_sha256",
+            "model_state_before_sha256",
+            "model_state_after_sha256",
+            "optimizer_state_after_sha256",
+        ):
+            _sha256_text(event[field], f"R6 optimizer event {index} {field}")
+        previous_model_after = event["model_state_after_sha256"]
+    ledger_fields = {
+        "schema_version",
+        "protocol_sha256",
+        "source_manifest_sha256",
+        "review_attestation_sha256",
+        "protocol_commit",
+        "protocol_tree_sha1",
+        "arm",
+        "seed",
+        "initial_model_sha256",
+        "final_model_sha256",
+        "model_config_sha256",
+        "resolved_command_sha256",
+        "environment_lock_sha256",
+        "execution_trace_sha256",
+        "initial_model_state_sha256",
+        "final_model_state_sha256",
+        "optimizer_event_count",
+        "effective_token_count",
+        "gradient_accumulation_steps",
+        "hyperparameter_trial_id",
+        "calibration_population_sha256",
+        "control_construction_sha256",
+        "fairness_audit_sha256",
+        "emissions_sha256",
+        "status",
+    }
+    if not isinstance(ledger, dict) or set(ledger) != ledger_fields:
+        raise PrefixRouteR6Error("R6 execution ledger fields differ")
+    expected_hashes = {
+        "initial_model_sha256": hashlib.sha256(
+            payloads["initial_model_artifact"]
+        ).hexdigest(),
+        "final_model_sha256": hashlib.sha256(
+            payloads["final_model_artifact"]
+        ).hexdigest(),
+        "model_config_sha256": hashlib.sha256(
+            payloads["model_config"]
+        ).hexdigest(),
+        "resolved_command_sha256": hashlib.sha256(
+            payloads["resolved_command"]
+        ).hexdigest(),
+        "environment_lock_sha256": hashlib.sha256(
+            payloads["environment_lock"]
+        ).hexdigest(),
+        "execution_trace_sha256": hashlib.sha256(trace_bytes).hexdigest(),
+    }
+    if (
+        ledger["schema_version"] != R6_EXECUTION_LEDGER_SCHEMA
+        or ledger["protocol_sha256"] != protocol_record["sha256"]
+        or ledger["source_manifest_sha256"] != manifest_record["sha256"]
+        or ledger["review_attestation_sha256"]
+        != review_record["attestation_sha256"]
+        or ledger["protocol_commit"] != attestation["protocol_commit"]
+        or ledger["protocol_tree_sha1"] != attestation["protocol_tree_sha1"]
+        or ledger["arm"] != arm
+        or ledger["seed"] != seed
+        or any(ledger[field] != value for field, value in expected_hashes.items())
+        or ledger["fairness_audit_sha256"] != fairness_audit_sha256
+        or ledger["emissions_sha256"] != emissions_sha256
+        or ledger["control_construction_sha256"]
+        != control_construction_sha256
+        or ledger["initial_model_state_sha256"]
+        != events[0]["model_state_before_sha256"]
+        or ledger["final_model_state_sha256"]
+        != events[-1]["model_state_after_sha256"]
+        or ledger["status"] != "COMPLETED_FINITE_NO_SKIPPED_UPDATES"
+    ):
+        raise PrefixRouteR6Error("R6 execution ledger identity differs")
+    fairness_row = fairness_audit["rows"].get(arm)
+    if fairness_row is not None and any(
+        ledger[field] != fairness_row[field]
+        for field in (
+            "optimizer_event_count",
+            "effective_token_count",
+            "gradient_accumulation_steps",
+        )
+    ):
+        raise PrefixRouteR6Error(
+            "R6 execution ledger differs from live fairness budget"
+        )
+    if (
+        len(accumulation_steps) != 1
+        or ledger["optimizer_event_count"] != len(events)
+        or ledger["effective_token_count"] != effective_token_count
+        or ledger["gradient_accumulation_steps"]
+        != next(iter(accumulation_steps))
+    ):
+        raise PrefixRouteR6Error(
+            "R6 execution ledger differs from optimizer event trace"
+        )
+    for field in (
+        "optimizer_event_count",
+        "effective_token_count",
+        "gradient_accumulation_steps",
+    ):
+        if (
+            isinstance(ledger[field], bool)
+            or not isinstance(ledger[field], int)
+            or ledger[field] <= 0
+        ):
+            raise PrefixRouteR6Error(f"R6 execution ledger {field} differs")
+    if (
+        not isinstance(ledger["hyperparameter_trial_id"], str)
+        or not ledger["hyperparameter_trial_id"]
+    ):
+        raise PrefixRouteR6Error("R6 hyperparameter trial identity differs")
+    _sha256_text(
+        ledger["calibration_population_sha256"],
+        "R6 calibration population",
+    )
+    unsigned = dict(provenance)
+    supplied_identity = unsigned.pop("run_identity_sha256")
+    _sha256_text(supplied_identity, "R6 run identity")
+    if hashlib.sha256(_canonical_json_bytes(unsigned)).hexdigest() != (
+        supplied_identity
+    ):
+        raise PrefixRouteR6Error("R6 run identity commitment differs")
+    return hashlib.sha256(ledger_bytes).hexdigest()
 
 
 def _r0_ground_truth(r0_report, r0_detail, *, expected_video_count):
@@ -1188,24 +1818,29 @@ def _online_ap_from_raw(video_sources, emissions_by_video):
     }
 
 
-def evaluate_r6_raw_evidence(
+def _evaluate_verified_r6_objects(
     raw_evidence,
     *,
-    protocol_path,
+    bundle_root,
+    protocol_record,
+    manifest_record,
+    review_record,
+    fairness_audit,
+    fairness_audit_sha256,
     r0_envelope,
     r0_detail,
 ):
     """Derive every R6 metric, interval, control, and terminal state from raw rows."""
 
-    from opentad.utils.prefix_route_protocol_v2 import load_protocol
-
-    protocol_record = load_protocol(protocol_path)
     required = {
         "schema_version",
         "protocol_id",
         "protocol_sha256",
+        "source_manifest_sha256",
+        "review_attestation_sha256",
         "r0_envelope_sha256",
         "r0_detail_sha256",
+        "fairness_audit_sha256",
         "reporting_subset",
         "seeds",
         "runs",
@@ -1218,6 +1853,10 @@ def evaluate_r6_raw_evidence(
         raw_evidence["protocol_id"]
         != protocol_record["protocol"]["protocol_id"]
         or raw_evidence["protocol_sha256"] != protocol_record["sha256"]
+        or raw_evidence["source_manifest_sha256"] != manifest_record["sha256"]
+        or raw_evidence["review_attestation_sha256"]
+        != review_record["attestation_sha256"]
+        or raw_evidence["fairness_audit_sha256"] != fairness_audit_sha256
         or raw_evidence["reporting_subset"]
         != protocol_record["protocol"]["r0"]["reporting_subset"]
         or tuple(raw_evidence["seeds"])
@@ -1245,7 +1884,12 @@ def evaluate_r6_raw_evidence(
     dataset_metrics = []
     expected_videos = list(video_sources)
     for run in runs:
-        if not isinstance(run, dict) or set(run) != {"arm", "seed", "videos"}:
+        if not isinstance(run, dict) or set(run) != {
+            "arm",
+            "seed",
+            "provenance",
+            "videos",
+        }:
             raise PrefixRouteR6Error("R6 run fields differ")
         arm = run["arm"]
         seed = run["seed"]
@@ -1299,6 +1943,18 @@ def evaluate_r6_raw_evidence(
             for row in emissions
         }) != sum(len(rows) for rows in emissions_by_video.values()):
             raise PrefixRouteR6Error("R6 emission IDs are duplicated across videos")
+        _validate_run_provenance(
+            run["provenance"],
+            bundle_root=bundle_root,
+            arm=arm,
+            seed=seed,
+            videos=videos,
+            protocol_record=protocol_record,
+            manifest_record=manifest_record,
+            review_record=review_record,
+            fairness_audit=fairness_audit,
+            fairness_audit_sha256=fairness_audit_sha256,
+        )
         dataset_metrics.append(
             {
                 "arm": arm,
@@ -1340,6 +1996,136 @@ def evaluate_r6_raw_evidence(
     return result
 
 
+def evaluate_r6_raw_evidence(
+    raw_evidence_reference,
+    *,
+    bundle_root,
+    population_request_reference,
+    r0_request_reference,
+    r0_detail_reference,
+    fairness_audit_reference,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Rebuild R6 only from the canonical signed protocol and verified bundle."""
+
+    from opentad.utils.evidence_bundle import (
+        EvidenceBundleError,
+        read_verified_bundle_json,
+    )
+    from opentad.utils.prefix_route_fairness_v2 import (
+        validate_fairness_audit_record,
+    )
+    from opentad.utils.prefix_route_protocol_v2 import (
+        PROTOCOL_PASS,
+        load_protocol,
+        load_signed_review,
+        load_source_manifest,
+        validate_population_bundle,
+        validate_r0_bundle,
+    )
+
+    repo_root = Path(__file__).resolve().parents[2]
+    protocol_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2.json"
+    )
+    manifest_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2_manifest.json"
+    )
+    protocol_record = load_protocol(protocol_path)
+    registration = protocol_record["protocol"]["population"][
+        "source_registration"
+    ]
+    if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        raise PrefixRouteR6Error(
+            "R6 is blocked until canonical reporting source registration"
+        )
+    manifest_record = load_source_manifest(
+        manifest_path,
+        protocol_record=protocol_record,
+        repo_root=repo_root,
+        check_worktree=True,
+    )
+    review_record = load_signed_review(
+        attestation_path=review_attestation_path,
+        signature_path=review_signature_path,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        repo_root=repo_root,
+        require_head=True,
+    )
+    if review_record["attestation"]["verdict"] != PROTOCOL_PASS:
+        raise PrefixRouteR6Error("R6 requires the signed independent PASS")
+
+    def read_canonical(reference, label):
+        try:
+            _, payload, value = read_verified_bundle_json(
+                reference,
+                bundle_root,
+                label,
+                require_object=True,
+            )
+        except EvidenceBundleError as exc:
+            raise PrefixRouteR6Error(str(exc)) from exc
+        if payload != _canonical_json_bytes(value):
+            raise PrefixRouteR6Error(f"{label} is not canonical JSON")
+        return payload, value
+
+    _, population_request = read_canonical(
+        population_request_reference,
+        "R6 population request",
+    )
+    population_record = validate_population_bundle(
+        population_request,
+        bundle_root=bundle_root,
+        protocol_record=protocol_record,
+        review_record=review_record,
+    )
+    _, r0_request = read_canonical(r0_request_reference, "R6 R0 request")
+    r0_envelope = validate_r0_bundle(
+        r0_request,
+        bundle_root=bundle_root,
+        protocol_record=protocol_record,
+        review_record=review_record,
+        population_record=population_record,
+    )
+    _, r0_detail = read_canonical(r0_detail_reference, "R6 R0 detail")
+    fairness_bytes, fairness_audit = read_canonical(
+        fairness_audit_reference,
+        "R6 fairness audit",
+    )
+    validate_fairness_audit_record(
+        fairness_audit,
+        bundle_root=bundle_root,
+    )
+    if fairness_audit["status"] != "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED":
+        raise PrefixRouteR6Error("R6 is blocked by failed arm fairness")
+    fairness_audit_sha256 = hashlib.sha256(fairness_bytes).hexdigest()
+    _, raw_evidence = read_canonical(
+        raw_evidence_reference,
+        "R6 raw evidence",
+    )
+    return _evaluate_verified_r6_objects(
+        raw_evidence,
+        bundle_root=bundle_root,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        review_record=review_record,
+        fairness_audit=fairness_audit,
+        fairness_audit_sha256=fairness_audit_sha256,
+        r0_envelope=r0_envelope,
+        r0_detail=r0_detail,
+    )
+
+
 __all__ = [
     "BOOTSTRAP_RESAMPLES",
     "BOOTSTRAP_SEED",
@@ -1349,6 +2135,8 @@ __all__ = [
     "GLOBAL_METRICS",
     "INFERENCE_ARMS",
     "R6_RAW_SCHEMA",
+    "R6_CONTROL_CONSTRUCTION_SCHEMA",
+    "R6_CONTROL_TRANSCRIPT_SCHEMA",
     "R6_RESULT_SCHEMA",
     "R6_SEEDS",
     "REQUIRED_ARMS",

@@ -17,6 +17,14 @@ The same reviewer then reassessed commit
 That review is archived byte-identically in
 `PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`.
 
+The same reviewer then reproduced six false-PASS paths at commit
+`b0ac8b1c1d29fc252b472a6dc64c854524426593` and returned:
+
+`REVISE_PROTOCOL_BEFORE_COLLECTION`
+
+That review is archived in
+`PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`.
+
 The current remediation candidate remains:
 
 `PROTOCOL_REVIEW_PENDING`
@@ -61,12 +69,16 @@ The key changes are:
    Fairness is measured from live parameters, gradients, Torch profiler output,
    CUDA memory, latency events, and actual state tensors.
 5. R5 is one public 3,800-sequence package with exact counts, seeds, compound
-   table, valid cells, and sequence-set hash commitments.
-6. R6 accepts raw immutable emissions only. It requires the registered-source
-   R0 envelope and its committed 213-video detail, invokes the real evaluators,
-   runs fixed 10,000-resample inference, and computes all PASS/KILL states
-   internally. Caller metrics, confidence intervals, alpha, seeds, and
-   resample counts are not accepted.
+   table, valid cells, sequence-set commitments, and exact per-row regeneration
+   from factor specification, seed, index, and set name.
+6. R6 accepts only hash-verified bundle references under the canonical
+   repository protocol. It rebuilds population and R0 from source bytes,
+   requires the signed independent PASS and live fairness audit, binds every
+   arm/seed run to code, initial/final model artifacts, config, command,
+   environment, optimizer ledger, and emissions, runs fixed literal
+   10,000-resample inference, and computes all PASS/KILL states internally.
+   Caller-selected protocols, in-memory PASS objects, metrics, confidence
+   intervals, alpha, seeds, and resample counts are not accepted.
 
 These are protocol implementations, not positive scientific evidence. R0, R1,
 B0-B4, D1, D2, and route effectiveness remain unknown.
@@ -120,6 +132,14 @@ A reviewed registration commit must bind:
 - a canonical 211-entry historical inventory;
 - all 211 actual historical video artifacts and hashes;
 - explicit source-video to canonical-video aliases.
+
+A registered state rejects the placeholder release revision. The R1 annotation
+hash must equal the reporting-population annotation hash, and population/R0
+derivation requires a path-backed protocol record plus a cryptographically
+verified PASS from the fixed reviewer. The registered source commit must equal
+the signed review commit's direct parent. Every historical artifact must be an
+`.mp4` that OpenCV can open and decode to a nonempty first frame; its bytes are
+re-read after decoding to reject mutation during validation.
 
 The canonical 213 set is derived from annotation rows whose subset equals
 `validation`. The historical set is derived from the inventory and actual
@@ -204,8 +224,11 @@ B2 is now executable in
 `opentad/utils/prefix_route_b2_contract_v2.py`. It has 64 propagated-track
 slots and executes all 64 newborn queries at every decision, for at most 128
 decoder queries. Propagated identities are locked before quantized Hungarian
-matching of newborn queries. Completed but un-emitted instances remain in the
-instance-aware risk set and keep a first-emission target.
+matching of newborn queries against targets plus 64 unique optional dustbin
+columns. Dustbins participate in optimization rather than being applied after
+a forced target assignment. Completed but un-emitted instances remain in the
+instance-aware risk set and keep a first-emission target. Every transition also
+requires `decision_bin=(decision_observation_count-1)//8`.
 
 B2 can create persistent newborn tracks only from slots that were free before
 the current decision. A slot released by completion or drop becomes reusable
@@ -238,9 +261,19 @@ set, replays every microbatch in one trace-bound optimizer event, measures
 FLOPs with Torch profiler, reads CUDA peak allocation, measures 20 warmup plus
 100 timed decisions, and recursively counts live causal-state tensor bytes.
 Optimizer events, effective tokens, accumulation, calibration videos, trials,
-and seeds are derived from four canonical hash-verified execution records;
-adapters cannot submit aggregate budget scalars. Production measurement
-remains blocked until a separate model-P0 contract is authorized.
+and seeds are read from four canonical hash-verified budget-plan records;
+these records cannot independently produce fairness evidence. Only the live
+model/optimizer/CUDA audit may produce the fairness record. During R6, each
+arm/seed execution ledger must bind the initial and final model, config,
+command, environment, full optimizer-event trace, fairness audit, and
+emissions. Every trace event carries input-batch, model-before,
+model-after, and optimizer-after commitments; adjacent model states must form
+one chain. The live audit reproduces the first event, while R6 checks the full
+trace count, token sum, accumulation, first/last model states, and trace hash
+from its verified source reference. Formal B2/B3/B4 run budgets must equal
+their corresponding live fairness rows; ablation and diagnostic-control runs
+retain independent bound ledgers. Production measurement remains blocked until
+a separate model-P0 contract is authorized.
 
 ## Controls and OOD
 
@@ -266,7 +299,13 @@ full package contains:
 All 3,800 scientific-content hashes must be pairwise disjoint. Every shifted
 factor must change scientific content relative to an IID counterfactual, every
 cell count differs by at most one, and each complete set must match its frozen
-sequence-set SHA-256.
+sequence-set SHA-256. The auditor regenerates every row from its exact
+`factor_spec`, seed, sequence index, and set name and requires canonical-byte
+equality. Each row also carries a separate canonical full-row SHA-256 that
+commits the set metadata, factor specification, seed, index, scientific hash,
+and generated payload. Payloads therefore cannot be exchanged while retaining
+their factor labels, even though the scientific-content hash intentionally
+excludes set metadata for cross-set disjointness.
 
 Because the grammar, seeds, and compound table are public, R5 is explicitly a
 design-exposed protocol stress test, not hidden confirmatory OOD evidence. A
@@ -279,18 +318,35 @@ R6 has one public entry point:
 
 `opentad.evaluations.prefix_route_r6_v2.evaluate_r6_raw_evidence`
 
-It accepts only per-video immutable emissions for all 15 model/control arms and
-the fixed seeds 705, 706, and 707. It verifies that the R0 evidence envelope
-binds the same protocol and registered annotation source, checks its fixed R0
-bootstrap and complete canonical 213-video detail commitment, derives GT and
-stress-family IDs, invokes `compute_full_petal_metrics` and `OnlineAPBudgeted`,
-and then performs crossed paired resampling:
+It accepts verified references inside one contained evidence bundle for all 15
+model/control arms and the fixed seeds 705, 706, and 707. The public entry
+always loads the repository's canonical protocol and manifest; a caller cannot
+provide a temporary protocol. It verifies the fixed reviewer's Ed25519 PASS,
+rebuilds population and R0 from their source requests, validates the complete
+213-video detail and a live fairness audit, and checks each run's code
+commit/tree, initial and final model artifacts, config, resolved command,
+environment lock, execution ledger, and canonical emissions commitment.
+Every control run additionally carries a canonical construction record. R6
+rechecks its exact frozen algorithm and parameters, source-artifact bytes,
+reporting-video population, a complete ordered per-video transcript of source
+and constructed-input hashes, and the output-emissions commitment, then binds
+that record's SHA-256 into the run ledger. Missing videos and no-op
+transformations fail. A control name alone is never accepted.
+
+Only after this source chain closes does R6 derive GT and stress-family IDs,
+invoke `compute_full_petal_metrics` and `OnlineAPBudgeted`, and perform crossed
+paired resampling:
 
 - one global seed resample is shared across every video and arm;
 - one video resample is shared across every arm;
 - mOnlineAP uses paired global training seeds;
 - additive lifecycle metrics use paired video and seed units;
 - multiplicity includes every registered contrast and eligible metric.
+
+The production bootstrap call uses literal `10000`, `2026071707`, and `0.05`
+values rather than mutable module globals. The terminal function first
+validates the exact complete inference schema, all registered contrasts and
+metrics, fixed parameters, margins, estimates, and interval fields.
 
 B4 survives only when:
 

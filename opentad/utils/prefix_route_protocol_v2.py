@@ -440,14 +440,15 @@ def _validate_population_policy(protocol):
     )
     if (
         registration["release_id"] != "THUMOS14_TEMPORAL_ANNOTATIONS"
-        or registration["release_revision"] != "OFFICIAL_RELEASE_TO_BE_REGISTERED"
         or registration["annotation_schema"] != "thumos_database_json_v1"
         or registration["reporting_subset"] != "validation"
     ):
         raise PrefixRouteProtocolV2Error("source registration identity differs")
     if registration["state"] == "UNREGISTERED_BLOCK_POPULATION_R0_R1":
         if (
-            registration["authoritative_annotation_sha256"] != "UNREGISTERED"
+            registration["release_revision"]
+            != "OFFICIAL_RELEASE_TO_BE_REGISTERED"
+            or registration["authoritative_annotation_sha256"] != "UNREGISTERED"
             or registration["historical_inventory_sha256"] != "UNREGISTERED"
             or registration["registration_commit"] != "UNREGISTERED"
         ):
@@ -455,6 +456,17 @@ def _validate_population_policy(protocol):
                 "unregistered source identity contains asserted hashes"
             )
     elif registration["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        if registration["release_revision"] in {
+            "OFFICIAL_RELEASE_TO_BE_REGISTERED",
+            "UNREGISTERED",
+        }:
+            raise PrefixRouteProtocolV2Error(
+                "registered source release revision remains a placeholder"
+            )
+        _nonempty(
+            registration["release_revision"],
+            "registered source release revision",
+        )
         _sha256(
             registration["authoritative_annotation_sha256"],
             "registered annotation hash",
@@ -770,6 +782,25 @@ def _validate_r0_r1(protocol):
             _sha256(binding[field], f"R1 {field}")
     else:
         raise PrefixRouteProtocolV2Error("R1 execution binding state differs")
+    registration = protocol["population"]["source_registration"]
+    registration_is_frozen = (
+        registration["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    )
+    binding_is_frozen = (
+        binding["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    )
+    if registration_is_frozen != binding_is_frozen:
+        raise PrefixRouteProtocolV2Error(
+            "population and R1 registration states differ"
+        )
+    if (
+        registration_is_frozen
+        and binding["annotation_sha256"]
+        != registration["authoritative_annotation_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "R1 annotation differs from registered reporting source"
+        )
     if r1["status_derivation"] != "computed_from_evidence_no_boolean_pass_inputs":
         raise PrefixRouteProtocolV2Error("R1 status derivation differs")
 
@@ -840,7 +871,11 @@ def _validate_r2_to_r6(protocol):
         ),
         "training_target": "instance_aware_first_emission_target",
         "assignment": (
-            "locked_propagated_identity_then_quantized_hungarian_newborn_plus_dustbin"
+            "locked_propagated_identity_then_quantized_augmented_hungarian_"
+            "newborn_plus_64_unique_dustbins"
+        ),
+        "decision_coordinate": (
+            "decision_bin=(decision_observation_count-1)//8_at_stride_8"
         ),
         "single_calibrated_threshold_grid": [
             index / 20.0 for index in range(1, 20)
@@ -890,7 +925,13 @@ def _validate_r2_to_r6(protocol):
             "HASH_VERIFIED_BUDGET_RECORDS"
         ),
         "budget_evidence_source": (
-            "CANONICAL_HASH_VERIFIED_EXECUTION_CALIBRATION_TRIAL_AND_SEED_RECORDS"
+            "REGISTERED_BUDGET_PLAN_PLUS_RUN_BOUND_EXECUTION_LEDGERS_"
+            "NOT_STANDALONE_PASS"
+        ),
+        "standalone_budget_evidence": "FORBIDDEN",
+        "run_ledger_binding": (
+            "EVERY_ARM_SEED_LEDGER_BINDS_MODEL_COMMAND_ENVIRONMENT_"
+            "FAIRNESS_AND_EMISSIONS"
         ),
         "budget_record_schemas": [
             "prefix-route-fairness-execution-trace-v2",
@@ -1095,6 +1136,10 @@ def _validate_r2_to_r6(protocol):
             "frozen_distribution"
         ),
         "float_serialization": "round_8_decimal_canonical_json",
+        "row_commitment": (
+            "sha256_canonical_full_row_including_set_factor_seed_index_"
+            "and_scientific_content_hash"
+        ),
     }:
         raise PrefixRouteProtocolV2Error("R5 sequence contract differs")
     required_families = {
@@ -1178,6 +1223,10 @@ def _validate_r2_to_r6(protocol):
         "round_robin_balancing": True,
         "minimum_and_maximum_cell_counts_reported": True,
         "no_posthoc_resampling": True,
+        "per_row_regeneration": (
+            "exact_canonical_match_from_factor_spec_seed_"
+            "sequence_index_set_name"
+        ),
         "expected_sequence_set_sha256": EXPECTED_SET_SHA256,
     }:
         raise PrefixRouteProtocolV2Error("R5 valid-cross rules differ")
@@ -1196,6 +1245,8 @@ def _validate_r2_to_r6(protocol):
         "cell_balance_mismatch": "FAIL_R5_GENERATION",
         "set_hash_overlap": "FAIL_R5_GENERATION",
         "shift_no_scientific_effect": "FAIL_R5_GENERATION",
+        "factor_payload_mismatch": "FAIL_R5_GENERATION",
+        "row_commitment_mismatch": "FAIL_R5_GENERATION",
     }:
         raise PrefixRouteProtocolV2Error("R5 failure actions differ")
 
@@ -1213,6 +1264,8 @@ def _validate_r2_to_r6(protocol):
             "run_seeds",
             "paired_inference",
             "margins",
+            "source_chain",
+            "run_provenance",
             "b4_survival",
             "terminal_statuses",
         },
@@ -1236,15 +1289,55 @@ def _validate_r2_to_r6(protocol):
             "opentad.evaluations.prefix_route_r6_v2.derive_per_video_cell"
         ),
         "raw_evidence": (
-            "immutable_emissions_only_no_caller_metrics_intervals_or_"
-            "bootstrap_parameters"
+            "verified_bundle_reference_with_per_run_model_command_environment_"
+            "ledger_fairness_and_emissions_commitments"
         ),
         "r0_evidence": (
-            "registered_source_bound_R0_envelope_plus_committed_213_video_detail"
+            "recomputed_from_signed_PASS_registered_population_and_R0_source_bytes"
         ),
         "stress_membership": "source_derived_R0_ground_truth_ID_membership",
     }:
         raise PrefixRouteProtocolV2Error("R6 metric source bindings differ")
+    if r6["source_chain"] != {
+        "protocol": (
+            "canonical_repo_protocol_manifest_and_Ed25519_signed_PASS_only"
+        ),
+        "population_and_r0": (
+            "recompute_from_verified_bundle_references_never_accept_in_memory_PASS"
+        ),
+        "fairness": "validated_live_audit_hash_bound_to_every_run_ledger",
+        "caller_selected_protocol_path": "FORBIDDEN",
+    }:
+        raise PrefixRouteProtocolV2Error("R6 source chain differs")
+    if r6["run_provenance"] != {
+        "schema": "prefix-route-r6-run-provenance-v2",
+        "execution_ledger_schema": "prefix-route-r6-execution-ledger-v2",
+        "code_binding": "signed_review_protocol_commit_and_tree",
+        "required_artifacts": [
+            "initial_model_artifact",
+            "final_model_artifact",
+            "model_config",
+            "resolved_command",
+            "environment_lock",
+            "execution_trace",
+            "execution_ledger",
+            "control_construction_for_control_arms",
+            "fairness_audit",
+            "emissions",
+        ],
+        "control_construction": (
+            "every_control_run_binds_frozen_algorithm_parameters_per_video_"
+            "source_and_constructed_transcript_reporting_population_and_"
+            "emissions"
+        ),
+        "optimizer_status": "COMPLETED_FINITE_NO_SKIPPED_UPDATES",
+        "emissions_commitment": "canonical_per_run_video_emissions_sha256",
+        "budget_crosscheck": (
+            "for_B0_B4_optimizer_events_effective_tokens_and_accumulation_"
+            "equal_live_fairness_row"
+        ),
+    }:
+        raise PrefixRouteProtocolV2Error("R6 run provenance differs")
     if r6["global_metrics"] != [
         "mOnlineAP",
         "event_recall",
@@ -1316,6 +1409,8 @@ def _validate_r2_to_r6(protocol):
         "simultaneous_interval": "bonferroni_paired_percentile_type7",
         "family_wise_alpha": 0.05,
         "multiplicity_denominator": "all_registered_contrasts_times_all_eligible_metrics",
+        "sealed_parameter_source": "literal_constants_not_mutable_module_state",
+        "terminal_input_validation": "exact_complete_inference_schema",
     }:
         raise PrefixRouteProtocolV2Error("R6 inference contract differs")
     if r6["b4_survival"] != {
@@ -1426,6 +1521,8 @@ def validate_protocol(protocol):
             "v1_revise_review_sha256",
             "v2_revise_review_path",
             "v2_revise_review_sha256",
+            "v3_revise_review_path",
+            "v3_revise_review_sha256",
         },
         "source bindings",
     )
@@ -1438,7 +1535,12 @@ def validate_protocol(protocol):
         raise PrefixRouteProtocolV2Error("required source paths must be sorted")
     mandatory_sources = {
         ".gitattributes",
+        "opentad/evaluations/__init__.py",
+        "opentad/evaluations/builder.py",
         "opentad/utils/evidence_bundle.py",
+        "opentad/utils/__init__.py",
+        "opentad/utils/immutable_event_ledger.py",
+        "opentad/utils/online_protocol.py",
         "opentad/utils/prefix_route_b2_contract_v2.py",
         "opentad/utils/prefix_route_protocol_v2.py",
         "opentad/utils/prefix_route_r0_v2.py",
@@ -1448,7 +1550,12 @@ def validate_protocol(protocol):
         "opentad/utils/prefix_route_ood_v2.py",
         "opentad/evaluations/prefix_route_r6_v2.py",
         "opentad/evaluations/full_petal_metrics.py",
+        "opentad/evaluations/mAP.py",
+        "opentad/evaluations/mAP_epic.py",
+        "opentad/evaluations/online_map.py",
         "opentad/evaluations/online_budgeted_map.py",
+        "PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md",
+        "opentad/evaluations/recall.py",
         "tools/cache_ontad_features.py",
         "tests/test_prefix_route_protocol_v2.py",
     }
@@ -1458,6 +1565,8 @@ def validate_protocol(protocol):
     _sha256(sources["v1_revise_review_sha256"], "V1 review hash")
     _relative_repo_path(sources["v2_revise_review_path"], "V2 review path")
     _sha256(sources["v2_revise_review_sha256"], "V2 review hash")
+    _relative_repo_path(sources["v3_revise_review_path"], "V3 review path")
+    _sha256(sources["v3_revise_review_sha256"], "V3 review hash")
     if (
         sources["v1_revise_review_path"]
         != "PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md"
@@ -1467,6 +1576,10 @@ def validate_protocol(protocol):
         != "PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md"
         or sources["v2_revise_review_sha256"]
         != "e411804f5bb744cbbe776a77b63701957ec607a3ca2293b4d523a23a656ec4cf"
+        or sources["v3_revise_review_path"]
+        != "PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md"
+        or sources["v3_revise_review_sha256"]
+        != "039fcb7868f31da9a7153dadf6cb60e29c14916dd6dba81f926f7ee2b28a28a9"
     ):
         raise PrefixRouteProtocolV2Error("review archive binding differs")
     return protocol
@@ -1693,6 +1806,15 @@ def load_signed_review(
         manifest_record=manifest_record,
         require_head=require_head,
     )
+    registration = protocol_record["protocol"]["population"][
+        "source_registration"
+    ]
+    if registration["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+            parent = _git(repo_root, "rev-parse", f"{commit}^").decode().strip()
+            if registration["registration_commit"] != parent:
+                raise PrefixRouteProtocolV2Error(
+                    "source registration commit must be the reviewed commit direct parent"
+                )
     return {
         "attestation_path": attestation_resolved,
         "attestation_bytes": attestation_bytes,
@@ -1778,6 +1900,155 @@ def _read_canonical_bundle_json(reference, bundle_root, label):
     return payload, _require_canonical_json(payload, label)
 
 
+def _validate_historical_video_artifact(path, payload, label):
+    if path.suffix.lower() != ".mp4":
+        raise PrefixRouteProtocolV2Error(f"{label} must be an MP4 artifact")
+    try:
+        import cv2
+    except Exception as exc:
+        raise PrefixRouteProtocolV2Error(
+            "OpenCV is required to validate historical videos"
+        ) from exc
+    capture = cv2.VideoCapture(str(path))
+    try:
+        opened = capture.isOpened()
+        ok, frame = capture.read() if opened else (False, None)
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) if opened else 0
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)) if opened else 0
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) if opened else 0
+    finally:
+        capture.release()
+    if (
+        not opened
+        or not ok
+        or frame is None
+        or frame_count <= 0
+        or width <= 0
+        or height <= 0
+    ):
+        raise PrefixRouteProtocolV2Error(
+            f"{label} is not a decodable nonempty video"
+        )
+    _, after_decode = read_stable_file_bytes(path, label)
+    if after_decode != payload:
+        raise PrefixRouteProtocolV2Error(f"{label} changed during decode")
+
+
+def _require_loaded_protocol_record(protocol_record):
+    _exact(
+        protocol_record,
+        {"path", "bytes", "sha256", "protocol"},
+        "loaded protocol record",
+    )
+    payload = protocol_record["bytes"]
+    if not isinstance(payload, bytes):
+        raise PrefixRouteProtocolV2Error("loaded protocol bytes differ")
+    parsed = _require_canonical_json(payload, "loaded protocol record")
+    if parsed != protocol_record["protocol"]:
+        raise PrefixRouteProtocolV2Error("loaded protocol object differs from bytes")
+    validate_protocol(parsed)
+    if hashlib.sha256(payload).hexdigest() != protocol_record["sha256"]:
+        raise PrefixRouteProtocolV2Error("loaded protocol hash differs")
+    _, disk_payload = read_stable_file_bytes(
+        protocol_record["path"],
+        "loaded protocol source",
+    )
+    if disk_payload != payload:
+        raise PrefixRouteProtocolV2Error("loaded protocol source changed")
+    return parsed
+
+
+def _require_signed_pass_review_record(review_record, protocol_record):
+    _exact(
+        review_record,
+        {
+            "attestation_path",
+            "attestation_bytes",
+            "attestation_sha256",
+            "signature_path",
+            "signature_sha256",
+            "attestation",
+        },
+        "verified review record",
+    )
+    _, attestation_bytes = read_stable_file_bytes(
+        review_record["attestation_path"],
+        "verified review attestation",
+    )
+    if (
+        attestation_bytes != review_record["attestation_bytes"]
+        or hashlib.sha256(attestation_bytes).hexdigest()
+        != review_record["attestation_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error("verified review attestation changed")
+    attestation = _require_canonical_json(
+        attestation_bytes,
+        "verified review attestation",
+    )
+    if attestation != review_record["attestation"]:
+        raise PrefixRouteProtocolV2Error("verified review object differs from bytes")
+    if (
+        attestation.get("schema_version") != REVIEW_SCHEMA
+        or attestation.get("protocol_id")
+        != protocol_record["protocol"]["protocol_id"]
+        or attestation.get("protocol_sha256") != protocol_record["sha256"]
+        or attestation.get("reviewer_id") != REVIEWER_ID
+        or attestation.get("review_task_id") != REVIEWER_ID
+        or attestation.get("verdict") != PROTOCOL_PASS
+        or attestation.get("scope") != REVIEW_SCOPE
+        or attestation.get("no_prohibited_access") is not True
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "population or R0 requires the signed independent PASS"
+        )
+    _, signature_bytes = read_stable_file_bytes(
+        review_record["signature_path"],
+        "verified review signature",
+    )
+    if hashlib.sha256(signature_bytes).hexdigest() != (
+        review_record["signature_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error("verified review signature changed")
+    if not signature_bytes.endswith(b"\n") or signature_bytes.count(b"\n") != 1:
+        raise PrefixRouteProtocolV2Error("verified review signature encoding differs")
+    try:
+        signature = base64.b64decode(signature_bytes[:-1], validate=True)
+    except ValueError as exc:
+        raise PrefixRouteProtocolV2Error(
+            "verified review signature is not base64"
+        ) from exc
+    if base64.b64encode(signature) + b"\n" != signature_bytes:
+        raise PrefixRouteProtocolV2Error(
+            "verified review signature is not canonical base64"
+        )
+    public_key = load_ssh_public_key(REVIEWER_PUBLIC_KEY.encode("ascii"))
+    try:
+        public_key.verify(signature, attestation_bytes)
+    except InvalidSignature as exc:
+        raise PrefixRouteProtocolV2Error(
+            "verified review signature verification failed"
+        ) from exc
+    registration = protocol_record["protocol"]["population"][
+        "source_registration"
+    ]
+    if registration["state"] == "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        repo_root = _git(
+            protocol_record["path"].parent,
+            "rev-parse",
+            "--show-toplevel",
+        ).decode().strip()
+        parent = _git(
+            repo_root,
+            "rev-parse",
+            f"{attestation['protocol_commit']}^",
+        ).decode().strip()
+        if registration["registration_commit"] != parent:
+            raise PrefixRouteProtocolV2Error(
+                "source registration commit must be the reviewed commit parent"
+            )
+    return attestation
+
+
 def validate_population_bundle(
     request,
     *,
@@ -1787,6 +2058,13 @@ def validate_population_bundle(
 ):
     """Derive 211/213 membership from registered annotation and inventory bytes."""
 
+    protocol = _require_loaded_protocol_record(protocol_record)
+    registration = protocol["population"]["source_registration"]
+    if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
+        )
+    _require_signed_pass_review_record(review_record, protocol_record)
     _exact(
         request,
         {
@@ -1810,13 +2088,8 @@ def validate_population_bundle(
         review_record["attestation_sha256"]
     ):
         raise PrefixRouteProtocolV2Error("population review binding differs")
-    population = protocol_record["protocol"]["population"]
+    population = protocol["population"]
     reporting = population["reporting"]
-    registration = population["source_registration"]
-    if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
-        raise PrefixRouteProtocolV2Error(
-            "source registration is not frozen; population and R0/R1 remain blocked"
-        )
     annotation_path, annotation_bytes = read_verified_bundle_bytes(
         request["authoritative_annotation"],
         bundle_root,
@@ -1937,13 +2210,18 @@ def validate_population_bundle(
             raise PrefixRouteProtocolV2Error(
                 "historical artifact reference differs from registered inventory"
             )
-        _, payload = read_verified_bundle_bytes(
+        artifact_path, payload = read_verified_bundle_bytes(
             reference,
             bundle_root,
             f"historical artifact {source_id}",
         )
         if not payload:
             raise PrefixRouteProtocolV2Error("historical artifact is empty")
+        _validate_historical_video_artifact(
+            artifact_path,
+            payload,
+            f"historical artifact {source_id}",
+        )
         if canonical_id not in canonical:
             raise PrefixRouteProtocolV2Error(
                 "historical canonical ID is outside authoritative reporting subset"
@@ -1986,6 +2264,12 @@ def validate_population_bundle(
     result = {
         "schema_version": "prefix-route-population-derived-v2",
         "status": "EXPLAINED_MISMATCH",
+        "protocol_id": protocol["protocol_id"],
+        "protocol_sha256": protocol_record["sha256"],
+        "review_attestation_sha256": review_record["attestation_sha256"],
+        "release_id": registration["release_id"],
+        "release_revision": registration["release_revision"],
+        "registration_commit": registration["registration_commit"],
         "historical_role": reporting["historical_role"],
         "canonical_role": reporting["canonical_role"],
         "historical_count": len(historical),
@@ -2070,7 +2354,140 @@ def validate_exposure_ledger_bytes(payload, *, frozen_prefix=None):
     }
 
 
-def derive_r0_envelope(
+def _require_derived_population_record(
+    population_record,
+    *,
+    protocol_record,
+    review_record,
+):
+    required = {
+        "schema_version",
+        "status",
+        "protocol_id",
+        "protocol_sha256",
+        "review_attestation_sha256",
+        "release_id",
+        "release_revision",
+        "registration_commit",
+        "historical_role",
+        "canonical_role",
+        "historical_count",
+        "canonical_count",
+        "authoritative_annotation_path",
+        "authoritative_annotation_sha256",
+        "historical_inventory_sha256",
+        "historical_only",
+        "canonical_only",
+        "canonical_ids",
+        "historical_canonical_ids",
+        "explicit_aliases",
+        "reasons",
+        "derived_sha256",
+    }
+    _exact(population_record, required, "derived population record")
+    protocol = protocol_record["protocol"]
+    registration = protocol["population"]["source_registration"]
+    reporting = protocol["population"]["reporting"]
+    if (
+        population_record["schema_version"]
+        != "prefix-route-population-derived-v2"
+        or population_record["status"] != "EXPLAINED_MISMATCH"
+        or population_record["protocol_id"] != protocol["protocol_id"]
+        or population_record["protocol_sha256"] != protocol_record["sha256"]
+        or population_record["review_attestation_sha256"]
+        != review_record["attestation_sha256"]
+        or population_record["release_id"] != registration["release_id"]
+        or population_record["release_revision"]
+        != registration["release_revision"]
+        or population_record["registration_commit"]
+        != registration["registration_commit"]
+        or population_record["historical_role"] != reporting["historical_role"]
+        or population_record["canonical_role"] != reporting["canonical_role"]
+        or population_record["historical_count"] != reporting["historical_count"]
+        or population_record["canonical_count"] != reporting["canonical_count"]
+        or population_record["authoritative_annotation_sha256"]
+        != registration["authoritative_annotation_sha256"]
+        or population_record["historical_inventory_sha256"]
+        != registration["historical_inventory_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "derived population identity differs from frozen sources"
+        )
+    unsigned = dict(population_record)
+    supplied_sha256 = unsigned.pop("derived_sha256")
+    _sha256(supplied_sha256, "derived population commitment")
+    if canonical_sha256(unsigned) != supplied_sha256:
+        raise PrefixRouteProtocolV2Error(
+            "derived population commitment differs"
+        )
+    canonical_ids = population_record["canonical_ids"]
+    historical_ids = population_record["historical_canonical_ids"]
+    if (
+        not isinstance(canonical_ids, list)
+        or canonical_ids != sorted(canonical_ids)
+        or len(canonical_ids) != reporting["canonical_count"]
+        or len(set(canonical_ids)) != len(canonical_ids)
+        or any(not isinstance(item, str) or not item for item in canonical_ids)
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "derived canonical reporting population differs"
+        )
+    if (
+        not isinstance(historical_ids, list)
+        or len(historical_ids) != reporting["historical_count"]
+        or len(set(historical_ids)) != len(historical_ids)
+        or not set(historical_ids).issubset(canonical_ids)
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "derived historical reporting population differs"
+        )
+    canonical_only = sorted(set(canonical_ids) - set(historical_ids))
+    if (
+        population_record["historical_only"] != []
+        or population_record["canonical_only"] != canonical_only
+        or len(canonical_only)
+        != reporting["canonical_count"] - reporting["historical_count"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "derived 211/213 difference differs"
+        )
+    expected_reasons = {
+        video_id: {
+            "video_id": video_id,
+            "side": "canonical_only",
+            "reason_code": "HISTORICAL_LOCAL_FILE_ABSENT",
+            "derived_from": "registered_annotation_minus_registered_inventory",
+        }
+        for video_id in canonical_only
+    }
+    if population_record["reasons"] != expected_reasons:
+        raise PrefixRouteProtocolV2Error(
+            "derived population reason records differ"
+        )
+    aliases = population_record["explicit_aliases"]
+    if (
+        not isinstance(aliases, dict)
+        or any(
+            not isinstance(source_id, str)
+            or not source_id
+            or canonical_id not in historical_ids
+            for source_id, canonical_id in aliases.items()
+        )
+    ):
+        raise PrefixRouteProtocolV2Error("derived population aliases differ")
+    source_name = population_record["authoritative_annotation_path"]
+    if (
+        not isinstance(source_name, str)
+        or not source_name
+        or Path(source_name).name != source_name
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "derived annotation source name differs"
+        )
+    return canonical_ids
+
+
+def _derive_r0_envelope(
     *,
     annotation_bytes,
     class_map_bytes,
@@ -2080,6 +2497,18 @@ def derive_r0_envelope(
     review_record,
     frozen_ledger_prefix=None,
 ):
+    protocol = _require_loaded_protocol_record(protocol_record)
+    registration = protocol["population"]["source_registration"]
+    if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
+        )
+    _require_signed_pass_review_record(review_record, protocol_record)
+    canonical_ids = _require_derived_population_record(
+        population_record,
+        protocol_record=protocol_record,
+        review_record=review_record,
+    )
     annotation_sha256 = hashlib.sha256(annotation_bytes).hexdigest()
     if annotation_sha256 != population_record.get(
         "authoritative_annotation_sha256"
@@ -2100,20 +2529,20 @@ def derive_r0_envelope(
     report, _ = collect_r0_census(
         annotation,
         class_names,
-        population_record["canonical_ids"],
+        canonical_ids,
         feature_stride_frames=8,
         bootstrap_resamples=10000,
         bootstrap_seed=2026071701,
-        expected_subset=protocol_record["protocol"]["population"][
+        expected_subset=protocol["population"][
             "source_registration"
         ]["reporting_subset"],
-        annotation_exposure_status=protocol_record["protocol"]["population"][
+        annotation_exposure_status=protocol["population"][
             "exposure_policy"
         ]["thumos_reporting_status"],
     )
     envelope = {
         "schema_version": R0_ENVELOPE_SCHEMA,
-        "protocol_id": protocol_record["protocol"]["protocol_id"],
+        "protocol_id": protocol["protocol_id"],
         "protocol_sha256": protocol_record["sha256"],
         "review_attestation_sha256": review_record["attestation_sha256"],
         "population_derived_sha256": population_record["derived_sha256"],
@@ -2140,6 +2569,15 @@ def validate_r0_bundle(
 ):
     """Recompute the entire R0 envelope and compare canonical bytes exactly."""
 
+    protocol = _require_loaded_protocol_record(protocol_record)
+    if (
+        protocol["population"]["source_registration"]["state"]
+        != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
+        )
+    _require_signed_pass_review_record(review_record, protocol_record)
     _exact(
         request,
         {
@@ -2187,7 +2625,7 @@ def validate_r0_bundle(
         "R0 author report",
     )
     _require_canonical_json(supplied_report_bytes, "R0 author report")
-    derived = derive_r0_envelope(
+    derived = _derive_r0_envelope(
         annotation_bytes=annotation_bytes,
         class_map_bytes=class_map_bytes,
         exposure_ledger_bytes=ledger_bytes,
@@ -2223,7 +2661,6 @@ __all__ = [
     "authorize_collection",
     "canonical_json_bytes",
     "canonical_sha256",
-    "derive_r0_envelope",
     "load_protocol",
     "load_signed_review",
     "load_source_manifest",

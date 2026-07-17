@@ -1409,3 +1409,40 @@ Current decision:
 > PASS, every collection and model gate remains blocked. Even a PASS initially
 > authorizes only read-only source-identity registration, not R0/R1
 > collection, model implementation, profile, or training.
+
+### T46: Round-3 Review Rejects Six Bypasses and a New Candidate Closes Them Locally
+
+The same sole reviewer audited commit `b0ac8b1` and returned
+`REVISE_PROTOCOL_BEFORE_COLLECTION`. The report is archived as
+`PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`,
+SHA-256
+`039FCB7868F31DA9A7153DADF6CB60E29C14916DD6DBA81F926F7EE2B28A28A9`.
+It reproduced six false-accept classes: source-free R6 PASS, unregistered R0
+PASS, non-augmented B2 assignment, self-authored fairness evidence, R5
+factor/payload swaps, and mutable/incomplete R6 terminal evidence. It also
+found omitted import-time manifest sources.
+
+The new zero-GPU candidate removes the public low-level R0 PASS path, requires
+registered signed source chains, decodes historical videos, implements
+augmented B2 dustbins and the frozen observation coordinate, binds full
+optimizer/model/input run ledgers, and validates exact per-control
+construction transcripts. R5 generator `20260717.4` now regenerates every row
+and separates scientific-content disjointness from a full-row metadata
+commitment. R6 uses literal bootstrap constants and rejects incomplete
+terminal dictionaries.
+
+The candidate protocol SHA-256 is
+`493A132BBC9998AD7DD1D4756EC882DEE858AC8C739DBF96C618B1459BE3AC65`;
+its 32-entry manifest SHA-256 is
+`05BF8A8925B465522BCB7470D1810D2421B99C3F7E15512AD3C87C6435AA8C25`.
+Dedicated tests pass `46`; a broader 11-file zero-GPU suite passes `148` with
+one fail-closed Torch-import skip. Unsigned authorization remains blocked with
+exit code 2.
+
+Current decision:
+
+> Commit and push this exact candidate, then ask only reviewer
+> `019f6f63-496d-75a0-a77b-91425a8e7ea1` to re-run the six probes against the
+> fixed commit. Do not collect sources, inspect model outcomes, implement
+> B0-B4, profile, train, or use a GPU unless the signed review chain explicitly
+> authorizes the next narrow scope.

@@ -10,7 +10,7 @@ import math
 
 
 GENERATOR_SCHEMA = "prefix-route-structural-ood-sequence-v2"
-GENERATOR_VERSION = "20260717.3"
+GENERATOR_VERSION = "20260717.4"
 SEQUENCE_LENGTH_BINS = 64
 TICKS_PER_BIN = 8
 FEATURE_DIM = 16
@@ -76,22 +76,22 @@ EXPECTED_SET_SEEDS = {
     "COMPOUND_OOD": 2026071712,
 }
 EXPECTED_SET_SHA256 = {
-    "TRAIN": "83df0f4d098e7d5009b849ebab3e48adb76ef0823d038bf53cdff7d7cf8499a1",
-    "IID_HOLDOUT": "70e794a9f4b3a2c628f52710bcd2e880fce928cd7f3e59118c57fb9e5a7246d0",
+    "TRAIN": "ce0fc44b78dbd7d7f974308a78dded59f9923356fbdb490d3178e3dc8f50eb09",
+    "IID_HOLDOUT": "b905ef60ef1331aa329dfc90f070f8d0ab57fc82ad5c102d9205fda1c1e49cfb",
     "SINGLE_SHIFT_OOD:event_topology": (
-        "440b17cfa0faf68fc5176eb18a2812b957dc246575988860585762d51c875ef6"
+        "f62da4f5c4d2801dc22eed0923563b9c7dd643b1d571103cd84323438d301f53"
     ),
     "SINGLE_SHIFT_OOD:temporal_geometry": (
-        "9b875de07757d8518a020cd90e135d492877b0dc8301bf807579f21354fc5041"
+        "39c7d8c2da05b9b3370edbc4c996bb8af34050f7ae3564a40ea56166e42c7ee9"
     ),
     "SINGLE_SHIFT_OOD:semantic_mapping": (
-        "07b139085d677808b5ca33a96be299b67c2fb3fda171240dc1dacf30e8618195"
+        "15ed615e6be6e97e4557ee7daea73cadd3f105ebff29f814ef449146892e8b7f"
     ),
     "SINGLE_SHIFT_OOD:observation_distribution": (
-        "810c815f4a83f35ad83a40108cd927a991aed06b2f95d667504e032b80c541c3"
+        "4c729712a23bf158e3e4f2f7bbdabc3bf722f4fe13046c6dbe981ebf85798b9b"
     ),
     "COMPOUND_OOD": (
-        "7030d35c9bc5e916371b7a4785422d3a579d7f64b5cd8b9a6d1773781a71d9ce"
+        "a5ee537623cf91095d4b96d1914f48361442717d5c2060630909b86542067e10"
     ),
 }
 COMPOUND_SPECS = (
@@ -489,6 +489,7 @@ def generate_sequence(spec, *, seed, sequence_index, set_name):
         },
     }
     payload["sequence_sha256"] = _scientific_content_sha256(payload)
+    payload["row_commitment_sha256"] = _row_commitment_sha256(payload)
     return payload
 
 
@@ -509,6 +510,15 @@ def _scientific_content_sha256(sequence):
         )
     }
     return hashlib.sha256(canonical_json_bytes(scientific_content)).hexdigest()
+
+
+def _row_commitment_sha256(sequence):
+    committed = {
+        key: value
+        for key, value in sequence.items()
+        if key != "row_commitment_sha256"
+    }
+    return hashlib.sha256(canonical_json_bytes(committed)).hexdigest()
 
 
 def _iid_specs():
@@ -691,6 +701,7 @@ def audit_sequence_sets(named_sequences):
                 "observations",
                 "derived",
                 "sequence_sha256",
+                "row_commitment_sha256",
             }
             if not isinstance(sequence, dict) or set(sequence) != required:
                 raise PrefixRouteOODError(
@@ -713,11 +724,27 @@ def audit_sequence_sets(named_sequences):
             if isinstance(index, bool) or not isinstance(index, int) or index < 0:
                 raise PrefixRouteOODError("sequence index is invalid")
             observed_indexes.append(index)
+            regenerated = generate_sequence(
+                sequence["factor_spec"],
+                seed=expected_seed,
+                sequence_index=index,
+                set_name=set_name,
+            )
+            if canonical_json_bytes(sequence) != canonical_json_bytes(regenerated):
+                raise PrefixRouteOODError(
+                    f"{set_name} sequence differs from frozen regeneration"
+                )
             supplied = sequence.get("sequence_sha256")
             derived = _scientific_content_sha256(sequence)
             if supplied != derived:
                 raise PrefixRouteOODError(
                     f"sequence hash differs in set {set_name}"
+                )
+            supplied_row_commitment = sequence.get("row_commitment_sha256")
+            derived_row_commitment = _row_commitment_sha256(sequence)
+            if supplied_row_commitment != derived_row_commitment:
+                raise PrefixRouteOODError(
+                    f"row commitment differs in set {set_name}"
                 )
             if supplied in all_hashes:
                 raise PrefixRouteOODError(

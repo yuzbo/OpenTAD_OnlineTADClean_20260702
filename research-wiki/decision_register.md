@@ -2361,3 +2361,85 @@ Reversibility:
   `READ_ONLY_SOURCE_IDENTITY_REGISTRATION` scope;
 - no local test result can authorize source collection, model code, profile,
   or training.
+
+## DR-053: Accept Round-3 REVISE and Close the Six Reproduced Bypasses
+
+Status: zero-GPU remediation complete locally; exact fixed-commit reassessment
+by the same reviewer is pending.
+
+Decision:
+
+> Accept the sole reviewer's round-3 verdict
+> `REVISE_PROTOCOL_BEFORE_COLLECTION` at commit `b0ac8b1`. Do not reinterpret
+> the prior local test pass as protocol authorization. Repair all six hostile
+> probes, freeze a new source-manifest-bound candidate, and return only that
+> exact commit to reviewer `019f6f63-496d-75a0-a77b-91425a8e7ea1`.
+
+Accepted findings:
+
+- R6 accepted caller-selected protocol/R0/fairness/emissions and could produce
+  a route PASS without a real run chain;
+- the unregistered state still exposed a low-level R0 PASS path;
+- B2 performed post-hoc dustbin deletion rather than augmented assignment and
+  did not bind decision bins to observation counts;
+- fairness records and later optimizer events were insufficiently tied to
+  model states, inputs, and R6 runs;
+- R5 scientific payloads could be exchanged while retaining factor metadata;
+- mutable bootstrap globals and incomplete interval dictionaries could reach
+  terminal PASS; import-time source files were omitted from the manifest.
+
+Implemented closure:
+
+- population and R0 PASS paths require registered source state, the canonical
+  repository protocol, current manifest, a cryptographically verified
+  same-reviewer PASS, and source-derived canonical-213 records;
+- registered source revision, annotation identity, reviewed-parent commit, and
+  decodable historical videos are mandatory;
+- B2 uses one augmented Hungarian matrix with 64 unique dustbins,
+  deterministic nonseparable target ties, and
+  `decision_bin=(observation_count-1)//8`;
+- standalone fairness evidence is forbidden; live audit and every formal run
+  bind optimizer events, input batches, model/optimizer state chains,
+  command, environment, model artifacts, fairness, and emissions;
+- every R6 control additionally binds its exact algorithm and parameters, a
+  complete ordered per-video source/construction transcript, and output
+  emissions;
+- R5 generator `20260717.4` regenerates each row from
+  factor/seed/index/set, carries separate scientific-content and full-row
+  commitments, and freezes seven newly recomputed set hashes;
+- R6 loads only the canonical signed source chain, uses literal bootstrap
+  constants, validates the complete inference schema, and binds each control
+  construction; import-time package initializers are manifest-bound.
+
+Local evidence:
+
+- protocol SHA-256:
+  `493A132BBC9998AD7DD1D4756EC882DEE858AC8C739DBF96C618B1459BE3AC65`;
+- policy-lock SHA-256:
+  `C9594FF7AB2E89549E512F5528BDDEFE127ECDA12D3C8B900F3E0E5D9BF598C0`;
+- 32-entry source-manifest SHA-256:
+  `05BF8A8925B465522BCB7470D1810D2421B99C3F7E15512AD3C87C6435AA8C25`;
+- dedicated V2 suite: `46 passed`;
+- broader 11-file zero-GPU suite: `148 passed, 1 skipped`; the skip is a
+  fail-closed isolated Torch import failure;
+- unsigned authorization remains
+  `BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW`, exit code 2;
+- R0/R1 collection, model outcomes, checkpoints, profile, training, and GPU
+  access remain zero.
+
+Sources:
+
+- [round-3 independent review](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md),
+  SHA-256
+  `039FCB7868F31DA9A7153DADF6CB60E29C14916DD6DBA81F926F7EE2B28A28A9`;
+- [Protocol V2](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md);
+- [machine protocol](../configs/causaltad/protocols/prefix_route_identifiability_v2.json);
+- [T46](discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally).
+
+Reversibility:
+
+- a same-reviewer `REVISE` requires another zero-GPU repair and fixed-commit
+  reassessment;
+- a valid signed PASS authorizes only read-only source-identity registration;
+- no source collection, model implementation, profile, or training may start
+  from these local results.

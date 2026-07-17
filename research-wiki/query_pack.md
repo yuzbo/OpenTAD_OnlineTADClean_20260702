@@ -36,11 +36,11 @@ Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 DR-045 was superseded before implementation. The R-A historical P0 is
 withdrawn; R-A survives only as B4 in a route-level comparison.
 
-DR-051 records V2 false PASS paths in population, R1, R0, fairness, R5, and
-R6. DR-052's zero-GPU remediation closes those known paths locally and awaits
-the same reviewer's fixed-commit decision. Local tests are not a scientific
-PASS. Source registration, R0/R1, model outcomes/code, profile, training, and
-GPU work remain blocked.
+DR-053 records round-3 false PASS paths in R0, B2, fairness, R5, and R6. The
+new zero-GPU candidate closes all six reproduced probes locally and awaits the
+same reviewer's fixed-commit decision. Local tests are not a scientific PASS.
+Source registration, R0/R1, model outcomes/code, profile, training, and GPU
+work remain blocked.
 
 ## Established vs Unknown
 
@@ -57,9 +57,9 @@ Established:
   videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
   and maximum concurrency 2;
 - cache code appears to sample the latest stride frame and encode it alone;
-- V2 reproduction passed but its scientific paths received `REVISE`. The
-  remediation covers source derivation, R1 reexecution, executable B2/fairness,
-  3,800 R5 sequences, and raw-only R6; re-review is pending.
+- three V2 reviews returned `REVISE`; the latest candidate adds signed
+  canonical source chains, augmented B2 dustbins, run-bound fairness, R5
+  full-row commitments, sealed R6, and per-control construction transcripts.
 
 Unknown or `NOT_ESTABLISHED`:
 
@@ -166,6 +166,6 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Immediate Goal
 
-Commit and push the source-manifest-bound remediation candidate, then obtain
+Commit and push protocol `493A132B...` with its 32-entry manifest, then obtain
 same-reviewer reassessment. Source registration, R0/R1, models, and GPU remain
 blocked. GPU hours: 0.

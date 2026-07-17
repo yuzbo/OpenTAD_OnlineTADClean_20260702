@@ -2,7 +2,7 @@
 type: experiment
 node_id: exp:prefix-route-identifiability-gate
 title: "Persistent-Carrier On-TAL Route Identifiability Gate"
-stage: protocol-v2-revise-remediation
+stage: protocol-v2-round3-revise-remediation
 outcome: not-run
 updated: 2026-07-17
 ---
@@ -15,6 +15,9 @@ Protocol V1 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
 Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
+Protocol V2 round-3 verdict at `b0ac8b1`:
+`REVISE_PROTOCOL_BEFORE_COLLECTION`.
+
 This node records the evidence required before any R-A model P0 contract,
 implementation, or training. It is not a model experiment, has not run, and
 does not authorize B0-B4 implementation. V1 converted the checklist into code
@@ -22,18 +25,19 @@ but its independent review found self-forgeable authorization, asserted
 evidence statuses, and incomplete R0-R6 execution. Fixed V2 commit `18cc27b`
 also received `REVISE`: its Git/source reproduction passed, but population,
 R1, R0 disclosure, B2/fairness, R5, R6, tests, and Windows path semantics
-still contained false-PASS or unusable paths. The active candidate is the
-zero-GPU remediation of those findings. Neither source registration, R0, nor
-R1 evidence collection is currently authorized.
+still contained false-PASS or unusable paths. Round 3 then reproduced six
+remaining bypasses in R0, B2, fairness, R5, and R6. The active candidate is
+their zero-GPU remediation. Neither source registration, R0, nor R1 evidence
+collection is currently authorized.
 
-The remediation implementation is locally complete and awaiting the same
-reviewer's fixed-commit reassessment. Protocol SHA-256 is
-`77DAC32A878A07316E3384B7BAE2D7768D57830479A3916EAF0273B788C8ECF8`;
-the 22-entry source-manifest SHA-256 is
-`DDD2DBAFF706D12E8EBAED7E40AA53919B0836E623ACE9EFA5DFD80E1B1CDC27`.
-Dedicated tests pass `40/40`; focused zero-GPU tests pass `135` with six
-local Torch-import skips. These are engineering checks, not scientific
-outcomes or authorization.
+The round-3 remediation is locally complete and awaiting the same reviewer's
+fixed-commit reassessment. Protocol SHA-256 is
+`493A132BBC9998AD7DD1D4756EC882DEE858AC8C739DBF96C618B1459BE3AC65`;
+the 32-entry source-manifest SHA-256 is
+`05BF8A8925B465522BCB7470D1810D2421B99C3F7E15512AD3C87C6435AA8C25`.
+Dedicated tests pass `46/46`; a broader 11-file zero-GPU suite passes `148`
+with one fail-closed Torch-import skip. These are engineering checks, not
+scientific outcomes or authorization.
 
 GPU authorization: zero hours.
 
@@ -349,6 +353,7 @@ training, visual fine-tuning, or raw-video training.
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V2_METHOD_REASSESSMENT_20260717.md)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v1.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v1.json)
 - [`../../opentad/utils/prefix_route_protocol.py`](../../opentad/utils/prefix_route_protocol.py)
@@ -363,6 +368,8 @@ training, visual fine-tuning, or raw-video training.
 - [DR-049](../decision_register.md#dr-049-accept-the-independent-v1-revise-and-preserve-the-collection-block)
 - [DR-050](../decision_register.md#dr-050-freeze-protocol-v2-for-same-reviewer-reassessment)
 - [T43](../discussion_timeline.md#t43-protocol-v2-closes-v1-bypasses-and-awaits-the-same-reviewer)
+- [DR-053](../decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses)
+- [T46](../discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally)
 - [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
 - [T39](../discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status)
 - [idea:prefix-shared-latent-event-filter](../ideas/prefix-shared-latent-event-filter.md)

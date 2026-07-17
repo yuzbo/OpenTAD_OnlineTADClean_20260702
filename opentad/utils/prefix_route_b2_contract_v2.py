@@ -166,8 +166,9 @@ def build_temporal_tracklet_assignment(
             raise PrefixRouteB2Error(
                 "temporal tracklet assignment requires NumPy and SciPy"
             ) from exc
+        target_count = len(available_instances)
         matrix = np.empty(
-            (NEWBORN_QUERY_COUNT, len(available_instances)),
+            (NEWBORN_QUERY_COUNT, target_count + NEWBORN_QUERY_COUNT),
             dtype=np.float64,
         )
         for slot in range(NEWBORN_QUERY_COUNT):
@@ -187,13 +188,21 @@ def build_temporal_tracklet_assignment(
                     raise PrefixRouteB2Error(
                         "newborn assignment costs must be quantized to 1e-6"
                     )
-                matrix[slot, column] = (
-                    quantized + slot * 1e-9 + column * 1e-12
+                # A non-separable perturbation makes equal-cost target
+                # assignments deterministic without changing 1e-6 decisions.
+                tie = (slot + 1) * (column + 1) * 1e-12
+                matrix[slot, column] = quantized + tie
+            for dustbin in range(NEWBORN_QUERY_COUNT):
+                # Each query has its own optional-match column. Cross-dustbin
+                # assignments remain possible so the matrix has a full matching,
+                # but the diagonal is deterministically preferred.
+                distance = abs(slot - dustbin)
+                matrix[slot, target_count + dustbin] = (
+                    DUSTBIN_COST + distance * 1e-9 + dustbin * 1e-12
                 )
         row_indexes, column_indexes = linear_sum_assignment(matrix)
         for slot, column in zip(row_indexes.tolist(), column_indexes.tolist()):
-            raw_cost = matrix[slot, column] - slot * 1e-9 - column * 1e-12
-            if raw_cost < DUSTBIN_COST:
+            if column < target_count:
                 newborn_assignment[slot] = available_instances[column]
     return {
         "schema_version": B2_CONTRACT_SCHEMA,
@@ -203,7 +212,7 @@ def build_temporal_tracklet_assignment(
         "unmatched_target": "DUSTBIN",
         "dustbin_cost": DUSTBIN_COST,
         "cost_quantization": "round_half_even_1e-6",
-        "tie_break": "newborn_slot_then_instance_id",
+        "tie_break": "nonseparable_slot_instance_then_unique_dustbin",
     }
 
 
@@ -323,6 +332,14 @@ def temporal_motr_transition(
         decision_observation_count,
         "decision_observation_count",
     )
+    if observation_count <= 0:
+        raise PrefixRouteB2Error(
+            "decision_observation_count must be a positive integer"
+        )
+    if decision_bin != (observation_count - 1) // 8:
+        raise PrefixRouteB2Error(
+            "decision bin differs from the frozen observation coordinate"
+        )
     threshold = validate_calibrated_threshold(calibrated_threshold)
     serial = _nonnegative_int(next_track_serial, "next_track_serial")
     sequence = _nonnegative_int(

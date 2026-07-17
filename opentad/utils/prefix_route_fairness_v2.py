@@ -101,6 +101,47 @@ def _exact(value, fields, label):
     return value
 
 
+def _sha256_text(value, label):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise PrefixRouteFairnessError(f"{label} must be a lowercase SHA-256")
+    return value
+
+
+def _runtime_state_sha256(value, torch):
+    digest = hashlib.sha256()
+
+    def update(item):
+        if torch.is_tensor(item):
+            tensor = item.detach().contiguous().cpu()
+            digest.update(b"T")
+            digest.update(str(tensor.dtype).encode("ascii"))
+            digest.update(_canonical_json_bytes(list(tensor.shape)))
+            digest.update(tensor.view(torch.uint8).numpy().tobytes())
+        elif isinstance(item, Mapping):
+            digest.update(b"D")
+            for key in sorted(item, key=lambda candidate: repr(candidate)):
+                update(key)
+                update(item[key])
+        elif isinstance(item, (list, tuple)):
+            digest.update(b"L")
+            for child in item:
+                update(child)
+        elif item is None or isinstance(item, (bool, int, float, str)):
+            digest.update(b"J")
+            digest.update(_canonical_json_bytes(item))
+        else:
+            raise PrefixRouteFairnessError(
+                "runtime state contains an unsupported value"
+            )
+
+    update(value)
+    return digest.hexdigest()
+
+
 def _read_budget_record(reference, root, label):
     try:
         _, payload, value = read_verified_bundle_json(
@@ -158,6 +199,7 @@ def _runtime_budget(adapter):
         raise PrefixRouteFairnessError("execution trace identity differs")
     effective_tokens = 0
     accumulation_steps = set()
+    previous_model_after = None
     for index, event in enumerate(trace["events"]):
         _exact(
             event,
@@ -166,6 +208,10 @@ def _runtime_budget(adapter):
                 "gradient_accumulation_steps",
                 "effective_token_count",
                 "status",
+                "input_batches_sha256",
+                "model_state_before_sha256",
+                "model_state_after_sha256",
+                "optimizer_state_after_sha256",
             },
             "optimizer event",
         )
@@ -177,6 +223,25 @@ def _runtime_budget(adapter):
             raise PrefixRouteFairnessError(
                 "execution trace contains a skipped or non-finite update"
             )
+        for field in (
+            "input_batches_sha256",
+            "model_state_before_sha256",
+            "model_state_after_sha256",
+            "optimizer_state_after_sha256",
+        ):
+            _sha256_text(event[field], f"optimizer event {index} {field}")
+        if (
+            previous_model_after is not None
+            and event["model_state_before_sha256"] != previous_model_after
+        ):
+            raise PrefixRouteFairnessError(
+                "optimizer event model-state chain differs"
+            )
+        if event["model_state_before_sha256"] == event["model_state_after_sha256"]:
+            raise PrefixRouteFairnessError(
+                "optimizer event did not change model state"
+            )
+        previous_model_after = event["model_state_after_sha256"]
         accumulation_steps.add(
             _positive_int(
                 event["gradient_accumulation_steps"],
@@ -264,19 +329,11 @@ def _runtime_budget(adapter):
 
 
 def derive_runtime_budget_evidence(adapter):
-    """Derive exact run budgets from canonical hash-verified records."""
+    """Reject standalone records that are not tied to a live runtime audit."""
 
-    if type(adapter) is not ArmRuntimeAdapter:
-        raise PrefixRouteFairnessError(
-            "budget evidence requires one live ArmRuntimeAdapter"
-        )
-    budget, source_sha256, _ = _runtime_budget(adapter)
-    return {
-        "schema_version": BUDGET_EVIDENCE_SCHEMA,
-        "arm": adapter.arm,
-        **budget,
-        "source_sha256": source_sha256,
-    }
+    raise PrefixRouteFairnessError(
+        "standalone budget evidence is forbidden; use the live fairness audit"
+    )
 
 
 def _measure_runtime(adapter, torch):
@@ -331,6 +388,11 @@ def _measure_runtime(adapter, torch):
 
     adapter.reset_runtime_state()
     optimizer.zero_grad(set_to_none=True)
+    model_state_before = _runtime_state_sha256(model.state_dict(), torch)
+    if model_state_before != profile_event["model_state_before_sha256"]:
+        raise PrefixRouteFairnessError(
+            "profiled model state differs from execution trace"
+        )
     torch.cuda.synchronize()
     baseline_training_memory = torch.cuda.memory_allocated()
     torch.cuda.reset_peak_memory_stats()
@@ -342,12 +404,14 @@ def _measure_runtime(adapter, torch):
             )
         smoke_tokens = 0
         microbatch_count = 0
+        input_batch_hashes = []
         for item in forwards:
-            if not isinstance(item, tuple) or len(item) != 2:
+            if not isinstance(item, tuple) or len(item) != 3:
                 raise PrefixRouteFairnessError(
-                    "each optimizer-event forward must return loss and token count"
+                    "each optimizer-event forward must return loss, token count, "
+                    "and input commitment"
                 )
-            loss, effective_tokens = item
+            loss, effective_tokens, input_batch_sha256 = item
             if not torch.is_tensor(loss) or loss.numel() != 1:
                 raise PrefixRouteFairnessError(
                     "optimizer-event loss must be one scalar tensor"
@@ -358,6 +422,12 @@ def _measure_runtime(adapter, torch):
                 effective_tokens,
                 "smoke effective tokens",
             )
+            input_batch_hashes.append(
+                _sha256_text(
+                    input_batch_sha256,
+                    "smoke input batch commitment",
+                )
+            )
             microbatch_count += 1
             loss.backward()
         if (
@@ -367,6 +437,13 @@ def _measure_runtime(adapter, torch):
         ):
             raise PrefixRouteFairnessError(
                 "profiled optimizer event differs from its execution trace"
+            )
+        profiled_input_sha256 = hashlib.sha256(
+            _canonical_json_bytes(input_batch_hashes)
+        ).hexdigest()
+        if profiled_input_sha256 != profile_event["input_batches_sha256"]:
+            raise PrefixRouteFairnessError(
+                "profiled input batches differ from execution trace"
             )
     gradient_inventory = []
     for name, parameter in trainable:
@@ -392,6 +469,16 @@ def _measure_runtime(adapter, torch):
             }
         )
     optimizer.step()
+    model_state_after = _runtime_state_sha256(model.state_dict(), torch)
+    optimizer_state_after = _runtime_state_sha256(optimizer.state_dict(), torch)
+    if (
+        model_state_after != profile_event["model_state_after_sha256"]
+        or optimizer_state_after
+        != profile_event["optimizer_state_after_sha256"]
+    ):
+        raise PrefixRouteFairnessError(
+            "profiled post-update state differs from execution trace"
+        )
     torch.cuda.synchronize()
     train_macs = _profiler_macs(profile)
     peak_training_memory = float(
@@ -450,6 +537,14 @@ def _measure_runtime(adapter, torch):
         "latency_p95_ms": latencies[p95_index],
         **budget,
         "budget_source_sha256": budget_evidence["source_sha256"],
+        "budget_source_references": {
+            "execution_trace": dict(adapter.execution_trace_reference),
+            "calibration_manifest": dict(
+                adapter.calibration_manifest_reference
+            ),
+            "trial_manifest": dict(adapter.trial_manifest_reference),
+            "seed_manifest": dict(adapter.seed_manifest_reference),
+        },
         "parameter_gradient_inventory": gradient_inventory,
     }
 
@@ -553,6 +648,185 @@ def derive_fairness_audit(runtimes):
     }
 
 
+def validate_fairness_audit_record(record, *, bundle_root):
+    """Recompute every structural fairness decision from one live-audit record."""
+
+    required = {
+        "schema_version",
+        "evidence_source",
+        "mac_definition",
+        "serialized_scalar_or_boolean_input_allowed",
+        "anchor_arm",
+        "warmup_decisions",
+        "timed_decisions",
+        "parameter_relative_tolerance",
+        "resource_relative_tolerance",
+        "latency_upper_ratio",
+        "rows",
+        "checks",
+        "status",
+    }
+    _exact(record, required, "fairness audit")
+    if (
+        record["schema_version"] != FAIRNESS_SCHEMA
+        or record["evidence_source"]
+        != (
+            "LIVE_MODEL_GRADIENT_PROFILER_CUDA_AND_STATE_MEASUREMENT_PLUS_"
+            "HASH_VERIFIED_BUDGET_RECORDS"
+        )
+        or record["mac_definition"] != "torch_profiler_flops_divided_by_two"
+        or record["serialized_scalar_or_boolean_input_allowed"] is not False
+        or record["anchor_arm"] != "B2"
+        or record["warmup_decisions"] != WARMUP_DECISIONS
+        or record["timed_decisions"] != TIMED_DECISIONS
+        or record["parameter_relative_tolerance"] != PARAMETER_TOLERANCE
+        or record["resource_relative_tolerance"] != RESOURCE_TOLERANCE
+        or record["latency_upper_ratio"] != LATENCY_UPPER_RATIO
+    ):
+        raise PrefixRouteFairnessError("fairness audit identity differs")
+    rows = record["rows"]
+    if not isinstance(rows, dict) or set(rows) != set(CORE_ARMS):
+        raise PrefixRouteFairnessError("fairness audit arm rows differ")
+    row_fields = {
+        "arm",
+        "trainable_parameters",
+        "train_macs_per_optimizer_event",
+        "inference_macs_per_decision",
+        "live_causal_state_bytes",
+        "peak_training_memory_bytes",
+        "peak_inference_memory_bytes",
+        "latency_median_ms",
+        "latency_p95_ms",
+        *EXACT_BUDGET_FIELDS,
+        "budget_source_sha256",
+        "budget_source_references",
+        "parameter_gradient_inventory",
+    }
+    positive_fields = {
+        "trainable_parameters",
+        "train_macs_per_optimizer_event",
+        "inference_macs_per_decision",
+        "peak_training_memory_bytes",
+        "peak_inference_memory_bytes",
+        "latency_median_ms",
+        "latency_p95_ms",
+        *EXACT_BUDGET_FIELDS,
+    }
+    for arm in CORE_ARMS:
+        row = rows[arm]
+        _exact(row, row_fields, f"fairness row {arm}")
+        if row["arm"] != arm:
+            raise PrefixRouteFairnessError("fairness row arm identity differs")
+        for field in positive_fields:
+            if _finite_nonnegative(row[field], f"{arm}.{field}") <= 0:
+                raise PrefixRouteFairnessError(
+                    f"{arm}.{field} must be strictly positive"
+                )
+        _finite_nonnegative(
+            row["live_causal_state_bytes"],
+            f"{arm}.live_causal_state_bytes",
+        )
+        sources = row["budget_source_sha256"]
+        _exact(
+            sources,
+            {
+                "execution_trace",
+                "calibration_manifest",
+                "trial_manifest",
+                "seed_manifest",
+            },
+            f"fairness budget source {arm}",
+        )
+        if any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in sources.values()
+        ):
+            raise PrefixRouteFairnessError(
+                f"fairness budget source hash differs for {arm}"
+            )
+        references = row["budget_source_references"]
+        _exact(
+            references,
+            {
+                "execution_trace",
+                "calibration_manifest",
+                "trial_manifest",
+                "seed_manifest",
+            },
+            f"fairness budget source references {arm}",
+        )
+        adapter = ArmRuntimeAdapter(
+            arm=arm,
+            model=None,
+            optimizer=None,
+            optimizer_event_forwards=lambda: None,
+            inference_forward=lambda: None,
+            reset_runtime_state=lambda: None,
+            budget_evidence_root=bundle_root,
+            execution_trace_reference=references["execution_trace"],
+            calibration_manifest_reference=references["calibration_manifest"],
+            trial_manifest_reference=references["trial_manifest"],
+            seed_manifest_reference=references["seed_manifest"],
+        )
+        derived_budget, derived_sources, _ = _runtime_budget(adapter)
+        if (
+            any(row[field] != value for field, value in derived_budget.items())
+            or sources != derived_sources
+        ):
+            raise PrefixRouteFairnessError(
+                f"fairness budget differs from source records for {arm}"
+            )
+        inventory = row["parameter_gradient_inventory"]
+        if not isinstance(inventory, list) or not inventory:
+            raise PrefixRouteFairnessError(
+                f"fairness gradient inventory differs for {arm}"
+            )
+        names = []
+        total_parameters = 0
+        for item in inventory:
+            _exact(
+                item,
+                {"name", "numel", "gradient_l1"},
+                f"fairness gradient row {arm}",
+            )
+            if (
+                not isinstance(item["name"], str)
+                or not item["name"]
+                or isinstance(item["numel"], bool)
+                or not isinstance(item["numel"], int)
+                or item["numel"] <= 0
+                or _finite_nonnegative(
+                    item["gradient_l1"],
+                    f"{arm}.{item['name']}.gradient_l1",
+                )
+                <= 0
+            ):
+                raise PrefixRouteFairnessError(
+                    f"fairness gradient row differs for {arm}"
+                )
+            names.append(item["name"])
+            total_parameters += item["numel"]
+        if len(names) != len(set(names)) or total_parameters != (
+            row["trainable_parameters"]
+        ):
+            raise PrefixRouteFairnessError(
+                f"fairness gradient inventory total differs for {arm}"
+            )
+    derived_checks = _derive_checks(rows)
+    if record["checks"] != derived_checks:
+        raise PrefixRouteFairnessError("fairness checks differ from runtime rows")
+    expected_status = (
+        "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED"
+        if all(result["pass"] for result in derived_checks.values())
+        else "FAIL_ARM_FAIRNESS"
+    )
+    if record["status"] != expected_status:
+        raise PrefixRouteFairnessError("fairness status differs from checks")
+    return record
+
+
 __all__ = [
     "ArmRuntimeAdapter",
     "BUDGET_EVIDENCE_SCHEMA",
@@ -571,5 +845,5 @@ __all__ = [
     "WARMUP_DECISIONS",
     "PrefixRouteFairnessError",
     "derive_fairness_audit",
-    "derive_runtime_budget_evidence",
+    "validate_fairness_audit_record",
 ]
