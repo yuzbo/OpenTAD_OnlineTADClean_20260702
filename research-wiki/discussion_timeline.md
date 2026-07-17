@@ -1188,3 +1188,32 @@ Current decision:
 > GPU profile and formal training blocked with zero GPU hours authorized. Any
 > future route must begin with a new mechanism contract and preregistration,
 > not a threshold/prior patch to Q2.
+
+### T38: Post-Kill Review Selects a New Model-Only Prefix Filter for P0
+
+The commit-anchored post-kill Pro review was archived byte-identically as
+`PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`, SHA-256
+`6E7935741C497D90000CED25AEB6D4A078919882065D8E082EDABBE7CB148C7F`.
+It preserves every prior KILL and selects only R-A, Prefix-Shared Latent Event
+Filter with Immutable Ledger, under `GO_NEW_ROUTE_P0_ONLY`.
+
+R-A removes the Q2 split between predicted runtime availability and GT
+canonical ownership. One model-only continuous carrier state advances in both
+training and inference. Prefix-visible unbalanced OT exists only while
+computing loss; it cannot write identity, availability, reset, risk, or
+emission state. Completion releases carrier mass before same-bin reseed, and a
+model-only latch writes immutable interval commits.
+
+The review freezes eight synthetic families, seeds 9101/9102/9103, learned
+anti-silence margins, taint/equality/gradient requirements, and a family-wise
+terminal KILL. It does not freeze enough constants to run reproducibly:
+UOT costs and solver, ledger thresholds/ties, generator distributions, model
+dimensions, optimizer/schedule/update budget, exact numerical comparison, and
+resource interpretation remain open.
+
+Current decision:
+
+> Accept R-A as a P0 hypothesis, not a method result. First close and hash the
+> complete CPU-only preregistration; only then implement new modules and run
+> synthetic P0. P1, GPU profile, effectiveness/formal training, raw-video work,
+> and all Q2/R1 revisions remain blocked. GPU hours authorized remain zero.

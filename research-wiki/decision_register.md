@@ -1760,3 +1760,69 @@ Reversibility:
 - the Q2/R1 route is terminal under the frozen protocol. A future route would
   require a new task/mechanism contract and new preregistration; it may cite
   this evidence but cannot reopen Q2 by changing one threshold or prior.
+
+## DR-045: Authorize R-A Preregistration and CPU-Only P0
+
+Status: active; exact P0 preregistration pending; GPU authorization zero.
+
+Decision:
+
+> Accept `GO_NEW_ROUTE_P0_ONLY` for R-A, Prefix-Shared Latent Event Filter
+> with Immutable Ledger. Preserve Q2/R1 as terminal KILL. Authorize a new,
+> CPU-only synthetic P0 after a clean preregistration freezes every executable
+> model, UOT, loss, generator, optimizer, runtime, comparison, and evidence
+> constant. Do not authorize real-data G0, profile, effectiveness/formal
+> training, visual fine-tuning, raw-video training, or any GPU hour.
+
+Reasons:
+
+- the new route directly targets the demonstrated Q2 contract defect:
+  train/inference share one model-generated prefix state while GT assignment
+  is ephemeral and loss-only;
+- runtime availability no longer gates target eligibility, so a predicted
+  false ACTIVE state cannot permanently erase first-birth supervision;
+- release-before-reseed, first-event targets, immutable model-only ledger, and
+  anti-silence controls form a task-specific P0 hypothesis rather than a Q2
+  threshold/K/refractory patch;
+- eight deterministic synthetic families, future/GT taint tests,
+  train/inference equality, learned anti-silence, and optimizer/gradient gates
+  can falsify the mechanism at zero GPU cost;
+- the review retains temporal MOTR/TrackFormer as a severe reconstruction
+  threat, so publication novelty and effectiveness remain unapproved.
+
+Execution amendment:
+
+- `runtime_supervision_contract_pass` is design-level only; implementation is
+  `SPECIFIED_NOT_IMPLEMENTED`;
+- the review does not freeze all UOT, ledger, generator, training, numerical,
+  and resource constants, despite freezing families, seeds, margins, and the
+  terminal rule;
+- therefore implementation and P0 execution begin only after the
+  [P0 closure checklist](experiments/prefix-shared-event-p0-20260717.md) is
+  converted into an exact, hashed preregistration.
+
+Rejected alternatives:
+
+- reopen Q2/R1 or adopt `birth_prior_bias_m2`;
+- treat a coherent method sketch as P0 PASS;
+- start coding while preserving freedom over optimizer steps, synthetic
+  distributions, UOT parameters, ledger thresholds, or equality tolerances;
+- claim raw-video end-to-end novelty from a cached-feature/head-level P0;
+- skip temporal MOTR reconstruction because persistent queries are internal;
+- allow a P0 PASS to authorize GPU work automatically.
+
+Source:
+
+- private attachment
+  `c9567761-7186-4f18-986d-f450881b8052/pasted-text.txt`, archived as
+  `PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`, SHA-256
+  `6E7935741C497D90000CED25AEB6D4A078919882065D8E082EDABBE7CB148C7F`;
+- [independent absorption](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md);
+- [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md);
+- [T38](discussion_timeline.md#t38-post-kill-review-selects-a-new-model-only-prefix-filter-for-p0).
+
+Reversibility:
+
+- R-A may be killed by any frozen P0 gate. A P0 PASS still requires independent
+  read-only review and can authorize at most an unseen CPU G0. Q2/R1 remains
+  irreversible under its prior contract.

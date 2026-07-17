@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-16
+updated: 2026-07-17
 status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
@@ -11,41 +11,39 @@ scope: Compressed memory to prepend before any new ideation or implementation pl
 
 The task is fixed to standard fully supervised Online Temporal Action Detection/Localization: causal RGB stream in, one immutable `{start, end, class, score}` instance emitted when an action end is detected. Do not introduce sensors, new observability labels, semantic-maintenance outputs, or a replacement task.
 
-PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
+PIVOT is out of scope; PCEH/CESR and Full PETAL remain demoted. Causal backbones, direct On-TAD queries, and TrackFormer-style persistence are occupied ingredients. Read DR-026 and the PETAL absorption before reviving them.
 
-The conditionally accepted CRS-EPS hybrid was fully implemented and falsified at commit `70df86e`. Its proposed successor R1/CSFSB was never implemented because the prerequisite Q2 capacity audit returned `REVISE_REQUIRED`: 2,206 GT births exhausted under the actual controller. The only legal zero-exhaustion arm, additive birth bias `-2`, emitted only ten events. Unique independent max review verified 524,258 trace rows, diagnosed degenerate birth suppression, and selected terminal `KILL_Q2_R1`. Q2/R1, GPU profile, effectiveness training, formal training, and raw-video Stage 2 are blocked. No active training route is currently authorized.
+CRS-EPS failed signed G0. Q2 then exhausted 2,206 GT births; its only legal zero arm emitted ten events by suppressing birth, so independent review selected terminal `KILL_Q2_R1`. A post-kill review now authorizes only R-A Prefix-Shared Latent Event Filter for CPU P0: one model-only prefix state in train/inference, GT transport loss-only, immutable ledger, and anti-silence readiness. This is design authorization, not P0 PASS. Exact model/UOT/ledger/generator/training/numerical/evidence constants remain to be preregistered. P1, profile, effectiveness/formal/raw-video training are blocked; GPU hours are zero.
 
 ## Top Gaps
 
 1. **Raw-video instance-level joint training is missing.** Current On-TAD leaders use frozen/pre-extracted TSN, I3D, SlowFast, or pickle features; raw-video online methods predominantly solve frame-level OAD.
 2. **Window rediscovery is a structural failure.** Independent windows repeatedly rediscover one action, causing fragmentation, duplicates, same-class merging, and online-NMS dependence.
 3. **Current PCEH is scientifically blocked.** End/emit coupling, repeated late positives, class-level targets, end=emit decode, detached state, and GT proximity remain core concerns.
-4. **The complete-video reference is expensive and scientifically invalid as the R1 substrate.** It uses one optimizer event per video but runs every cached token sequentially, while its runtime/canonical availability contract exhausts 2,206 GT births.
+4. **Train/inference lifecycle mismatch is a demonstrated failure.** Q2 lets predicted availability gate GT ownership; false ACTIVE/refractory state erases first-birth supervision, while silence can pass capacity.
 5. **Generic streaming pretraining is occupied.** StreamFormer blocks the claim that a causal streaming backbone alone is new; BSP and offline E2E-TAD block generic boundary pretraining or PEFT claims.
-6. **The required intersection remains open.** Strict causal raw-video adaptation, persistent action-instance identity, standard immutable On-TAD emission, and prefix-equivalent efficient training must all hold together.
+6. **Raw-video joint training remains second-stage.** P0 is cached-free synthetic/head-level; no raw-video claim is active.
 7. **Same-class repetition and overlap remain direct risks.** ActionSwitch is the closest baseline and must be matched fairly.
 8. **Evaluation must prevent future use and duplicate cleanup.** Full chronological evaluation, fixed thresholds, immutable outputs, recall/FN, delay, and no offline NMS remain mandatory.
 
 ## Candidate Portfolio
 
-- **Q2 fixed/rematch:** terminal `KILL` disposition after a valid `REVISE_REQUIRED` capacity audit. It remains historical negative evidence, not a trainer or gold reference.
+- **R-A Prefix-Shared Latent Event Filter:** sole active hypothesis. P0 preregistration authorized, implementation/result absent. Shared model-only state; GT OT loss-only; release-before-reseed; immutable ledger; silence controls must fail.
+- **R-B Endpoint-Set Completion:** strongest simple baseline only; MATR/OAT/PCEH reconstruction risk.
+- **R-C Causal Interval Transducer:** theoretical fallback; no implementation permission.
+- **R-D Teacher-Student State Alignment:** rejected; may distill GT-conditioned mismatch.
+- **Q2 fixed/rematch:** terminal `KILL` disposition after valid `REVISE_REQUIRED`; historical negative evidence only.
 - **CRS-EPS dynamic replay:** negative for the current protocol. Signed G0 failed absolute state/loss/gradient fidelity. The exposed G0 cases are development-only; any replacement needs a new holdout protocol.
 - **R1/CSFSB:** terminal `KILL` under the frozen protocol. It was never implemented because Q2 failed to provide a nondegenerate shared lifecycle contract.
-- **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
-- **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
-- **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
-- **PIVOT/T01/T03/P01/L01:** rejected as current main task or held outside the fixed On-TAD scope.
-- **Cache/LoRA/ETAD-style gradient sampling:** cost-control tools, not standalone novelty.
+- **Full raw-video PETAL/CESR/PCEH:** demoted, blocked, or baseline infrastructure; not current framing.
+- **PIVOT and task-changing routes:** rejected or held outside fixed On-TAD.
+- **Pretraining/cache/LoRA/gradient sampling:** components only, never standalone novelty.
 
-## Current Q2 Exact Question
+## Current R-A Exact Question
 
-Historical, now terminated under the frozen protocol:
+> Can one model-only causal event state be shared exactly by training and inference while prefix GT affects only ephemeral loss transport, same-bin release/reseed and immutable commits close correctly, and no-birth/no-emission/always-background policies provably fail readiness?
 
-Defensible sentence:
-
-> Under identical cached features, detector weights, lifecycle, birth rule, capacity, optimizer, and evaluator, does fixed post-birth slot-instance supervision outperform per-prefix active-pool rematching because it preserves identity-linked localization rather than changing masks, normalization, or negative semantics?
-
-No raw-video, end-to-end, or novelty claim is currently active. Persistent tracks are internal state; standard immutable On-TAD outputs and metrics remain unchanged.
+P0 tests this contract on synthetic CPU data only. It cannot establish THUMOS effectiveness, raw-video end-to-end training, efficiency, or publication novelty.
 
 ## Failed / Blocked Claims
 
@@ -55,6 +53,7 @@ No raw-video, end-to-end, or novelty claim is currently active. Persistent track
 - Current THUMOS PCEH, full-packet training first, zero-shot wrapper, and offline distillation headline: rejected.
 - Current CRS-EPS `dynamic_birth` as primary training: rejected by its preregistered G0; HH/IPW did not establish state/gradient fidelity.
 - Q2/R1/CSFSB: rejected because the shared runtime/canonical capacity contract exhausts 2,206 GT births and its only zero arm passes by nearly silencing birth.
+- R-A is rejected if GT/OT changes runtime state, silence passes, any frozen P0 gate fails, or future temporal-MOTR reconstruction is equivalent.
 - PETAL is also rejected if it reduces to TrackFormer plus a one-dimensional interval head without an On-TAD-specific trajectory mechanism or measurable matched gain.
 
 ## Closest Prior Work
@@ -65,17 +64,18 @@ No raw-video, end-to-end, or novelty claim is currently active. Persistent track
 - **ActionSwitch:** same-class/overlap state-switch baseline.
 - **E2E-LOAD/StreamFormer:** raw-video causal OAD, but frame-level outputs.
 - **E2E-TAD/TIA, LoSA, Re2TAL, ETAD:** offline TAL adaptation/efficiency precedents.
-- **TrackFormer/online VIS:** strongest persistent-query obviousness attack.
+- **TrackFormer/MOTR:** strongest R-A obviousness attack; matched temporal reconstruction mandatory before paper claims.
 
-## Persistent-State Mandatory Gates
+## R-A Mandatory Gates
 
-1. PES must beat FRESH and Temporal TrackFormer on matched cached features, including duplicate/fragmentation or same-class/overlap errors.
-2. Births must be prefix-observable; post-birth identity fixed; future assignment privileged only.
-3. Future perturbation, prefix-cut, stepwise equivalence, immutable emission, no-cleanup, and miss/late-FP audits must pass.
-4. Novelty must survive TrackFormer plus causal-backbone reconstruction; cost must improve matched wall time/GPU-hours.
-5. Three seeds are kill-only; retained claims require five seeds, paired uncertainty, and a dense/overlap benchmark.
+1. Freeze every executable P0 constant before code/run: model, UOT, loss, ledger, generator, optimizer, update budget, numerical comparison, CPU/resource, and evidence schema.
+2. One `advance_and_decode` must produce identical model-only state/logits/ledger in train-loss-off, inference, stepwise, and packet execution.
+3. GT/future perturbations may change loss transport only, never runtime state or emission.
+4. Eight deterministic families and learned seeds 9101/9102/9103 must pass family-wise; silence controls must fail.
+5. Exact optimizer coverage, directional gradients, detached immutable records, and atomic non-overwritten evidence are mandatory.
+6. Any P0 failure is terminal KILL. P0 PASS still needs independent review and can authorize at most unseen CPU G0.
 
-Protocol taint, slot exhaustion, unmatched seeds, or resource-cap breach invalidates Stage 1. Historical effect-size thresholds are project resource gates, not universal significance claims.
+Review-frozen learned margins: every seed recall/precision >=0.90, same-class-overlap recall >=0.80, mean count error <=0.10/positive sequence, background FP/duplicate/fragmentation all zero.
 
 ## Infrastructure Laws
 
@@ -85,4 +85,4 @@ Protocol taint, slot exhaustion, unmatched seeds, or resource-cap breach invalid
 
 ## Current Final Goal
 
-Do not start profile or training. Preserve both the `70df86e` CRS-EPS G0 `KILL` and the `1441219` Q2 capacity `REVISE_REQUIRED` plus independent `KILL_Q2_R1` disposition. Do not reopen Q2 with a birth prior, threshold, K, refractory, or release-order patch. The next research step, if continued, must define a new On-TAD mechanism whose runtime state and GT supervision share a non-silence-passable availability contract, then preregister a new zero-GPU falsification protocol before implementation. GPU hours: 0.
+Preserve CRS-EPS/Q2/R1 negative evidence and never reopen them with prior/threshold/K/refractory/release patches. Convert `experiments/prefix-shared-event-p0-20260717.md` from a closure checklist into an exact hashed CPU-only preregistration; then implement new R-A modules and run only the frozen synthetic P0. No P1, GPU profile, real-data effectiveness, formal, visual, or raw-video training is authorized. GPU hours: 0.

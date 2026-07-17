@@ -1,6 +1,6 @@
 ---
 type: gap_map
-updated: 2026-07-12
+updated: 2026-07-17
 status: active
 scope: Stable gaps and anti-repetition constraints for Online/Causal TAD.
 ---
@@ -254,3 +254,29 @@ The target is not merely to unfreeze a backbone. A defensible solution must join
 5. lower redundant training/inference cost than overlapping-window processing.
 
 Candidate route: [ideas/petal-ontad.md](ideas/petal-ontad.md).
+
+## G16: Training and Inference Need One Model-Only Prefix State
+
+Status: unresolved; R-A CPU-only P0 authorized.
+
+Q2 showed that a model can have future-free inference and still use an
+incompatible training contract. Predicted runtime availability gated GT
+canonical ownership, so false ACTIVE/refractory state permanently discarded
+first-crossing targets. A silent birth policy could then pass capacity.
+
+Required contract:
+
+- one scientific state transition shared by train and inference;
+- state contains only causal inputs, model outputs, and past immutable commits;
+- GT assignment is ephemeral and loss-only;
+- assignment cannot alter identity, availability, reset, risk set, or
+  emission;
+- no-birth, no-emission, and always-background policies must fail readiness;
+- same-bin release/reseed, repeated instances, overlap, delayed endpoints, and
+  immutable commits must close under synthetic tests.
+
+Candidate route:
+[ideas/prefix-shared-latent-event-filter.md](ideas/prefix-shared-latent-event-filter.md).
+
+The gap is narrower than generic persistent queries or memory. Temporal
+MOTR/TrackFormer remains the mandatory reconstruction attack.
