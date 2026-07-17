@@ -19,13 +19,18 @@ intervals to an immutable model-only ledger.
 
 ## Status
 
-`REVISE_ROUTE_AND_REVIEW_AGAIN`.
+`REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
 DR-045's design authorization was superseded by DR-046 before preregistration
 or implementation. R-A is not the default route and has no model-P0
 permission. It survives only as B4 in a future route-identifiability
 comparison. It is not implemented, has no P0 result, has no effectiveness
 evidence, and has no GPU permission.
+
+DR-047 further blocks even new R0 annotation census and R1 cache audit
+collection until an executable protocol-only commit receives an independent
+protocol PASS. The current legal work is protocol revision, not evidence
+collection.
 
 Q2/R1 remains terminal `KILL`. This route may reuse generic evaluator,
 optimizer-audit, evidence, and causal execution infrastructure, but it may not
@@ -122,6 +127,19 @@ loss are individually occupied ingredients.
 Equivalence to the matched temporal-MOTR reconstruction is a predeclared route
 KILL.
 
+The protocol review narrows the only plausible B4-specific deltas to:
+
+- **D1:** atomic release-before-same-bin-reseed within one transition;
+- **D2:** continuous carrier mass plus ephemeral, loss-only, noncanonical
+  unbalanced transport.
+
+These are hypotheses, not accepted innovation claims. Persistent queries,
+causal memory, interval heads, completion heads, a ledger, soft assignment,
+and generic consistency losses are reconstructible ingredients. D1 and D2
+must each survive an exact temporal-MOTR reconstruction, a mechanism deletion,
+matched observable metrics, structural OOD, and a frozen equivalence test.
+Reviewer-proposed numerical margins are not yet adopted.
+
 ## Mandatory Route Gates
 
 - outcome-blind, read-only annotation census on the exact split;
@@ -157,7 +175,9 @@ withdrawn before preregistration.
 ## Ordered Gate
 
 ```text
-annotation census and causality certificate
+executable protocol-only revision
+-> independent protocol PASS
+-> model-outcome-blind annotation census and cache certificate
 -> B0-B4/OOD/negative-control route contract
 -> temporal-MOTR exact-delta and equivalence-KILL rule
 -> independent route re-review
@@ -166,10 +186,14 @@ annotation census and causality certificate
 
 ## Sources
 
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md)
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md)
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md)
 - [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md)
 - [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md)
+- [DR-047](../decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1)
+- [T40](../discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection)
 - [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
 - [T39](../discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status)
 - historical [DR-045](../decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0)

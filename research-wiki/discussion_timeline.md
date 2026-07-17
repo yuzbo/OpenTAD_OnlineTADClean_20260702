@@ -1250,3 +1250,35 @@ Current decision:
 > equivalence-implies-KILL. Then request a new independent route review.
 > Real-data effectiveness, profile, formal, visual, and raw-video work remain
 > blocked; GPU hours authorized remain zero.
+
+### T40: Protocol Review Blocks R0 and R1 Before Collection
+
+The fixed-commit protocol review of
+`b70baf3bb5d819d1df25ca47534c5d3bfbb6e695` was archived byte-identically as
+`PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`, SHA-256
+`F9064827B05991FD63156770B2A1D6D6D40C3E53A73F4113B31F312B17F82BD0`.
+Its verdict is `REVISE_PROTOCOL_BEFORE_COLLECTION` with confidence 0.96.
+
+The review agrees with DR-046's route direction but finds that the gate still
+freezes categories rather than calculations and decisions. Reporting 211
+versus 213 is unresolved; old overlap/concurrency/duration results are already
+exposed; current cache code is plausibly single-frame causal but does not bind
+the exact model snapshot, processor, weights, raw videos, extraction
+environment, or support map. B0-B4 fairness, controls, OOD, and temporal-MOTR
+equivalence also remain non-executable.
+
+Independent code inspection confirms these repository facts. Independent
+absorption accepts the blocking verdict but does not automatically freeze the
+review's proposed sample thresholds, parameter/MAC bands, equivalence margins,
+or CPU byte-equality rule. It also corrects the repetition-gap sign, separates
+cache support from artifact linkage, and rejects a globally consistent class
+permutation as a valid semantic-destruction control.
+
+Current decision:
+
+> Allow only a protocol-document revision. Do not run R0 or R1. Close the nine
+> DR-047 protocol blockers in one immutable commit, add a prior-exposure
+> ledger, and obtain a new independent protocol PASS. Such a PASS may authorize
+> only model-outcome-blind R0/R1 evidence collection. Model contracts, model
+> code, effects, profile, formal, visual, and raw-video work remain blocked;
+> GPU hours authorized remain zero.

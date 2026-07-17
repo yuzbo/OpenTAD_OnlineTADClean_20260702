@@ -10,38 +10,42 @@ scope: Persistent project memory for the Online/Causal TAD research direction.
 This wiki exists to prevent repeated discussion loops. Before proposing a new task definition, method, training route, or paper story, read:
 
 1. [query_pack.md](query_pack.md) for the compressed current memory.
-2. [`../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md), [DR-046](decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation), and the [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md) for the current `REVISE_ROUTE_AND_REVIEW_AGAIN`.
-3. [`../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md), its [independent absorption](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md), historical [DR-045](decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0), and the [withdrawn P0 node](experiments/prefix-shared-event-p0-20260717.md) for the superseded R-A authorization.
-4. [`../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md`](../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md), [DR-044](decision_register.md#dr-044-kill-q2-and-r1-after-independent-degeneracy-adjudication), and [the Q2 audit](experiments/q2-capacity-lifecycle-audit-20260716.md) for the permanent `KILL_Q2_R1` boundary.
-5. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md) for the historical selection of R1/CSFSB and its capacity-first gate.
-6. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md) for the structural-kill diagnosis and U1-U8 resolution.
-7. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the earlier terminal scientific gate and raw-artifact postmortem.
-8. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the two-round route question.
-9. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
-10. [gap_map.md](gap_map.md) for unresolved research gaps.
-11. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
-12. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-13. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+2. [`../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md), [DR-047](decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1), [T40](discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection), and the [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md) for the current `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+3. [`../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md), and [DR-046](decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation) for the preceding route revision.
+4. [`../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md), its [independent absorption](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md), historical [DR-045](decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0), and the [withdrawn P0 node](experiments/prefix-shared-event-p0-20260717.md) for the superseded R-A authorization.
+5. [`../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md`](../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md), [DR-044](decision_register.md#dr-044-kill-q2-and-r1-after-independent-degeneracy-adjudication), and [the Q2 audit](experiments/q2-capacity-lifecycle-audit-20260716.md) for the permanent `KILL_Q2_R1` boundary.
+6. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND2_ABSORPTION_20260716.md) for the historical selection of R1/CSFSB and its capacity-first gate.
+7. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_20260716.md) and its [independent absorption](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_ROUND1_ABSORPTION_20260716.md) for the structural-kill diagnosis and U1-U8 resolution.
+8. [experiments/crs-eps-g0-kill-20260716.md](experiments/crs-eps-g0-kill-20260716.md) for the earlier terminal scientific gate and raw-artifact postmortem.
+9. [`../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md`](../PRO_CRS_EPS_G0_KILL_ROUTE_REVIEW_PROMPT_20260716.md) for the two-round route question.
+10. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) and its [review](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) only for earlier broad-route history.
+11. [gap_map.md](gap_map.md) for unresolved research gaps.
+12. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for historical Stage-1 context.
+13. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+14. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
 The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted after a Pro `REVISE` and independent verification of the TrackFormer/On-TAD/causal-backbone reconstruction attack.
 
-CRS-EPS, Q2, and R1/CSFSB retain their terminal negative dispositions. The
-latest preimplementation review supersedes DR-045 and returns the method route
-to `REVISE_ROUTE_AND_REVIEW_AGAIN`. Q2 proves a local lifecycle defect, not
-that R-A is necessary. R-A is now B4 only, alongside a no-identity prefix set,
-ordinary persistent queries, temporal MOTR, and a clean order/risk-set
-baseline.
+CRS-EPS, Q2, and R1/CSFSB retain their terminal negative dispositions. R-A
+remains B4 only, alongside a no-identity prefix set, ordinary persistent
+queries, temporal MOTR, and a clean order/risk-set baseline. The latest review
+returns the evidence route to `REVISE_PROTOCOL_BEFORE_COLLECTION`: the route
+gate is still a checklist, not an executable frozen protocol.
 
-The immediate work is route evidence, not model code: an outcome-blind exact
-annotation census, a cached-feature strict-causality certificate, a shared
-B0-B4 fairness contract, structural OOD, negative controls, mechanism
-deletions, and a temporal-MOTR exact-delta with equivalence-implies-KILL.
-Model P0, real-data effectiveness, profile, formal training, visual
-fine-tuning, and raw-video work remain blocked; GPU authorization is zero.
+The immediate work is protocol-only revision and independent protocol review.
+New R0 census and R1 cache-audit collection are also blocked, as are model
+outcomes, B0-B4 code, P0, effectiveness, profile, formal training, visual
+fine-tuning, and raw-video work. GPU authorization is zero. Reviewer-proposed
+sample, power, matching, and equivalence numbers remain candidate policies
+until justified and frozen.
 
-Read the current [preimplementation review](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md),
+Read the current [protocol review](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md),
+its [independent absorption](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md),
+[DR-047](decision_register.md#dr-047-revise-and-independently-review-the-protocol-before-r0-or-r1),
+[T40](discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection),
+the [preimplementation review](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md),
 its [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md),
 [DR-046](decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation),
 the [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md),
@@ -156,7 +160,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 | [exp:crs-eps-g0-kill-20260716](experiments/crs-eps-g0-kill-20260716.md) | terminal `KILL` | Preregistered fidelity gate rejects current empty-state dynamic replay; postmortem adds exact state/lifecycle diagnosis and a separate Q2 capacity blocker. |
 | [exp:q2-capacity-lifecycle-20260716](experiments/q2-capacity-lifecycle-audit-20260716.md) | `REVISE_REQUIRED`, disposition `KILL` | Clean 160 x 3 rerun verifies 2,206 actual exhaustions and no true-capacity cause; independent review rejects the zero arm as birth suppression and terminates Q2/R1. |
-| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | not run; protocol design required | Current legal route-evidence node: census, feature causality, B0-B4 fairness, OOD, controls, mechanism deletions, and temporal-MOTR exact delta. No model implementation permission. |
+| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | not run; `REVISE_PROTOCOL_BEFORE_COLLECTION` | Only protocol revision/review is legal. R0/R1 collection, model outcomes, B0-B4 code, and GPU work are blocked pending independent protocol PASS. |
 | [exp:prefix-shared-event-p0](experiments/prefix-shared-event-p0-20260717.md) | withdrawn before preregistration | Historical R-A CPU-P0 proposal retained for provenance; DR-046 blocks implementation and execution. |
 
 ## Source Records
@@ -176,6 +180,8 @@ Local review records that informed this wiki:
 - `PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md`
 - `PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`
 - `PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`
+- `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`
+- `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md`
 - `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`

@@ -2,17 +2,17 @@
 type: query_pack
 updated: 2026-07-17
 status: active
-scope: Compressed memory to prepend before any new ideation or implementation planning.
+scope: Compressed memory for ideation and implementation planning.
 ---
 
 # Query Pack: Online/Causal TAD Project Memory
 
 ## Fixed Task
 
-The project remains fully supervised On-TAL. At time t, the model may use only
-the video prefix, causal state, and past commits. Internal hypotheses may be
-revised before commit. Formal `{start, end, class, score}` outputs are
-append-only, with no future-frame revision, NMS, merging, or offline cleanup.
+The project remains fully supervised On-TAL. At time t, use only the video
+prefix, causal state, and past commits. Hypotheses may change before commit;
+formal `{start, end, class, score}` outputs are append-only, with no
+future-frame revision, merging, NMS, or offline cleanup.
 
 Do not change the task to physical observability, generic semantic memory,
 VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
@@ -31,36 +31,40 @@ VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
 ## Current Route Decision
 
-`REVISE_ROUTE_AND_REVIEW_AGAIN`.
+`REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
-DR-045 was superseded before preregistration or implementation. R-A
-Prefix-Shared Latent Event Filter is no longer the sole/default route and its
-historical CPU P0 is withdrawn. R-A survives only as B4 in a route-level
-comparison.
+DR-045 was superseded before implementation. The R-A historical P0 is
+withdrawn; R-A survives only as B4 in a route-level comparison.
 
-Only route-evidence protocol design is allowed. Outcome-blind census and
-feature-causality audit require frozen protocols. R-A contract freeze, B0-B4
-implementation, model P0, real-data effects, profile, formal, visual, and
-raw-video work are blocked. GPU hours: 0.
+The route-gate document is a checklist, not an executable protocol. Only a
+protocol-only revision and independent protocol review are allowed. New R0
+annotation census, R1 cache audit, model-outcome inspection, R-A constants,
+B0-B4 code, P0, effectiveness, profile, formal, visual, and raw-video work are
+blocked. GPU hours: 0.
 
 ## Established vs Unknown
 
 Established:
 
-- strict causal input and immutable committed-output rules are real On-TAL
-  requirements;
+- strict causal input and immutable commits are On-TAL requirements;
 - duplicate, fragmentation, endpoint delay, history, and overlap are real
   output-level concerns;
 - Q2 reads hard runtime availability before GT assignment and can permanently
   lose first-birth supervision;
 - the current evaluator does not observe internal query identity;
-- the current model path consumes cached features.
+- the current model path consumes cached features;
+- an earlier annotation audit exposed 200/3003 train and 211/3325 validation
+  videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
+  and maximum concurrency 2;
+- cache code appears to sample the latest stride frame and encode it alone.
 
 Unknown or `NOT_ESTABLISHED`:
 
-- exact repetition, same-class overlap, same-bin transition, short-action, and
-  concurrency prevalence in the bound project split;
-- whether cached encoder tokens are strictly causal at the raw-frame level;
+- whether reporting 211 or canonical 213 is the correct bound split;
+- exact claim-eligible prevalence under a frozen, powered R0 rule;
+- whether the existing cache artifact is linked to the inspected code,
+  immutable encoder revision/weights, raw videos, environment, and token
+  support map;
 - whether persistent carriers are necessary for standard On-TAL;
 - whether no-identity sets, ordinary persistent queries, temporal MOTR, or a
   clean order/risk-set baseline are insufficient;
@@ -75,81 +79,77 @@ Do not convert an unknown into a positive or negative field claim.
 > online instance-consistency gains that cannot be reconstructed by a
 > no-identity prefix set or a matched one-dimensional TrackFormer/MOTR?
 
-Required observable outcomes:
-
-- duplicate and fragmentation;
-- same-class repetition/overlap recall;
-- same-bin end/start correctness;
-- event recall, false emission, and endpoint/commit latency;
-- mAP-latency or recall-latency Pareto.
+Required outcomes are duplicate, fragmentation, repetition/overlap recall,
+same-bin end/start correctness, event recall, false emission,
+endpoint/commit latency, and mAP-latency or recall-latency Pareto.
 
 Internal query swap is diagnostic only. It cannot replace output evidence.
 
 ## B0-B4 Candidate Arms
 
 - **B0:** no-identity prefix completion set.
-- **B1:** ordinary persistent query plus matched
-  start/end/class/completion heads.
+- **B1:** ordinary persistent queries with matched heads.
 - **B2:** one-dimensional TrackFormer/MOTR reconstruction.
-- **B3:** new clean order/risk-set baseline; never modify or reopen old Q2.
+- **B3:** clean order/risk-set baseline; never reopen old Q2.
 - **B4:** R-A Prefix-Shared Latent Event Filter.
 
-All arms must share causal inputs, decision times, output heads where
-applicable, append-only ledger, evaluator, no-future checks, anti-silence,
-parameter-matching rule, update/token budget, generators, and reporting.
+All arms must freeze capacity-matched, resource-matched, or both comparisons,
+plus shared causal inputs, decision times, compatible heads, ledger,
+evaluator, no-future checks, anti-silence, generators, and reporting.
 
 Temporal-MOTR equivalence is a predeclared R-A route `KILL`.
 
-## Route Gates Before Model Code
+Only two B4-specific deltas remain plausible: D1 atomic
+release-before-same-bin-reseed and D2 continuous carrier mass with ephemeral,
+loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
-1. **R0 annotation census:** exact split/annotation hashes; repetition,
-   overlaps, same-bin events, durations, concurrency, and zero-action streams.
-   Outcome-blind, deterministic, read-only.
-2. **R1 feature certificate:** encoder source, weights, clip construction,
-   frame sampling, receptive field, token/decision mapping, and no-future
-   proof. Source-frame monotonicity alone is insufficient.
-3. **R2 B0-B4 fairness:** shared protocol and matched budgets.
-4. **R3 negative controls:** count-only, template timing, feature-time shuffle,
-   label-feature permutation, ledger-only deduplicator, history-off, and
-   threshold sweep.
-5. **R4 mechanism deletions:** UOT alternatives, occupancy, consistency,
-   release/reseed, latch variants, K/K+1, start posterior, direct-complete.
-6. **R5 structural OOD:** unseen count, duration, gap, overlap graph, same-bin
-   combination, class permutation, feature basis, noise, delay, and combined
-   shifts.
-7. **R6 temporal-MOTR exact delta:** nearest prior mechanism, exact difference,
-   intended failure, observable metric, deletion, and equivalence region.
-8. **R7 independent route review:** only then may a model-P0 contract be
-   considered.
+## Route Gates
+
+1. **P protocol PASS:** exact computations, units, denominators, thresholds,
+   failures, schemas, hashes, and prior-exposure ledger. No collection before
+   independent PASS.
+2. **R0 annotation census:** reconcile 211/213; freeze split/annotation hashes;
+   repetition, overlap, same-bin, duration, concurrency, and zero-action
+   statistics. Model-outcome-blind, not annotation-unseen. Signed gap is
+   `next_start - current_end`.
+3. **R1 cache certificate:** bind encoder revision, processor, weights, raw
+   video, extraction commit/environment, frame support, token/decision map,
+   and artifact hashes. Static proof, perturbation audit, and historical-cache
+   linkage are separate; CPU/GPU byte identity is not assumed.
+4. **R2 B0-B4 fairness:** exact arm semantics and capacity/resource budgets.
+5. **R3 controls:** count-only, timing-only, time shuffle, valid semantic
+   destruction, ledger-only, history-off, plus threshold sensitivity. A
+   globally consistent class renaming is not destructive.
+6. **R4 deletions:** assignment, occupancy, consistency, atomic
+   release/reseed, and latch variants; conditional start/direct-complete.
+7. **R5 structural OOD:** lifecycle geometry, semantic mapping,
+   representation/noise, endpoint delay, and compound shifts.
+8. **R6 temporal-MOTR delta:** exact difference, target failure, metric,
+   deletion, and justified equivalence region for D1/D2.
+9. **R7 route review:** only after evidence may model-P0 design be considered.
 
 ## Failed or Blocked Directions
 
-- PIVOT/three-clock route: rejected because it leaves On-TAL.
-- Broad CESR track/refine/commit: crowded and demoted to infrastructure.
-- Full PETAL: not innovative merely because raw-video and persistent queries
-  are combined; TrackFormer/MOTR and causal-backbone reconstruction remain.
-- PCEH: endpoint/emission targets and decode are scientifically invalid in the
-  current code; component only.
-- CRS-EPS dynamic replay and R1/CSFSB: terminal under their frozen protocols.
-- Zero-shot/open-vocabulary wrapper: OZ-TAL already occupies the task.
-- Offline-teacher distillation: support/ablation only.
-- Generic memory, causal backbone, feature cache, LoRA, PEFT, pretraining,
-  gradient sampling, or raw-frame input: ingredients, not standalone novelty.
-- Historical R-A P0: withdrawn because it lacked route identifiability,
-  structural OOD, simple baselines, and mechanism controls.
+- PIVOT leaves On-TAL; CESR is crowded infrastructure.
+- Full PETAL is reconstructible from causal backbones plus TrackFormer/MOTR.
+- PCEH's current endpoint/emission contract is invalid; component only.
+- CRS-EPS dynamic replay and R1/CSFSB are terminal under frozen protocols.
+- OZ-TAL occupies zero-shot/open-vocabulary On-TAL.
+- Distillation, memory, cache, LoRA/PEFT, pretraining, sampling, and raw frames
+  are ingredients or controls, not standalone novelty.
+- Historical R-A P0 is withdrawn because route and protocol identifiability
+  were missing.
 
 ## Closest Prior Work
 
-- **CAG-QIL and SimOn:** standard On-TAL definition and simple causal
-  sequential prediction.
-- **OAT:** online anchors and repetitive-proposal suppression.
-- **MATR/HAT:** long-history online interval localization.
-- **ActionSwitch:** simultaneous and same-class overlapping actions.
-- **TadTR:** direct action-query interval set prediction.
-- **TrackFormer/MOTR:** persistent query birth/survival and identity
-  propagation; strongest R-A reconstruction attack.
-- **E2E-LOAD/StreamFormer:** raw-video causal OAD/representation, insufficient
-  alone for a new instance-level On-TAL method.
+- **CAG-QIL/SimOn:** task protocol and simple causal prediction.
+- **OAT/MATR/HAT:** anchors, suppression, and long-history localization.
+- **ActionSwitch:** simultaneous and same-class overlap.
+- **TadTR:** action-query interval prediction.
+- **TrackFormer/MOTR:** persistent birth/survival/identity; strongest R-A
+  reconstruction attack.
+- **E2E-LOAD/StreamFormer:** raw-video causal OAD/representation, not alone a
+  new instance-level On-TAL method.
 
 ## Infrastructure Laws
 
@@ -165,9 +165,9 @@ Temporal-MOTR equivalence is a predeclared R-A route `KILL`.
 
 ## Immediate Goal
 
-Do not implement a model. Turn
-`experiments/prefix-route-identifiability-gate-20260717.md` into an immutable
-route-evidence protocol, then collect only the outcome-blind census and
-feature-causality certificate. Freeze B0-B4 fairness, structural OOD, negative
-controls, mechanism deletions, and temporal-MOTR equivalence rules, and submit
-that package for a new independent route review. GPU hours remain 0.
+Do not collect evidence or implement a model. Turn
+`experiments/prefix-route-identifiability-gate-20260717.md` into one immutable,
+executable protocol-only commit and obtain an independent protocol PASS.
+Reviewer-proposed sample, power, fairness, and equivalence numbers are
+candidate policies, not frozen constants. Only a PASS may authorize the
+specified read-only R0/R1 collection. GPU hours remain 0.

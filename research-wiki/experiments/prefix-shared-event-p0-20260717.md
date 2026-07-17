@@ -15,7 +15,7 @@ superseded_by: exp:prefix-route-identifiability-gate
 Historical design authorization: `GO_NEW_ROUTE_P0_ONLY`, superseded before
 preregistration or implementation.
 
-Current route verdict: `REVISE_ROUTE_AND_REVIEW_AGAIN`.
+Current route verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
 Execution status: withdrawn, not implemented, and not run.
 
@@ -23,9 +23,10 @@ GPU authorization: zero hours.
 
 DR-046 revokes the model-P0 permission because the proposal cannot distinguish
 R-A from simpler no-identity sets, persistent queries, temporal MOTR, or a
-clean order/risk-set baseline. No model, UOT, loss, generator, optimizer,
-runtime, threshold, comparison, or evidence constant may now be frozen for
-this experiment.
+clean order/risk-set baseline. DR-047 also blocks new R0/R1 evidence
+collection until an executable protocol receives an independent PASS. No
+model, UOT, loss, generator, optimizer, runtime, threshold, comparison, or
+evidence constant may now be frozen for this experiment.
 
 All remaining sections preserve the prior proposal as decision history only.
 They are not an executable contract. The current legal successor is the

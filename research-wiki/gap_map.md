@@ -257,7 +257,8 @@ Candidate route: [ideas/petal-ontad.md](ideas/petal-ontad.md).
 
 ## G16: Training and Inference Need One Model-Only Prefix State
 
-Status: candidate gap not established; route-identifiability evidence required.
+Status: candidate gap not established; protocol revision required before new
+route-identifiability evidence may be collected.
 
 Q2 proved a repository-local contract defect: predicted runtime availability
 gated GT canonical ownership, so false ACTIVE/refractory state permanently
@@ -288,6 +289,25 @@ Before a model P0, the project must compare:
 The exact split must also establish that repetition, overlap, same-bin
 transitions, and concurrency are prevalent enough to support the intended
 claim. Until then, field-gap status is `NOT_ESTABLISHED`.
+
+Earlier repository analysis is prior annotation exposure, not a fresh R0:
+training had 200 videos/3003 instances and validation had 211 videos/3325
+instances; overlap appeared in 23/32 videos, same-class overlap in only 2/3
+videos, and maximum concurrency was 2. The new census may be blind to model
+outcomes, but cannot be called annotation-unseen. The unresolved reporting
+count of 211 versus canonical expectation 213 must also be reconciled before
+any prevalence claim.
+
+Static code inspection suggests the cache builder samples the latest frame at
+each stride and the default SigLIP path encodes frames independently. That is
+not yet a certificate for the existing cache: its exact model revision,
+processor, weights, raw-video hashes, extraction environment, and per-token
+support map are not bound. Existing-cache strict causality therefore remains
+`UNVERIFIED`.
+
+The current gate document is still being converted from a checklist into an
+executable protocol. R0, R1, model outcomes, B0-B4 implementation, and GPU use
+remain blocked until that protocol receives an independent PASS.
 
 Candidate:
 [ideas/prefix-shared-latent-event-filter.md](ideas/prefix-shared-latent-event-filter.md),

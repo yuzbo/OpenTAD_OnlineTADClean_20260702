@@ -1829,7 +1829,7 @@ Reversibility:
 
 ## DR-046: Revoke R-A Default-Route Authorization Before Implementation
 
-Status: active; route revision required; model P0 and GPU authorization zero.
+Status: active route constraint; evidence-collection execution refined by DR-047; model P0 and GPU authorization zero.
 
 Decision:
 
@@ -1915,3 +1915,103 @@ Reversibility:
   package receives an independent PASS. Such a PASS may authorize a model P0
   contract, but cannot directly authorize real-data effectiveness or GPU work.
   Q2/R1 remains terminal under its frozen protocol.
+
+## DR-047: Revise and Independently Review the Protocol Before R0 or R1
+
+Status: active; protocol-only revision allowed; evidence collection and model work blocked.
+
+Decision:
+
+> Accept `REVISE_PROTOCOL_BEFORE_COLLECTION`. The current route gate is a
+> high-quality checklist, not an executable preregistration. Do not run a new
+> annotation census or cache-causality audit until a protocol-only immutable
+> commit closes every population, definition, statistic, disclosure,
+> fairness, control, OOD, exact-delta, equivalence, and terminal-action choice,
+> and a new independent reviewer returns
+> `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`.
+
+Reasons:
+
+- the repository simultaneously records historical reporting count 211 and
+  canonical expected count 213, so R0 has no unique reporting population;
+- overlap, concurrency, and duration aggregates have already been exposed, so
+  the census can be model-outcome-blind but not annotation-unseen;
+- the existing R0 gate does not define interval/bin conventions, clustered
+  uncertainty, claim eligibility, disclosure, or failure actions precisely
+  enough to prevent post-observation route selection;
+- the SigLIP cache source path is plausibly single-frame causal, but the
+  manifest does not bind an exact Hugging Face revision, processor/config,
+  weight shards, raw-video bytes, extraction commit/environment, or token
+  support map;
+- B0-B4 semantics, parameter/token/update/tuning fairness, negative-control
+  input rights, structural OOD grammar, and temporal-MOTR equivalence are not
+  yet executable;
+- R-A currently has only two plausible, unproven route-level deltas: atomic
+  release-before-same-bin-reseed and continuous carrier mass with ephemeral
+  noncanonical UOT.
+
+Required protocol-only revision:
+
+1. resolve the 211/213 population using bound manifests and publish the exact
+   difference audit;
+2. freeze R0 formulas for time, bins, half-open intervals, overlap,
+   repetition, same-bin transitions, one-bin actions, Ambiguous, and
+   zero-action videos;
+3. freeze clustered uncertainty, claim-eligibility, power, and disclosure;
+4. add a prior-exposure ledger and define `model-outcome-blind`;
+5. freeze R0 environment isolation, aggregate author disclosure,
+   reviewer-only detailed commitments, atomic publication, and no-overwrite;
+6. freeze R1 provenance schema, token support proof, perturbation audit, cache
+   linkage, and fail-unverifiable action;
+7. uniquely define B0-B4 and the common fairness/calibration/evaluation
+   algorithms;
+8. freeze exact negative controls, core mechanism deletions, compact OOD
+   grammar, hidden-generation ownership, and identifiability KILL;
+9. freeze an R-A versus temporal-MOTR exact-delta table and numerical/formula
+   equivalence region.
+
+Absorption amendments:
+
+- do not automatically choose canonical 213 until external manifests and the
+  exact two-ID difference are verified;
+- define sequential gap only as `next_start - current_end`;
+- treat the review's sample thresholds, parameter/MAC bands, equivalence
+  margins, and bootstrap count as candidates requiring exact justification,
+  not already frozen constants;
+- separate static support proof, same-environment perturbation invariance, and
+  existing-cache byte linkage; CPU output need not byte-match a historical GPU
+  float16 cache;
+- reject a globally consistent class-label permutation as a semantic control,
+  because it merely renames classes;
+- predeclare whether fairness is capacity-matched, resource-matched, or
+  reported under both views.
+
+Rejected alternatives:
+
+- run R0 or R1 because they are read-only;
+- use this Pro response itself as the hashed protocol;
+- inspect model predictions, checkpoints, effects, or hard-case IDs while
+  revising the protocol;
+- revive historical P0 constants;
+- freeze model dimensions, UOT solver, optimizer, ledger thresholds, or GPU
+  budgets in a route-evidence protocol;
+- interpret D1 or D2 as established novelty.
+
+Source:
+
+- private attachment
+  `ae88cc1d-c95c-483c-9b04-5fdbbec2c1e5/pasted-text.txt`, archived as
+  `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`, 47,878 bytes,
+  971 lines, SHA-256
+  `F9064827B05991FD63156770B2A1D6D6D40C3E53A73F4113B31F312B17F82BD0`;
+- [independent absorption](../PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md),
+  SHA-256
+  `73F6C034C05F9FBAB37FD8650ECD0152B52FAFEC55487842AB93E4C4D532D54B`;
+- [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md);
+- [T40](discussion_timeline.md#t40-protocol-review-blocks-r0-and-r1-before-collection).
+
+Reversibility:
+
+- a new independent protocol PASS may authorize only R0/R1 evidence
+  collection. It cannot authorize model-contract freeze, model code, model P0,
+  real-data effectiveness, or GPU work.
