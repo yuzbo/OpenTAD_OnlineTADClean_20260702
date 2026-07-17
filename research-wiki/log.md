@@ -1,6 +1,6 @@
 ---
 type: log
-updated: 2026-07-11
+updated: 2026-07-17
 status: active
 scope: Append-only timeline of wiki mutations and major research decisions.
 ---
@@ -102,3 +102,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-16: Added a commit-anchored post-kill Pro prompt for strict On-TAD route redefinition. It preserves the Q2/R1 kill, forbids task drift and threshold/prior reopening, and can authorize at most a new zero-GPU P0 contract.
 - 2026-07-17: Archived the 80,830-byte post-kill route review as `PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`, SHA-256 `6E7935741C497D90000CED25AEB6D4A078919882065D8E082EDABBE7CB148C7F`. It preserves Q2/R1 KILL and selects R-A Prefix-Shared Latent Event Filter under `GO_NEW_ROUTE_P0_ONLY`.
 - 2026-07-17: Added independent absorption, DR-045, T38, G16, the R-A idea node, and a not-run P0 experiment node. P0 direction is authorized, but code/execution waits for exact UOT, ledger, generator, training, numerical, resource, and evidence preregistration; P1/GPU/formal/raw-video remain blocked.
+- 2026-07-17: Archived the 50,146-byte, 653-line fixed-commit preimplementation review as `PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`, SHA-256 `B5BAC9E38C40883687193E37F5364A6A165C67EEDF0F496607A59B46FD88A3D4`.
+- 2026-07-17: Added an independent absorption, SHA-256 `FFAA9E81F485D3D7A83666F8F17EB571B220F75E746C5715C1D7D790C1828B17`. Accepted `REVISE_ROUTE_AND_REVIEW_AGAIN` while normalizing unproved field-gap and baseline claims to `NOT_ESTABLISHED`.
+- 2026-07-17: Added DR-046 and T39, superseded DR-045 before implementation, demoted R-A to B4, withdrew the historical R-A P0, and created the route-identifiability gate for the annotation census, cached-feature causality certificate, B0-B4, structural OOD, controls, and temporal-MOTR exact delta.
+- 2026-07-17: Added MOTR and TadTR paper nodes from primary sources. Model P0, real-data effectiveness, profile, formal, visual, and raw-video work remain blocked; GPU hours authorized remain zero.

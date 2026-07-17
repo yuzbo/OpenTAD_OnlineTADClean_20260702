@@ -2,25 +2,34 @@
 type: experiment
 node_id: exp:prefix-shared-event-p0
 title: "Prefix-Shared Event Filter CPU P0"
-stage: preregistration-closure-required
+stage: withdrawn-before-preregistration
 outcome: not-run
 updated: 2026-07-17
+superseded_by: exp:prefix-route-identifiability-gate
 ---
 
 # Prefix-Shared Event Filter CPU P0
 
 ## Status
 
-Design authorization: `GO_NEW_ROUTE_P0_ONLY`.
+Historical design authorization: `GO_NEW_ROUTE_P0_ONLY`, superseded before
+preregistration or implementation.
 
-Execution status: not ready and not started.
+Current route verdict: `REVISE_ROUTE_AND_REVIEW_AGAIN`.
+
+Execution status: withdrawn, not implemented, and not run.
 
 GPU authorization: zero hours.
 
-The review freezes the scientific purpose, test families, headline margins,
-and terminal rule. An exact execution preregistration must still freeze all
-model, UOT, loss, generator, optimizer, runtime, and evidence constants before
-implementation or outcome observation.
+DR-046 revokes the model-P0 permission because the proposal cannot distinguish
+R-A from simpler no-identity sets, persistent queries, temporal MOTR, or a
+clean order/risk-set baseline. No model, UOT, loss, generator, optimizer,
+runtime, threshold, comparison, or evidence constant may now be frozen for
+this experiment.
+
+All remaining sections preserve the prior proposal as decision history only.
+They are not an executable contract. The current legal successor is the
+[route-identifiability gate](prefix-route-identifiability-gate-20260717.md).
 
 ## Scientific Question
 
@@ -36,7 +45,7 @@ commit while:
 This P0 does not test THUMOS14 effectiveness, publication novelty, raw-video
 training, or GPU efficiency.
 
-## Inherited Immutable Boundaries
+## Historical Proposed Boundaries
 
 - standard fully supervised On-TAD output;
 - no future access, offline NMS, mutable committed output, teacher cache, or GT
@@ -52,7 +61,7 @@ training, or GPU efficiency.
   aggregate/wall-clock interpretation is frozen;
 - any frozen gate failure is terminal KILL.
 
-## P0-A Deterministic Families
+## Historical Proposed Deterministic Families
 
 1. single event;
 2. delayed endpoint;
@@ -99,7 +108,7 @@ Video-future perturbation:
 - change all video/features/labels after t;
 - state, logits, and ledger through t must remain unchanged.
 
-## Learned Anti-Silence Gate
+## Historical Proposed Anti-Silence Gate
 
 Every seed must independently satisfy:
 
@@ -127,7 +136,7 @@ components where applicable:
 - endpoint and ledger records are detached and cannot be revised by later
   loss.
 
-## Preimplementation Closure Checklist
+## Historical Unclosed Constants
 
 The following remain unfrozen:
 
@@ -145,7 +154,8 @@ The following remain unfrozen:
 - CPU threads, deterministic runtime, timeout, resource interpretation, and
   atomic evidence schema.
 
-The P0 runner is forbidden until every item is frozen and hashed.
+The P0 runner remains forbidden. Closing these constants is no longer the next
+step; the route-identifiability gate must pass first.
 
 ## Required Evidence
 
@@ -163,7 +173,7 @@ The P0 runner is forbidden until every item is frozen and hashed.
 - partial-directory write, flush/hash, and atomic rename;
 - refusal to overwrite an existing evidence root.
 
-## Decision Rule
+## Historical Proposed Decision Rule
 
 ```text
 ANY Q1-Q6 FAILURE:
@@ -184,9 +194,14 @@ ALL Q1-Q6 PASS:
 Only an independent read-only review may later choose
 `PASS_AUTHORIZE_UNSEEN_CPU_G0_ONLY`.
 
+This historical escalation rule is inactive under DR-046.
+
 ## Sources
 
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md)
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md)
+- [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md)
+- [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md)
 - [idea:prefix-shared-latent-event-filter](../ideas/prefix-shared-latent-event-filter.md)
-- [DR-045](../decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0)
+- [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
+- historical [DR-045](../decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0)

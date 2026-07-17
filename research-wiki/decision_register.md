@@ -1,6 +1,6 @@
 ---
 type: decision_register
-updated: 2026-07-11
+updated: 2026-07-17
 status: active
 scope: Major research decisions, reasons, counterarguments, sources, and reversibility.
 ---
@@ -1763,7 +1763,7 @@ Reversibility:
 
 ## DR-045: Authorize R-A Preregistration and CPU-Only P0
 
-Status: active; exact P0 preregistration pending; GPU authorization zero.
+Status: superseded on 2026-07-17 by DR-046 before preregistration or implementation; GPU authorization remained zero.
 
 Decision:
 
@@ -1826,3 +1826,92 @@ Reversibility:
 - R-A may be killed by any frozen P0 gate. A P0 PASS still requires independent
   read-only review and can authorize at most an unseen CPU G0. Q2/R1 remains
   irreversible under its prior contract.
+
+## DR-046: Revoke R-A Default-Route Authorization Before Implementation
+
+Status: active; route revision required; model P0 and GPU authorization zero.
+
+Decision:
+
+> Accept `REVISE_ROUTE_AND_REVIEW_AGAIN`. DR-045 no longer authorizes an R-A
+> preregistration, implementation, or synthetic model P0. Demote R-A to B4 in
+> a route-level B0-B4 comparison. Before another route review, bind an
+> outcome-blind annotation census, a cached-feature strict-causality
+> certificate, matched simple baselines, structural OOD and negative controls,
+> and an exact-delta/equivalence-KILL contract against temporal MOTR.
+
+Reasons:
+
+- Q2 evidence proves a local train/runtime lifecycle defect, but does not show
+  that continuous carriers, UOT, adjacent-prefix transport consistency, or a
+  model-only latch are necessary;
+- the formal evaluator observes committed intervals, classes, scores, and
+  times, not internal carrier identity, so any identity claim must produce
+  observable duplicate, fragmentation, overlap-recall, latency, or recall
+  gains;
+- TrackFormer and MOTR already establish persistent track queries and
+  birth/survival assignment, while TadTR establishes action-query interval
+  prediction; a one-dimensional reconstruction is therefore a mandatory
+  obviousness attack;
+- the proposed P0 can test causal execution and anti-silence, but cannot
+  distinguish R-A from template timing, event counting, threshold selection,
+  ordinary prefix sets, persistent queries, or ledger-only deduplication;
+- the exact project split has not yet established the prevalence of
+  same-class repetition/overlap, same-bin transitions, short actions, or
+  concurrency needed to support the proposed mechanism;
+- source-frame ordering does not prove that cached encoder tokens exclude
+  future frames.
+
+Normalization amendment:
+
+- the review's machine-readable `false` values for field-gap status,
+  simple-baseline insufficiency, and non-locality are recorded as
+  `NOT_ESTABLISHED`, not as proof that the corresponding propositions are
+  permanently false;
+- internal identity is not dismissed a priori, but it can only survive as a
+  mechanism claim if it changes preregistered observable outputs;
+- R-A remains a reversible B4 candidate, not a default route and not a
+  permanently killed family.
+
+Required route-level sequence:
+
+1. freeze and run only an outcome-blind, read-only annotation census;
+2. bind encoder code, weights, clip construction, temporal sampling, and exact
+   receptive field in a strict-causality certificate;
+3. rewrite the question as whether persistent carriers provide
+   non-reconstructible online instance-consistency gains over a no-identity
+   prefix set and temporal MOTR;
+4. freeze B0-B4 shared inputs, heads, ledger, evaluator, anti-silence,
+   parameter matching, and update-budget rules;
+5. freeze structural OOD, negative controls, mechanism deletions, and the
+   temporal-MOTR equivalence region;
+6. conduct another independent route review before any model contract or code.
+
+Rejected alternatives:
+
+- continue DR-045 merely because it was previously authorized;
+- interpret Q2's local failure as a field-wide proof;
+- freeze R-A dimensions, UOT, losses, thresholds, generator, optimizer, or
+  evidence schema before route identifiability is established;
+- treat seed-held-out synthetic accuracy as structural generalization;
+- implement only R-A and compare it after outcome observation;
+- use internal carrier identity as a result without output-level consequences;
+- perform cached-feature effectiveness, profile, formal, visual, or raw-video
+  training.
+
+Source:
+
+- private attachment
+  `0b362eae-64cd-4f53-830e-eb4f7524e31a/pasted-text.txt`, archived as
+  `PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`, SHA-256
+  `B5BAC9E38C40883687193E37F5364A6A165C67EEDF0F496607A59B46FD88A3D4`;
+- [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md);
+- [route-identifiability gate](experiments/prefix-route-identifiability-gate-20260717.md);
+- [T39](discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status).
+
+Reversibility:
+
+- the route revision is reversible only after the complete route-evidence
+  package receives an independent PASS. Such a PASS may authorize a model P0
+  contract, but cannot directly authorize real-data effectiveness or GPU work.
+  Q2/R1 remains terminal under its frozen protocol.

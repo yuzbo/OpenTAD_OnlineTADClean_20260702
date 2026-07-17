@@ -257,14 +257,15 @@ Candidate route: [ideas/petal-ontad.md](ideas/petal-ontad.md).
 
 ## G16: Training and Inference Need One Model-Only Prefix State
 
-Status: unresolved; R-A CPU-only P0 authorized.
+Status: candidate gap not established; route-identifiability evidence required.
 
-Q2 showed that a model can have future-free inference and still use an
-incompatible training contract. Predicted runtime availability gated GT
-canonical ownership, so false ACTIVE/refractory state permanently discarded
-first-crossing targets. A silent birth policy could then pass capacity.
+Q2 proved a repository-local contract defect: predicted runtime availability
+gated GT canonical ownership, so false ACTIVE/refractory state permanently
+discarded first-crossing targets and a silent birth policy could pass
+capacity. It did not prove that standard On-TAL generally lacks a
+model-only prefix state, or that persistent latent carriers are necessary.
 
-Required contract:
+Any successor still requires:
 
 - one scientific state transition shared by train and inference;
 - state contains only causal inputs, model outputs, and past immutable commits;
@@ -275,8 +276,22 @@ Required contract:
 - same-bin release/reseed, repeated instances, overlap, delayed endpoints, and
   immutable commits must close under synthetic tests.
 
-Candidate route:
-[ideas/prefix-shared-latent-event-filter.md](ideas/prefix-shared-latent-event-filter.md).
+Those are correctness requirements, not evidence that R-A is the best route.
+Before a model P0, the project must compare:
 
-The gap is narrower than generic persistent queries or memory. Temporal
-MOTR/TrackFormer remains the mandatory reconstruction attack.
+- a no-identity prefix completion set;
+- ordinary persistent queries;
+- a one-dimensional TrackFormer/MOTR reconstruction;
+- a clean order/risk-set baseline that does not modify old Q2;
+- R-A as one candidate arm.
+
+The exact split must also establish that repetition, overlap, same-bin
+transitions, and concurrency are prevalent enough to support the intended
+claim. Until then, field-gap status is `NOT_ESTABLISHED`.
+
+Candidate:
+[ideas/prefix-shared-latent-event-filter.md](ideas/prefix-shared-latent-event-filter.md),
+now B4 only.
+
+Required evidence:
+[experiments/prefix-route-identifiability-gate-20260717.md](experiments/prefix-route-identifiability-gate-20260717.md).

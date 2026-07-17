@@ -7,82 +7,167 @@ scope: Compressed memory to prepend before any new ideation or implementation pl
 
 # Query Pack: Online/Causal TAD Project Memory
 
-## Project Direction
+## Fixed Task
 
-The task is fixed to standard fully supervised Online Temporal Action Detection/Localization: causal RGB stream in, one immutable `{start, end, class, score}` instance emitted when an action end is detected. Do not introduce sensors, new observability labels, semantic-maintenance outputs, or a replacement task.
+The project remains fully supervised On-TAL. At time t, the model may use only
+the video prefix, causal state, and past commits. Internal hypotheses may be
+revised before commit. Formal `{start, end, class, score}` outputs are
+append-only, with no future-frame revision, NMS, merging, or offline cleanup.
 
-PIVOT is out of scope; PCEH/CESR and Full PETAL remain demoted. Causal backbones, direct On-TAD queries, and TrackFormer-style persistence are occupied ingredients. Read DR-026 and the PETAL absorption before reviving them.
+Do not change the task to physical observability, generic semantic memory,
+VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
-CRS-EPS failed signed G0. Q2 then exhausted 2,206 GT births; its only legal zero arm emitted ten events by suppressing birth, so independent review selected terminal `KILL_Q2_R1`. A post-kill review now authorizes only R-A Prefix-Shared Latent Event Filter for CPU P0: one model-only prefix state in train/inference, GT transport loss-only, immutable ledger, and anti-silence readiness. This is design authorization, not P0 PASS. Exact model/UOT/ledger/generator/training/numerical/evidence constants remain to be preregistered. P1, profile, effectiveness/formal/raw-video training are blocked; GPU hours are zero.
+## Terminal Evidence
 
-## Top Gaps
+- CRS-EPS empty-state dynamic replay failed its signed G0 on state, loss, and
+  gradient fidelity.
+- Q2 actual replay produced 5,517 emissions and 2,206 GT-birth exhaustions.
+  Its only legal zero-exhaustion arm emitted ten events and was silent on two
+  seeds.
+- Independent review selected terminal `KILL_Q2_R1`. Do not reopen Q2/R1 with
+  a threshold, K, prior, refractory, release-order, or post-outcome gate.
+- These results prove local training/runtime lifecycle defects. They do not
+  prove that all persistent-state methods fail or that R-A is necessary.
 
-1. **Raw-video instance-level joint training is missing.** Current On-TAD leaders use frozen/pre-extracted TSN, I3D, SlowFast, or pickle features; raw-video online methods predominantly solve frame-level OAD.
-2. **Window rediscovery is a structural failure.** Independent windows repeatedly rediscover one action, causing fragmentation, duplicates, same-class merging, and online-NMS dependence.
-3. **Current PCEH is scientifically blocked.** End/emit coupling, repeated late positives, class-level targets, end=emit decode, detached state, and GT proximity remain core concerns.
-4. **Train/inference lifecycle mismatch is a demonstrated failure.** Q2 lets predicted availability gate GT ownership; false ACTIVE/refractory state erases first-birth supervision, while silence can pass capacity.
-5. **Generic streaming pretraining is occupied.** StreamFormer blocks the claim that a causal streaming backbone alone is new; BSP and offline E2E-TAD block generic boundary pretraining or PEFT claims.
-6. **Raw-video joint training remains second-stage.** P0 is cached-free synthetic/head-level; no raw-video claim is active.
-7. **Same-class repetition and overlap remain direct risks.** ActionSwitch is the closest baseline and must be matched fairly.
-8. **Evaluation must prevent future use and duplicate cleanup.** Full chronological evaluation, fixed thresholds, immutable outputs, recall/FN, delay, and no offline NMS remain mandatory.
+## Current Route Decision
 
-## Candidate Portfolio
+`REVISE_ROUTE_AND_REVIEW_AGAIN`.
 
-- **R-A Prefix-Shared Latent Event Filter:** sole active hypothesis. P0 preregistration authorized, implementation/result absent. Shared model-only state; GT OT loss-only; release-before-reseed; immutable ledger; silence controls must fail.
-- **R-B Endpoint-Set Completion:** strongest simple baseline only; MATR/OAT/PCEH reconstruction risk.
-- **R-C Causal Interval Transducer:** theoretical fallback; no implementation permission.
-- **R-D Teacher-Student State Alignment:** rejected; may distill GT-conditioned mismatch.
-- **Q2 fixed/rematch:** terminal `KILL` disposition after valid `REVISE_REQUIRED`; historical negative evidence only.
-- **CRS-EPS dynamic replay:** negative for the current protocol. Signed G0 failed absolute state/loss/gradient fidelity. The exposed G0 cases are development-only; any replacement needs a new holdout protocol.
-- **R1/CSFSB:** terminal `KILL` under the frozen protocol. It was never implemented because Q2 failed to provide a nondegenerate shared lifecycle contract.
-- **Full raw-video PETAL/CESR/PCEH:** demoted, blocked, or baseline infrastructure; not current framing.
-- **PIVOT and task-changing routes:** rejected or held outside fixed On-TAD.
-- **Pretraining/cache/LoRA/gradient sampling:** components only, never standalone novelty.
+DR-045 was superseded before preregistration or implementation. R-A
+Prefix-Shared Latent Event Filter is no longer the sole/default route and its
+historical CPU P0 is withdrawn. R-A survives only as B4 in a route-level
+comparison.
 
-## Current R-A Exact Question
+Only route-evidence protocol design is allowed. Outcome-blind census and
+feature-causality audit require frozen protocols. R-A contract freeze, B0-B4
+implementation, model P0, real-data effects, profile, formal, visual, and
+raw-video work are blocked. GPU hours: 0.
 
-> Can one model-only causal event state be shared exactly by training and inference while prefix GT affects only ephemeral loss transport, same-bin release/reseed and immutable commits close correctly, and no-birth/no-emission/always-background policies provably fail readiness?
+## Established vs Unknown
 
-P0 tests this contract on synthetic CPU data only. It cannot establish THUMOS effectiveness, raw-video end-to-end training, efficiency, or publication novelty.
+Established:
 
-## Failed / Blocked Claims
+- strict causal input and immutable committed-output rules are real On-TAL
+  requirements;
+- duplicate, fragmentation, endpoint delay, history, and overlap are real
+  output-level concerns;
+- Q2 reads hard runtime availability before GT assignment and can permanently
+  lose first-birth supervision;
+- the current evaluator does not observe internal query identity;
+- the current model path consumes cached features.
 
-- PIVOT/three-clock event verification: rejected because it changes the project task.
-- Generic causal backbone, generic memory, generic pretraining, LoRA, raw-frame input, or online cache alone: occupied and insufficient.
-- Early proposals or mutable user-visible revisions: outside the fixed standard On-TAD output protocol.
-- Current THUMOS PCEH, full-packet training first, zero-shot wrapper, and offline distillation headline: rejected.
-- Current CRS-EPS `dynamic_birth` as primary training: rejected by its preregistered G0; HH/IPW did not establish state/gradient fidelity.
-- Q2/R1/CSFSB: rejected because the shared runtime/canonical capacity contract exhausts 2,206 GT births and its only zero arm passes by nearly silencing birth.
-- R-A is rejected if GT/OT changes runtime state, silence passes, any frozen P0 gate fails, or future temporal-MOTR reconstruction is equivalent.
-- PETAL is also rejected if it reduces to TrackFormer plus a one-dimensional interval head without an On-TAD-specific trajectory mechanism or measurable matched gain.
+Unknown or `NOT_ESTABLISHED`:
+
+- exact repetition, same-class overlap, same-bin transition, short-action, and
+  concurrency prevalence in the bound project split;
+- whether cached encoder tokens are strictly causal at the raw-frame level;
+- whether persistent carriers are necessary for standard On-TAL;
+- whether no-identity sets, ordinary persistent queries, temporal MOTR, or a
+  clean order/risk-set baseline are insufficient;
+- whether R-A has an algorithmic and measurable delta beyond temporal MOTR;
+- the main source of real-data On-TAL performance error.
+
+Do not convert an unknown into a positive or negative field claim.
+
+## Current Scientific Question
+
+> In standard strictly causal On-TAL, do persistent event carriers provide
+> online instance-consistency gains that cannot be reconstructed by a
+> no-identity prefix set or a matched one-dimensional TrackFormer/MOTR?
+
+Required observable outcomes:
+
+- duplicate and fragmentation;
+- same-class repetition/overlap recall;
+- same-bin end/start correctness;
+- event recall, false emission, and endpoint/commit latency;
+- mAP-latency or recall-latency Pareto.
+
+Internal query swap is diagnostic only. It cannot replace output evidence.
+
+## B0-B4 Candidate Arms
+
+- **B0:** no-identity prefix completion set.
+- **B1:** ordinary persistent query plus matched
+  start/end/class/completion heads.
+- **B2:** one-dimensional TrackFormer/MOTR reconstruction.
+- **B3:** new clean order/risk-set baseline; never modify or reopen old Q2.
+- **B4:** R-A Prefix-Shared Latent Event Filter.
+
+All arms must share causal inputs, decision times, output heads where
+applicable, append-only ledger, evaluator, no-future checks, anti-silence,
+parameter-matching rule, update/token budget, generators, and reporting.
+
+Temporal-MOTR equivalence is a predeclared R-A route `KILL`.
+
+## Route Gates Before Model Code
+
+1. **R0 annotation census:** exact split/annotation hashes; repetition,
+   overlaps, same-bin events, durations, concurrency, and zero-action streams.
+   Outcome-blind, deterministic, read-only.
+2. **R1 feature certificate:** encoder source, weights, clip construction,
+   frame sampling, receptive field, token/decision mapping, and no-future
+   proof. Source-frame monotonicity alone is insufficient.
+3. **R2 B0-B4 fairness:** shared protocol and matched budgets.
+4. **R3 negative controls:** count-only, template timing, feature-time shuffle,
+   label-feature permutation, ledger-only deduplicator, history-off, and
+   threshold sweep.
+5. **R4 mechanism deletions:** UOT alternatives, occupancy, consistency,
+   release/reseed, latch variants, K/K+1, start posterior, direct-complete.
+6. **R5 structural OOD:** unseen count, duration, gap, overlap graph, same-bin
+   combination, class permutation, feature basis, noise, delay, and combined
+   shifts.
+7. **R6 temporal-MOTR exact delta:** nearest prior mechanism, exact difference,
+   intended failure, observable metric, deletion, and equivalence region.
+8. **R7 independent route review:** only then may a model-P0 contract be
+   considered.
+
+## Failed or Blocked Directions
+
+- PIVOT/three-clock route: rejected because it leaves On-TAL.
+- Broad CESR track/refine/commit: crowded and demoted to infrastructure.
+- Full PETAL: not innovative merely because raw-video and persistent queries
+  are combined; TrackFormer/MOTR and causal-backbone reconstruction remain.
+- PCEH: endpoint/emission targets and decode are scientifically invalid in the
+  current code; component only.
+- CRS-EPS dynamic replay and R1/CSFSB: terminal under their frozen protocols.
+- Zero-shot/open-vocabulary wrapper: OZ-TAL already occupies the task.
+- Offline-teacher distillation: support/ablation only.
+- Generic memory, causal backbone, feature cache, LoRA, PEFT, pretraining,
+  gradient sampling, or raw-frame input: ingredients, not standalone novelty.
+- Historical R-A P0: withdrawn because it lacked route identifiability,
+  structural OOD, simple baselines, and mechanism controls.
 
 ## Closest Prior Work
 
-### PETAL
-
-- **MATR/HAT/OAT:** direct window/query On-TAD references over frozen features; MATR uses online NMS.
-- **ActionSwitch:** same-class/overlap state-switch baseline.
-- **E2E-LOAD/StreamFormer:** raw-video causal OAD, but frame-level outputs.
-- **E2E-TAD/TIA, LoSA, Re2TAL, ETAD:** offline TAL adaptation/efficiency precedents.
-- **TrackFormer/MOTR:** strongest R-A obviousness attack; matched temporal reconstruction mandatory before paper claims.
-
-## R-A Mandatory Gates
-
-1. Freeze every executable P0 constant before code/run: model, UOT, loss, ledger, generator, optimizer, update budget, numerical comparison, CPU/resource, and evidence schema.
-2. One `advance_and_decode` must produce identical model-only state/logits/ledger in train-loss-off, inference, stepwise, and packet execution.
-3. GT/future perturbations may change loss transport only, never runtime state or emission.
-4. Eight deterministic families and learned seeds 9101/9102/9103 must pass family-wise; silence controls must fail.
-5. Exact optimizer coverage, directional gradients, detached immutable records, and atomic non-overwritten evidence are mandatory.
-6. Any P0 failure is terminal KILL. P0 PASS still needs independent review and can authorize at most unseen CPU G0.
-
-Review-frozen learned margins: every seed recall/precision >=0.90, same-class-overlap recall >=0.80, mean count error <=0.10/positive sequence, background FP/duplicate/fragmentation all zero.
+- **CAG-QIL and SimOn:** standard On-TAL definition and simple causal
+  sequential prediction.
+- **OAT:** online anchors and repetitive-proposal suppression.
+- **MATR/HAT:** long-history online interval localization.
+- **ActionSwitch:** simultaneous and same-class overlapping actions.
+- **TadTR:** direct action-query interval set prediction.
+- **TrackFormer/MOTR:** persistent query birth/survival and identity
+  propagation; strongest R-A reconstruction attack.
+- **E2E-LOAD/StreamFormer:** raw-video causal OAD/representation, insufficient
+  alone for a new instance-level On-TAL method.
 
 ## Infrastructure Laws
 
-- Keep PCEH repairs for baselines; do not inherit its hazard framing by default.
-- Require causal reads, chronological validation, immutable outputs, miss/late-FP accounting, no-future audits, and stepwise/batched agreement.
-- Identity must be trajectory-level. Training GT assignment is allowed; model input and inference state remain future-free.
+- Keep chronological, prefix-causal execution and no-future audits.
+- Keep committed outputs immutable and report recall/FN, late FP, duplicate,
+  fragmentation, and GT-end latency.
+- GT may create loss targets and matching only. It may not write runtime
+  identity, availability, reset, risk set, or emission state.
+- Cached features require a raw-frame receptive-field certificate before any
+  strict-online claim.
+- Preserve every negative result and do not tune gates after outcome
+  observation.
 
-## Current Final Goal
+## Immediate Goal
 
-Preserve CRS-EPS/Q2/R1 negative evidence and never reopen them with prior/threshold/K/refractory/release patches. Convert `experiments/prefix-shared-event-p0-20260717.md` from a closure checklist into an exact hashed CPU-only preregistration; then implement new R-A modules and run only the frozen synthetic P0. No P1, GPU profile, real-data effectiveness, formal, visual, or raw-video training is authorized. GPU hours: 0.
+Do not implement a model. Turn
+`experiments/prefix-route-identifiability-gate-20260717.md` into an immutable
+route-evidence protocol, then collect only the outcome-blind census and
+feature-causality certificate. Freeze B0-B4 fairness, structural OOD, negative
+controls, mechanism deletions, and temporal-MOTR equivalence rules, and submit
+that package for a new independent route review. GPU hours remain 0.

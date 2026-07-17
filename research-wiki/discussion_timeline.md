@@ -1,6 +1,6 @@
 ---
 type: timeline
-updated: 2026-07-11
+updated: 2026-07-17
 status: active
 scope: Chronological record of major discussions, turns, reversals, and decisions for this Online/Causal TAD project.
 ---
@@ -1217,3 +1217,36 @@ Current decision:
 > complete CPU-only preregistration; only then implement new modules and run
 > synthetic P0. P1, GPU profile, effectiveness/formal training, raw-video work,
 > and all Q2/R1 revisions remain blocked. GPU hours authorized remain zero.
+
+### T39: Preimplementation Review Revokes R-A Default-Route Status
+
+A new fixed-commit review of `f9419612cc90860019cd9a124833568489c9d38c`
+was archived byte-identically as
+`PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`, SHA-256
+`B5BAC9E38C40883687193E37F5364A6A165C67EEDF0F496607A59B46FD88A3D4`.
+Its terminal verdict is `REVISE_ROUTE_AND_REVIEW_AGAIN`.
+
+The review accepts standard On-TAL as a valuable task but rejects the inference
+from Q2's local lifecycle defect to R-A's necessity. R-A had not ruled out a
+no-identity prefix completion set, ordinary persistent queries, a clean
+order/risk-set baseline, or a one-dimensional TrackFormer/MOTR
+reconstruction. The proposed synthetic P0 also could not distinguish R-A's
+mechanism from template timing, event counting, conservative thresholds, or a
+ledger-only deduplicator.
+
+Independent absorption accepts the core verdict while normalizing the
+review's machine-readable `false` values to `NOT_ESTABLISHED`. Internal
+identity is not declared useless, but any benefit must appear in observable
+duplicate, fragmentation, same-class overlap recall, latency, recall, or
+mAP-latency metrics. R-A is therefore retained only as B4, not permanently
+killed.
+
+Current decision:
+
+> Supersede DR-045 before preregistration or implementation. Do not freeze or
+> code R-A. First bind an outcome-blind annotation census, cached-feature
+> strict-causality certificate, B0-B4 fairness contract, structural OOD,
+> negative controls, mechanism deletions, and a temporal-MOTR exact-delta with
+> equivalence-implies-KILL. Then request a new independent route review.
+> Real-data effectiveness, profile, formal, visual, and raw-video work remain
+> blocked; GPU hours authorized remain zero.

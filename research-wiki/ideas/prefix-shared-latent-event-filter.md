@@ -2,10 +2,11 @@
 type: idea
 node_id: idea:prefix-shared-latent-event-filter
 title: "Prefix-Shared Latent Event Filter with Immutable Ledger"
-stage: p0-preregistration-authorized
+stage: route-revision-required
 outcome: untested
 updated: 2026-07-17
 target_gaps: ["G2", "G3", "G6", "G7", "G16"]
+portfolio_role: candidate-arm-b4
 ---
 
 # Prefix-Shared Latent Event Filter with Immutable Ledger
@@ -18,11 +19,13 @@ intervals to an immutable model-only ledger.
 
 ## Status
 
-`GO_NEW_ROUTE_P0_ONLY`.
+`REVISE_ROUTE_AND_REVIEW_AGAIN`.
 
-The design is authorized for exact preregistration and a CPU-only synthetic P0
-probe. It is not implemented, has no P0 result, has no effectiveness evidence,
-and has no GPU permission.
+DR-045's design authorization was superseded by DR-046 before preregistration
+or implementation. R-A is not the default route and has no model-P0
+permission. It survives only as B4 in a future route-identifiability
+comparison. It is not implemented, has no P0 result, has no effectiveness
+evidence, and has no GPU permission.
 
 Q2/R1 remains terminal `KILL`. This route may reuse generic evaluator,
 optimizer-audit, evidence, and causal execution infrastructure, but it may not
@@ -100,11 +103,13 @@ Exact equations and constants remain to be frozen in the P0 preregistration.
 | C-A5: mechanism improves identity errors beyond temporal MOTR | future matched P3 | reconstruction falls in frozen equivalence region |
 | C-A6: efficiency is not the main claim | future profile plus effects | only cost changes |
 
-P0 can test C-A1 through C-A4 only.
+This table is a historical method hypothesis, not an authorized P0 contract.
+Before any model probe, a route-level gate must determine whether C-A1 through
+C-A4 are specific to R-A or equally satisfied by B0-B3.
 
 ## Novelty Boundary
 
-P0 novelty hypothesis: conditionally retained.
+Route hypothesis: conditionally retained as B4 only.
 
 Publication novelty: not established.
 
@@ -114,27 +119,36 @@ reconstruction on duplicate, fragmentation, same-class repetition/overlap,
 latency, and recall. Persistent queries, soft occupancy, OT, memory, and a new
 loss are individually occupied ingredients.
 
-## Mandatory P0 Gates
+Equivalence to the matched temporal-MOTR reconstruction is a predeclared route
+KILL.
 
-- deterministic eight-family synthetic contract;
-- shared train/inference/loss-off state transition;
-- stepwise/packet equivalence;
-- GT-future and video-future perturbation;
-- learned anti-silence across all three frozen seeds;
-- finite, directional gradients and exact optimizer coverage;
-- immutable, detached ledger records;
-- atomic, non-overwritten evidence;
-- family-wise terminal KILL on any failure.
+## Mandatory Route Gates
 
-See
-[exp:prefix-shared-event-p0](../experiments/prefix-shared-event-p0-20260717.md)
-for the closure checklist.
+- outcome-blind, read-only annotation census on the exact split;
+- cached-feature encoder strict-causality certificate;
+- B0 no-identity prefix set;
+- B1 ordinary persistent query;
+- B2 temporal TrackFormer/MOTR;
+- B3 clean order/risk-set baseline;
+- B4 R-A;
+- shared inputs, heads, ledger, evaluator, anti-silence, parameter rule, and
+  update budget;
+- structural OOD, negative controls, and mechanism deletions;
+- exact-delta table and frozen temporal-MOTR equivalence region;
+- independent route re-review.
+
+See the
+[route-identifiability gate](../experiments/prefix-route-identifiability-gate-20260717.md).
+The historical
+[R-A P0 proposal](../experiments/prefix-shared-event-p0-20260717.md) was
+withdrawn before preregistration.
 
 ## Non-Claims
 
 - not raw-video end-to-end;
 - not a Q2 or CSFSB revision;
 - not a publication novelty pass;
+- not an authorized P0 design;
 - not a cached-feature effectiveness result;
 - not a GPU-efficiency result;
 - not a new task, event-ID benchmark, mutable final output, or offline cleanup
@@ -143,19 +157,22 @@ for the closure checklist.
 ## Ordered Gate
 
 ```text
-exact preregistration
--> CPU-only P0 implementation
--> atomic P0 evidence
--> independent P0 review
--> possible unseen CPU G0 authorization
--> no automatic GPU authorization
+annotation census and causality certificate
+-> B0-B4/OOD/negative-control route contract
+-> temporal-MOTR exact-delta and equivalence-KILL rule
+-> independent route re-review
+-> only then decide whether a model P0 contract may be frozen
 ```
 
 ## Sources
 
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md)
 - [`../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md`](../../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md)
-- [DR-045](../decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0)
+- [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md)
+- [`../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md`](../../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md)
+- [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
+- [T39](../discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status)
+- historical [DR-045](../decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0)
 - [T38](../discussion_timeline.md#t38-post-kill-review-selects-a-new-model-only-prefix-filter-for-p0)
 - [Q2 capacity audit](../experiments/q2-capacity-lifecycle-audit-20260716.md)
 
