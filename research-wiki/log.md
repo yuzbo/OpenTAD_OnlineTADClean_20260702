@@ -1,6 +1,6 @@
 ---
 type: log
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Append-only timeline of wiki mutations and major research decisions.
 ---
@@ -122,3 +122,16 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-17: Completed the zero-GPU V2 remediation candidate: source-derived population, executed R1, exact R0 subset/exposure, executable B2 and live fairness, exact public R5 package, raw-only sealed R6, and Windows 8.3 handling.
 - 2026-07-17: Added DR-052 and T45. Final protocol `77DAC32A...` and its 22-entry manifest `DDD2DBAF...` pass `40` dedicated and `135` focused tests with six local Torch-import skips; same-reviewer reassessment is required and every collection/model/GPU gate remains blocked.
 - 2026-07-17: Archived round-3 same-reviewer `REVISE` as `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`; added DR-053 and T46. Candidate protocol `493A132B...` and 32-entry manifest `05BF8A89...` bind the full local import closure and pass `46` dedicated plus `148` broader zero-GPU tests with one fail-closed skip; all collection/model/profile/training/GPU gates remain blocked pending the same reviewer.
+
+## 2026-07-20
+
+- Archived the 172-line cross-route Gate A audit as the content-complete LF-normalized `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md`; retained the original attachment SHA-256 `6A05072FA0168E7E17C0DB9DF04B586D0706C991403CCAA507854987EABB8022` separately from the normalized archive hash.
+- Added the independent exact-commit absorption `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`. Local read-only inspection confirms A1-A4, A6-A8, and A10-A12 fail, while A5 and A9 pass locally.
+- Added DR-054 and T47. The active terminal is `REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`; the earlier claim that the round-3 candidate had closed the full local import/fairness/terminal evidence boundary is superseded.
+- Recorded six implementation qualifications without weakening the block: capability separation over underscore privacy; clean process only for formal certificates; attested immutable commit/tree rather than moving branch HEAD; verifiable live-produced serialized bundles; metric-specific CUDA provenance; and append-only/no-overwrite guarantees beyond a hash chain.
+- Updated the wiki index, route gate, B4 idea node, source map, and query pack. No tests, registration, collection, model results, ChronoTransport inspection, profile, training, or GPU work occurred.
+- Archived the 49,740-byte, 1,257-line unresolved-target Pro response byte-identically as `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md`, SHA-256 `272B3650F6656FA160328F0D549C0C117BD788F7037A4B020A6FB50636B2B802`.
+- Added `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md`, DR-055, and T48. The attachment contains an auxiliary audit of rejected commit `48e78e43` plus a strict immutable-target stop-chain; both return `REVISE`, but only the unresolved-target finding belongs to that request as formal evidence.
+- Independently reran the dedicated suite (`46 passed, 1 warning`) and reproduced a caller-created terminal `PASS_B4_ROUTE_SURVIVES` without raw cells or bootstrap execution. This corroborates Gate A while preserving all source, ChronoTransport, model, profile, training, and GPU blocks.
+- Implemented the Gate-A-only closure candidate and recorded DR-056/T49: capability-bound formal evidence, source/import attestation, live fairness and tensor artifacts, full optimizer provenance, ledger-only R6, clean-process terminal sealing, exact B2 assignment/state, and hostile rejection coverage.
+- Verified the candidate locally with `195 passed, 1 skipped, 1 warning`, a focused `15 passed` hostile suite, syntax compilation, `git diff --check`, and `PROTOCOL_V2_VALID_REVIEW_REQUIRED`. Collection remains blocked; the Windows PyTorch `c10.dll` import failure is an environment limitation, not positive or negative model evidence.

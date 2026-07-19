@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.serialization import load_ssh_public_key
 from .evidence_bundle import (
     read_stable_file_bytes,
     read_verified_bundle_bytes,
+    read_verified_bundle_json,
     strict_json_from_bytes,
 )
 from .prefix_route_r0_v2 import collect_r0_census, parse_class_map_bytes
@@ -25,6 +26,7 @@ from .prefix_route_ood_v2 import (
     EXPECTED_SET_SEEDS,
     EXPECTED_SET_SHA256,
     GENERATOR_VERSION,
+    audit_sequence_sets,
 )
 
 
@@ -34,6 +36,8 @@ MANIFEST_SCHEMA = "prefix-route-source-manifest-v2"
 REVIEW_SCHEMA = "prefix-route-signed-review-attestation-v2"
 POPULATION_REQUEST_SCHEMA = "prefix-route-population-request-v2"
 HISTORICAL_INVENTORY_SCHEMA = "prefix-route-historical-inventory-v2"
+SOURCE_ORIGIN_SCHEMA = "prefix-route-source-origin-attestation-v2"
+OFFICIAL_VIDEO_MANIFEST_SCHEMA = "prefix-route-official-video-manifest-v2"
 R0_REQUEST_SCHEMA = "prefix-route-r0-request-v2"
 R0_ENVELOPE_SCHEMA = "prefix-route-r0-evidence-envelope-v2"
 EXPOSURE_LEDGER_SCHEMA = "prefix-route-exposure-ledger-entry-v2"
@@ -87,6 +91,45 @@ _POLICY_SECTIONS = (
 
 class PrefixRouteProtocolV2Error(ValueError):
     """Raised when a V2 authorization or evidence derivation is not unique."""
+
+
+_FORMAL_CONTEXT_TOKEN = object()
+
+
+class _FormalProtocolContext:
+    __slots__ = (
+        "repo_root",
+        "protocol_record",
+        "manifest_record",
+        "review_record",
+        "_token",
+    )
+
+    def __init__(
+        self,
+        *,
+        repo_root,
+        protocol_record,
+        manifest_record,
+        review_record,
+        token,
+    ):
+        self.repo_root = Path(repo_root).resolve()
+        self.protocol_record = protocol_record
+        self.manifest_record = manifest_record
+        self.review_record = review_record
+        self._token = token
+
+
+def _require_formal_context(context):
+    if (
+        type(context) is not _FormalProtocolContext
+        or context._token is not _FORMAL_CONTEXT_TOKEN
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "formal evidence requires canonical clean-process context"
+        )
+    return context
 
 
 def canonical_json_bytes(value):
@@ -434,6 +477,8 @@ def _validate_population_policy(protocol):
             "reporting_subset",
             "authoritative_annotation_sha256",
             "historical_inventory_sha256",
+            "source_origin_attestation_sha256",
+            "official_video_manifest_sha256",
             "registration_commit",
         },
         "source registration",
@@ -450,6 +495,9 @@ def _validate_population_policy(protocol):
             != "OFFICIAL_RELEASE_TO_BE_REGISTERED"
             or registration["authoritative_annotation_sha256"] != "UNREGISTERED"
             or registration["historical_inventory_sha256"] != "UNREGISTERED"
+            or registration["source_origin_attestation_sha256"]
+            != "UNREGISTERED"
+            or registration["official_video_manifest_sha256"] != "UNREGISTERED"
             or registration["registration_commit"] != "UNREGISTERED"
         ):
             raise PrefixRouteProtocolV2Error(
@@ -475,6 +523,32 @@ def _validate_population_policy(protocol):
             registration["historical_inventory_sha256"],
             "registered historical inventory hash",
         )
+        _sha256(
+            registration["source_origin_attestation_sha256"],
+            "registered source-origin attestation hash",
+        )
+        _sha256(
+            registration["official_video_manifest_sha256"],
+            "registered official video manifest hash",
+        )
+        forbidden_revision_tokens = {
+            "fixture",
+            "placeholder",
+            "synthetic",
+            "test",
+            "unknown",
+            "draft",
+            "unregistered",
+        }
+        normalized_revision = re.sub(
+            r"[^a-z0-9]+",
+            " ",
+            registration["release_revision"].lower(),
+        ).split()
+        if forbidden_revision_tokens.intersection(normalized_revision):
+            raise PrefixRouteProtocolV2Error(
+                "registered source release revision is semantically provisional"
+            )
         _git_sha1(
             registration["registration_commit"],
             "source registration commit",
@@ -872,7 +946,8 @@ def _validate_r2_to_r6(protocol):
         "training_target": "instance_aware_first_emission_target",
         "assignment": (
             "locked_propagated_identity_then_quantized_augmented_hungarian_"
-            "newborn_plus_64_unique_dustbins"
+            "newborn_plus_64_unique_dustbins_exact_primary_then_"
+            "rowwise_lexicographic"
         ),
         "decision_coordinate": (
             "decision_bin=(decision_observation_count-1)//8_at_stride_8"
@@ -888,7 +963,7 @@ def _validate_r2_to_r6(protocol):
         "shared_heads_and_ledger": True,
         "route_specific_d1_d2_forbidden": True,
         "implementation_path": (
-            "opentad.utils.prefix_route_b2_contract_v2.temporal_motr_transition"
+            "opentad.utils.prefix_route_b2_contract_v2.B2StreamMachine.advance"
         ),
         "implementation_gate": (
             "source_cited_reconstruction_tests_pass_before_B4_comparison"
@@ -896,7 +971,8 @@ def _validate_r2_to_r6(protocol):
     }:
         raise PrefixRouteProtocolV2Error("B2 canonical attack differs")
     if r2["fairness_validator"] != (
-        "opentad.utils.prefix_route_fairness_v2.derive_fairness_audit"
+        "opentad.utils.prefix_route_fairness_v2."
+        "derive_live_fairness_capability"
     ):
         raise PrefixRouteProtocolV2Error("fairness validator differs")
     fairness = r2["fairness"]
@@ -921,8 +997,8 @@ def _validate_r2_to_r6(protocol):
         "unused_or_dummy_trainable_parameters": "FORBIDDEN",
         "every_trainable_parameter_requires_forward_use_and_smoke_gradient": True,
         "evidence_source": (
-            "LIVE_MODEL_GRADIENT_PROFILER_CUDA_AND_STATE_MEASUREMENT_PLUS_"
-            "HASH_VERIFIED_BUDGET_RECORDS"
+            "LIVE_CLEAN_PROCESS_MODEL_OPTIMIZER_GRADIENT_CUDA_PROFILER_AND_"
+            "ARTIFACT_DERIVED_TENSOR_STATE"
         ),
         "budget_evidence_source": (
             "REGISTERED_BUDGET_PLAN_PLUS_RUN_BOUND_EXECUTION_LEDGERS_"
@@ -938,8 +1014,21 @@ def _validate_r2_to_r6(protocol):
             "prefix-route-fairness-calibration-manifest-v2",
             "prefix-route-fairness-trial-manifest-v2",
             "prefix-route-fairness-seed-manifest-v2",
+            "prefix-route-optimizer-artifact-trace-v2",
         ],
         "serialized_scalar_or_boolean_input_allowed": False,
+        "serialized_archive_status": "UNVERIFIED_SERIALIZED_AUDIT",
+        "profiled_model_binding": (
+            "LIVE_STATE_DICT_SEMANTIC_DIGEST_EQUALS_BOUND_SAFE_NPZ_ARTIFACT"
+        ),
+        "raw_profile_evidence": (
+            "CANONICAL_TRAIN_AND_INFERENCE_PROFILER_EVENTS_LATENCY_SAMPLES_"
+            "AND_CUDA_IDENTITY"
+        ),
+        "r6_checkpoint_crosscheck": (
+            "CORE_ARM_INITIAL_MODEL_ARTIFACT_AND_TENSOR_DIGEST_EQUAL_"
+            "LIVE_PROFILED_MODEL"
+        ),
         "warmup_decisions": 20,
         "timed_decisions": 100,
         "production_measurement_state": (
@@ -1272,7 +1361,7 @@ def _validate_r2_to_r6(protocol):
         "r6",
     )
     if r6["implementation"] != (
-        "opentad.evaluations.prefix_route_r6_v2.evaluate_r6_raw_evidence"
+        "tools.run_prefix_route_r6_v2.clean_isolated_process"
     ):
         raise PrefixRouteProtocolV2Error("R6 implementation differs")
     if r6["metric_sources"] != {
@@ -1289,8 +1378,8 @@ def _validate_r2_to_r6(protocol):
             "opentad.evaluations.prefix_route_r6_v2.derive_per_video_cell"
         ),
         "raw_evidence": (
-            "verified_bundle_reference_with_per_run_model_command_environment_"
-            "ledger_fairness_and_emissions_commitments"
+            "verified_bundle_reference_with_artifact_backed_optimizer_trace_"
+            "and_committed_immutable_emission_ledger"
         ),
         "r0_evidence": (
             "recomputed_from_signed_PASS_registered_population_and_R0_source_bytes"
@@ -1305,7 +1394,9 @@ def _validate_r2_to_r6(protocol):
         "population_and_r0": (
             "recompute_from_verified_bundle_references_never_accept_in_memory_PASS"
         ),
-        "fairness": "validated_live_audit_hash_bound_to_every_run_ledger",
+        "fairness": (
+            "same_clean_process_live_capability_bound_to_every_run_ledger"
+        ),
         "caller_selected_protocol_path": "FORBIDDEN",
     }:
         raise PrefixRouteProtocolV2Error("R6 source chain differs")
@@ -1316,22 +1407,29 @@ def _validate_r2_to_r6(protocol):
         "required_artifacts": [
             "initial_model_artifact",
             "final_model_artifact",
+            "initial_optimizer_artifact",
+            "final_optimizer_artifact",
             "model_config",
             "resolved_command",
             "environment_lock",
-            "execution_trace",
+            "optimizer_artifact_trace",
             "execution_ledger",
             "control_construction_for_control_arms",
-            "fairness_audit",
-            "emissions",
+            "live_fairness_capability",
+            "immutable_emission_ledger",
+            "emission_tail_commitment",
         ],
         "control_construction": (
             "every_control_run_binds_frozen_algorithm_parameters_per_video_"
             "source_and_constructed_transcript_reporting_population_and_"
             "emissions"
         ),
-        "optimizer_status": "COMPLETED_FINITE_NO_SKIPPED_UPDATES",
-        "emissions_commitment": "canonical_per_run_video_emissions_sha256",
+        "optimizer_status": (
+            "ARTIFACT_DERIVED_FINITE_CHAIN_OR_EXPLICIT_ZERO_UPDATE_NO_LEARNING"
+        ),
+        "emissions_commitment": (
+            "append_only_hash_chain_plus_external_tail_commitment"
+        ),
         "budget_crosscheck": (
             "for_B0_B4_optimizer_events_effective_tokens_and_accumulation_"
             "equal_live_fairness_row"
@@ -1410,7 +1508,9 @@ def _validate_r2_to_r6(protocol):
         "family_wise_alpha": 0.05,
         "multiplicity_denominator": "all_registered_contrasts_times_all_eligible_metrics",
         "sealed_parameter_source": "literal_constants_not_mutable_module_state",
-        "terminal_input_validation": "exact_complete_inference_schema",
+        "terminal_input_validation": (
+            "sealed_raw_cells_dataset_metrics_and_bootstrap_capability"
+        ),
     }:
         raise PrefixRouteProtocolV2Error("R6 inference contract differs")
     if r6["b4_survival"] != {
@@ -1541,7 +1641,9 @@ def validate_protocol(protocol):
         "opentad/utils/__init__.py",
         "opentad/utils/immutable_event_ledger.py",
         "opentad/utils/online_protocol.py",
+        "opentad/utils/prefix_route_artifacts_v2.py",
         "opentad/utils/prefix_route_b2_contract_v2.py",
+        "opentad/utils/prefix_route_formal_v2.py",
         "opentad/utils/prefix_route_protocol_v2.py",
         "opentad/utils/prefix_route_r0_v2.py",
         "opentad/utils/prefix_route_r1_v2.py",
@@ -1555,8 +1657,15 @@ def validate_protocol(protocol):
         "opentad/evaluations/online_map.py",
         "opentad/evaluations/online_budgeted_map.py",
         "PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md",
+        "PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md",
+        "PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md",
         "opentad/evaluations/recall.py",
+        "opentad/models/__init__.py",
+        "opentad/models/backbones/__init__.py",
+        "opentad/models/backbones/online_siglip_adapter.py",
         "tools/cache_ontad_features.py",
+        "tools/run_prefix_route_r6_v2.py",
+        "tests/test_prefix_route_gate_a_closure.py",
         "tests/test_prefix_route_protocol_v2.py",
     }
     if not mandatory_sources.issubset(required_paths):
@@ -2049,15 +2158,22 @@ def _require_signed_pass_review_record(review_record, protocol_record):
     return attestation
 
 
-def validate_population_bundle(
+def _validate_population_bundle_objects(
     request,
     *,
     bundle_root,
     protocol_record,
     review_record,
+    formal_context,
 ):
     """Derive 211/213 membership from registered annotation and inventory bytes."""
 
+    context = _require_formal_context(formal_context)
+    if (
+        context.protocol_record is not protocol_record
+        or context.review_record is not review_record
+    ):
+        raise PrefixRouteProtocolV2Error("formal population context differs")
     protocol = _require_loaded_protocol_record(protocol_record)
     registration = protocol["population"]["source_registration"]
     if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
@@ -2072,6 +2188,8 @@ def validate_population_bundle(
             "protocol_id",
             "protocol_sha256",
             "review_attestation_sha256",
+            "source_origin_attestation",
+            "official_video_manifest",
             "authoritative_annotation",
             "historical_inventory",
             "historical_artifacts",
@@ -2090,6 +2208,86 @@ def validate_population_bundle(
         raise PrefixRouteProtocolV2Error("population review binding differs")
     population = protocol["population"]
     reporting = population["reporting"]
+    origin_bytes, origin = _read_canonical_bundle_json(
+        request["source_origin_attestation"],
+        bundle_root,
+        "registered source-origin attestation",
+    )
+    if hashlib.sha256(origin_bytes).hexdigest() != (
+        registration["source_origin_attestation_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "source-origin attestation differs from registered bytes"
+        )
+    _exact(
+        origin,
+        {
+            "schema_version",
+            "release_id",
+            "release_revision",
+            "reporting_subset",
+            "authoritative_annotation_sha256",
+            "historical_inventory_sha256",
+            "official_video_manifest_sha256",
+            "source_uri",
+            "issued_at",
+        },
+        "source-origin attestation",
+    )
+    if (
+        origin["schema_version"] != SOURCE_ORIGIN_SCHEMA
+        or origin["release_id"] != registration["release_id"]
+        or origin["release_revision"] != registration["release_revision"]
+        or origin["reporting_subset"] != registration["reporting_subset"]
+        or origin["authoritative_annotation_sha256"]
+        != registration["authoritative_annotation_sha256"]
+        or origin["historical_inventory_sha256"]
+        != registration["historical_inventory_sha256"]
+        or origin["official_video_manifest_sha256"]
+        != registration["official_video_manifest_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error("source-origin attestation identity differs")
+    if (
+        not isinstance(origin["source_uri"], str)
+        or not origin["source_uri"].startswith(("https://", "doi:"))
+    ):
+        raise PrefixRouteProtocolV2Error("source-origin URI differs")
+    _timestamp(origin["issued_at"], "source-origin issued_at")
+    official_manifest_bytes, official_manifest = _read_canonical_bundle_json(
+        request["official_video_manifest"],
+        bundle_root,
+        "registered official video manifest",
+    )
+    if hashlib.sha256(official_manifest_bytes).hexdigest() != (
+        registration["official_video_manifest_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "official video manifest differs from registered bytes"
+        )
+    _exact(
+        official_manifest,
+        {
+            "schema_version",
+            "release_id",
+            "release_revision",
+            "reporting_subset",
+            "authoritative_annotation_sha256",
+            "videos",
+            "allowed_content_aliases",
+        },
+        "official video manifest",
+    )
+    if (
+        official_manifest["schema_version"] != OFFICIAL_VIDEO_MANIFEST_SCHEMA
+        or official_manifest["release_id"] != registration["release_id"]
+        or official_manifest["release_revision"]
+        != registration["release_revision"]
+        or official_manifest["reporting_subset"]
+        != registration["reporting_subset"]
+        or official_manifest["authoritative_annotation_sha256"]
+        != registration["authoritative_annotation_sha256"]
+    ):
+        raise PrefixRouteProtocolV2Error("official video manifest identity differs")
     annotation_path, annotation_bytes = read_verified_bundle_bytes(
         request["authoritative_annotation"],
         bundle_root,
@@ -2131,6 +2329,48 @@ def validate_population_bundle(
         raise PrefixRouteProtocolV2Error(
             "registered annotation reporting population count differs"
         )
+    official_videos = _mapping(
+        official_manifest["videos"],
+        "official video manifest videos",
+    )
+    if sorted(official_videos) != canonical:
+        raise PrefixRouteProtocolV2Error(
+            "official video manifest population differs from annotation"
+        )
+    for video_id, row in official_videos.items():
+        _exact(row, {"sha256", "byte_count"}, "official video manifest row")
+        _sha256(row["sha256"], f"official video hash {video_id}")
+        if (
+            isinstance(row["byte_count"], bool)
+            or not isinstance(row["byte_count"], int)
+            or row["byte_count"] <= 0
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "official video byte count must be positive"
+            )
+    allowed_alias_rows = official_manifest["allowed_content_aliases"]
+    if not isinstance(allowed_alias_rows, list):
+        raise PrefixRouteProtocolV2Error(
+            "official content aliases must be an array"
+        )
+    allowed_content_aliases = set()
+    for row in allowed_alias_rows:
+        if (
+            not isinstance(row, list)
+            or len(row) != 2
+            or row != sorted(row)
+            or row[0] == row[1]
+            or any(video_id not in official_videos for video_id in row)
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "official content alias entry differs"
+            )
+        pair = tuple(row)
+        if pair in allowed_content_aliases:
+            raise PrefixRouteProtocolV2Error(
+                "official content alias is duplicated"
+            )
+        allowed_content_aliases.add(pair)
     inventory_bytes, inventory = _read_canonical_bundle_json(
         request["historical_inventory"],
         bundle_root,
@@ -2172,6 +2412,7 @@ def validate_population_bundle(
         request["historical_artifacts"],
         "historical artifacts",
     )
+    content_owners = {}
     for row in entries:
         _exact(
             row,
@@ -2226,6 +2467,23 @@ def validate_population_bundle(
             raise PrefixRouteProtocolV2Error(
                 "historical canonical ID is outside authoritative reporting subset"
             )
+        actual_sha256 = hashlib.sha256(payload).hexdigest()
+        official_row = official_videos[canonical_id]
+        if (
+            actual_sha256 != official_row["sha256"]
+            or len(payload) != official_row["byte_count"]
+        ):
+            raise PrefixRouteProtocolV2Error(
+                "historical artifact differs from official source manifest"
+            )
+        previous_owner = content_owners.get(actual_sha256)
+        if previous_owner is not None:
+            pair = tuple(sorted((previous_owner, canonical_id)))
+            if pair not in allowed_content_aliases:
+                raise PrefixRouteProtocolV2Error(
+                    "duplicate video bytes lack a frozen legitimate alias"
+                )
+        content_owners[actual_sha256] = canonical_id
         source_ids.append(source_id)
         historical.append(canonical_id)
         if source_id != canonical_id:
@@ -2280,6 +2538,12 @@ def validate_population_bundle(
         ).hexdigest(),
         "historical_inventory_sha256": hashlib.sha256(
             inventory_bytes
+        ).hexdigest(),
+        "source_origin_attestation_sha256": hashlib.sha256(
+            origin_bytes
+        ).hexdigest(),
+        "official_video_manifest_sha256": hashlib.sha256(
+            official_manifest_bytes
         ).hexdigest(),
         "historical_only": historical_only,
         "canonical_only": canonical_only,
@@ -2376,6 +2640,8 @@ def _require_derived_population_record(
         "authoritative_annotation_path",
         "authoritative_annotation_sha256",
         "historical_inventory_sha256",
+        "source_origin_attestation_sha256",
+        "official_video_manifest_sha256",
         "historical_only",
         "canonical_only",
         "canonical_ids",
@@ -2409,6 +2675,10 @@ def _require_derived_population_record(
         != registration["authoritative_annotation_sha256"]
         or population_record["historical_inventory_sha256"]
         != registration["historical_inventory_sha256"]
+        or population_record["source_origin_attestation_sha256"]
+        != registration["source_origin_attestation_sha256"]
+        or population_record["official_video_manifest_sha256"]
+        != registration["official_video_manifest_sha256"]
     ):
         raise PrefixRouteProtocolV2Error(
             "derived population identity differs from frozen sources"
@@ -2495,8 +2765,15 @@ def _derive_r0_envelope(
     population_record,
     protocol_record,
     review_record,
+    formal_context,
     frozen_ledger_prefix=None,
 ):
+    context = _require_formal_context(formal_context)
+    if (
+        context.protocol_record is not protocol_record
+        or context.review_record is not review_record
+    ):
+        raise PrefixRouteProtocolV2Error("formal R0 context differs")
     protocol = _require_loaded_protocol_record(protocol_record)
     registration = protocol["population"]["source_registration"]
     if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
@@ -2558,17 +2835,24 @@ def _derive_r0_envelope(
     return envelope
 
 
-def validate_r0_bundle(
+def _validate_r0_bundle_objects(
     request,
     *,
     bundle_root,
     protocol_record,
     review_record,
     population_record,
+    formal_context,
     frozen_ledger_prefix=None,
 ):
     """Recompute the entire R0 envelope and compare canonical bytes exactly."""
 
+    context = _require_formal_context(formal_context)
+    if (
+        context.protocol_record is not protocol_record
+        or context.review_record is not review_record
+    ):
+        raise PrefixRouteProtocolV2Error("formal R0 context differs")
     protocol = _require_loaded_protocol_record(protocol_record)
     if (
         protocol["population"]["source_registration"]["state"]
@@ -2632,6 +2916,7 @@ def validate_r0_bundle(
         population_record=population_record,
         protocol_record=protocol_record,
         review_record=review_record,
+        formal_context=formal_context,
         frozen_ledger_prefix=frozen_ledger_prefix,
     )
     derived_bytes = canonical_json_bytes(derived)
@@ -2640,6 +2925,229 @@ def validate_r0_bundle(
             "R0 author report differs from source-derived envelope"
         )
     return derived
+
+
+def _load_formal_protocol_context(
+    *,
+    repo_root,
+    review_attestation_path,
+    review_signature_path,
+    require_head=True,
+):
+    repo_root = Path(repo_root).resolve()
+    protocol_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2.json"
+    )
+    manifest_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2_manifest.json"
+    )
+    protocol_record = load_protocol(protocol_path)
+    manifest_record = load_source_manifest(
+        manifest_path,
+        protocol_record=protocol_record,
+        repo_root=repo_root,
+        check_worktree=True,
+    )
+    review_record = load_signed_review(
+        attestation_path=review_attestation_path,
+        signature_path=review_signature_path,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        repo_root=repo_root,
+        require_head=require_head,
+    )
+    if review_record["attestation"]["verdict"] != PROTOCOL_PASS:
+        raise PrefixRouteProtocolV2Error(
+            "formal evidence requires the signed independent PASS"
+        )
+    return _FormalProtocolContext(
+        repo_root=repo_root,
+        protocol_record=protocol_record,
+        manifest_record=manifest_record,
+        review_record=review_record,
+        token=_FORMAL_CONTEXT_TOKEN,
+    )
+
+
+def _read_formal_request(reference, *, bundle_root, label):
+    try:
+        _, payload, value = read_verified_bundle_json(
+            reference,
+            bundle_root,
+            label,
+            require_object=True,
+        )
+    except Exception as exc:
+        raise PrefixRouteProtocolV2Error(str(exc)) from exc
+    if payload != canonical_json_bytes(value):
+        raise PrefixRouteProtocolV2Error(f"{label} is not canonical JSON")
+    return value, payload
+
+
+def validate_population_bundle(
+    request_reference,
+    *,
+    bundle_root,
+    repo_root,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Formal population entry; caller-owned validated dictionaries are forbidden."""
+
+    repo_root = Path(repo_root).resolve()
+    protocol_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2.json"
+    )
+    if (
+        load_protocol(protocol_path)["protocol"]["population"][
+            "source_registration"
+        ]["state"]
+        != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
+        )
+    context = _load_formal_protocol_context(
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
+        require_head=True,
+    )
+    request, _ = _read_formal_request(
+        request_reference,
+        bundle_root=bundle_root,
+        label="formal population request",
+    )
+    return _validate_population_bundle_objects(
+        request,
+        bundle_root=bundle_root,
+        protocol_record=context.protocol_record,
+        review_record=context.review_record,
+        formal_context=context,
+    )
+
+
+def validate_r0_bundle(
+    request_reference,
+    *,
+    population_request_reference,
+    bundle_root,
+    repo_root,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Formal R0 entry; reload and bind every protocol and source object."""
+
+    repo_root = Path(repo_root).resolve()
+    protocol_path = (
+        repo_root
+        / "configs"
+        / "causaltad"
+        / "protocols"
+        / "prefix_route_identifiability_v2.json"
+    )
+    if (
+        load_protocol(protocol_path)["protocol"]["population"][
+            "source_registration"
+        ]["state"]
+        != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    ):
+        raise PrefixRouteProtocolV2Error(
+            "source registration is not frozen; population and R0/R1 remain blocked"
+        )
+    context = _load_formal_protocol_context(
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
+        require_head=True,
+    )
+    population_request, _ = _read_formal_request(
+        population_request_reference,
+        bundle_root=bundle_root,
+        label="formal population request",
+    )
+    population_record = _validate_population_bundle_objects(
+        population_request,
+        bundle_root=bundle_root,
+        protocol_record=context.protocol_record,
+        review_record=context.review_record,
+        formal_context=context,
+    )
+    request, _ = _read_formal_request(
+        request_reference,
+        bundle_root=bundle_root,
+        label="formal R0 request",
+    )
+    ledger_relative = context.protocol_record["protocol"]["population"][
+        "exposure_policy"
+    ]["ledger_path"]
+    frozen_ledger_prefix = _git(
+        context.repo_root,
+        "show",
+        (
+            f"{context.review_record['attestation']['protocol_commit']}:"
+            f"{ledger_relative}"
+        ),
+    )
+    return _validate_r0_bundle_objects(
+        request,
+        bundle_root=bundle_root,
+        protocol_record=context.protocol_record,
+        review_record=context.review_record,
+        population_record=population_record,
+        formal_context=context,
+        frozen_ledger_prefix=frozen_ledger_prefix,
+    )
+
+
+def certify_r5_bundle(
+    sequence_set_reference,
+    *,
+    bundle_root,
+    repo_root,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Issue R5 status only around regenerated rows in a formal context."""
+
+    context = _load_formal_protocol_context(
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
+        require_head=True,
+    )
+    named_sequences, source_bytes = _read_formal_request(
+        sequence_set_reference,
+        bundle_root=bundle_root,
+        label="formal R5 sequence sets",
+    )
+    diagnostic = audit_sequence_sets(named_sequences)
+    envelope = {
+        "schema_version": "prefix-route-r5-formal-envelope-v2",
+        "protocol_id": context.protocol_record["protocol"]["protocol_id"],
+        "protocol_sha256": context.protocol_record["sha256"],
+        "source_manifest_sha256": context.manifest_record["sha256"],
+        "review_attestation_sha256": context.review_record[
+            "attestation_sha256"
+        ],
+        "sequence_sets_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "diagnostic": diagnostic,
+        "status": "PASS_R5_FROZEN_SETS_CERTIFIED",
+    }
+    envelope["derived_sha256"] = canonical_sha256(envelope)
+    return envelope
 
 
 __all__ = [
@@ -2659,6 +3167,7 @@ __all__ = [
     "REVIEW_SCHEMA",
     "PrefixRouteProtocolV2Error",
     "authorize_collection",
+    "certify_r5_bundle",
     "canonical_json_bytes",
     "canonical_sha256",
     "load_protocol",

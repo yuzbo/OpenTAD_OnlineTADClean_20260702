@@ -29,6 +29,17 @@ The current remediation candidate remains:
 
 `PROTOCOL_REVIEW_PENDING`
 
+An exact-commit Gate-A audit of commit
+`48e78e43a77822ee0e51cace9ad758ca935c1450` subsequently returned:
+
+`REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`
+
+That review and the repository-side absorption are archived as
+`PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md` and
+`PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`.
+The present changes are a new, unreviewed Gate-A closure candidate. Local tests
+cannot replace a fixed-commit independent review.
+
 It does not authorize population evidence, R0, R1, model implementation,
 profiling, or training. Even a future protocol PASS can initially authorize
 only read-only source-identity registration because the authoritative THUMOS14
@@ -55,30 +66,40 @@ reviewer retains the private key outside the repository.
 The key changes are:
 
 1. Population membership is derived only from registered authoritative
-   annotation bytes, a registered historical file inventory, and every actual
-   historical artifact. Caller-supplied 211/213 lists and reason prose no
-   longer exist.
+   annotation bytes, an exact reviewed source-origin attestation, an official
+   per-video content manifest, a registered historical file inventory, and
+   every actual historical artifact. Caller-supplied 211/213 lists and reason
+   prose no longer exist.
 2. R0 is fixed to the `validation` subset and the exact
    `DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK` disclosure. Its former
-   heuristic power label is removed; R0 prevalence is descriptive only.
+   heuristic power label is removed; R0 prevalence is descriptive only. The
+   low-level collector emits diagnostics only. Only the canonical
+   protocol/manifest/review-bound wrapper can issue an R0 status.
 3. R1 must recreate the registered local-only SigLIP snapshot, decode every
    video, verify the canonical command and active software versions, rerun
    every cache row, and rerun the dynamic transcript. The current unregistered
    binding blocks R1 before reading author-crafted evidence.
-4. B2 is an executable temporal-MOTR state machine, not a prose baseline.
-   Fairness is measured from live parameters, gradients, Torch profiler output,
-   CUDA memory, latency events, and actual state tensors.
+4. B2 is an executable temporal-MOTR state machine, not a prose baseline. Its
+   indivisible per-stream state owns the observation clock, track serial, and
+   emission sequence, and its integer Hungarian objective has an exact
+   row-wise lexicographic tie-break. Fairness is measured from live parameters,
+   gradients, canonical Torch-profiler events, CUDA identity and memory,
+   latency samples, and artifact-matched state tensors.
 5. R5 is one public 3,800-sequence package with exact counts, seeds, compound
    table, valid cells, sequence-set commitments, and exact per-row regeneration
-   from factor specification, seed, index, and set name.
+   from factor specification, seed, index, and set name. Its low-level auditor
+   is diagnostic; only the formal wrapper can issue an R5 certificate.
 6. R6 accepts only hash-verified bundle references under the canonical
-   repository protocol. It rebuilds population and R0 from source bytes,
-   requires the signed independent PASS and live fairness audit, binds every
-   arm/seed run to code, initial/final model artifacts, config, command,
-   environment, optimizer ledger, and emissions, runs fixed literal
-   10,000-resample inference, and computes all PASS/KILL states internally.
-   Caller-selected protocols, in-memory PASS objects, metrics, confidence
-   intervals, alpha, seeds, and resample counts are not accepted.
+   repository protocol. Every output must come from a verified append-only
+   event ledger plus an external tail commitment. Model and optimizer state is
+   derived from safe numeric NPZ tensors, and every optimizer event binds
+   before/after state artifacts, inputs, RNG, AMP state, and a hash-chain tail.
+7. A serialized fairness record is always an
+   `UNVERIFIED_SERIALIZED_AUDIT`. Formal R6 requires a same-process live
+   fairness capability and a fresh-process capability bound to executable,
+   argv, repository root, exact commit/tree, environment, and loaded module
+   origins. Bootstrap and terminal decisions additionally require internal
+   capabilities derived from verified raw cells and immutable ledger rows.
 
 These are protocol implementations, not positive scientific evidence. R0, R1,
 B0-B4, D1, D2, and route effectiveness remain unknown.
@@ -127,19 +148,24 @@ The source identity is currently:
 A reviewed registration commit must bind:
 
 - the authoritative THUMOS14 temporal-annotation bytes;
+- an exact source-origin attestation with release, subset, source URI, and
+  source-object commitments;
+- an official 213-video manifest with per-video SHA-256 and byte count;
 - release identity and revision;
 - the `validation` reporting subset;
 - a canonical 211-entry historical inventory;
 - all 211 actual historical video artifacts and hashes;
 - explicit source-video to canonical-video aliases.
 
-A registered state rejects the placeholder release revision. The R1 annotation
-hash must equal the reporting-population annotation hash, and population/R0
-derivation requires a path-backed protocol record plus a cryptographically
-verified PASS from the fixed reviewer. The registered source commit must equal
-the signed review commit's direct parent. Every historical artifact must be an
-`.mp4` that OpenCV can open and decode to a nonempty first frame; its bytes are
-re-read after decoding to reject mutation during validation.
+A registered state rejects sentinel and semantic placeholder revisions. The R1
+annotation hash must equal the reporting-population annotation hash. Public
+population and R0 APIs accept only bundle references, then reload the canonical
+protocol, manifest, review, HEAD, tree, annotation, origin, official manifest,
+inventory, and artifacts. The registered source commit must equal the signed
+review commit's direct parent. Every historical artifact must be an `.mp4`
+that OpenCV can open and decode to a nonempty first frame; its bytes are re-read
+after decoding to reject mutation during validation. Duplicate content is
+forbidden unless the exact canonical-ID pair is frozen as a legitimate alias.
 
 The canonical 213 set is derived from annotation rows whose subset equals
 `validation`. The historical set is derived from the inventory and actual
@@ -149,7 +175,9 @@ inventory. There is no API for author-supplied membership lists or explanations.
 
 ## R0 Gate
 
-The R0 collector directly parses annotation and class-map bytes.
+The R0 collector directly parses annotation and class-map bytes but returns
+only `DIAGNOSTIC_ONLY_REQUIRES_FORMAL_ENVELOPE`. It cannot emit PASS or a
+scientific certificate.
 
 Its fixed boundary rules include:
 
@@ -226,9 +254,16 @@ slots and executes all 64 newborn queries at every decision, for at most 128
 decoder queries. Propagated identities are locked before quantized Hungarian
 matching of newborn queries against targets plus 64 unique optional dustbin
 columns. Dustbins participate in optimization rather than being applied after
-a forced target assignment. Completed but un-emitted instances remain in the
-instance-aware risk set and keep a first-emission target. Every transition also
-requires `decision_bin=(decision_observation_count-1)//8`.
+a forced target assignment. Primary costs are quantized to integers; among all
+primary-optimal assignments, one arbitrary-precision row-wise lexicographic
+objective selects a unique result without floating perturbations. Completed
+but un-emitted instances remain in the instance-aware risk set and keep a
+first-emission target.
+
+`B2StreamMachine` owns each stream's decision index, observation count, tracks,
+track serial, emission sequence, state hash, and transcript. It accepts only
+the next stride-8 observation count, including one final partial stride, and
+rejects repeat, skip, reorder, reset, or caller-supplied serial/sequence state.
 
 B2 can create persistent newborn tracks only from slots that were free before
 the current decision. A slot released by completion or drop becomes reusable
@@ -253,13 +288,17 @@ All B0-B4 arms must match B2 on:
 - calibration population;
 - seed count.
 
-Serialized rows that merely assert these values are rejected. The production
+Serialized rows that merely assert these values can only be archived as
+`UNVERIFIED_SERIALIZED_AUDIT`; they can never authorize R6. The production
 fairness function accepts live runtime adapters only. It counts actual
 trainable parameters, runs backward, requires finite nonzero smoke gradients,
 requires the optimizer parameter set to equal the model trainable parameter
 set, replays every microbatch in one trace-bound optimizer event, measures
-FLOPs with Torch profiler, reads CUDA peak allocation, measures 20 warmup plus
-100 timed decisions, and recursively counts live causal-state tensor bytes.
+FLOPs from canonical profiler-event rows, reads CUDA identity and peak
+allocation, retains all 100 post-warmup latency samples, and recursively counts
+live causal-state tensor bytes. The live model `state_dict` is converted to the
+same semantic tensor digest as its bound safe NPZ artifact; a byte-valid but
+state-mismatched checkpoint is rejected.
 Optimizer events, effective tokens, accumulation, calibration videos, trials,
 and seeds are read from four canonical hash-verified budget-plan records;
 these records cannot independently produce fairness evidence. Only the live
@@ -270,10 +309,11 @@ emissions. Every trace event carries input-batch, model-before,
 model-after, and optimizer-after commitments; adjacent model states must form
 one chain. The live audit reproduces the first event, while R6 checks the full
 trace count, token sum, accumulation, first/last model states, and trace hash
-from its verified source reference. Formal B2/B3/B4 run budgets must equal
-their corresponding live fairness rows; ablation and diagnostic-control runs
-retain independent bound ledgers. Production measurement remains blocked until
-a separate model-P0 contract is authorized.
+from its verified source reference. Formal B2/B3/B4 run budgets and initial
+model artifact/tensor digests must equal their corresponding live fairness
+rows; ablation and diagnostic-control runs retain independent bound ledgers.
+Production measurement remains blocked until a separate model-P0 contract is
+authorized.
 
 ## Controls and OOD
 
@@ -299,13 +339,17 @@ full package contains:
 All 3,800 scientific-content hashes must be pairwise disjoint. Every shifted
 factor must change scientific content relative to an IID counterfactual, every
 cell count differs by at most one, and each complete set must match its frozen
-sequence-set SHA-256. The auditor regenerates every row from its exact
+sequence-set SHA-256. The low-level auditor regenerates every row from its exact
 `factor_spec`, seed, sequence index, and set name and requires canonical-byte
 equality. Each row also carries a separate canonical full-row SHA-256 that
 commits the set metadata, factor specification, seed, index, scientific hash,
 and generated payload. Payloads therefore cannot be exchanged while retaining
 their factor labels, even though the scientific-content hash intentionally
 excludes set metadata for cross-set disjointness.
+
+The low-level output has no PASS field. `certify_r5_bundle` can issue the
+formal status only after reloading the signed protocol, manifest, review,
+HEAD, and tree.
 
 Because the grammar, seeds, and compound table are public, R5 is explicitly a
 design-exposed protocol stress test, not hidden confirmatory OOD evidence. A
@@ -314,24 +358,42 @@ before any model artifact exists.
 
 ## R6 Decision
 
-R6 has one public entry point:
+The historical public Python entry is:
 
 `opentad.evaluations.prefix_route_r6_v2.evaluate_r6_raw_evidence`
 
-It accepts verified references inside one contained evidence bundle for all 15
-model/control arms and the fixed seeds 705, 706, and 707. The public entry
-always loads the repository's canonical protocol and manifest; a caller cannot
-provide a temporary protocol. It verifies the fixed reviewer's Ed25519 PASS,
-rebuilds population and R0 from their source requests, validates the complete
-213-video detail and a live fairness audit, and checks each run's code
-commit/tree, initial and final model artifacts, config, resolved command,
-environment lock, execution ledger, and canonical emissions commitment.
+It is retained only to reject serialized fairness evidence and cannot produce a
+formal result. The sole certificate launcher is:
+
+`tools/run_prefix_route_r6_v2.py`
+
+The launcher starts a fresh child with a one-use nonce. The child reloads the
+canonical protocol, manifest, signed review, and exact commit/tree, then
+verifies every loaded repository module against the reviewed import closure,
+including existing parent-package `__init__.py` files. Parent-process
+monkeypatches are not inherited. Its private live-evaluation entry additionally
+requires both a live fairness capability and the child process capability.
+
+After a future model-P0 authorization, that path will consume verified
+references inside one contained evidence bundle for all 15 model/control arms
+and fixed seeds 705, 706, and 707. It rebuilds population and R0, validates the
+complete 213-video detail, and checks each run's exact commit/tree, safe
+initial/final model and optimizer tensor artifacts, typed config/command/
+environment artifacts, optimizer trace, execution ledger, control
+construction, live fairness binding, immutable emission ledger, and external
+tail commitment.
+
 Every control run additionally carries a canonical construction record. R6
 rechecks its exact frozen algorithm and parameters, source-artifact bytes,
 reporting-video population, a complete ordered per-video transcript of source
 and constructed-input hashes, and the output-emissions commitment, then binds
 that record's SHA-256 into the run ledger. Missing videos and no-op
 transformations fail. A control name alone is never accepted.
+
+Only a verified ledger can mint the internal emission-row capability consumed
+by lifecycle metrics. Plain lists, rows with a caller-added `immutable=True`,
+rewritten chains, reordered chains, and run/stream provenance substitutions are
+rejected. `OnlineAPBudgeted` is always invoked with `require_ledger=True`.
 
 Only after this source chain closes does R6 derive GT and stress-family IDs,
 invoke `compute_full_petal_metrics` and `OnlineAPBudgeted`, and perform crossed
@@ -344,9 +406,12 @@ paired resampling:
 - multiplicity includes every registered contrast and eligible metric.
 
 The production bootstrap call uses literal `10000`, `2026071707`, and `0.05`
-values rather than mutable module globals. The terminal function first
-validates the exact complete inference schema, all registered contrasts and
-metrics, fixed parameters, margins, estimates, and interval fields.
+values rather than mutable module globals. Caller cells cannot invoke the
+bootstrap sealer, and a hand-built complete inference dictionary cannot invoke
+the terminal. The terminal accepts only an internal object binding raw
+evidence, per-video cells, dataset metrics, and bootstrap-output commitments,
+then validates the exact complete inference schema, all registered contrasts
+and metrics, fixed parameters, margins, estimates, and interval fields.
 
 B4 survives only when:
 
@@ -374,6 +439,19 @@ Validate the unsigned protocol package:
 ```powershell
 python tools/validate_prefix_route_protocol_v2.py validate-protocol
 ```
+
+The formal R6 launcher has a zero-GPU preflight command, but it still requires
+the fixed signed review and registered source chain:
+
+```powershell
+python tools/run_prefix_route_r6_v2.py preflight `
+  --review-attestation <review.json> `
+  --review-signature <review.sig>
+```
+
+Its `evaluate` command intentionally returns
+`MODEL_P0_RUNTIME_FACTORY_NOT_AUTHORIZED` until a later fixed protocol review
+explicitly authorizes model construction and production CUDA measurement.
 
 Without a signed independent PASS, authorization must exit with code 2:
 

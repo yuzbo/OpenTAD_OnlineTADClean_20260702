@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Compressed memory for ideation and implementation planning.
 ---
@@ -31,16 +31,22 @@ VideoQA, zero-shot TAL, mutable final outputs, or extra-sensor verification.
 
 ## Current Route Decision
 
-Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+Protocol V2 Gate A verdict at exact commit `48e78e43`:
+`REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`.
 
 DR-045 was superseded before implementation. The R-A historical P0 is
 withdrawn; R-A survives only as B4 in a route-level comparison.
 
-DR-053 records round-3 false PASS paths in R0, B2, fairness, R5, and R6. The
-new zero-GPU candidate closes all six reproduced probes locally and awaits the
-same reviewer's fixed-commit decision. Local tests are not a scientific PASS.
-Source registration, R0/R1, model outcomes/code, profile, training, and GPU
-work remain blocked.
+DR-054 supersedes the claimed round-3 closure. Exact-commit review accepts
+only A5 augmented dustbins and A9 R5 regeneration; formal entry, fairness,
+terminal, checkpoint/emission provenance, import closure, B2 tie-breaking,
+and stream-clock ownership remain open. DR-055 archives a later
+`TARGET_COMMIT` placeholder response as corroboration, not a fixed-commit
+certificate. DR-056 records a local Gate-A closure candidate with
+capability-bound evidence, exact B2 state/assignment, and hostile tests.
+Its `195 passed, 1 skipped` zero-GPU result is not a scientific PASS.
+Registration, R0/R1, models, ChronoTransport, profile, training, and GPU
+remain blocked pending fixed-SHA review.
 
 ## Established vs Unknown
 
@@ -57,9 +63,10 @@ Established:
   videos/instances, overlap in 23/32 videos, same-class overlap in 2/3 videos,
   and maximum concurrency 2;
 - cache code appears to sample the latest stride frame and encode it alone;
-- three V2 reviews returned `REVISE`; the latest candidate adds signed
-  canonical source chains, augmented B2 dustbins, run-bound fairness, R5
-  full-row commitments, sealed R6, and per-control construction transcripts.
+- the latest exact-commit Gate A review confirms augmented B2 dustbins and R5
+  full-row regeneration but rejects the claimed closure of formal entry,
+  fairness, terminal, emission provenance, import closure, exact tie-breaking,
+  and stream-clock ownership.
 
 Unknown or `NOT_ESTABLISHED`:
 
@@ -104,24 +111,21 @@ Temporal-MOTR equivalence is a predeclared R-A route `KILL`.
 
 Only two B4-specific deltas remain plausible: D1 atomic
 release-before-same-bin-reseed and D2 continuous carrier mass with ephemeral,
-loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
+loss-only, noncanonical unbalanced transport. Unproven.
 
 ## Route Gates
 
-1. **P protocol PASS:** obtain a fixed-commit decision from the same reviewer.
-   Current unregistered state permits only source-identity registration.
-2. **R0 annotation census:** reconcile 211/213; freeze split/annotation hashes;
-   repetition, overlap, same-bin, duration, concurrency, and zero-action
-   statistics. Model-outcome-blind, not annotation-unseen. Signed gap is
-   `next_start - current_end`.
-3. **R1 cache certificate:** bind encoder revision, processor, weights, raw
-   video, extraction commit/environment, frame support, token/decision map,
-   and artifact hashes. Static proof, perturbation audit, and historical-cache
-   linkage are separate; CPU/GPU byte identity is not assumed.
+1. **P protocol PASS:** repair Gate A only, freeze a new immutable commit, and
+   obtain a new zero-trust exact-commit closure decision. Current state permits
+   neither source-identity registration nor ChronoTransport work.
+2. **R0 census:** reconcile 211/213 and freeze annotation identity plus
+   lifecycle statistics. It is model-outcome-blind, not annotation-unseen.
+3. **R1 cache certificate:** bind raw video, encoder/weights/environment,
+   frame support, token map, and cache artifacts; separate static,
+   perturbation, and historical-linkage evidence.
 4. **R2 B0-B4 fairness:** exact arm semantics and capacity/resource budgets.
-5. **R3 controls:** count-only, timing-only, time shuffle, valid semantic
-   destruction, ledger-only, history-off, plus threshold sensitivity. A
-   globally consistent class renaming is not destructive.
+5. **R3 controls:** count/timing-only, time shuffle, semantic destruction,
+   ledger/history-off, and threshold sensitivity.
 6. **R4 deletions:** assignment, occupancy, consistency, atomic
    release/reseed, and latch variants; conditional start/direct-complete.
 7. **R5 structural OOD:** lifecycle geometry, semantic mapping,
@@ -132,25 +136,19 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Failed or Blocked Directions
 
-- PIVOT leaves On-TAL; CESR is crowded infrastructure.
-- Full PETAL is reconstructible from causal backbones plus TrackFormer/MOTR.
-- PCEH's current endpoint/emission contract is invalid; component only.
-- CRS-EPS dynamic replay and R1/CSFSB are terminal under frozen protocols.
-- OZ-TAL occupies zero-shot/open-vocabulary On-TAL.
-- Distillation, cache, PEFT, pretraining, and raw frames are ingredients.
-- Historical R-A P0 is withdrawn because route and protocol identifiability
-  were missing.
+- PIVOT leaves On-TAL; CESR is crowded; OZ-TAL occupies zero-shot On-TAL.
+- Full PETAL is reconstructible from causal backbones plus TrackFormer/MOTR;
+  PCEH remains an endpoint/emission component.
+- CRS-EPS and R1/CSFSB are terminal; historical R-A P0 is withdrawn.
+- Distillation, cache, PEFT, pretraining, and raw frames are ingredients only.
 
 ## Closest Prior Work
 
-- **CAG-QIL/SimOn:** task protocol and simple causal prediction.
-- **OAT/MATR/HAT:** anchors, suppression, and long-history localization.
-- **ActionSwitch:** simultaneous and same-class overlap.
-- **TadTR:** action-query interval prediction.
-- **TrackFormer/MOTR:** persistent birth/survival/identity; strongest R-A
-  reconstruction attack.
-- **E2E-LOAD/StreamFormer:** raw-video causal OAD/representation, not alone a
-  new instance-level On-TAL method.
+- **CAG-QIL/SimOn/OAT/MATR/HAT:** causal prediction, anchors, suppression,
+  and history localization.
+- **ActionSwitch/TadTR:** overlap handling and action-query intervals.
+- **TrackFormer/MOTR:** strongest persistent-identity reconstruction attack.
+- **E2E-LOAD/StreamFormer:** causal video representation, not instance On-TAL.
 
 ## Infrastructure Laws
 
@@ -166,6 +164,7 @@ loss-only, noncanonical unbalanced transport. They are unproven hypotheses.
 
 ## Immediate Goal
 
-Commit and push protocol `493A132B...` with its 32-entry manifest, then obtain
-same-reviewer reassessment. Source registration, R0/R1, models, and GPU remain
-blocked. GPU hours: 0.
+Freeze and publish the completed Gate-A closure candidate, then request
+zero-trust reassessment of that exact SHA. Do not add ChronoTransport, B4,
+collection, experiment configs, profile, training, or GPU work before the
+signed review explicitly authorizes a next scope. GPU hours: 0.

@@ -1,6 +1,6 @@
 ---
 type: timeline
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Chronological record of major discussions, turns, reversals, and decisions for this Online/Causal TAD project.
 ---
@@ -1446,3 +1446,86 @@ Current decision:
 > fixed commit. Do not collect sources, inspect model outcomes, implement
 > B0-B4, profile, train, or use a GPU unless the signed review chain explicitly
 > authorizes the next narrow scope.
+
+### T47: Gate A Fails and Stops the ChronoTransport Branch
+
+An exact-commit cross-route audit inspected Prefix Protocol V2 at
+`48e78e43a77822ee0e51cace9ad758ca935c1450` before considering
+ChronoTransport. It confirmed the augmented B2 Hungarian-plus-dustbin
+assignment and R5 row regeneration, then stopped at Gate A.
+
+The remaining false-PASS surfaces are formal-entry leakage, low-level R0/R5
+status, serialized fairness with `model=None`, checkpoint-state self-reporting,
+caller emissions marked immutable without a ledger, a hand-built terminal
+inference path, incomplete import closure, a colliding B2 tie-break, and a
+caller-owned stream clock. The local production-code read confirms these
+findings. No tests, collection, model results, profile, training, or GPU were
+used in this absorption.
+
+Current decision:
+
+> Accept `REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`. The next commit may
+> repair Gate A and its hostile tests only. ChronoTransport adaptation,
+> Streaming CT protocol design, B2/B4 head selection, registration,
+> collection, model work, profile, training, and GPU all remain blocked.
+
+The implementation guidance is absorbed with explicit qualifications:
+capability separation matters more than Python privacy, exact attested
+commit/tree matters more than a moving branch HEAD, a provenance-complete
+serialized bundle may be independently verified, and a hash chain must be
+paired with append-only/no-overwrite publication.
+
+### T48: Unresolved-Target Review Corroborates Gate A but Cannot Replace It
+
+A later Pro request accidentally retained the literal `TARGET_COMMIT`. Its
+49,740-byte response is preserved byte-identically as
+`PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md`,
+SHA-256
+`272B3650F6656FA160328F0D549C0C117BD788F7037A4B020A6FB50636B2B802`.
+
+The archive concatenates two answers. One treats the visible rejected branch
+head `48e78e43` as an auxiliary audit object and repeats the Gate-A false-PASS
+findings. The other correctly stops at the immutable-target identity gate and
+declares all code-level closure formally unreviewed. Both return `REVISE`, but
+they cannot jointly be treated as one signed fixed-commit certificate.
+
+Independent local inspection confirms the substantive diagnosis. The
+dedicated suite passes `46`, while a complete hand-written inference mapping
+directly returns `PASS_B4_ROUTE_SURVIVES`; local contract tests therefore do
+not establish a source-bound scientific chain.
+
+Current decision:
+
+> Preserve this review as corroborating negative evidence under DR-055. Keep
+> DR-054 and the exact-commit Gate-A review as the active repair authority.
+> Repair at zero GPU, publish a real successor SHA, and never send another
+> placeholder-target prompt. All source, model, ChronoTransport, profile,
+> training, and GPU work remains blocked.
+
+### T49: Gate-A Closure Is Implemented Locally but Remains Unreviewed
+
+The allowed Gate-A-only remediation is now implemented without collecting
+sources, inspecting model outcomes, importing a working GPU runtime, or using
+GPU hours. Low-level helpers no longer certify; formal fairness, optimizer,
+ledger, bootstrap, terminal, and clean-process evidence are capability-bound;
+source origin and transitive package imports are attested; B2 assignment and
+stream state are exact and indivisible; and hostile tests exercise the known
+false-PASS paths.
+
+The relevant zero-GPU suite passes `195` tests with one declared skip and one
+warning. The focused hostile suite passes `15` tests. Protocol validation
+reports 40 manifest entries and
+`PROTOCOL_V2_VALID_REVIEW_REQUIRED`; authorization still returns
+`BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW`. A legacy
+Torch-dependent test cannot be collected on this Windows host because the
+installed `c10.dll` fails initialization, so it is explicitly deferred to the
+target Linux environment rather than counted as evidence.
+
+Current decision:
+
+> Record this as an unreviewed closure candidate under DR-056, freeze and push
+> one real successor SHA, and send that immutable commit to the same
+> independent reviewer. Do not register sources, collect R0/R1, inspect or
+> implement models, adapt ChronoTransport, profile, train, or use a GPU until
+> the signed review returns the exact required PASS and names the next allowed
+> scope.

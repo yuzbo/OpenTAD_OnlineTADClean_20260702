@@ -39,6 +39,18 @@ class PrefixRouteFairnessError(ValueError):
     pass
 
 
+_FAIRNESS_CAPABILITY_TOKEN = object()
+
+
+@dataclass(frozen=True)
+class VerifiedFairnessAudit:
+    """In-process capability minted only after live CUDA measurement."""
+
+    record: Mapping[str, Any]
+    record_sha256: str
+    _token: object
+
+
 @dataclass(frozen=True)
 class ArmRuntimeAdapter:
     """Live arm hooks; serialized scalar/boolean fairness evidence is forbidden."""
@@ -54,6 +66,7 @@ class ArmRuntimeAdapter:
     calibration_manifest_reference: Mapping[str, str]
     trial_manifest_reference: Mapping[str, str]
     seed_manifest_reference: Mapping[str, str]
+    model_tensor_artifact_reference: Mapping[str, str] | None = None
 
 
 def _finite_nonnegative(value, label):
@@ -171,16 +184,129 @@ def _tensor_bytes(value, torch):
     )
 
 
-def _profiler_macs(profiler):
+def _profile_macs_from_rows(rows):
+    if not isinstance(rows, list) or not rows:
+        raise PrefixRouteFairnessError("profiler evidence is empty")
     total = 0
-    for event in profiler.key_averages():
-        flops = getattr(event, "flops", 0) or 0
+    keys = []
+    for row in rows:
+        _exact(row, {"key", "count", "flops"}, "profiler event")
+        if (
+            not isinstance(row["key"], str)
+            or not row["key"]
+            or isinstance(row["count"], bool)
+            or not isinstance(row["count"], int)
+            or row["count"] <= 0
+        ):
+            raise PrefixRouteFairnessError("profiler event identity differs")
+        flops = _finite_nonnegative(row["flops"], "profiler event FLOPs")
+        if not float(flops).is_integer():
+            raise PrefixRouteFairnessError("profiler event FLOPs must be integral")
         total += int(flops)
+        keys.append(row["key"])
+    if keys != sorted(keys) or len(keys) != len(set(keys)):
+        raise PrefixRouteFairnessError(
+            "profiler events must have sorted unique keys"
+        )
     if total <= 0:
         raise PrefixRouteFairnessError(
             "Torch profiler reported no FLOPs for the measured path"
         )
     return float(total) / 2.0
+
+
+def _profiler_evidence(profiler):
+    rows = sorted(
+        (
+            {
+                "key": str(event.key),
+                "count": int(event.count),
+                "flops": int(getattr(event, "flops", 0) or 0),
+            }
+            for event in profiler.key_averages()
+        ),
+        key=lambda row: row["key"],
+    )
+    return _profile_macs_from_rows(rows), rows
+
+
+def _model_tensor_summary(model, torch):
+    from .prefix_route_artifacts_v2 import (
+        PrefixRouteArtifactError,
+        tensor_state_digest_from_named_arrays,
+    )
+
+    state = model.state_dict()
+    if not isinstance(state, Mapping) or not state:
+        raise PrefixRouteFairnessError("profiled model state is empty")
+    arrays = {}
+    for name, tensor in state.items():
+        if not isinstance(name, str) or not torch.is_tensor(tensor):
+            raise PrefixRouteFairnessError(
+                "profiled model state must contain named tensors only"
+            )
+        try:
+            arrays[name] = tensor.detach().contiguous().cpu().numpy()
+        except Exception as exc:
+            raise PrefixRouteFairnessError(
+                f"profiled model tensor cannot be canonicalized: {name}"
+            ) from exc
+    try:
+        return tensor_state_digest_from_named_arrays(arrays)
+    except PrefixRouteArtifactError as exc:
+        raise PrefixRouteFairnessError(str(exc)) from exc
+
+
+def _verify_model_tensor_artifact(
+    model,
+    torch,
+    *,
+    reference,
+    bundle_root,
+    arm,
+):
+    from .prefix_route_artifacts_v2 import (
+        PrefixRouteArtifactError,
+        read_tensor_state_artifact,
+    )
+
+    model_tensor_summary = _model_tensor_summary(model, torch)
+    if reference is None:
+        raise PrefixRouteFairnessError(
+            "live fairness requires the profiled model tensor artifact"
+        )
+    try:
+        model_artifact = read_tensor_state_artifact(
+            reference,
+            bundle_root=bundle_root,
+            label=f"{arm} profiled model tensor artifact",
+        )
+    except PrefixRouteArtifactError as exc:
+        raise PrefixRouteFairnessError(str(exc)) from exc
+    if (
+        model_artifact["tensor_state_sha256"]
+        != model_tensor_summary["tensor_state_sha256"]
+    ):
+        raise PrefixRouteFairnessError(
+            "profiled model tensors differ from the bound checkpoint artifact"
+        )
+    return model_tensor_summary, model_artifact
+
+
+def _cuda_identity(torch):
+    index = int(torch.cuda.current_device())
+    properties = torch.cuda.get_device_properties(index)
+    return {
+        "device_index": index,
+        "device_name": str(properties.name),
+        "total_memory_bytes": int(properties.total_memory),
+        "compute_capability": [
+            int(properties.major),
+            int(properties.minor),
+        ],
+        "torch_version": str(torch.__version__),
+        "cuda_version": str(torch.version.cuda),
+    }
 
 
 def _runtime_budget(adapter):
@@ -389,6 +515,13 @@ def _measure_runtime(adapter, torch):
     adapter.reset_runtime_state()
     optimizer.zero_grad(set_to_none=True)
     model_state_before = _runtime_state_sha256(model.state_dict(), torch)
+    model_tensor_before, model_artifact = _verify_model_tensor_artifact(
+        model,
+        torch,
+        reference=adapter.model_tensor_artifact_reference,
+        bundle_root=adapter.budget_evidence_root,
+        arm=adapter.arm,
+    )
     if model_state_before != profile_event["model_state_before_sha256"]:
         raise PrefixRouteFairnessError(
             "profiled model state differs from execution trace"
@@ -480,7 +613,7 @@ def _measure_runtime(adapter, torch):
             "profiled post-update state differs from execution trace"
         )
     torch.cuda.synchronize()
-    train_macs = _profiler_macs(profile)
+    train_macs, train_profiler_events = _profiler_evidence(profile)
     peak_training_memory = float(
         max(
             0,
@@ -498,7 +631,7 @@ def _measure_runtime(adapter, torch):
             with_flops=True,
         ) as profile:
             _, causal_state = adapter.inference_forward()
-    inference_macs = _profiler_macs(profile)
+    inference_macs, inference_profiler_events = _profiler_evidence(profile)
     torch.cuda.synchronize()
     peak_inference_memory = float(
         max(
@@ -525,6 +658,7 @@ def _measure_runtime(adapter, torch):
     latencies.sort()
     median = statistics.median(latencies)
     p95_index = max(0, math.ceil(0.95 * len(latencies)) - 1)
+    cuda_identity = _cuda_identity(torch)
     return {
         "arm": adapter.arm,
         "trainable_parameters": int(parameter_count),
@@ -535,6 +669,18 @@ def _measure_runtime(adapter, torch):
         "peak_inference_memory_bytes": peak_inference_memory,
         "latency_median_ms": median,
         "latency_p95_ms": latencies[p95_index],
+        "profiled_model_artifact_reference": dict(
+            adapter.model_tensor_artifact_reference
+        ),
+        "profiled_model_artifact_sha256": model_artifact["artifact_sha256"],
+        "profiled_model_tensor_state_sha256": model_tensor_before[
+            "tensor_state_sha256"
+        ],
+        "profiled_model_tensor_count": model_tensor_before["tensor_count"],
+        "train_profiler_events": train_profiler_events,
+        "inference_profiler_events": inference_profiler_events,
+        "latency_samples_ms": latencies,
+        "cuda_identity": cuda_identity,
         **budget,
         "budget_source_sha256": budget_evidence["source_sha256"],
         "budget_source_references": {
@@ -627,8 +773,8 @@ def derive_fairness_audit(runtimes):
     return {
         "schema_version": FAIRNESS_SCHEMA,
         "evidence_source": (
-            "LIVE_MODEL_GRADIENT_PROFILER_CUDA_AND_STATE_MEASUREMENT_PLUS_"
-            "HASH_VERIFIED_BUDGET_RECORDS"
+            "LIVE_CLEAN_PROCESS_MODEL_OPTIMIZER_GRADIENT_CUDA_PROFILER_AND_"
+            "ARTIFACT_DERIVED_TENSOR_STATE"
         ),
         "mac_definition": "torch_profiler_flops_divided_by_two",
         "serialized_scalar_or_boolean_input_allowed": False,
@@ -648,8 +794,38 @@ def derive_fairness_audit(runtimes):
     }
 
 
+def derive_live_fairness_capability(runtimes):
+    """Mint the capability consumed by formal R6 in the same clean process."""
+
+    record = derive_fairness_audit(runtimes)
+    return VerifiedFairnessAudit(
+        record=record,
+        record_sha256=hashlib.sha256(_canonical_json_bytes(record)).hexdigest(),
+        _token=_FAIRNESS_CAPABILITY_TOKEN,
+    )
+
+
+def require_live_fairness_capability(capability):
+    if (
+        type(capability) is not VerifiedFairnessAudit
+        or capability._token is not _FAIRNESS_CAPABILITY_TOKEN
+    ):
+        raise PrefixRouteFairnessError(
+            "formal fairness requires a live clean-process capability"
+        )
+    record = capability.record
+    if (
+        not isinstance(record, dict)
+        or record.get("status") != "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED"
+        or hashlib.sha256(_canonical_json_bytes(record)).hexdigest()
+        != capability.record_sha256
+    ):
+        raise PrefixRouteFairnessError("live fairness capability is invalid")
+    return record, capability.record_sha256
+
+
 def validate_fairness_audit_record(record, *, bundle_root):
-    """Recompute every structural fairness decision from one live-audit record."""
+    """Validate archive shape only; serialized rows can never authorize R6."""
 
     required = {
         "schema_version",
@@ -671,8 +847,8 @@ def validate_fairness_audit_record(record, *, bundle_root):
         record["schema_version"] != FAIRNESS_SCHEMA
         or record["evidence_source"]
         != (
-            "LIVE_MODEL_GRADIENT_PROFILER_CUDA_AND_STATE_MEASUREMENT_PLUS_"
-            "HASH_VERIFIED_BUDGET_RECORDS"
+            "LIVE_CLEAN_PROCESS_MODEL_OPTIMIZER_GRADIENT_CUDA_PROFILER_AND_"
+            "ARTIFACT_DERIVED_TENSOR_STATE"
         )
         or record["mac_definition"] != "torch_profiler_flops_divided_by_two"
         or record["serialized_scalar_or_boolean_input_allowed"] is not False
@@ -697,6 +873,14 @@ def validate_fairness_audit_record(record, *, bundle_root):
         "peak_inference_memory_bytes",
         "latency_median_ms",
         "latency_p95_ms",
+        "profiled_model_artifact_reference",
+        "profiled_model_artifact_sha256",
+        "profiled_model_tensor_state_sha256",
+        "profiled_model_tensor_count",
+        "train_profiler_events",
+        "inference_profiler_events",
+        "latency_samples_ms",
+        "cuda_identity",
         *EXACT_BUDGET_FIELDS,
         "budget_source_sha256",
         "budget_source_references",
@@ -710,6 +894,7 @@ def validate_fairness_audit_record(record, *, bundle_root):
         "peak_inference_memory_bytes",
         "latency_median_ms",
         "latency_p95_ms",
+        "profiled_model_tensor_count",
         *EXACT_BUDGET_FIELDS,
     }
     for arm in CORE_ARMS:
@@ -726,6 +911,108 @@ def validate_fairness_audit_record(record, *, bundle_root):
             row["live_causal_state_bytes"],
             f"{arm}.live_causal_state_bytes",
         )
+        _sha256_text(
+            row["profiled_model_artifact_sha256"],
+            f"{arm}.profiled_model_artifact_sha256",
+        )
+        _sha256_text(
+            row["profiled_model_tensor_state_sha256"],
+            f"{arm}.profiled_model_tensor_state_sha256",
+        )
+        reference = row["profiled_model_artifact_reference"]
+        _exact(
+            reference,
+            {"path", "sha256"},
+            f"{arm}.profiled_model_artifact_reference",
+        )
+        if (
+            not isinstance(reference["path"], str)
+            or not reference["path"]
+            or reference["sha256"]
+            != row["profiled_model_artifact_sha256"]
+        ):
+            raise PrefixRouteFairnessError(
+                f"profiled model artifact reference differs for {arm}"
+            )
+        if not math.isclose(
+            _profile_macs_from_rows(row["train_profiler_events"]),
+            float(row["train_macs_per_optimizer_event"]),
+            rel_tol=0.0,
+            abs_tol=0.0,
+        ) or not math.isclose(
+            _profile_macs_from_rows(row["inference_profiler_events"]),
+            float(row["inference_macs_per_decision"]),
+            rel_tol=0.0,
+            abs_tol=0.0,
+        ):
+            raise PrefixRouteFairnessError(
+                f"profiler event totals differ for {arm}"
+            )
+        latency_samples = row["latency_samples_ms"]
+        if (
+            not isinstance(latency_samples, list)
+            or len(latency_samples) != TIMED_DECISIONS
+            or latency_samples != sorted(latency_samples)
+            or any(
+                _finite_nonnegative(value, f"{arm}.latency_sample") <= 0
+                for value in latency_samples
+            )
+            or not math.isclose(
+                statistics.median(latency_samples),
+                float(row["latency_median_ms"]),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+            or not math.isclose(
+                latency_samples[
+                    max(0, math.ceil(0.95 * len(latency_samples)) - 1)
+                ],
+                float(row["latency_p95_ms"]),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+        ):
+            raise PrefixRouteFairnessError(
+                f"latency samples differ for {arm}"
+            )
+        cuda_identity = row["cuda_identity"]
+        _exact(
+            cuda_identity,
+            {
+                "device_index",
+                "device_name",
+                "total_memory_bytes",
+                "compute_capability",
+                "torch_version",
+                "cuda_version",
+            },
+            f"{arm}.cuda_identity",
+        )
+        if (
+            isinstance(cuda_identity["device_index"], bool)
+            or not isinstance(cuda_identity["device_index"], int)
+            or cuda_identity["device_index"] < 0
+            or not isinstance(cuda_identity["device_name"], str)
+            or not cuda_identity["device_name"]
+            or isinstance(cuda_identity["total_memory_bytes"], bool)
+            or not isinstance(cuda_identity["total_memory_bytes"], int)
+            or cuda_identity["total_memory_bytes"] <= 0
+            or not isinstance(cuda_identity["compute_capability"], list)
+            or len(cuda_identity["compute_capability"]) != 2
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+                for value in cuda_identity["compute_capability"]
+            )
+            or not isinstance(cuda_identity["torch_version"], str)
+            or not cuda_identity["torch_version"]
+            or not isinstance(cuda_identity["cuda_version"], str)
+            or not cuda_identity["cuda_version"]
+        ):
+            raise PrefixRouteFairnessError(
+                f"CUDA identity differs for {arm}"
+            )
         sources = row["budget_source_sha256"]
         _exact(
             sources,
@@ -757,27 +1044,6 @@ def validate_fairness_audit_record(record, *, bundle_root):
             },
             f"fairness budget source references {arm}",
         )
-        adapter = ArmRuntimeAdapter(
-            arm=arm,
-            model=None,
-            optimizer=None,
-            optimizer_event_forwards=lambda: None,
-            inference_forward=lambda: None,
-            reset_runtime_state=lambda: None,
-            budget_evidence_root=bundle_root,
-            execution_trace_reference=references["execution_trace"],
-            calibration_manifest_reference=references["calibration_manifest"],
-            trial_manifest_reference=references["trial_manifest"],
-            seed_manifest_reference=references["seed_manifest"],
-        )
-        derived_budget, derived_sources, _ = _runtime_budget(adapter)
-        if (
-            any(row[field] != value for field, value in derived_budget.items())
-            or sources != derived_sources
-        ):
-            raise PrefixRouteFairnessError(
-                f"fairness budget differs from source records for {arm}"
-            )
         inventory = row["parameter_gradient_inventory"]
         if not isinstance(inventory, list) or not inventory:
             raise PrefixRouteFairnessError(
@@ -814,17 +1080,15 @@ def validate_fairness_audit_record(record, *, bundle_root):
             raise PrefixRouteFairnessError(
                 f"fairness gradient inventory total differs for {arm}"
             )
-    derived_checks = _derive_checks(rows)
-    if record["checks"] != derived_checks:
-        raise PrefixRouteFairnessError("fairness checks differ from runtime rows")
-    expected_status = (
-        "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED"
-        if all(result["pass"] for result in derived_checks.values())
-        else "FAIL_ARM_FAIRNESS"
-    )
-    if record["status"] != expected_status:
-        raise PrefixRouteFairnessError("fairness status differs from checks")
-    return record
+    del bundle_root
+    return {
+        "verification_status": "UNVERIFIED_SERIALIZED_AUDIT",
+        "claimed_status": record["status"],
+        "record_sha256": hashlib.sha256(
+            _canonical_json_bytes(record)
+        ).hexdigest(),
+        "formal_fairness_pass": False,
+    }
 
 
 __all__ = [
@@ -844,6 +1108,9 @@ __all__ = [
     "TRIAL_MANIFEST_SCHEMA",
     "WARMUP_DECISIONS",
     "PrefixRouteFairnessError",
+    "VerifiedFairnessAudit",
     "derive_fairness_audit",
+    "derive_live_fairness_capability",
+    "require_live_fairness_capability",
     "validate_fairness_audit_record",
 ]

@@ -1,6 +1,6 @@
 ---
 type: source_map
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Mapping from source records, reviews, attachments, online notes, and code snapshots to wiki nodes.
 ---
@@ -248,3 +248,23 @@ If these become active again, create dedicated pages before using them as claims
 |---|---|---|
 | `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`, SHA-256 `039FCB7868F31DA9A7153DADF6CB60E29C14916DD6DBA81F926F7EE2B28A28A9` | Same-reviewer verdict `REVISE_PROTOCOL_BEFORE_COLLECTION`. Six hostile probes reproduce source-free R6, unregistered R0, B2 dustbin/coordinate, fairness, R5 swap, and R6 terminal bypasses; import-time manifest coverage is incomplete. | [DR-053](decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses), [T46](discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally) |
 | Round-3 remediation candidate: protocol SHA-256 `493A132BBC9998AD7DD1D4756EC882DEE858AC8C739DBF96C618B1459BE3AC65`, 32-entry manifest SHA-256 `05BF8A8925B465522BCB7470D1810D2421B99C3F7E15512AD3C87C6435AA8C25` | Closes the six probes locally with signed canonical source chains, augmented B2 matching, run-bound fairness, R5 row regeneration/full-row commitments, sealed R6, explicit control-construction transcripts, and the complete local import-time source closure. It is still review-required and has produced no scientific outcome. | [DR-053](decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses), [T46](discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally), [route gate](experiments/prefix-route-identifiability-gate-20260717.md) |
+
+## Prefix Gate A and ChronoTransport Stop-Chain Review: 2026-07-20
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| Private attachment `ae85b0a1-c69b-463b-8b39-36d85a22121b/pasted-text.txt`, 32,229 bytes, 172 UTF-8 CRLF lines, SHA-256 `6A05072FA0168E7E17C0DB9DF04B586D0706C991403CCAA507854987EABB8022`; content-complete LF-normalized archive `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md`, SHA-256 `DBE6E2BF10A0A1C1316D96958758417BCC9610B7DFD194EFE68A81D5423589D9` | Exact-commit Gate A verdict `REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`. A5 and A9 pass locally, while formal entry, registration provenance, fairness, terminal, checkpoint/emission ledger, import closure, B2 tie-break/clock, and hostile coverage fail. Stop-chain does not reach ChronoTransport. | [DR-054](decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work), [T47](discussion_timeline.md#t47-gate-a-fails-and-stops-the-chronotransport-branch), [route gate](experiments/prefix-route-identifiability-gate-20260717.md) |
+| `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`, 11,093 bytes, 220 lines, SHA-256 `10DE03480C37EEB26ADCC033D6D1569F10FA1BA3D67C9D6BFA54FE7D9FE1DDB4`, plus local read-only inspection of exact commit `48e78e43...` | Fully accepts Gate A failure and all blocking consequences. Qualifies implementation details: formal capability rather than underscore privacy; attested detached commit/tree rather than moving branch HEAD; independently verifiable live-produced serialized evidence; metric-specific CUDA provenance; and append-only/no-overwrite guarantees beyond a hash chain. | [DR-054](decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work), [query pack](query_pack.md), [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md) |
+
+## Unresolved-Target Round-4 Corroboration: 2026-07-20
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| Private attachment `f5c2b241-e040-4375-8693-be594d48f0b5/pasted-text.txt`, archived byte-identically as `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md`, 49,740 bytes, 1,257 lines, SHA-256 `272B3650F6656FA160328F0D549C0C117BD788F7037A4B020A6FB50636B2B802` | Two concatenated `REVISE` answers. Formally, literal `TARGET_COMMIT` leaves the immutable review object unresolved. The auxiliary branch-head audit repeats the `48e78e43` Gate-A false-PASS classes but cannot serve as a fixed-target attestation. | [absorption](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md), [DR-055](decision_register.md#dr-055-preserve-the-unresolved-target-review-without-promoting-it-to-a-fixed-commit-certificate), [T48](discussion_timeline.md#t48-unresolved-target-review-corroborates-gate-a-but-cannot-replace-it) |
+| `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md`, SHA-256 `CD25005DDB6C9D7BCC69BE52A08284CEFA43840C61B667A469C91725BBACC020` plus independent local verification | Accepts the verdict and substantive defect classes, rejects treating the two blocks as one fixed-commit certificate, reproduces a hand-written terminal PASS, and keeps DR-054 as the active Gate-A repair authority. | [DR-055](decision_register.md#dr-055-preserve-the-unresolved-target-review-without-promoting-it-to-a-fixed-commit-certificate), [query pack](query_pack.md), [route gate](experiments/prefix-route-identifiability-gate-20260717.md) |
+
+## Gate-A Closure Candidate: 2026-07-20
+
+| Source | Absorbed content | Wiki destination |
+|---|---|---|
+| Gate-A-only code and hostile tests in the successor worktree; protocol SHA-256 `C076FEE3B5C03290560C2D2F4A460ABCA2597904E6EEEB40465C0B19E639A0CE`; 40-entry source manifest | Locally closes the known certification, source-origin, fairness/checkpoint, optimizer, emission-ledger, terminal, import-closure, B2 tie-break, and stream-state bypasses. Relevant zero-GPU suite: `195 passed, 1 skipped`; focused hostile suite: `15 passed`. Collection authorization remains blocked and the formal model runtime is intentionally absent. | [DR-056](decision_register.md#dr-056-freeze-the-local-gate-a-closure-candidate-without-granting-authorization), [T49](discussion_timeline.md#t49-gate-a-closure-is-implemented-locally-but-remains-unreviewed), [route gate](experiments/prefix-route-identifiability-gate-20260717.md), [Protocol V2](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md) |

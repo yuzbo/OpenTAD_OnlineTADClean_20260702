@@ -158,6 +158,19 @@ class PrefixRouteR6Error(ValueError):
     pass
 
 
+_VERIFIED_EMISSION_TOKEN = object()
+
+
+class _VerifiedEmissionRows:
+    __slots__ = ("video_id", "canonical_rows", "metric_rows", "_token")
+
+    def __init__(self, *, video_id, canonical_rows, metric_rows, token):
+        self.video_id = video_id
+        self.canonical_rows = tuple(canonical_rows)
+        self.metric_rows = tuple(metric_rows)
+        self._token = token
+
+
 def _canonical_json_bytes(value):
     return (
         json.dumps(
@@ -286,25 +299,16 @@ def derive_per_video_cell(
         raise PrefixRouteR6Error("feature stride must be a positive integer")
     if not isinstance(ground_truth, list):
         raise PrefixRouteR6Error("ground truth must be an array")
-    if not isinstance(emissions, list):
-        raise PrefixRouteR6Error("emissions must be an array")
-    canonical_emissions = [canonical_emission(dict(row)) for row in emissions]
-    metric_emissions = [
-        {
-            "emission_id": row["emission_id"],
-            "stream_key": row["stream_key"],
-            "sequence_id": row["sequence_id"],
-            "start_frame": row["start"],
-            "end_frame": row["end"],
-            "label": row["class"],
-            "score": row["score"],
-            "source_frame": row["source_frame"],
-            "emit_frame": row["emit_frame"],
-            "immutable": True,
-            "fps": float(fps),
-        }
-        for row in canonical_emissions
-    ]
+    if (
+        type(emissions) is not _VerifiedEmissionRows
+        or emissions._token is not _VERIFIED_EMISSION_TOKEN
+        or emissions.video_id != video_id
+    ):
+        raise PrefixRouteR6Error(
+            "per-video metrics require verified immutable ledger rows"
+        )
+    canonical_emissions = [dict(row) for row in emissions.canonical_rows]
+    metric_emissions = [dict(row) for row in emissions.metric_rows]
     gt_ids = []
     for index, row in enumerate(ground_truth):
         if not isinstance(row, dict):
@@ -904,8 +908,123 @@ def _validate_inference_schema(inference):
     return intervals
 
 
-def _terminal_route_decision(inference):
-    """Compute the frozen B4 survival decision from sealed inference."""
+_SEALED_INFERENCE_TOKEN = object()
+_VERIFIED_R6_EVIDENCE_TOKEN = object()
+
+
+class _VerifiedR6Evidence:
+    __slots__ = (
+        "raw_evidence",
+        "per_video_cells",
+        "dataset_metrics",
+        "eligible_stress_families",
+        "_token",
+    )
+
+    def __init__(
+        self,
+        *,
+        raw_evidence,
+        per_video_cells,
+        dataset_metrics,
+        eligible_stress_families,
+        token,
+    ):
+        self.raw_evidence = json.loads(
+            _canonical_json_bytes(raw_evidence)
+        )
+        self.per_video_cells = json.loads(
+            _canonical_json_bytes(per_video_cells)
+        )
+        self.dataset_metrics = json.loads(
+            _canonical_json_bytes(dataset_metrics)
+        )
+        self.eligible_stress_families = tuple(
+            eligible_stress_families
+        )
+        self._token = token
+
+
+class _SealedInference:
+    __slots__ = (
+        "inference",
+        "raw_evidence_sha256",
+        "cell_set_sha256",
+        "dataset_metrics_sha256",
+        "bootstrap_output_sha256",
+        "_token",
+    )
+
+    def __init__(
+        self,
+        *,
+        inference,
+        raw_evidence_sha256,
+        cell_set_sha256,
+        dataset_metrics_sha256,
+        bootstrap_output_sha256,
+        token,
+    ):
+        self.inference = inference
+        self.raw_evidence_sha256 = raw_evidence_sha256
+        self.cell_set_sha256 = cell_set_sha256
+        self.dataset_metrics_sha256 = dataset_metrics_sha256
+        self.bootstrap_output_sha256 = bootstrap_output_sha256
+        self._token = token
+
+
+def _seal_bootstrap_output(verified_evidence):
+    if (
+        type(verified_evidence) is not _VerifiedR6Evidence
+        or verified_evidence._token is not _VERIFIED_R6_EVIDENCE_TOKEN
+    ):
+        raise PrefixRouteR6Error(
+            "bootstrap sealing requires verified formal R6 evidence"
+        )
+    raw_evidence = verified_evidence.raw_evidence
+    per_video_cells = verified_evidence.per_video_cells
+    dataset_metrics = verified_evidence.dataset_metrics
+    inference = _sealed_paired_crossed_bootstrap(
+        per_video_cells,
+        dataset_metrics,
+        eligible_stress_families=(
+            verified_evidence.eligible_stress_families
+        ),
+    )
+    return _SealedInference(
+        inference=inference,
+        raw_evidence_sha256=hashlib.sha256(
+            _canonical_json_bytes(raw_evidence)
+        ).hexdigest(),
+        cell_set_sha256=hashlib.sha256(
+            _canonical_json_bytes(per_video_cells)
+        ).hexdigest(),
+        dataset_metrics_sha256=hashlib.sha256(
+            _canonical_json_bytes(dataset_metrics)
+        ).hexdigest(),
+        bootstrap_output_sha256=hashlib.sha256(
+            _canonical_json_bytes(inference)
+        ).hexdigest(),
+        token=_SEALED_INFERENCE_TOKEN,
+    )
+
+
+def _terminal_route_decision(sealed_inference):
+    """Compute a route decision only from the internally sealed evidence chain."""
+
+    if (
+        type(sealed_inference) is not _SealedInference
+        or sealed_inference._token is not _SEALED_INFERENCE_TOKEN
+    ):
+        raise PrefixRouteR6Error(
+            "terminal requires sealed raw cells and bootstrap output"
+        )
+    inference = sealed_inference.inference
+    if (
+        hashlib.sha256(_canonical_json_bytes(inference)).hexdigest()
+        != sealed_inference.bootstrap_output_sha256
+    ):
+        raise PrefixRouteR6Error("sealed bootstrap output changed")
 
     intervals = _validate_inference_schema(inference)
     global_metrics = tuple(GLOBAL_METRICS)
@@ -1076,16 +1195,136 @@ def _sha256_text(value, label):
     return value
 
 
+def _run_binding_sha256(provenance):
+    fields = (
+        "protocol_sha256",
+        "source_manifest_sha256",
+        "review_attestation_sha256",
+        "protocol_commit",
+        "protocol_tree_sha1",
+        "arm",
+        "seed",
+        "initial_model_artifact",
+        "final_model_artifact",
+        "initial_optimizer_artifact",
+        "final_optimizer_artifact",
+        "model_config",
+        "resolved_command",
+        "environment_lock",
+        "optimizer_artifact_trace",
+        "fairness_audit_sha256",
+    )
+    return hashlib.sha256(
+        _canonical_json_bytes({field: provenance[field] for field in fields})
+    ).hexdigest()
+
+
+def _load_verified_run_emissions(
+    *,
+    ledger_reference,
+    commitment_reference,
+    bundle_root,
+    expected_video_ids,
+    run_binding_sha256,
+):
+    from opentad.utils.evidence_bundle import (
+        EvidenceBundleError,
+        read_verified_bundle_bytes,
+    )
+    from opentad.utils.online_protocol import (
+        verified_emission_result_dict_bytes,
+    )
+
+    try:
+        _, ledger_bytes = read_verified_bundle_bytes(
+            ledger_reference,
+            bundle_root,
+            "R6 immutable emission ledger",
+        )
+        _, commitment_bytes = read_verified_bundle_bytes(
+            commitment_reference,
+            bundle_root,
+            "R6 immutable emission commitment",
+        )
+    except EvidenceBundleError as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
+    ledger_filename = Path(ledger_reference["path"]).name
+    try:
+        verified = verified_emission_result_dict_bytes(
+            ledger_bytes,
+            commitment_bytes,
+            ledger_filename=ledger_filename,
+        )
+    except Exception as exc:
+        raise PrefixRouteR6Error(f"R6 emission ledger verification failed: {exc}") from exc
+    if not set(verified).issubset(set(expected_video_ids)):
+        raise PrefixRouteR6Error("R6 emission ledger contains an unregistered video")
+    canonical_by_video = {video_id: [] for video_id in expected_video_ids}
+    metric_by_video = {video_id: [] for video_id in expected_video_ids}
+    event_ids = set()
+    for video_id, rows in verified.items():
+        for row in rows:
+            if (
+                row["video_id"] != video_id
+                or row.get("stream_key", row["stream_id"]) != video_id
+                or row["provenance_digest"] != run_binding_sha256
+            ):
+                raise PrefixRouteR6Error(
+                    "R6 emission ledger run or stream binding differs"
+                )
+            event_id = row["event_id"]
+            if event_id in event_ids:
+                raise PrefixRouteR6Error("R6 emission event IDs are duplicated")
+            event_ids.add(event_id)
+            if not isinstance(row["label"], str) or not row["label"]:
+                raise PrefixRouteR6Error(
+                    "R6 emission ledger labels must be class names"
+                )
+            canonical_by_video[video_id].append(
+                canonical_emission(
+                    {
+                        "emission_id": event_id,
+                        "stream_key": video_id,
+                        "sequence_id": row["sequence"],
+                        "start": row["start_frame"],
+                        "end": row["end_frame"],
+                        "class": row["label"],
+                        "score": row["score"],
+                        "source_frame": row["source_frame"],
+                        "emit_frame": row["emit_frame"],
+                    }
+                )
+            )
+            metric_by_video[video_id].append(dict(row))
+    batches_by_video = {
+        video_id: _VerifiedEmissionRows(
+            video_id=video_id,
+            canonical_rows=canonical_by_video[video_id],
+            metric_rows=metric_by_video[video_id],
+            token=_VERIFIED_EMISSION_TOKEN,
+        )
+        for video_id in expected_video_ids
+    }
+    return {
+        "ledger_bytes": ledger_bytes,
+        "commitment_bytes": commitment_bytes,
+        "ledger_filename": ledger_filename,
+        "ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "commitment_sha256": hashlib.sha256(commitment_bytes).hexdigest(),
+        "batches_by_video": batches_by_video,
+    }
+
+
 def _validate_control_construction(
     reference,
     *,
     bundle_root,
     arm,
     seed,
-    videos,
+    video_ids,
     protocol_record,
     manifest_record,
-    emissions_sha256,
+    emission_ledger_sha256,
 ):
     if arm not in CONTROL_ARMS:
         if reference is not None:
@@ -1128,7 +1367,7 @@ def _validate_control_construction(
         raise PrefixRouteR6Error("R6 control construction fields differ")
     expected = CONTROL_CONSTRUCTION_SPECS[arm]
     video_ids_sha256 = hashlib.sha256(
-        _canonical_json_bytes([video["video_id"] for video in videos])
+        _canonical_json_bytes(video_ids)
     ).hexdigest()
     if (
         record["schema_version"] != R6_CONTROL_CONSTRUCTION_SCHEMA
@@ -1139,7 +1378,7 @@ def _validate_control_construction(
         or record["algorithm"] != expected["algorithm"]
         or record["parameters"] != expected["parameters"]
         or record["reporting_video_ids_sha256"] != video_ids_sha256
-        or record["emissions_sha256"] != emissions_sha256
+        or record["emissions_sha256"] != emission_ledger_sha256
     ):
         raise PrefixRouteR6Error("R6 control construction identity differs")
     _sha256_text(
@@ -1176,7 +1415,6 @@ def _validate_control_construction(
     }
     if not isinstance(source, dict) or set(source) != source_fields:
         raise PrefixRouteR6Error("R6 control source transcript fields differ")
-    video_ids = [video["video_id"] for video in videos]
     if (
         source["schema_version"] != R6_CONTROL_TRANSCRIPT_SCHEMA
         or source["protocol_sha256"] != protocol_record["sha256"]
@@ -1191,6 +1429,8 @@ def _validate_control_construction(
     for index, row in enumerate(source["records"]):
         if not isinstance(row, dict) or set(row) != {
             "video_id",
+            "source_artifact",
+            "constructed_artifact",
             "source_sha256",
             "constructed_sha256",
         }:
@@ -1207,6 +1447,127 @@ def _validate_control_construction(
         )
         if source_hash == constructed_hash:
             raise PrefixRouteR6Error("R6 control construction is a no-op")
+        try:
+            _, raw_source_bytes, raw_source = read_verified_bundle_json(
+                row["source_artifact"],
+                bundle_root,
+                f"R6 {arm}/{seed} control source {index}",
+                require_object=True,
+            )
+            _, constructed_bytes, constructed = read_verified_bundle_json(
+                row["constructed_artifact"],
+                bundle_root,
+                f"R6 {arm}/{seed} control construction {index}",
+                require_object=True,
+            )
+        except EvidenceBundleError as exc:
+            raise PrefixRouteR6Error(str(exc)) from exc
+        if (
+            raw_source_bytes != _canonical_json_bytes(raw_source)
+            or constructed_bytes != _canonical_json_bytes(constructed)
+            or hashlib.sha256(raw_source_bytes).hexdigest() != source_hash
+            or hashlib.sha256(constructed_bytes).hexdigest()
+            != constructed_hash
+        ):
+            raise PrefixRouteR6Error(
+                "R6 control transcript artifact bytes differ"
+            )
+        from opentad.utils.prefix_route_controls_v2 import (
+            count_only_schedule,
+            feature_time_shuffle_permutation,
+            semantic_derangement,
+            template_timing_schedule,
+        )
+
+        video_id = row["video_id"]
+        if arm == "COUNT_ONLY":
+            if set(raw_source) != {
+                "decision_bins",
+                "event_count_prior",
+                "class_prior",
+            }:
+                raise PrefixRouteR6Error("COUNT_ONLY source fields differ")
+            expected_constructed = count_only_schedule(
+                video_id,
+                raw_source["decision_bins"],
+                event_count_prior=raw_source["event_count_prior"],
+                class_prior=raw_source["class_prior"],
+            )
+        elif arm == "TEMPLATE_TIMING":
+            if set(raw_source) != {
+                "decision_bins",
+                "duration_template_bins",
+                "gap_template_bins",
+            }:
+                raise PrefixRouteR6Error("TEMPLATE_TIMING source fields differ")
+            expected_constructed = template_timing_schedule(
+                video_id,
+                raw_source["decision_bins"],
+                duration_template_bins=raw_source["duration_template_bins"],
+                gap_template_bins=raw_source["gap_template_bins"],
+            )
+        elif arm == "FEATURE_TIME_SHUFFLE":
+            if set(raw_source) != {"token_count"}:
+                raise PrefixRouteR6Error(
+                    "FEATURE_TIME_SHUFFLE source fields differ"
+                )
+            expected_constructed = {
+                "video_id": video_id,
+                "permutation": list(
+                    feature_time_shuffle_permutation(
+                        video_id,
+                        raw_source["token_count"],
+                        seed=2026071703,
+                    )
+                ),
+            }
+        elif arm == "SEMANTIC_DERANGEMENT":
+            if set(raw_source) != {"split_id", "instances"}:
+                raise PrefixRouteR6Error(
+                    "SEMANTIC_DERANGEMENT source fields differ"
+                )
+            expected_constructed = semantic_derangement(
+                raw_source["instances"],
+                split_id=raw_source["split_id"],
+                seed=2026071704,
+            )
+        elif arm == "LEDGER_ONLY":
+            if set(raw_source) != {"raw_b0_candidate_sha256"}:
+                raise PrefixRouteR6Error("LEDGER_ONLY source fields differ")
+            _sha256_text(
+                raw_source["raw_b0_candidate_sha256"],
+                "LEDGER_ONLY source candidates",
+            )
+            expected_constructed = {
+                "video_id": video_id,
+                "learning": False,
+                "emission_ledger_sha256": emission_ledger_sha256,
+                "raw_b0_candidate_sha256": raw_source[
+                    "raw_b0_candidate_sha256"
+                ],
+            }
+        else:
+            if set(raw_source) != {
+                "decision_count",
+                "state_reset_count",
+                "keep_current_causal_visual_memory",
+            }:
+                raise PrefixRouteR6Error("HISTORY_OFF source fields differ")
+            if (
+                raw_source["decision_count"] <= 0
+                or raw_source["state_reset_count"]
+                != raw_source["decision_count"]
+                or raw_source["keep_current_causal_visual_memory"] is not True
+            ):
+                raise PrefixRouteR6Error("HISTORY_OFF reset trace differs")
+            expected_constructed = {
+                "video_id": video_id,
+                **raw_source,
+            }
+        if constructed != expected_constructed:
+            raise PrefixRouteR6Error(
+                f"R6 {arm} construction differs from frozen re-execution"
+            )
     return hashlib.sha256(record_bytes).hexdigest()
 
 
@@ -1216,12 +1577,14 @@ def _validate_run_provenance(
     bundle_root,
     arm,
     seed,
-    videos,
+    video_ids,
     protocol_record,
     manifest_record,
     review_record,
     fairness_audit,
     fairness_audit_sha256,
+    emission_ledger_sha256,
+    emission_commitment_sha256,
 ):
     fields = {
         "schema_version",
@@ -1234,20 +1597,23 @@ def _validate_run_provenance(
         "seed",
         "initial_model_artifact",
         "final_model_artifact",
+        "initial_optimizer_artifact",
+        "final_optimizer_artifact",
         "model_config",
         "resolved_command",
         "environment_lock",
-        "execution_trace",
+        "optimizer_artifact_trace",
         "execution_ledger",
         "control_construction",
         "fairness_audit_sha256",
-        "emissions_sha256",
+        "emission_ledger_sha256",
+        "emission_commitment_sha256",
+        "run_binding_sha256",
         "run_identity_sha256",
     }
     if not isinstance(provenance, dict) or set(provenance) != fields:
         raise PrefixRouteR6Error("R6 run provenance fields differ")
     attestation = review_record["attestation"]
-    emissions_sha256 = hashlib.sha256(_canonical_json_bytes(videos)).hexdigest()
     if (
         provenance["schema_version"] != R6_RUN_PROVENANCE_SCHEMA
         or provenance["protocol_sha256"] != protocol_record["sha256"]
@@ -1259,40 +1625,49 @@ def _validate_run_provenance(
         or provenance["arm"] != arm
         or provenance["seed"] != seed
         or provenance["fairness_audit_sha256"] != fairness_audit_sha256
-        or provenance["emissions_sha256"] != emissions_sha256
+        or provenance["emission_ledger_sha256"] != emission_ledger_sha256
+        or provenance["emission_commitment_sha256"]
+        != emission_commitment_sha256
+        or provenance["run_binding_sha256"] != _run_binding_sha256(provenance)
     ):
         raise PrefixRouteR6Error("R6 run provenance identity differs")
     from opentad.utils.evidence_bundle import (
         EvidenceBundleError,
-        read_verified_bundle_bytes,
         read_verified_bundle_json,
     )
+    from opentad.utils.prefix_route_artifacts_v2 import (
+        PrefixRouteArtifactError,
+        read_identity_artifact,
+        verify_optimizer_artifact_trace,
+    )
 
-    payloads = {}
-    for field in (
-        "initial_model_artifact",
-        "final_model_artifact",
-        "model_config",
-        "resolved_command",
-        "environment_lock",
-    ):
-        try:
-            _, payloads[field] = read_verified_bundle_bytes(
-                provenance[field],
-                bundle_root,
-                f"R6 {arm}/{seed} {field}",
-            )
-        except EvidenceBundleError as exc:
-            raise PrefixRouteR6Error(str(exc)) from exc
-        if not payloads[field]:
-            raise PrefixRouteR6Error(f"R6 {arm}/{seed} {field} is empty")
+    identity_artifacts = {}
     try:
-        _, trace_bytes, trace = read_verified_bundle_json(
-            provenance["execution_trace"],
-            bundle_root,
-            f"R6 {arm}/{seed} execution trace",
-            require_object=True,
+        for kind in ("model_config", "resolved_command", "environment_lock"):
+            identity_artifacts[kind] = read_identity_artifact(
+                provenance[kind],
+                bundle_root=bundle_root,
+                kind=kind,
+                arm=arm,
+                seed=seed,
+            )
+        learning = arm not in {"COUNT_ONLY", "TEMPLATE_TIMING", "LEDGER_ONLY"}
+        optimizer_summary = verify_optimizer_artifact_trace(
+            provenance["optimizer_artifact_trace"],
+            bundle_root=bundle_root,
+            arm=arm,
+            seed=seed,
+            initial_model_reference=provenance["initial_model_artifact"],
+            final_model_reference=provenance["final_model_artifact"],
+            initial_optimizer_reference=provenance[
+                "initial_optimizer_artifact"
+            ],
+            final_optimizer_reference=provenance["final_optimizer_artifact"],
+            learning=learning,
         )
+    except PrefixRouteArtifactError as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
+    try:
         _, ledger_bytes, ledger = read_verified_bundle_json(
             provenance["execution_ledger"],
             bundle_root,
@@ -1301,8 +1676,6 @@ def _validate_run_provenance(
         )
     except EvidenceBundleError as exc:
         raise PrefixRouteR6Error(str(exc)) from exc
-    if trace_bytes != _canonical_json_bytes(trace):
-        raise PrefixRouteR6Error("R6 execution trace is not canonical JSON")
     if ledger_bytes != _canonical_json_bytes(ledger):
         raise PrefixRouteR6Error("R6 execution ledger is not canonical JSON")
     control_construction_sha256 = _validate_control_construction(
@@ -1310,71 +1683,11 @@ def _validate_run_provenance(
         bundle_root=bundle_root,
         arm=arm,
         seed=seed,
-        videos=videos,
+        video_ids=video_ids,
         protocol_record=protocol_record,
         manifest_record=manifest_record,
-        emissions_sha256=emissions_sha256,
+        emission_ledger_sha256=emission_ledger_sha256,
     )
-    trace_fields = {"schema_version", "arm", "events"}
-    if not isinstance(trace, dict) or set(trace) != trace_fields:
-        raise PrefixRouteR6Error("R6 execution trace fields differ")
-    events = trace["events"]
-    event_fields = {
-        "optimizer_event_index",
-        "gradient_accumulation_steps",
-        "effective_token_count",
-        "status",
-        "input_batches_sha256",
-        "model_state_before_sha256",
-        "model_state_after_sha256",
-        "optimizer_state_after_sha256",
-    }
-    if (
-        trace["schema_version"] != "prefix-route-fairness-execution-trace-v2"
-        or trace["arm"] != arm
-        or not isinstance(events, list)
-        or not events
-    ):
-        raise PrefixRouteR6Error("R6 execution trace identity differs")
-    previous_model_after = None
-    effective_token_count = 0
-    accumulation_steps = set()
-    for index, event in enumerate(events):
-        if not isinstance(event, dict) or set(event) != event_fields:
-            raise PrefixRouteR6Error("R6 optimizer event fields differ")
-        if (
-            event["optimizer_event_index"] != index
-            or event["status"] != "APPLIED_FINITE"
-            or (
-                previous_model_after is not None
-                and event["model_state_before_sha256"] != previous_model_after
-            )
-        ):
-            raise PrefixRouteR6Error("R6 optimizer event chain differs")
-        for field in (
-            "gradient_accumulation_steps",
-            "effective_token_count",
-        ):
-            if (
-                isinstance(event[field], bool)
-                or not isinstance(event[field], int)
-                or event[field] <= 0
-            ):
-                raise PrefixRouteR6Error(
-                    f"R6 optimizer event {field} differs"
-                )
-        accumulation_steps.add(event["gradient_accumulation_steps"])
-        effective_token_count += event["effective_token_count"]
-        if event["model_state_before_sha256"] == event["model_state_after_sha256"]:
-            raise PrefixRouteR6Error("R6 optimizer event did not update the model")
-        for field in (
-            "input_batches_sha256",
-            "model_state_before_sha256",
-            "model_state_after_sha256",
-            "optimizer_state_after_sha256",
-        ):
-            _sha256_text(event[field], f"R6 optimizer event {index} {field}")
-        previous_model_after = event["model_state_after_sha256"]
     ledger_fields = {
         "schema_version",
         "protocol_sha256",
@@ -1384,14 +1697,17 @@ def _validate_run_provenance(
         "protocol_tree_sha1",
         "arm",
         "seed",
-        "initial_model_sha256",
-        "final_model_sha256",
+        "learning",
+        "run_binding_sha256",
         "model_config_sha256",
         "resolved_command_sha256",
         "environment_lock_sha256",
-        "execution_trace_sha256",
+        "optimizer_artifact_trace_sha256",
         "initial_model_state_sha256",
         "final_model_state_sha256",
+        "initial_optimizer_state_sha256",
+        "final_optimizer_state_sha256",
+        "optimizer_event_tail_sha256",
         "optimizer_event_count",
         "effective_token_count",
         "gradient_accumulation_steps",
@@ -1399,29 +1715,24 @@ def _validate_run_provenance(
         "calibration_population_sha256",
         "control_construction_sha256",
         "fairness_audit_sha256",
-        "emissions_sha256",
+        "emission_ledger_sha256",
+        "emission_commitment_sha256",
         "status",
     }
     if not isinstance(ledger, dict) or set(ledger) != ledger_fields:
         raise PrefixRouteR6Error("R6 execution ledger fields differ")
     expected_hashes = {
-        "initial_model_sha256": hashlib.sha256(
-            payloads["initial_model_artifact"]
-        ).hexdigest(),
-        "final_model_sha256": hashlib.sha256(
-            payloads["final_model_artifact"]
-        ).hexdigest(),
-        "model_config_sha256": hashlib.sha256(
-            payloads["model_config"]
-        ).hexdigest(),
-        "resolved_command_sha256": hashlib.sha256(
-            payloads["resolved_command"]
-        ).hexdigest(),
-        "environment_lock_sha256": hashlib.sha256(
-            payloads["environment_lock"]
-        ).hexdigest(),
-        "execution_trace_sha256": hashlib.sha256(trace_bytes).hexdigest(),
+        f"{kind}_sha256": value["artifact_sha256"]
+        for kind, value in identity_artifacts.items()
     }
+    expected_hashes["optimizer_artifact_trace_sha256"] = (
+        optimizer_summary["trace_sha256"]
+    )
+    expected_status = (
+        "COMPLETED_FINITE_NO_SKIPPED_UPDATES"
+        if optimizer_summary["learning"]
+        else "COMPLETED_NO_LEARNING_STATE_FROZEN"
+    )
     if (
         ledger["schema_version"] != R6_EXECUTION_LEDGER_SCHEMA
         or ledger["protocol_sha256"] != protocol_record["sha256"]
@@ -1432,21 +1743,52 @@ def _validate_run_provenance(
         or ledger["protocol_tree_sha1"] != attestation["protocol_tree_sha1"]
         or ledger["arm"] != arm
         or ledger["seed"] != seed
+        or ledger["learning"] is not optimizer_summary["learning"]
+        or ledger["run_binding_sha256"] != provenance["run_binding_sha256"]
         or any(ledger[field] != value for field, value in expected_hashes.items())
         or ledger["fairness_audit_sha256"] != fairness_audit_sha256
-        or ledger["emissions_sha256"] != emissions_sha256
+        or ledger["emission_ledger_sha256"] != emission_ledger_sha256
+        or ledger["emission_commitment_sha256"]
+        != emission_commitment_sha256
         or ledger["control_construction_sha256"]
         != control_construction_sha256
         or ledger["initial_model_state_sha256"]
-        != events[0]["model_state_before_sha256"]
+        != optimizer_summary["initial_model_state_sha256"]
         or ledger["final_model_state_sha256"]
-        != events[-1]["model_state_after_sha256"]
-        or ledger["status"] != "COMPLETED_FINITE_NO_SKIPPED_UPDATES"
+        != optimizer_summary["final_model_state_sha256"]
+        or ledger["initial_optimizer_state_sha256"]
+        != optimizer_summary["initial_optimizer_state_sha256"]
+        or ledger["final_optimizer_state_sha256"]
+        != optimizer_summary["final_optimizer_state_sha256"]
+        or ledger["optimizer_event_tail_sha256"]
+        != optimizer_summary["final_event_sha256"]
+        or ledger["status"] != expected_status
     ):
         raise PrefixRouteR6Error("R6 execution ledger identity differs")
     fairness_row = fairness_audit["rows"].get(arm)
-    if fairness_row is not None and any(
-        ledger[field] != fairness_row[field]
+    if fairness_row is not None:
+        if any(
+            ledger[field] != fairness_row[field]
+            for field in (
+                "optimizer_event_count",
+                "effective_token_count",
+                "gradient_accumulation_steps",
+            )
+        ):
+            raise PrefixRouteR6Error(
+                "R6 execution ledger differs from live fairness budget"
+            )
+        if (
+            optimizer_summary["initial_model_state_sha256"]
+            != fairness_row["profiled_model_tensor_state_sha256"]
+            or optimizer_summary["initial_model_artifact_sha256"]
+            != fairness_row["profiled_model_artifact_sha256"]
+        ):
+            raise PrefixRouteR6Error(
+                "R6 initial checkpoint differs from the live profiled model"
+            )
+    if any(
+        ledger[field] != optimizer_summary[field]
         for field in (
             "optimizer_event_count",
             "effective_token_count",
@@ -1454,29 +1796,31 @@ def _validate_run_provenance(
         )
     ):
         raise PrefixRouteR6Error(
-            "R6 execution ledger differs from live fairness budget"
-        )
-    if (
-        len(accumulation_steps) != 1
-        or ledger["optimizer_event_count"] != len(events)
-        or ledger["effective_token_count"] != effective_token_count
-        or ledger["gradient_accumulation_steps"]
-        != next(iter(accumulation_steps))
-    ):
-        raise PrefixRouteR6Error(
             "R6 execution ledger differs from optimizer event trace"
         )
-    for field in (
-        "optimizer_event_count",
-        "effective_token_count",
-        "gradient_accumulation_steps",
-    ):
-        if (
-            isinstance(ledger[field], bool)
-            or not isinstance(ledger[field], int)
-            or ledger[field] <= 0
+    if optimizer_summary["learning"]:
+        for field in (
+            "optimizer_event_count",
+            "effective_token_count",
+            "gradient_accumulation_steps",
         ):
-            raise PrefixRouteR6Error(f"R6 execution ledger {field} differs")
+            if (
+                isinstance(ledger[field], bool)
+                or not isinstance(ledger[field], int)
+                or ledger[field] <= 0
+            ):
+                raise PrefixRouteR6Error(
+                    f"R6 execution ledger {field} differs"
+                )
+    elif any(
+        ledger[field] != 0
+        for field in (
+            "optimizer_event_count",
+            "effective_token_count",
+            "gradient_accumulation_steps",
+        )
+    ):
+        raise PrefixRouteR6Error("R6 no-learning ledger contains updates")
     if (
         not isinstance(ledger["hyperparameter_trial_id"], str)
         or not ledger["hyperparameter_trial_id"]
@@ -1502,7 +1846,7 @@ def _r0_ground_truth(r0_report, r0_detail, *, expected_video_count):
     report_fields = {
         "schema_version",
         "collector_version",
-        "status",
+        "evidence_role",
         "reporting_population_role",
         "annotation_exposure_status",
         "author_disclosure",
@@ -1530,7 +1874,8 @@ def _r0_ground_truth(r0_report, r0_detail, *, expected_video_count):
         r0_report["schema_version"] != R0_REPORT_SCHEMA
         or r0_detail["schema_version"] != R0_DETAIL_SCHEMA
         or r0_report["collector_version"] != r0_detail["collector_version"]
-        or r0_report["status"] != "PASS_R0_COMPLETE"
+        or r0_report["evidence_role"]
+        != "DIAGNOSTIC_ONLY_REQUIRES_FORMAL_ENVELOPE"
         or r0_report["reporting_population_role"] != "canonical_reporting_213"
         or r0_report["annotation_exposure_status"]
         != "DESIGN_EXPOSED_ROUTE_SELECTION_AND_BENCHMARK"
@@ -1746,10 +2091,18 @@ def _r0_evidence(protocol_record, r0_envelope, r0_detail):
     return report, video_sources, eligible_stress, detail_sha256
 
 
-def _canonical_video_emissions(rows, video_id, frame_count):
-    if not isinstance(rows, list):
-        raise PrefixRouteR6Error("per-video emissions must be an array")
-    canonical = [canonical_emission(dict(row)) for row in rows]
+def _canonical_video_emissions(batch, video_id, frame_count):
+    if (
+        type(batch) is not _VerifiedEmissionRows
+        or batch._token is not _VERIFIED_EMISSION_TOKEN
+        or batch.video_id != video_id
+    ):
+        raise PrefixRouteR6Error(
+            "per-video emissions require a verified immutable ledger batch"
+        )
+    canonical = [
+        canonical_emission(dict(row)) for row in batch.canonical_rows
+    ]
     if [row["sequence_id"] for row in canonical] != list(range(len(canonical))):
         raise PrefixRouteR6Error(
             "per-video sequence_id must be contiguous append order"
@@ -1765,12 +2118,16 @@ def _canonical_video_emissions(rows, video_id, frame_count):
         if row["emit_frame"] < previous_emit:
             raise PrefixRouteR6Error("emissions are not append-ordered")
         previous_emit = row["emit_frame"]
-    return canonical
+    return _VerifiedEmissionRows(
+        video_id=video_id,
+        canonical_rows=canonical,
+        metric_rows=batch.metric_rows,
+        token=_VERIFIED_EMISSION_TOKEN,
+    )
 
 
-def _online_ap_from_raw(video_sources, emissions_by_video):
+def _online_ap_from_verified_ledger(video_sources, ledger_evidence):
     ground_truth = {"database": {}}
-    predictions = {"results": {}}
     for video_id, source in video_sources.items():
         ground_truth["database"][video_id] = {
             "subset": "validation",
@@ -1785,25 +2142,18 @@ def _online_ap_from_raw(video_sources, emissions_by_video):
                 for row in source["ground_truth"]
             ],
         }
-        fps = source["fps"]
-        predictions["results"][video_id] = [
-            {
-                "segment": [row["start"] / fps, row["end"] / fps],
-                "label": row["class"],
-                "score": row["score"],
-                "source_frame": row["source_frame"],
-                "emit_frame": row["emit_frame"],
-                "fps": fps,
-            }
-            for row in emissions_by_video[video_id]
-        ]
+    predictions = {
+        "ledger_bytes": ledger_evidence["ledger_bytes"],
+        "commitment_bytes": ledger_evidence["commitment_bytes"],
+        "ledger_filename": ledger_evidence["ledger_filename"],
+    }
     evaluator = OnlineAPBudgeted(
         ground_truth,
         predictions,
         subset="validation",
         tiou_thresholds=(R6_TIOU_THRESHOLD,),
         latency_budgets_sec=(R6_LATENCY_BUDGET_SEC,),
-        require_ledger=False,
+        require_ledger=True,
         include_identity_diagnostics=False,
     )
     metrics = evaluator.evaluate()
@@ -1888,7 +2238,8 @@ def _evaluate_verified_r6_objects(
             "arm",
             "seed",
             "provenance",
-            "videos",
+            "emission_ledger",
+            "emission_commitment",
         }:
             raise PrefixRouteR6Error("R6 run fields differ")
         arm = run["arm"]
@@ -1898,26 +2249,32 @@ def _evaluate_verified_r6_objects(
         key = (arm, seed)
         if key in run_map:
             raise PrefixRouteR6Error("R6 run is duplicated")
-        videos = run["videos"]
-        if not isinstance(videos, list):
-            raise PrefixRouteR6Error("R6 run videos must be an array")
-        emissions_by_video = {}
-        for video in videos:
-            if (
-                not isinstance(video, dict)
-                or set(video) != {"video_id", "emissions"}
-            ):
-                raise PrefixRouteR6Error("R6 run video fields differ")
-            video_id = video["video_id"]
-            if video_id not in video_sources or video_id in emissions_by_video:
-                raise PrefixRouteR6Error("R6 run video identity differs")
+        provenance = run["provenance"]
+        if not isinstance(provenance, dict):
+            raise PrefixRouteR6Error("R6 run provenance must be an object")
+        try:
+            run_binding = _run_binding_sha256(provenance)
+        except KeyError as exc:
+            raise PrefixRouteR6Error(
+                "R6 run provenance lacks a binding field"
+            ) from exc
+        if provenance.get("run_binding_sha256") != run_binding:
+            raise PrefixRouteR6Error("R6 run binding commitment differs")
+        ledger_evidence = _load_verified_run_emissions(
+            ledger_reference=run["emission_ledger"],
+            commitment_reference=run["emission_commitment"],
+            bundle_root=bundle_root,
+            expected_video_ids=expected_videos,
+            run_binding_sha256=run_binding,
+        )
+        batches_by_video = ledger_evidence["batches_by_video"]
+        for video_id in expected_videos:
             source = video_sources[video_id]
             emissions = _canonical_video_emissions(
-                video["emissions"],
+                batches_by_video[video_id],
                 video_id,
                 source["frame_count"],
             )
-            emissions_by_video[video_id] = emissions
             cells.append(
                 derive_per_video_cell(
                     arm=arm,
@@ -1935,31 +2292,30 @@ def _evaluate_verified_r6_objects(
                     feature_stride_frames=R6_FEATURE_STRIDE_FRAMES,
                 )
             )
-        if list(emissions_by_video) != expected_videos:
-            raise PrefixRouteR6Error("R6 run video population differs from R0")
-        if len({
-            row["emission_id"]
-            for emissions in emissions_by_video.values()
-            for row in emissions
-        }) != sum(len(rows) for rows in emissions_by_video.values()):
-            raise PrefixRouteR6Error("R6 emission IDs are duplicated across videos")
         _validate_run_provenance(
-            run["provenance"],
+            provenance,
             bundle_root=bundle_root,
             arm=arm,
             seed=seed,
-            videos=videos,
+            video_ids=expected_videos,
             protocol_record=protocol_record,
             manifest_record=manifest_record,
             review_record=review_record,
             fairness_audit=fairness_audit,
             fairness_audit_sha256=fairness_audit_sha256,
+            emission_ledger_sha256=ledger_evidence["ledger_sha256"],
+            emission_commitment_sha256=ledger_evidence[
+                "commitment_sha256"
+            ],
         )
         dataset_metrics.append(
             {
                 "arm": arm,
                 "seed": seed,
-                **_online_ap_from_raw(video_sources, emissions_by_video),
+                **_online_ap_from_verified_ledger(
+                    video_sources,
+                    ledger_evidence,
+                ),
             }
         )
         run_map[key] = True
@@ -1968,12 +2324,16 @@ def _evaluate_verified_r6_objects(
     }
     if set(run_map) != expected_runs:
         raise PrefixRouteR6Error("R6 arm-seed Cartesian product is incomplete")
-    inference = _sealed_paired_crossed_bootstrap(
-        cells,
-        dataset_metrics,
+    verified_evidence = _VerifiedR6Evidence(
+        raw_evidence=raw_evidence,
+        per_video_cells=cells,
+        dataset_metrics=dataset_metrics,
         eligible_stress_families=eligible_stress,
+        token=_VERIFIED_R6_EVIDENCE_TOKEN,
     )
-    decision = _terminal_route_decision(inference)
+    sealed_inference = _seal_bootstrap_output(verified_evidence)
+    inference = sealed_inference.inference
+    decision = _terminal_route_decision(sealed_inference)
     result = {
         "schema_version": R6_RESULT_SCHEMA,
         "raw_evidence_sha256": hashlib.sha256(
@@ -1987,6 +2347,16 @@ def _evaluate_verified_r6_objects(
             "opentad.evaluations.online_budgeted_map.OnlineAPBudgeted"
         ),
         "eligible_stress_families": list(eligible_stress),
+        "sealed_evidence_commitments": {
+            "raw_evidence_sha256": sealed_inference.raw_evidence_sha256,
+            "cell_set_sha256": sealed_inference.cell_set_sha256,
+            "dataset_metrics_sha256": (
+                sealed_inference.dataset_metrics_sha256
+            ),
+            "bootstrap_output_sha256": (
+                sealed_inference.bootstrap_output_sha256
+            ),
+        },
         "inference": inference,
         "decision": decision,
     }
@@ -1996,14 +2366,16 @@ def _evaluate_verified_r6_objects(
     return result
 
 
-def evaluate_r6_raw_evidence(
+def _evaluate_r6_entry(
     raw_evidence_reference,
     *,
     bundle_root,
     population_request_reference,
     r0_request_reference,
     r0_detail_reference,
-    fairness_audit_reference,
+    fairness_audit_reference=None,
+    fairness_capability=None,
+    formal_process_capability=None,
     review_attestation_path,
     review_signature_path,
 ):
@@ -2014,17 +2386,27 @@ def evaluate_r6_raw_evidence(
         read_verified_bundle_json,
     )
     from opentad.utils.prefix_route_fairness_v2 import (
+        require_live_fairness_capability,
         validate_fairness_audit_record,
     )
+    from opentad.utils.prefix_route_formal_v2 import (
+        require_formal_process_capability,
+    )
     from opentad.utils.prefix_route_protocol_v2 import (
-        PROTOCOL_PASS,
+        _load_formal_protocol_context,
         load_protocol,
-        load_signed_review,
-        load_source_manifest,
         validate_population_bundle,
         validate_r0_bundle,
     )
 
+    process_attestation = None
+    if fairness_capability is not None:
+        try:
+            process_attestation = require_formal_process_capability(
+                formal_process_capability
+            )
+        except Exception as exc:
+            raise PrefixRouteR6Error(str(exc)) from exc
     repo_root = Path(__file__).resolve().parents[2]
     protocol_path = (
         repo_root
@@ -2033,38 +2415,43 @@ def evaluate_r6_raw_evidence(
         / "protocols"
         / "prefix_route_identifiability_v2.json"
     )
-    manifest_path = (
-        repo_root
-        / "configs"
-        / "causaltad"
-        / "protocols"
-        / "prefix_route_identifiability_v2_manifest.json"
+    if (
+        load_protocol(protocol_path)["protocol"]["population"][
+            "source_registration"
+        ]["state"]
+        != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL"
+    ):
+        raise PrefixRouteR6Error(
+            "R6 is blocked until canonical reporting source registration"
+        )
+    context = _load_formal_protocol_context(
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
+        require_head=True,
     )
-    protocol_record = load_protocol(protocol_path)
+    protocol_record = context.protocol_record
+    manifest_record = context.manifest_record
+    review_record = context.review_record
+    if process_attestation is not None and (
+        process_attestation["protocol_id"]
+        != protocol_record["protocol"]["protocol_id"]
+        or process_attestation["protocol_sha256"] != protocol_record["sha256"]
+        or process_attestation["source_manifest_sha256"]
+        != manifest_record["sha256"]
+        or process_attestation["review_attestation_sha256"]
+        != review_record["attestation_sha256"]
+        or Path(process_attestation["repository_root"]).resolve()
+        != repo_root.resolve()
+    ):
+        raise PrefixRouteR6Error(
+            "formal process capability differs from the R6 source chain"
+        )
     registration = protocol_record["protocol"]["population"][
         "source_registration"
     ]
     if registration["state"] != "REGISTERED_IN_FIXED_REVIEWED_PROTOCOL":
-        raise PrefixRouteR6Error(
-            "R6 is blocked until canonical reporting source registration"
-        )
-    manifest_record = load_source_manifest(
-        manifest_path,
-        protocol_record=protocol_record,
-        repo_root=repo_root,
-        check_worktree=True,
-    )
-    review_record = load_signed_review(
-        attestation_path=review_attestation_path,
-        signature_path=review_signature_path,
-        protocol_record=protocol_record,
-        manifest_record=manifest_record,
-        repo_root=repo_root,
-        require_head=True,
-    )
-    if review_record["attestation"]["verdict"] != PROTOCOL_PASS:
-        raise PrefixRouteR6Error("R6 requires the signed independent PASS")
-
+        raise PrefixRouteR6Error("R6 source registration changed during load")
     def read_canonical(reference, label):
         try:
             _, payload, value = read_verified_bundle_json(
@@ -2079,36 +2466,41 @@ def evaluate_r6_raw_evidence(
             raise PrefixRouteR6Error(f"{label} is not canonical JSON")
         return payload, value
 
-    _, population_request = read_canonical(
+    validate_population_bundle(
         population_request_reference,
-        "R6 population request",
-    )
-    population_record = validate_population_bundle(
-        population_request,
         bundle_root=bundle_root,
-        protocol_record=protocol_record,
-        review_record=review_record,
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
     )
-    _, r0_request = read_canonical(r0_request_reference, "R6 R0 request")
     r0_envelope = validate_r0_bundle(
-        r0_request,
+        r0_request_reference,
+        population_request_reference=population_request_reference,
         bundle_root=bundle_root,
-        protocol_record=protocol_record,
-        review_record=review_record,
-        population_record=population_record,
+        repo_root=repo_root,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
     )
     _, r0_detail = read_canonical(r0_detail_reference, "R6 R0 detail")
-    fairness_bytes, fairness_audit = read_canonical(
-        fairness_audit_reference,
-        "R6 fairness audit",
-    )
-    validate_fairness_audit_record(
-        fairness_audit,
-        bundle_root=bundle_root,
-    )
-    if fairness_audit["status"] != "PASS_BOTH_CAPACITY_AND_RESOURCE_MATCHED":
-        raise PrefixRouteR6Error("R6 is blocked by failed arm fairness")
-    fairness_audit_sha256 = hashlib.sha256(fairness_bytes).hexdigest()
+    if fairness_capability is None:
+        fairness_bytes, fairness_audit = read_canonical(
+            fairness_audit_reference,
+            "R6 fairness audit",
+        )
+        archive_status = validate_fairness_audit_record(
+            fairness_audit,
+            bundle_root=bundle_root,
+        )
+        raise PrefixRouteR6Error(
+            "serialized fairness cannot authorize R6: "
+            f"{archive_status['verification_status']}"
+        )
+    try:
+        fairness_audit, fairness_audit_sha256 = (
+            require_live_fairness_capability(fairness_capability)
+        )
+    except Exception as exc:
+        raise PrefixRouteR6Error(str(exc)) from exc
     _, raw_evidence = read_canonical(
         raw_evidence_reference,
         "R6 raw evidence",
@@ -2123,6 +2515,58 @@ def evaluate_r6_raw_evidence(
         fairness_audit_sha256=fairness_audit_sha256,
         r0_envelope=r0_envelope,
         r0_detail=r0_detail,
+    )
+
+
+def evaluate_r6_raw_evidence(
+    raw_evidence_reference,
+    *,
+    bundle_root,
+    population_request_reference,
+    r0_request_reference,
+    r0_detail_reference,
+    fairness_audit_reference,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Reject serialized fairness records at the historical public entry."""
+
+    return _evaluate_r6_entry(
+        raw_evidence_reference,
+        bundle_root=bundle_root,
+        population_request_reference=population_request_reference,
+        r0_request_reference=r0_request_reference,
+        r0_detail_reference=r0_detail_reference,
+        fairness_audit_reference=fairness_audit_reference,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
+    )
+
+
+def _evaluate_r6_live_evidence(
+    raw_evidence_reference,
+    *,
+    bundle_root,
+    population_request_reference,
+    r0_request_reference,
+    r0_detail_reference,
+    fairness_capability,
+    formal_process_capability,
+    review_attestation_path,
+    review_signature_path,
+):
+    """Formal in-process R6 entry used only by the clean repository runner."""
+
+    return _evaluate_r6_entry(
+        raw_evidence_reference,
+        bundle_root=bundle_root,
+        population_request_reference=population_request_reference,
+        r0_request_reference=r0_request_reference,
+        r0_detail_reference=r0_detail_reference,
+        fairness_capability=fairness_capability,
+        formal_process_capability=formal_process_capability,
+        review_attestation_path=review_attestation_path,
+        review_signature_path=review_signature_path,
     )
 
 

@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:prefix-route-identifiability-gate
 title: "Persistent-Carrier On-TAL Route Identifiability Gate"
-stage: protocol-v2-round3-revise-remediation
+stage: protocol-v2-gate-a-closure-review-pending
 outcome: not-run
-updated: 2026-07-17
+updated: 2026-07-20
 ---
 
 # Persistent-Carrier On-TAL Route Identifiability Gate
@@ -18,6 +18,11 @@ Protocol V2 verdict: `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 Protocol V2 round-3 verdict at `b0ac8b1`:
 `REVISE_PROTOCOL_BEFORE_COLLECTION`.
 
+Protocol V2 Gate A verdict at `48e78e43`:
+`REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`.
+
+Gate-A successor candidate: `LOCAL_CLOSURE_COMPLETE_REVIEW_PENDING`.
+
 This node records the evidence required before any R-A model P0 contract,
 implementation, or training. It is not a model experiment, has not run, and
 does not authorize B0-B4 implementation. V1 converted the checklist into code
@@ -26,47 +31,61 @@ evidence statuses, and incomplete R0-R6 execution. Fixed V2 commit `18cc27b`
 also received `REVISE`: its Git/source reproduction passed, but population,
 R1, R0 disclosure, B2/fairness, R5, R6, tests, and Windows path semantics
 still contained false-PASS or unusable paths. Round 3 then reproduced six
-remaining bypasses in R0, B2, fairness, R5, and R6. The active candidate is
-their zero-GPU remediation. Neither source registration, R0, nor R1 evidence
-collection is currently authorized.
+remaining bypasses in R0, B2, fairness, R5, and R6. Its remediation was
+committed as `48e78e43`, but the next exact-commit audit found Gate A still
+open. Neither source registration, R0, R1 evidence collection, nor any
+ChronoTransport work is currently authorized.
 
-The round-3 remediation is locally complete and awaiting the same reviewer's
-fixed-commit reassessment. Protocol SHA-256 is
-`493A132BBC9998AD7DD1D4756EC882DEE858AC8C739DBF96C618B1459BE3AC65`;
-the 32-entry source-manifest SHA-256 is
-`05BF8A8925B465522BCB7470D1810D2421B99C3F7E15512AD3C87C6435AA8C25`.
-Dedicated tests pass `46/46`; a broader 11-file zero-GPU suite passes `148`
-with one fail-closed Torch-import skip. These are engineering checks, not
-scientific outcomes or authorization.
+The new audit confirms the augmented B2 dustbin assignment and R5 row
+regeneration, while rejecting formal-entry exclusivity, serialized fairness,
+checkpoint/emission provenance, sealed terminal derivation, full import
+closure, exact B2 tie-breaking, stream-clock ownership, and hostile-test
+coverage. Earlier local test counts remain engineering history, not
+authorization or scientific evidence.
+
+A later request retained literal `TARGET_COMMIT`, so it could not register a
+new immutable review object. Its auxiliary diagnosis corroborates Gate A, but
+DR-054 remains the active exact-commit decision. This procedural failure adds
+no new authorization and does not replace the Gate-A review.
+
+The Gate-A-only successor is now implemented locally. It adds capability-bound
+formal entry, live fairness and tensor provenance, full optimizer artifacts,
+ledger-only emissions, sealed R6 derivation, fresh-process import attestation,
+exact B2 assignment/state, and hostile rejection tests. The relevant
+zero-GPU suite passes `195` tests with one declared skip; this is engineering
+evidence only. The successor still needs one exact-commit independent review,
+and its formal runner deliberately refuses model evaluation before a separate
+model-P0 authorization.
 
 GPU authorization: zero hours.
 
-## Gate P: Independent Protocol Review Before Collection
+## Gate P: Gate A Closure Review Before Any Collection or CT Work
 
-The next legal artifact is one protocol-only immutable V2 commit containing:
+The next legal artifact is one Gate A-only immutable V2 commit containing:
 
 - `configs/causaltad/protocols/prefix_route_identifiability_v2.json`;
 - `configs/causaltad/protocols/prefix_route_identifiability_v2_manifest.json`;
-- `opentad/utils/prefix_route_protocol_v2.py`;
-- bound R0, R1, controls, fairness, OOD, and R6 implementations;
-- `tools/validate_prefix_route_protocol_v2.py`;
-- `tests/test_prefix_route_protocol_v2.py`;
+- non-certifying R0/R5 helpers and one formal capability boundary;
+- exact source-origin/registration validation;
+- live fairness and checkpoint tensor-state provenance;
+- a verified append-only emission ledger;
+- a sealed clean-process R6 runner and terminal;
+- exact execution import closure;
+- B2 lexicographic assignment and indivisible stream state;
+- hostile rejection and closure tests;
 - `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`;
-- the archived V1 and V2 independent reviews.
+- matching manifest and research-memory updates.
 
-The same sole reviewer must verify the exact commit/tree and sign canonical
-attestation bytes using the pre-frozen Ed25519 identity. The reviewer may
-return only:
+The reviewer must verify the exact commit/tree and the formal execution
+closure in a clean environment. The next required positive token is:
 
-- `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`;
-- `REVISE_PROTOCOL_BEFORE_COLLECTION`.
+- `PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN`.
 
-Because authoritative source identities are currently unregistered, a
-protocol PASS authorizes only read-only source-identity registration. A later
-fixed and independently reviewed registration commit may authorize the
-specified R0/R1 audits. Neither PASS authorizes inspecting model predictions
-or checkpoints, selecting model constants, implementing B0-B4, running P0, or
-using a GPU.
+Any other result preserves the block. Even that PASS authorizes only the next
+narrow scope explicitly stated in its attestation; it does not automatically
+authorize source registration, R0/R1, ChronoTransport, inspecting model
+predictions/checkpoints, selecting model constants, implementing B0-B4,
+running P0, or using a GPU.
 
 Local validation is necessary but not sufficient. The V2 validator reports
 `PROTOCOL_V2_VALID_REVIEW_REQUIRED`, and collection authorization returns
@@ -336,7 +355,9 @@ training, visual fine-tuning, or raw-video training.
 
 | Action | Status |
 |---|---|
-| Commit V2 and obtain same-reviewer signed protocol decision | `ALLOW` |
+| Implement Gate A-only remediation | `COMPLETE_LOCAL_UNREVIEWED` |
+| Publish successor SHA and obtain exact-commit closure review | `NEXT_REQUIRED` |
+| Inspect/adapt ChronoTransport or design its kill-test | `BLOCKED_BY_GATE_A` |
 | New annotation census | `BLOCKED_PENDING_PROTOCOL_PASS` |
 | New feature-provenance or causality audit | `BLOCKED_PENDING_PROTOCOL_PASS` |
 | Inspect model outcomes, predictions, or checkpoints | `BLOCKED` |
@@ -349,6 +370,10 @@ training, visual fine-tuning, or raw-video training.
 
 ## Sources
 
+- [`../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md`](../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md)
+- [`../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`](../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md)
+- [`../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)
@@ -370,6 +395,12 @@ training, visual fine-tuning, or raw-video training.
 - [T43](../discussion_timeline.md#t43-protocol-v2-closes-v1-bypasses-and-awaits-the-same-reviewer)
 - [DR-053](../decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses)
 - [T46](../discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally)
+- [DR-054](../decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work)
+- [T47](../discussion_timeline.md#t47-gate-a-fails-and-stops-the-chronotransport-branch)
+- [DR-055](../decision_register.md#dr-055-preserve-the-unresolved-target-review-without-promoting-it-to-a-fixed-commit-certificate)
+- [T48](../discussion_timeline.md#t48-unresolved-target-review-corroborates-gate-a-but-cannot-replace-it)
+- [DR-056](../decision_register.md#dr-056-freeze-the-local-gate-a-closure-candidate-without-granting-authorization)
+- [T49](../discussion_timeline.md#t49-gate-a-closure-is-implemented-locally-but-remains-unreviewed)
 - [DR-046](../decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation)
 - [T39](../discussion_timeline.md#t39-preimplementation-review-revokes-r-a-default-route-status)
 - [idea:prefix-shared-latent-event-filter](../ideas/prefix-shared-latent-event-filter.md)

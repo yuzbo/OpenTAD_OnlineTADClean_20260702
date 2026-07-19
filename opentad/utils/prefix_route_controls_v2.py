@@ -6,6 +6,7 @@ from collections import Counter
 from collections import defaultdict
 import hashlib
 import json
+import math
 
 
 CONTROL_SCHEMA = "prefix-route-negative-control-v2"
@@ -62,6 +63,122 @@ def feature_time_shuffle_permutation(
     if sorted(permutation) != list(range(token_count)):
         raise PrefixRouteControlError("feature shuffle is not a permutation")
     return tuple(permutation)
+
+
+def count_only_schedule(
+    video_id,
+    decision_bins,
+    *,
+    event_count_prior,
+    class_prior,
+):
+    """Construct the frozen feature-free count/class-prior schedule."""
+
+    if not isinstance(video_id, str) or not video_id:
+        raise PrefixRouteControlError("video_id must be non-empty text")
+    if (
+        not isinstance(decision_bins, list)
+        or not decision_bins
+        or decision_bins != sorted(set(decision_bins))
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in decision_bins)
+    ):
+        raise PrefixRouteControlError("decision_bins must be sorted unique integers")
+    if (
+        isinstance(event_count_prior, bool)
+        or not isinstance(event_count_prior, int)
+        or event_count_prior < 0
+    ):
+        raise PrefixRouteControlError("event_count_prior must be non-negative")
+    if (
+        not isinstance(class_prior, list)
+        or not class_prior
+        or any(
+            not isinstance(row, dict)
+            or set(row) != {"label", "probability"}
+            or not isinstance(row["label"], str)
+            or not row["label"]
+            or isinstance(row["probability"], bool)
+            or not isinstance(row["probability"], (int, float))
+            or row["probability"] < 0
+            for row in class_prior
+        )
+    ):
+        raise PrefixRouteControlError("class_prior fields differ")
+    total = sum(float(row["probability"]) for row in class_prior)
+    if not math.isclose(total, 1.0, rel_tol=0.0, abs_tol=1e-9):
+        raise PrefixRouteControlError("class_prior must sum to one")
+    count = min(event_count_prior, len(decision_bins))
+    if count == 0:
+        selected_bins = []
+    else:
+        selected_bins = [
+            decision_bins[(index * len(decision_bins)) // count]
+            for index in range(count)
+        ]
+    ranked_classes = sorted(
+        class_prior,
+        key=lambda row: (-float(row["probability"]), row["label"]),
+    )
+    return {
+        "video_id": video_id,
+        "scheduled_bins": selected_bins,
+        "labels": [
+            ranked_classes[index % len(ranked_classes)]["label"]
+            for index in range(count)
+        ],
+    }
+
+
+def template_timing_schedule(
+    video_id,
+    decision_bins,
+    *,
+    duration_template_bins,
+    gap_template_bins,
+):
+    """Construct the frozen feature-free duration/gap template schedule."""
+
+    if not isinstance(video_id, str) or not video_id:
+        raise PrefixRouteControlError("video_id must be non-empty text")
+    if (
+        not isinstance(decision_bins, list)
+        or not decision_bins
+        or decision_bins != sorted(set(decision_bins))
+    ):
+        raise PrefixRouteControlError("decision_bins differ")
+    for values, label, minimum in (
+        (duration_template_bins, "duration_template_bins", 1),
+        (gap_template_bins, "gap_template_bins", 0),
+    ):
+        if (
+            not isinstance(values, list)
+            or not values
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < minimum
+                for value in values
+            )
+        ):
+            raise PrefixRouteControlError(f"{label} differs")
+    allowed = set(decision_bins)
+    rows = []
+    cursor = decision_bins[0]
+    template_index = 0
+    while cursor in allowed:
+        duration = duration_template_bins[
+            template_index % len(duration_template_bins)
+        ]
+        rows.append(
+            {
+                "start_bin": cursor,
+                "end_bin": cursor + duration,
+            }
+        )
+        gap = gap_template_bins[template_index % len(gap_template_bins)]
+        cursor = cursor + duration + gap
+        template_index += 1
+    return {"video_id": video_id, "events": rows}
 
 
 def _validate_instances(instances):
@@ -255,6 +372,8 @@ __all__ = [
     "SEMANTIC_CLASS_AP_DROP_MARGIN",
     "SEMANTIC_DERANGEMENT_SEED",
     "canonical_json_bytes",
+    "count_only_schedule",
     "feature_time_shuffle_permutation",
     "semantic_derangement",
+    "template_timing_schedule",
 ]

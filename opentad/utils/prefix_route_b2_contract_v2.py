@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
+import hashlib
+import json
 import math
 
 
 B2_CONTRACT_SCHEMA = "prefix-route-temporal-motr-b2-v2"
+B2_STREAM_STATE_SCHEMA = "prefix-route-b2-stream-state-v2"
+B2_STREAM_TRANSCRIPT_SCHEMA = "prefix-route-b2-stream-transcript-v2"
 TRACK_CAPACITY = 64
 NEWBORN_QUERY_COUNT = 64
 MAX_DECODER_QUERY_COUNT = TRACK_CAPACITY + NEWBORN_QUERY_COUNT
 THRESHOLD_GRID = tuple(index / 20.0 for index in range(1, 20))
 DUSTBIN_COST = 10.0
+FEATURE_STRIDE_FRAMES = 8
+_COST_SCALE = 1_000_000
+_GENESIS_STATE_SHA256 = "0" * 64
 
 
 class PrefixRouteB2Error(ValueError):
@@ -46,6 +54,137 @@ def _identifier(value, label):
     if not isinstance(value, str) or not value:
         raise PrefixRouteB2Error(f"{label} must be non-empty text")
     return value
+
+
+def _canonical_json_bytes(value):
+    return (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _state_sha256(value):
+    unsigned = dict(value)
+    unsigned.pop("state_sha256", None)
+    return hashlib.sha256(_canonical_json_bytes(unsigned)).hexdigest()
+
+
+def _quantized_cost_units(value, label):
+    cost = _finite(value, label)
+    if cost < 0:
+        raise PrefixRouteB2Error(f"{label} must be non-negative")
+    try:
+        decimal = Decimal(str(value))
+    except InvalidOperation as exc:
+        raise PrefixRouteB2Error(f"{label} must be a decimal number") from exc
+    quantized = decimal.quantize(Decimal("0.000001"), rounding=ROUND_HALF_EVEN)
+    if decimal != quantized:
+        raise PrefixRouteB2Error(
+            f"{label} must be quantized to 1e-6"
+        )
+    return int(quantized * _COST_SCALE)
+
+
+def _hungarian_rectangular_integer(costs):
+    """Return the minimum assignment for an integer n-by-m matrix, n <= m."""
+
+    if not costs or not costs[0]:
+        raise PrefixRouteB2Error("assignment matrix must be non-empty")
+    row_count = len(costs)
+    column_count = len(costs[0])
+    if row_count > column_count:
+        raise PrefixRouteB2Error("assignment matrix must have at least as many columns")
+    if any(len(row) != column_count for row in costs):
+        raise PrefixRouteB2Error("assignment matrix rows differ in width")
+
+    u = [0] * (row_count + 1)
+    v = [0] * (column_count + 1)
+    matched_row = [0] * (column_count + 1)
+    predecessor = [0] * (column_count + 1)
+    for row_index in range(1, row_count + 1):
+        matched_row[0] = row_index
+        minimum = [None] * (column_count + 1)
+        used = [False] * (column_count + 1)
+        column = 0
+        while True:
+            used[column] = True
+            current_row = matched_row[column]
+            delta = None
+            next_column = 0
+            for candidate in range(1, column_count + 1):
+                if used[candidate]:
+                    continue
+                reduced = (
+                    costs[current_row - 1][candidate - 1]
+                    - u[current_row]
+                    - v[candidate]
+                )
+                if minimum[candidate] is None or reduced < minimum[candidate]:
+                    minimum[candidate] = reduced
+                    predecessor[candidate] = column
+                if (
+                    delta is None
+                    or minimum[candidate] < delta
+                    or (
+                        minimum[candidate] == delta
+                        and candidate < next_column
+                    )
+                ):
+                    delta = minimum[candidate]
+                    next_column = candidate
+            if delta is None:
+                raise PrefixRouteB2Error("assignment matrix has no complete matching")
+            for candidate in range(column_count + 1):
+                if used[candidate]:
+                    u[matched_row[candidate]] += delta
+                    v[candidate] -= delta
+                elif minimum[candidate] is not None:
+                    minimum[candidate] -= delta
+            column = next_column
+            if matched_row[column] == 0:
+                break
+        while True:
+            previous = predecessor[column]
+            matched_row[column] = matched_row[previous]
+            column = previous
+            if column == 0:
+                break
+
+    assignment = [-1] * row_count
+    for column in range(1, column_count + 1):
+        if matched_row[column]:
+            assignment[matched_row[column] - 1] = column - 1
+    if any(column < 0 for column in assignment):
+        raise PrefixRouteB2Error("assignment matrix produced an incomplete matching")
+    return assignment
+
+
+def _lexicographic_exact_assignment(primary_costs):
+    """Minimize primary integer cost, then the row-wise column vector exactly."""
+
+    row_count = len(primary_costs)
+    column_count = len(primary_costs[0])
+    base = column_count + 1
+    primary_multiplier = base ** row_count
+    row_weights = [
+        base ** (row_count - row_index - 1)
+        for row_index in range(row_count)
+    ]
+    combined = [
+        [
+            primary_costs[row_index][column_index] * primary_multiplier
+            + column_index * row_weights[row_index]
+            for column_index in range(column_count)
+        ]
+        for row_index in range(row_count)
+    ]
+    return _hungarian_rectangular_integer(combined)
 
 
 def validate_calibrated_threshold(value):
@@ -159,49 +298,29 @@ def build_temporal_tracklet_assignment(
             "newborn costs must be empty when the risk set is fully assigned"
         )
     if available_instances:
-        try:
-            import numpy as np
-            from scipy.optimize import linear_sum_assignment
-        except Exception as exc:
-            raise PrefixRouteB2Error(
-                "temporal tracklet assignment requires NumPy and SciPy"
-            ) from exc
         target_count = len(available_instances)
-        matrix = np.empty(
-            (NEWBORN_QUERY_COUNT, target_count + NEWBORN_QUERY_COUNT),
-            dtype=np.float64,
-        )
+        matrix = []
         for slot in range(NEWBORN_QUERY_COUNT):
             row = newborn_costs[slot]
             if not isinstance(row, dict) or set(row) != set(available_instances):
                 raise PrefixRouteB2Error(
                     "newborn cost columns differ from unassigned risk set"
                 )
+            matrix_row = []
             for column, instance_id in enumerate(available_instances):
-                cost = _finite(row[instance_id], "newborn assignment cost")
-                if cost < 0:
-                    raise PrefixRouteB2Error(
-                        "newborn assignment cost must be non-negative"
+                del column
+                matrix_row.append(
+                    _quantized_cost_units(
+                        row[instance_id],
+                        "newborn assignment cost",
                     )
-                quantized = round(cost, 6)
-                if not math.isclose(cost, quantized, rel_tol=0.0, abs_tol=1e-12):
-                    raise PrefixRouteB2Error(
-                        "newborn assignment costs must be quantized to 1e-6"
-                    )
-                # A non-separable perturbation makes equal-cost target
-                # assignments deterministic without changing 1e-6 decisions.
-                tie = (slot + 1) * (column + 1) * 1e-12
-                matrix[slot, column] = quantized + tie
-            for dustbin in range(NEWBORN_QUERY_COUNT):
-                # Each query has its own optional-match column. Cross-dustbin
-                # assignments remain possible so the matrix has a full matching,
-                # but the diagonal is deterministically preferred.
-                distance = abs(slot - dustbin)
-                matrix[slot, target_count + dustbin] = (
-                    DUSTBIN_COST + distance * 1e-9 + dustbin * 1e-12
                 )
-        row_indexes, column_indexes = linear_sum_assignment(matrix)
-        for slot, column in zip(row_indexes.tolist(), column_indexes.tolist()):
+            for dustbin in range(NEWBORN_QUERY_COUNT):
+                del dustbin
+                matrix_row.append(int(DUSTBIN_COST * _COST_SCALE))
+            matrix.append(matrix_row)
+        assignment = _lexicographic_exact_assignment(matrix)
+        for slot, column in enumerate(assignment):
             if column < target_count:
                 newborn_assignment[slot] = available_instances[column]
     return {
@@ -212,7 +331,7 @@ def build_temporal_tracklet_assignment(
         "unmatched_target": "DUSTBIN",
         "dustbin_cost": DUSTBIN_COST,
         "cost_quantization": "round_half_even_1e-6",
-        "tie_break": "nonseparable_slot_instance_then_unique_dustbin",
+        "tie_break": "exact_primary_integer_then_rowwise_lexicographic_column",
     }
 
 
@@ -437,6 +556,7 @@ def temporal_motr_transition(
         raise PrefixRouteB2Error("post-transition track capacity is exceeded")
     return {
         "schema_version": B2_CONTRACT_SCHEMA,
+        "evidence_role": "DIAGNOSTIC_ONLY_NOT_A_FORMAL_STREAM_CERTIFICATE",
         "stream_key": stream_key,
         "decision_bin": decision_bin,
         "decision_observation_count": observation_count,
@@ -455,9 +575,137 @@ def temporal_motr_transition(
     }
 
 
+class B2StreamMachine:
+    """Own the indivisible B2 clock, lifecycle state, and transcript."""
+
+    def __init__(
+        self,
+        *,
+        stream_key,
+        frame_count,
+        calibrated_threshold,
+        feature_stride_frames=FEATURE_STRIDE_FRAMES,
+        run_binding_sha256,
+    ):
+        self._stream_key = _identifier(stream_key, "stream_key")
+        self._frame_count = _nonnegative_int(frame_count, "frame_count")
+        if self._frame_count <= 0:
+            raise PrefixRouteB2Error("frame_count must be positive")
+        self._stride = _nonnegative_int(
+            feature_stride_frames,
+            "feature_stride_frames",
+        )
+        if self._stride != FEATURE_STRIDE_FRAMES:
+            raise PrefixRouteB2Error(
+                "feature_stride_frames differs from the frozen B2 contract"
+            )
+        self._threshold = validate_calibrated_threshold(calibrated_threshold)
+        if (
+            not isinstance(run_binding_sha256, str)
+            or len(run_binding_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in run_binding_sha256)
+        ):
+            raise PrefixRouteB2Error("run_binding_sha256 must be a lowercase SHA-256")
+        self._run_binding_sha256 = run_binding_sha256
+        self._decision_index = 0
+        self._observation_count = 0
+        self._tracks = []
+        self._next_track_serial = 0
+        self._next_emission_sequence = 0
+        self._previous_state_sha256 = _GENESIS_STATE_SHA256
+        self._terminal = False
+        self._transcript = []
+
+    def _next_observation_count(self):
+        if self._terminal:
+            return None
+        return min(
+            (self._decision_index + 1) * self._stride,
+            self._frame_count,
+        )
+
+    def snapshot(self):
+        state = {
+            "schema_version": B2_STREAM_STATE_SCHEMA,
+            "stream_key": self._stream_key,
+            "run_binding_sha256": self._run_binding_sha256,
+            "frame_count": self._frame_count,
+            "feature_stride_frames": self._stride,
+            "calibrated_threshold": self._threshold,
+            "decision_index": self._decision_index,
+            "observation_count": self._observation_count,
+            "next_decision_observation_count": self._next_observation_count(),
+            "next_track_serial": self._next_track_serial,
+            "next_emission_sequence": self._next_emission_sequence,
+            "tracks": [dict(row) for row in self._tracks],
+            "terminal": self._terminal,
+            "previous_state_sha256": self._previous_state_sha256,
+        }
+        state["state_sha256"] = _state_sha256(state)
+        return state
+
+    def advance(self, *, decision_observation_count, decoder_rows):
+        expected = self._next_observation_count()
+        if expected is None:
+            raise PrefixRouteB2Error("B2 stream is already terminal")
+        if decision_observation_count != expected:
+            raise PrefixRouteB2Error(
+                "B2 stream clock rejects repeated, skipped, reordered, or reset input"
+            )
+        before = self.snapshot()
+        decision_bin = (decision_observation_count - 1) // self._stride
+        result = temporal_motr_transition(
+            stream_key=self._stream_key,
+            decision_bin=decision_bin,
+            decision_observation_count=decision_observation_count,
+            calibrated_threshold=self._threshold,
+            previous_tracks=self._tracks,
+            decoder_rows=decoder_rows,
+            next_track_serial=self._next_track_serial,
+            next_emission_sequence=self._next_emission_sequence,
+        )
+        self._tracks = [dict(row) for row in result["next_tracks"]]
+        self._next_track_serial = result["next_track_serial"]
+        self._next_emission_sequence = result["next_emission_sequence"]
+        self._observation_count = decision_observation_count
+        self._decision_index += 1
+        self._previous_state_sha256 = before["state_sha256"]
+        self._terminal = decision_observation_count == self._frame_count
+        after = self.snapshot()
+        transcript_row = {
+            "schema_version": B2_STREAM_TRANSCRIPT_SCHEMA,
+            "stream_key": self._stream_key,
+            "run_binding_sha256": self._run_binding_sha256,
+            "decision_index": self._decision_index - 1,
+            "decision_observation_count": decision_observation_count,
+            "state_before_sha256": before["state_sha256"],
+            "decoder_rows_sha256": hashlib.sha256(
+                _canonical_json_bytes(decoder_rows)
+            ).hexdigest(),
+            "emissions_sha256": hashlib.sha256(
+                _canonical_json_bytes(result["emissions"])
+            ).hexdigest(),
+            "state_after_sha256": after["state_sha256"],
+        }
+        self._transcript.append(transcript_row)
+        return {
+            "state_before": before,
+            "transition": result,
+            "state_after": after,
+            "transcript_row": dict(transcript_row),
+        }
+
+    def transcript(self):
+        return tuple(dict(row) for row in self._transcript)
+
+
 __all__ = [
     "B2_CONTRACT_SCHEMA",
+    "B2_STREAM_STATE_SCHEMA",
+    "B2_STREAM_TRANSCRIPT_SCHEMA",
+    "B2StreamMachine",
     "DUSTBIN_COST",
+    "FEATURE_STRIDE_FRAMES",
     "MAX_DECODER_QUERY_COUNT",
     "NEWBORN_QUERY_COUNT",
     "THRESHOLD_GRID",

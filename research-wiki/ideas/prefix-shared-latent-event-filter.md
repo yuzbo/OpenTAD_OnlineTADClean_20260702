@@ -2,9 +2,9 @@
 type: idea
 node_id: idea:prefix-shared-latent-event-filter
 title: "Prefix-Shared Latent Event Filter with Immutable Ledger"
-stage: protocol-v2-review-pending
+stage: blocked-by-gate-a-independent-review
 outcome: untested
-updated: 2026-07-17
+updated: 2026-07-20
 target_gaps: ["G2", "G3", "G6", "G7", "G16"]
 portfolio_role: candidate-arm-b4
 ---
@@ -19,7 +19,7 @@ intervals to an immutable model-only ledger.
 
 ## Status
 
-Protocol state: `PROTOCOL_REVIEW_PENDING`.
+Protocol state: `REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK`.
 
 Scientific route state: B4 candidate only.
 
@@ -29,12 +29,19 @@ permission. It survives only as B4 in a future route-identifiability
 comparison. It is not implemented, has no P0 result, has no effectiveness
 evidence, and has no GPU permission.
 
-DR-047 further blocks even new R0 annotation census and R1 cache audit
-collection until an executable protocol-only commit receives an independent
-protocol PASS. V1 received `REVISE_PROTOCOL_BEFORE_COLLECTION`; DR-050 now
-freezes hardened V2 as the active candidate. Local validation is not a PASS.
-The current legal work is same-reviewer V2 reassessment, not evidence
-collection.
+DR-047 further blocked even new R0 annotation census and R1 cache audit
+collection until an executable protocol-only commit received an independent
+protocol PASS. Later V2 candidates also received `REVISE`. DR-054 records that
+exact commit `48e78e43` still fails Gate A: formal-entry, fairness, terminal,
+checkpoint/emission provenance, import closure, B2 tie-break, and stream-clock
+ownership remain open. Local validation is not a PASS. The only legal work is
+a Gate A-only zero-GPU remediation and new exact-commit closure review, not
+evidence collection, B4 implementation, or ChronoTransport adaptation.
+
+That remediation is now locally implemented and passes the relevant
+zero-GPU/hostile suites, but it remains an unreviewed successor candidate
+under DR-056. No scientific or model authorization changes until its fixed
+SHA receives the required independent PASS.
 
 Q2/R1 remains terminal `KILL`. This route may reuse generic evaluator,
 optimizer-audit, evidence, and causal execution infrastructure, but it may not
@@ -179,8 +186,8 @@ withdrawn before preregistration.
 ## Ordered Gate
 
 ```text
-commit executable Protocol V2
--> same-reviewer signed protocol PASS
+repair Gate A only and freeze a new immutable Protocol V2 commit
+-> zero-trust exact-commit Gate A PASS
 -> model-outcome-blind annotation census and cache certificate
 -> B0-B4/OOD/negative-control route contract
 -> temporal-MOTR exact-delta and equivalence-KILL rule
@@ -190,6 +197,12 @@ commit executable Protocol V2
 
 ## Sources
 
+- [`../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md`](../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md)
+- [`../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`](../../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md)
+- [DR-054](../decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work)
+- [T47](../discussion_timeline.md#t47-gate-a-fails-and-stops-the-chronotransport-branch)
+- [DR-056](../decision_register.md#dr-056-freeze-the-local-gate-a-closure-candidate-without-granting-authorization)
+- [T49](../discussion_timeline.md#t49-gate-a-closure-is-implemented-locally-but-remains-unreviewed)
 - [`../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md`](../../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md)
 - [`../../configs/causaltad/protocols/prefix_route_identifiability_v2.json`](../../configs/causaltad/protocols/prefix_route_identifiability_v2.json)
 - [`../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md`](../../PRO_PREFIX_ROUTE_PROTOCOL_V1_INDEPENDENT_REVIEW_20260717.md)

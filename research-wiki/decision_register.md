@@ -1,6 +1,6 @@
 ---
 type: decision_register
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Major research decisions, reasons, counterarguments, sources, and reversibility.
 ---
@@ -2443,3 +2443,258 @@ Reversibility:
 - a valid signed PASS authorizes only read-only source-identity registration;
 - no source collection, model implementation, profile, or training may start
   from these local results.
+
+## DR-054: Accept Gate A Failure Before Any ChronoTransport Work
+
+Status: active protocol repair decision; Gate A failed; all collection,
+model, ChronoTransport, profile, training, and GPU work blocked.
+
+Decision:
+
+> Accept the exact-commit verdict
+> `REVISE_PREFIX_PROTOCOL_BEFORE_ANY_CT_WORK` at
+> `48e78e43a77822ee0e51cace9ad758ca935c1450`. A5
+> Hungarian-plus-dustbin and A9 R5 row regeneration remain local closures,
+> but they do not establish a trustworthy scientific evidence chain. Repair
+> Gate A only, freeze a new immutable commit, and obtain another zero-trust
+> closure review before source registration or any ChronoTransport work.
+
+Independently confirmed findings:
+
+- low-level R0 emits `PASS_R0_COMPLETE`, R5 emits certificate-like completion,
+  and terminal accepts a caller-created inference object outside a formal
+  provenance boundary;
+- R6's fairness consumer builds `model=None, optimizer=None` adapters and
+  permits caller-provided resource rows to determine the derived PASS;
+- checkpoint bytes are hashed but their canonical tensor state is not used to
+  derive the execution-trace endpoints;
+- R6 converts ordinary emissions into rows carrying `immutable=True` and
+  evaluates with `require_ledger=False`;
+- B2's product epsilon tie-break has collisions, while its clock, serial, and
+  sequence are caller-owned rather than one indivisible stream state;
+- the formal cache import reaches parent package initializers omitted from the
+  32-entry manifest;
+- existing hostile tests do not reject the complete forged fairness,
+  terminal, checkpoint, ledger, import, clock, and tie-collision paths.
+
+Accepted closed items:
+
+- B2 performs one augmented Hungarian assignment over target and 64 dustbin
+  columns;
+- R5 regenerates every row from frozen factor, seed, index, and set identity
+  and checks canonical content commitments.
+
+Implementation qualifications:
+
+- Python private naming is not a security boundary. Low-level helpers may
+  remain callable only if their output is structurally diagnostic and cannot
+  be promoted by the formal runner.
+- A clean isolated process is mandatory for a scientific certificate, not for
+  every unit test or pure diagnostic computation.
+- execution must match the attested immutable commit/tree; a detached HEAD is
+  valid, while a later moving branch HEAD must not invalidate historical
+  evidence.
+- arbitrary serialized fairness rows are unverified, but a live-produced,
+  raw-artifact-bound and independently verifiable evidence bundle may receive
+  a formal result offline.
+- CUDA provenance is mandatory for claimed GPU latency, memory, and compute;
+  CPU-verifiable tensor and optimizer identities remain independently
+  checkable.
+- a hash chain detects mutation but is not physical immutability by itself;
+  the formal ledger also needs append-only creation, unique sequencing,
+  no-overwrite publication, run-bound head/tail commitments, and replay.
+
+Scope of the next commit:
+
+1. formal-entry capability separation;
+2. exact source-origin and registration identity;
+3. live fairness plus checkpoint tensor-state provenance;
+4. verified append-only emission ledger;
+5. sealed bootstrap/terminal in a clean repository-owned runner;
+6. exact clean-process repository import closure;
+7. B2 exact lexicographic tie-break and indivisible stream state;
+8. hostile RED and closure tests;
+9. matching protocol, manifest, and wiki updates.
+
+Rejected alternatives:
+
+- interpret prior local tests or A5/A9 as Gate A PASS;
+- begin registration, R0/R1, fairness artifacts, model work, profile,
+  training, GPU, or model-result inspection;
+- inspect or adapt ChronoTransport, freeze a Streaming CT kill-test, or select
+  a B2/B4 CT head before the Prefix evidence boundary is trustworthy;
+- combine Prefix and CT to bypass either route's missing evidence;
+- make helper underscores, caller booleans, internal hashes, or decodable
+  files stand in for provenance.
+
+Sources:
+
+- [cross-route Gate A review](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md),
+  normalized archive SHA-256
+  `DBE6E2BF10A0A1C1316D96958758417BCC9610B7DFD194EFE68A81D5423589D9`;
+- original attachment SHA-256
+  `6A05072FA0168E7E17C0DB9DF04B586D0706C991403CCAA507854987EABB8022`;
+- [independent absorption](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md),
+  SHA-256
+  `10DE03480C37EEB26ADCC033D6D1569F10FA1BA3D67C9D6BFA54FE7D9FE1DDB4`;
+- [route gate](experiments/prefix-route-identifiability-gate-20260717.md);
+- [T47](discussion_timeline.md#t47-gate-a-fails-and-stops-the-chronotransport-branch).
+
+Reversibility:
+
+- a new exact-commit Gate A PASS may authorize only the next scope explicitly
+  named by that review. It does not automatically authorize source
+  registration, ChronoTransport, collection, model implementation, profile,
+  training, or GPU.
+
+## DR-055: Preserve the Unresolved-Target Review Without Promoting It to a Fixed-Commit Certificate
+
+Status: absorbed as corroborating negative evidence; DR-054 remains the active
+Gate-A repair decision.
+
+Decision:
+
+> Accept the attachment's `REVISE_PROTOCOL` outcome and all authorization
+> blocks. Preserve it byte-identically, but separate its formal
+> immutable-target finding from its auxiliary audit of visible rejected commit
+> `48e78e43`. Do not call the concatenated response a signed fixed-commit
+> certificate. Use the exact-commit Gate-A review and independently reproduced
+> code paths as the authority for remediation.
+
+Accepted formal finding:
+
+- the supplied literal `TARGET_COMMIT` is unresolved;
+- a moving branch head cannot silently replace an author-frozen target;
+- no target-specific tree, manifest, LF certificate, tests, or attestation can
+  be registered from that request;
+- current authorization remains `NONE`.
+
+Accepted auxiliary findings on `48e78e43`:
+
+- R6 accepts inline emissions, creates `immutable=True`, and disables formal
+  ledger enforcement;
+- optimizer and fairness evidence can be reconstructed from author-supplied
+  records rather than one live replayable run;
+- controls are not rebuilt from source bytes and `LEDGER_ONLY` contradicts the
+  generic positive-update schema;
+- B2's risk, assignment, target, transition, and emission are not one bound
+  transcript;
+- a complete hand-written inference mapping can return
+  `PASS_B4_ROUTE_SURVIVES`;
+- duplicate video identity and transitive import binding remain open.
+
+Independent project check:
+
+- dedicated suite: `46 passed, 1 warning`;
+- direct hand-written terminal attack:
+  `PASS_B4_ROUTE_SURVIVES`, `route_claim_allowed=true`;
+- passing tests are engineering evidence only and do not contradict the
+  false-PASS diagnosis.
+
+Qualification:
+
+- the first review block's branch-head code audit is useful diagnosis, while
+  the second block correctly defines what the unresolved-target request can
+  formally attest;
+- exact artifact storage and replay mechanics are not frozen by reviewer
+  prose, but any implementation must provide source-bound, replayable,
+  fail-closed evidence at least as strong as the repair contract;
+- Python underscore privacy, unconditional duplicate-byte rejection, and a
+  purely static import graph are not standalone scientific requirements.
+
+Sources:
+
+- `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md`,
+  49,740 bytes, 1,257 lines, SHA-256
+  `272B3650F6656FA160328F0D549C0C117BD788F7037A4B020A6FB50636B2B802`;
+- `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md`;
+- [DR-054](#dr-054-accept-gate-a-failure-before-any-chronotransport-work);
+- [T48](discussion_timeline.md#t48-unresolved-target-review-corroborates-gate-a-but-cannot-replace-it).
+
+Reversibility:
+
+- a new exact-commit review may close individual findings;
+- no placeholder-target response can authorize source registration,
+  collection, ChronoTransport, model work, profile, training, or GPU.
+
+## DR-056: Freeze the Local Gate-A Closure Candidate Without Granting Authorization
+
+Status: implementation complete locally; exact-commit independent review
+pending.
+
+Decision:
+
+> Freeze the Gate-A-only remediation as an unreviewed successor candidate.
+> Treat its local tests as engineering evidence, not a protocol PASS. Publish
+> one exact commit and require the same independent reviewer to attack that
+> immutable tree before any source registration, collection, model work,
+> ChronoTransport work, profile, training, or GPU use.
+
+Implemented closure:
+
+- low-level R0 and R5 helpers return diagnostics only and cannot mint formal
+  PASS tokens;
+- source origin, exact commit/tree, official video manifests, parent package
+  imports, and the loaded repository module closure are checked;
+- live fairness evidence is an unforgeable runtime capability bound to the
+  profiled model's semantic tensor artifact, raw profiler events, latency
+  samples, and CUDA identity;
+- optimizer evidence binds before/after model and optimizer artifacts, inputs,
+  RNG, AMP state, and event hash chain, including a strict no-learning path;
+- R6 accepts verified ledger emissions only, binds every event to run, stream,
+  provenance, sequence, and commitment, and seals cells/bootstrap/terminal
+  capabilities;
+- a repository-owned fresh-process runner attests its execution environment
+  and deliberately blocks model evaluation until a later model-P0 contract is
+  authorized;
+- B2 uses exact integer costs, deterministic lexicographic tie-breaking, one
+  machine-owned stream clock/state, frozen stride 8, and rejects repeated,
+  skipped, reordered, reset, or drifted transitions;
+- hostile tests cover serialized-fairness forgery, checkpoint substitution,
+  hidden model mutation, ledger fabrication/reordering, caller-authored
+  bootstrap cells, missing parent imports, and inherited monkey patches.
+
+Local evidence:
+
+- relevant zero-GPU suite: `195 passed, 1 skipped, 1 warning`;
+- focused hostile suite: `15 passed, 1 warning`;
+- syntax compilation and `git diff --check`: pass;
+- protocol validator: `PROTOCOL_V2_VALID_REVIEW_REQUIRED`, 40 manifest
+  entries, protocol SHA-256
+  `C076FEE3B5C03290560C2D2F4A460ABCA2597904E6EEEB40465C0B19E639A0CE`;
+- collection authorization remains
+  `BLOCKED_PENDING_SIGNED_INDEPENDENT_PROTOCOL_REVIEW` with an empty allowed
+  action set;
+- the Windows host cannot import its installed PyTorch because `c10.dll`
+  fails initialization, so the legacy Torch-dependent result-gate test must
+  be rerun in the target Linux environment and supplies no positive evidence.
+
+What this does not establish:
+
+- no independent reviewer has inspected the successor commit yet;
+- no source identity has been registered and no R0/R1 evidence has been
+  collected;
+- no B0-B4 model, ChronoTransport adaptation, profile, checkpoint, prediction,
+  effectiveness result, training run, or GPU artifact has been created;
+- the formal runner's model-evaluation branch remains intentionally blocked
+  by `MODEL_P0_RUNTIME_FACTORY_NOT_AUTHORIZED`.
+
+Next irreversible boundary:
+
+- publish the exact successor SHA and request a zero-trust fixed-SHA review;
+- only `PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN`, with an explicit next
+  authorization scope, can change the matrix.
+
+Sources:
+
+- [Gate A review](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md);
+- [Gate A absorption](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md);
+- [Protocol V2](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md);
+- [route gate](experiments/prefix-route-identifiability-gate-20260717.md);
+- [T49](discussion_timeline.md#t49-gate-a-closure-is-implemented-locally-but-remains-unreviewed).
+
+Reversibility:
+
+- reviewer findings may require another zero-GPU protocol revision;
+- a PASS can authorize only the scope written into its signed attestation and
+  cannot be generalized to model implementation or training.

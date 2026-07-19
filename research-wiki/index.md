@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-17
+updated: 2026-07-20
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -10,7 +10,7 @@ scope: Persistent project memory for the Online/Causal TAD research direction.
 This wiki exists to prevent repeated discussion loops. Before proposing a new task definition, method, training route, or paper story, read:
 
 1. [query_pack.md](query_pack.md) for the compressed current memory.
-2. The [round-3 V2 REVISE](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md), current remediation [DR-053](decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses), [T46](discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally), and the [route gate](experiments/prefix-route-identifiability-gate-20260717.md).
+2. The current [Gate A review](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md), its [independent absorption](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md), the later [unresolved-target corroboration](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_20260720.md) and [absorption](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND4_UNRESOLVED_TARGET_REVIEW_ABSORPTION_20260720.md), [DR-054](decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work), [DR-055](decision_register.md#dr-055-preserve-the-unresolved-target-review-without-promoting-it-to-a-fixed-commit-certificate), [DR-056](decision_register.md#dr-056-freeze-the-local-gate-a-closure-candidate-without-granting-authorization), [T49](discussion_timeline.md#t49-gate-a-closure-is-implemented-locally-but-remains-unreviewed), and the [route gate](experiments/prefix-route-identifiability-gate-20260717.md).
 3. [`../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md`](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_20260717.md), its [independent absorption](../PRO_PREFIX_SHARED_ROUTE_PREIMPLEMENTATION_REVIEW_ABSORPTION_20260717.md), and [DR-046](decision_register.md#dr-046-revoke-r-a-default-route-authorization-before-implementation) for the preceding route revision.
 4. [`../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md`](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_20260717.md), its [independent absorption](../PRO_POST_Q2_R1_KILL_ONTAD_ROUTE_REVIEW_ABSORPTION_20260717.md), historical [DR-045](decision_register.md#dr-045-authorize-r-a-preregistration-and-cpu-only-p0), and the [withdrawn P0 node](experiments/prefix-shared-event-p0-20260717.md) for the superseded R-A authorization.
 5. [`../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md`](../PRO_Q2_CAPACITY_INDEPENDENT_MAX_REVIEW_20260716.md), [DR-044](decision_register.md#dr-044-kill-q2-and-r1-after-independent-degeneracy-adjudication), and [the Q2 audit](experiments/q2-capacity-lifecycle-audit-20260716.md) for the permanent `KILL_Q2_R1` boundary.
@@ -31,16 +31,24 @@ The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted aft
 CRS-EPS, Q2, and R1/CSFSB retain their terminal negative dispositions. R-A
 remains B4 only, alongside a no-identity prefix set, ordinary persistent
 queries, temporal MOTR, and a clean order/risk-set baseline. Protocol V1 and
-three V2 candidates were independently rejected before collection. The
-current zero-GPU remediation closes the six latest reproduced false-PASS paths
-locally but has not received the required same-reviewer PASS.
+three V2 candidates were independently rejected before collection. Exact
+commit `48e78e43` also failed Gate A. Its successor now closes the identified
+formal-entry, fairness, terminal, artifact, import-closure, exact tie-breaking,
+and stream-state paths locally, with `195 passed, 1 skipped` relevant
+zero-GPU tests. This remains an unreviewed implementation candidate, not a
+scientific or protocol PASS.
 
-DR-053 makes fixed-commit reassessment the immediate work. Source registration,
-new R0 census, R1 cache audit, model outcomes, B0-B4 code, P0, effectiveness,
+DR-056 makes publishing the successor SHA and obtaining a new exact-commit
+closure review the immediate work. Source registration, new R0 census, R1 cache audit,
+ChronoTransport adaptation, model outcomes, B0-B4 code, P0, effectiveness,
 profile, training, visual fine-tuning, and raw-video work remain blocked. GPU
 authorization is zero.
 
-Read the [round-3 V2 review](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md),
+Read the [Gate A review](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md),
+its [independent absorption](../PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md),
+[DR-054](decision_register.md#dr-054-accept-gate-a-failure-before-any-chronotransport-work),
+[T47](discussion_timeline.md#t47-gate-a-fails-and-stops-the-chronotransport-branch),
+[round-3 V2 review](../PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md),
 [DR-053](decision_register.md#dr-053-accept-round-3-revise-and-close-the-six-reproduced-bypasses),
 [T46](discussion_timeline.md#t46-round-3-review-rejects-six-bypasses-and-a-new-candidate-closes-them-locally),
 [Protocol V2](../PREFIX_ROUTE_EVIDENCE_PROTOCOL_V2.md), its
@@ -84,7 +92,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 
 | Node | Status | Role |
 |---|---|---|
-| [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md) | Protocol remediation; B4 only | V2 also received REVISE for scientific false-PASS paths. R-A remains unimplemented and must still survive B0-B4, OOD, controls, and temporal-MOTR equivalence. |
+| [idea:prefix-shared-latent-event-filter](ideas/prefix-shared-latent-event-filter.md) | Gate A review pending; B4 only | Gate-A false-PASS paths are locally remediated but unreviewed. R-A remains unimplemented and must still survive B0-B4, OOD, controls, and temporal-MOTR equivalence after protocol closure. |
 | [idea:anytime-semantic-event-alarms](ideas/anytime-semantic-event-alarms.md) | conditional-P0 | Pro Rank 1; direct e-process/video-FAR overlap requires a novelty and validity gate. |
 | [idea:petal-ontad](ideas/petal-ontad.md) | revise/feature-kill-gate | Full raw-video package demoted; only the FRESH/TTF/PES matched-feature falsification study is active. |
 | [idea:three-clock-event-observability](ideas/three-clock-event-observability.md) | rejected-out-of-scope | PIVOT changes the task to physically anchored streaming event verification and must not be revived in this project. |
@@ -170,7 +178,7 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 | [exp:crs-eps-g0-kill-20260716](experiments/crs-eps-g0-kill-20260716.md) | terminal `KILL` | Preregistered fidelity gate rejects current empty-state dynamic replay; postmortem adds exact state/lifecycle diagnosis and a separate Q2 capacity blocker. |
 | [exp:q2-capacity-lifecycle-20260716](experiments/q2-capacity-lifecycle-audit-20260716.md) | `REVISE_REQUIRED`, disposition `KILL` | Clean 160 x 3 rerun verifies 2,206 actual exhaustions and no true-capacity cause; independent review rejects the zero arm as birth suppression and terminates Q2/R1. |
-| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | V1 and three V2 candidates received `REVISE`; round-3 remediation complete locally and pending re-review | The active zero-GPU candidate closes six latest hostile probes, including control-construction and run-provenance gaps. Source registration, R0/R1, model outcomes, B0-B4 model code, and GPU work remain blocked. |
+| [exp:prefix-route-identifiability-gate](experiments/prefix-route-identifiability-gate-20260717.md) | Local closure complete; independent review pending; not run | Publish and review the exact successor SHA. Source registration, R0/R1, ChronoTransport, model outcomes, B0-B4 code, and GPU work remain blocked. |
 | [exp:prefix-shared-event-p0](experiments/prefix-shared-event-p0-20260717.md) | withdrawn before preregistration | Historical R-A CPU-P0 proposal retained for provenance; DR-046 blocks implementation and execution. |
 
 ## Source Records
@@ -193,6 +201,8 @@ Local review records that informed this wiki:
 - `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_20260717.md`
 - `PRO_PREFIX_ROUTE_PROTOCOL_FREEZE_REVIEW_ABSORPTION_20260717.md`
 - `PRO_PREFIX_ROUTE_PROTOCOL_V2_ROUND3_INDEPENDENT_REVIEW_20260717.md`
+- `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_20260720.md`
+- `PRO_PREFIX_CT_CROSS_ROUTE_GATE_A_REVIEW_ABSORPTION_20260720.md`
 - `PREFIX_ROUTE_EVIDENCE_PROTOCOL_V1.md`
 - `configs/causaltad/protocols/prefix_route_identifiability_v1.json`
 - `opentad/utils/prefix_route_protocol.py`

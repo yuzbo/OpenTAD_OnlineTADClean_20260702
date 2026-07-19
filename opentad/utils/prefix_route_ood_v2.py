@@ -667,7 +667,7 @@ def iter_balanced_public_set(set_name, count, *, seed, shifted_family=None):
 
 
 def audit_sequence_sets(named_sequences):
-    """Validate the complete frozen R5 package and its scientific content."""
+    """Recompute frozen R5 diagnostics without issuing a scientific certificate."""
 
     if not isinstance(named_sequences, dict) or set(named_sequences) != set(
         EXPECTED_SET_COUNTS
@@ -817,10 +817,14 @@ def audit_sequence_sets(named_sequences):
             "maximum_cell_count": max(cells.values(), default=0),
         }
     return {
-        "pairwise_disjoint": True,
+        "schema_version": "prefix-route-r5-diagnostic-v2",
+        "evidence_role": "DIAGNOSTIC_ONLY_REQUIRES_FORMAL_ENVELOPE",
         "total_sequence_count": len(all_hashes),
-        "complete_frozen_set_contract": True,
-        "all_shifted_factors_change_scientific_content": True,
+        "validated_properties": [
+            "pairwise_scientific_content_disjointness",
+            "complete_frozen_set_regeneration",
+            "shifted_factors_change_scientific_content",
+        ],
         "sets": reports,
     }
 __all__ = [

@@ -746,7 +746,7 @@ def collect_r0_census(
     report = {
         "schema_version": R0_REPORT_SCHEMA,
         "collector_version": R0_COLLECTOR_VERSION,
-        "status": "PASS_R0_COMPLETE",
+        "evidence_role": "DIAGNOSTIC_ONLY_REQUIRES_FORMAL_ENVELOPE",
         "reporting_population_role": "canonical_reporting_213",
         "annotation_exposure_status": annotation_exposure_status,
         "author_disclosure": "aggregate_only_no_video_ids",

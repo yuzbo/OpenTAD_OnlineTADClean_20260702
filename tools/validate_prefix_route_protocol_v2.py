@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from opentad.utils.evidence_bundle import (  # noqa: E402
     EvidenceBundleError,
+    bundle_file_reference,
     read_stable_file_bytes,
     strict_json_from_bytes,
 )
@@ -153,18 +154,18 @@ def _load_pass(args, protocol, manifest):
 
 
 def _population(args, protocol, review):
-    request = _read_json(
+    del protocol, review
+    request_path = (
         args.population_request
         if hasattr(args, "population_request")
-        else args.request,
-        "population request",
-        canonical=True,
+        else args.request
     )
     return validate_population_bundle(
-        request,
+        bundle_file_reference(request_path, args.bundle_root),
         bundle_root=args.bundle_root,
-        protocol_record=protocol,
-        review_record=review,
+        repo_root=args.repo_root,
+        review_attestation_path=args.review_attestation,
+        review_signature_path=args.review_signature,
     )
 
 
@@ -240,26 +241,19 @@ def main():
             if args.command == "validate-population":
                 result = population
             elif args.command == "validate-r0":
-                request = _read_json(
-                    args.r0_request,
-                    "R0 request",
-                    canonical=True,
-                )
-                ledger_relative = protocol["protocol"]["population"][
-                    "exposure_policy"
-                ]["ledger_path"]
-                frozen_ledger = subprocess_git_show(
-                    args.repo_root,
-                    review["attestation"]["protocol_commit"],
-                    ledger_relative,
-                )
                 result = validate_r0_bundle(
-                    request,
+                    bundle_file_reference(
+                        args.r0_request,
+                        args.bundle_root,
+                    ),
+                    population_request_reference=bundle_file_reference(
+                        args.population_request,
+                        args.bundle_root,
+                    ),
                     bundle_root=args.bundle_root,
-                    protocol_record=protocol,
-                    review_record=review,
-                    population_record=population,
-                    frozen_ledger_prefix=frozen_ledger,
+                    repo_root=args.repo_root,
+                    review_attestation_path=args.review_attestation,
+                    review_signature_path=args.review_signature,
                 )
             elif args.command == "validate-r1":
                 request = _read_json(
