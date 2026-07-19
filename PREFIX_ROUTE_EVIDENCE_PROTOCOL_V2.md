@@ -40,6 +40,14 @@ That review and the repository-side absorption are archived as
 The present changes are a new, unreviewed Gate-A closure candidate. Local tests
 cannot replace a fixed-commit independent review.
 
+For this closure review, the human-readable Gate-A headline
+`PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN` maps exactly to the signed
+V2 attestation field
+`verdict=PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`. A PASS response
+must state both tokens. The latter is the only machine-consumable token; both
+carry the same narrow scope described below and neither authorizes model work
+or GPU use.
+
 It does not authorize population evidence, R0, R1, model implementation,
 profiling, or training. Even a future protocol PASS can initially authorize
 only read-only source-identity registration because the authoritative THUMOS14

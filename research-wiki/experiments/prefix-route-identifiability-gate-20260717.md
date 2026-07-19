@@ -81,6 +81,12 @@ closure in a clean environment. The next required positive token is:
 
 - `PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN`.
 
+If and only if that headline is returned, the detached signed V2 attestation
+must encode the machine verdict
+`PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`. These are two names for
+the same Gate-A decision and the same narrow post-PASS scope, not two
+independent authorization levels.
+
 Any other result preserves the block. Even that PASS authorizes only the next
 narrow scope explicitly stated in its attestation; it does not automatically
 authorize source registration, R0/R1, ChronoTransport, inspecting model

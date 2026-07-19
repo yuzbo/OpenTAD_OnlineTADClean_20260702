@@ -2682,7 +2682,9 @@ What this does not establish:
 Next irreversible boundary:
 
 - publish the exact successor SHA and request a zero-trust fixed-SHA review;
-- only `PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN`, with an explicit next
+- only the headline `PASS_PREFIX_PROTOCOL_FOR_ROUTE_EVIDENCE_DESIGN` together
+  with the signed V2 machine verdict
+  `PASS_PROTOCOL_TO_OUTCOME_BLIND_EVIDENCE_COLLECTION`, and an explicit next
   authorization scope, can change the matrix.
 
 Sources:
