@@ -52,6 +52,8 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
   传输边际由两时刻预测的 alive mass 构造并 stop-gradient，代价是 query
   cosine distance 加同槽位时间身份先验；Sinkhorn 计划也 stop-gradient，
   梯度只优化当前表示距离。
+- 数值设置冻结为 soft temperature `0.5`、identity cost `0.25`、20 次
+  log-space Sinkhorn；该设置由四槽不均衡质量的真实迭代收敛回归约束。
 - 不使用 GT identity、未来帧、未来终点或 reporting 数据，因此不会修改
   FIXED/REMATCH 的监督比较轴。
 - 假设：持续查询的跨时刻漂移会削弱生命周期头；轻量时序传输约束可稳定
@@ -171,7 +173,7 @@ raw-RGB 端到端扩展。
 - [x] M1：冻结 A/B/C 三个版本与不越界合同。
 - [x] M2：实现模型损失、配置、测试和实验清单。
 - [x] M3：本地 CPU-safe 验证与远端 N16R4 轻量验证。
-- [x] M4：提交精确代码提交并部署三条 Slurm 作业。
+- [ ] M4：用数值修订后的精确提交重新部署三条 Slurm 作业。
 - [ ] M5：记录 job id、run dir、队列/完成状态和下一门禁。
 
 ## M2/M3 实现与验证记录
@@ -226,3 +228,32 @@ job name、`model_opt_*_seed705_*` 目录和 `pilot_contract.json` 均不存在
 提交后三条均出现在 `squeue`，账户活跃作业为 15/16；没有取消、修改或
 抢占任何无关作业。心跳已从“寻找提交槽”切换为“只读监控三条 pilot 与
 旧诊断 `1177682`”，明确禁止重复提交。
+
+### M4.1 Sinkhorn 数值修订与受控替换
+
+在三条作业尚为 PENDING、运行时间为零时，用当前真实 C 配置复核 4×4
+Sinkhorn。temperature `0.1`、20 次迭代的 1,000 个固定 seed 随机样本中：
+
+- mean marginal error `0.00681308`；
+- p95/p99 `0.0353077/0.0568880`；
+- max `0.127763`；
+- `484/1000` 样本误差大于 `1e-3`。
+
+单纯增加到 200 次虽降低均值，但会把每 token 小算子循环放大十倍。保持
+20 次迭代、把 soft temperature 改为 `0.5` 后，同一 1,000 样本：
+
+- mean error `1.48095e-7`；
+- p99 `1.69873e-6`；
+- max `1.76728e-5`；
+- 零样本大于 `1e-3`。
+
+因此旧 `1177693/1177694/1177695` 在零 GPU 消耗时受控取消，旧目录保留
+审计且均无 `pilot_contract.json`。没有取消或修改旧诊断及任何无关作业。
+修复提交 `adbd0bbd6a3b3ffe3de36f3c0f8ef506eef7ed48` 把 pilot temperature
+冻结为 `0.5` 并新增真实 20-iteration/identity-prior 收敛回归；部署提交
+`22aa93bd1b2b2441ba0810e1923a0fb35e0d5776` 将比较器测试并入作业前置。
+N16R4 在该精确提交完成 `120 passed in 76.64s`，测试后 worktree 仍 clean。
+
+04:34 重新提交前账户被 4 条新无关作业填回 16/16；提交器在创建新目录前
+正确停止。现在只认 exact `22aa93b` 的活跃 job 或 pilot contract，每出现
+一个 submit slot 就按 A→B→C 重新提交；旧取消目录不算重复。
