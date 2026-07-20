@@ -122,11 +122,11 @@ def _census_video(
         max_births = max(max_births, len(births))
         max_visible = max(max_visible, len(visible))
 
-        visible_items = {
+        birth_items = {
             int(item.instance_id): item
-            for item in tuple(step.active) + tuple(step.ends)
+            for item in step.births
         }
-        for item in visible_items.values():
+        for item in birth_items.values():
             if (
                 float(step.current_frame) - float(item.start_frame)
                 > float(memory_frames)

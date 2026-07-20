@@ -118,3 +118,40 @@ Local evidence:
   recorded `c10.dll` initialization failure, so head/detector/gradient tests
   are queued inside the N16R4 Slurm smoke; four local Torch-dependent tests
   were skipped by their explicit environment probe.
+
+## Census-Gated Smoke Attempt — Slurm 1177416
+
+- Code commit: `71914470cf7cbabb429fb6360c552d98230665ac`.
+- Run directory:
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260720_221248`.
+- Allocation: RTX 4090 on `g0003`; the in-allocation `nvidia-smi` preflight
+  passed.
+- Slurm result: `FAILED 2:0` after 14 seconds, before tests or training.
+- Gate behavior: correct fail-closed census rejection; no training budget was
+  consumed.
+
+Frozen full-data census evidence:
+
+- 411 videos, 320,205 causal feature tokens, and 6,328 action instances;
+- all 6,328 births and endpoints are covered;
+- maximum births per decision is 2 and maximum visible concurrency is 4,
+  exactly within the registered budgets;
+- zero GT entry-free deficits and zero oracle capacity overflow;
+- 208 old-end/new-birth decisions (263 pairs), so the adjacent-action path is
+  materially present in the real data;
+- zero same-decision birth+end instances at stride 8;
+- only failure: 820 clipped start targets versus a frozen limit of zero.
+
+Diagnosis and correction:
+
+- the detector decoded and stored start only at birth, but incorrectly applied
+  start-offset regression again at every later active prefix;
+- those 820 targets were therefore loss-only artifacts after the action had
+  outlived the 192-token memory horizon, not runtime birth-start failures;
+- start loss is now restricted to the shared canonical birth assignment, and
+  the census audits only actual birth-start targets;
+- this removes a nuisance post-birth loss from both arms and makes the
+  FIXED/REMATCH comparison more tightly controlled.
+
+The failed job is retained as negative evidence. A new commit and smoke job
+must show zero clipped birth-start targets before C1 or C3 can pass.

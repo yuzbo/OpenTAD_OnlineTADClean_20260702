@@ -474,6 +474,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 device=outputs["class_logits"].device,
             )
             class_loss = F.cross_entropy(outputs["class_logits"][0, slots], labels)
+        if transition.birth_assignments:
+            birth_slots = torch.as_tensor(
+                [
+                    int(binding.slot_id)
+                    for binding in transition.birth_assignments
+                ],
+                dtype=torch.long,
+                device=outputs["start_offset"].device,
+            )
             start_targets = torch.as_tensor(
                 [
                     min(
@@ -487,12 +496,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                         ),
                         float(self.head.memory_size),
                     )
-                    for binding in transition.loss_bindings
+                    for binding in transition.birth_assignments
                 ],
                 dtype=outputs["start_offset"].dtype,
                 device=outputs["start_offset"].device,
             )
-            start_loss = F.smooth_l1_loss(outputs["start_offset"][0, slots], start_targets)
+            start_loss = F.smooth_l1_loss(
+                outputs["start_offset"][0, birth_slots],
+                start_targets,
+            )
 
         return {
             "birth_loss": _masked_bce(outputs["birth_logits"], birth_target, birth_mask),

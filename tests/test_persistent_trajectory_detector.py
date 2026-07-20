@@ -166,6 +166,54 @@ def test_single_active_instance_has_identical_fixed_and_rematch_losses():
         assert torch.equal(fixed_output.losses[name], rematch_output.losses[name]), name
 
 
+def test_start_regression_is_supervised_only_on_the_shared_birth_assignment():
+    detector = _detector("prefix_rematch_active_pool").train()
+    frames = (7, 15)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 30.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    supervision = PrefixTrajectorySupervisionState(
+        num_slots=2,
+        mode="rematch",
+    )
+    head_state = detector.head.initial_state(
+        torch.device("cpu"),
+        torch.float32,
+        "stream",
+    )
+
+    for index, frame in enumerate(frames):
+        outputs, head_state = detector.head.step(
+            torch.randn(1, 4),
+            head_state,
+            frame,
+        )
+        outputs["start_offset"] = torch.full_like(
+            outputs["start_offset"],
+            99.0,
+            requires_grad=True,
+        )
+        transition = supervision.transition(
+            schedule[index],
+            detector._cost_provider(outputs, schedule[index], 8),
+        )
+        losses = detector._step_losses(
+            outputs,
+            schedule[index],
+            transition,
+            8,
+        )
+        if index == 0:
+            assert transition.birth_assignments
+            assert losses["start_loss"].item() > 0
+        else:
+            assert transition.birth_assignments == ()
+            assert losses["start_loss"].item() == 0
+
+
 def test_predicted_runtime_occupancy_cannot_delete_ground_truth_birth_supervision():
     detector = _detector("fixed_birth_slot").train()
     frames = (7,)
