@@ -296,6 +296,41 @@ def test_sinkhorn_plan_matches_requested_lifecycle_marginals():
     assert torch.isfinite(plan).all()
 
 
+def test_runtime_transport_temperature_converges_with_identity_prior():
+    torch.manual_seed(705)
+    num_slots = 4
+    off_diagonal = 1.0 - torch.eye(num_slots)
+    for _ in range(128):
+        cost = torch.rand(num_slots, num_slots) * 2.0
+        cost = cost + 0.25 * off_diagonal
+        source = torch.rand(num_slots).clamp_min(0.05)
+        target = torch.rand(num_slots).clamp_min(0.05)
+        source = source / source.sum()
+        target = target / target.sum()
+
+        plan = _sinkhorn_plan(
+            cost,
+            source,
+            target,
+            temperature=0.5,
+            iterations=20,
+        )
+
+        assert torch.allclose(
+            plan.sum(dim=1),
+            source,
+            atol=1e-4,
+            rtol=0,
+        )
+        assert torch.allclose(
+            plan.sum(dim=0),
+            target,
+            atol=1e-4,
+            rtol=0,
+        )
+        assert torch.isfinite(plan).all()
+
+
 def test_causal_query_transport_is_one_way_from_past_to_current():
     previous = torch.tensor(
         [[[1.0, 0.0], [0.0, 1.0]]],

@@ -241,6 +241,7 @@ payload = {
     "threshold_search": False,
     "raw_rgb_authorized": False,
     "same_commit_profile_required": True,
+    "transport_numerical_revision": "soft_sinkhorn_temperature_0p5_v1",
 }
 Path(output).write_text(
     json.dumps(payload, indent=2, sort_keys=True) + "\n",
