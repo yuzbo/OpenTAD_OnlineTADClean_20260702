@@ -410,3 +410,24 @@ C 的完整产物随后生成并以预期科学拒绝结束：activation gate `P
 没有形成最终区间，FIXED 的 birth/alive 判别方向还明显反转；因此不做
 transport 权重搜索，也不把“仅 confirmed-active 槽 transport”列为紧接
 下一版。当前优先级回到 A/B 所检验的优化与生命周期决策边界。
+
+### M5 下一轮 lifecycle 决策边界能力
+
+三版 FIXED calibration 均已确认零最终区间后，提交
+`6b0ffd68922ea879f17ae82651a60b2aa454302d` 实现默认关闭的下一轮核心
+能力：在既有 birth balanced logit margin 旁，为 alive 和 end 分别增加
+同构 margin。三者都只使用当前 prefix 的全监督 target/mask：
+
+- birth 只在当前 first-crossing 事件步约束正 birth 与同一步负槽；
+- alive 只在当前存在受监督 active 实例的步约束 occupied 槽与其他槽；
+- end 只在当前 endpoint 事件步约束结束槽与同一步其他 at-risk 槽；
+- 不读取未来帧、未来终点或 GT runtime identity，也不改变冻结 0.5
+  推理阈值。
+
+新参数在公共 pilot base 中全部默认为零；回归锁定原 A/B/C 的
+alive/end margin 均为零，因此该提交不追认或改变正在运行的 exact
+`d390779` 三版结果。activation gate 已扩展为能单独验证 lifecycle
+候选必须同时激活 birth/alive/end 三项且 transport 休眠。本地 Python
+编译与 11 项 CPU-safe 配置/activation 测试通过；Torch 梯度测试因已知
+Windows `c10.dll` 初始化故障未在本机形成证据，等待 N16R4 干净环境。
+具体 margin 数值和是否部署，继续由 A/B 两臂 v2 分数诊断决定。
