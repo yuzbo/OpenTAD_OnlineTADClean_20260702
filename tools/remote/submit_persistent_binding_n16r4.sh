@@ -126,6 +126,7 @@ python -m pytest \
     tests/test_online_instance_metrics.py \
     tests/test_persistent_binding_gate.py \
     tests/test_persistent_binding_configs.py \
+    tests/test_persistent_binding_scheduler.py \
     tests/test_streaming_feature_dataset.py \
     tests/test_persistent_binding_smoke_tools.py \
     tests/test_core_single_process_contracts.py \

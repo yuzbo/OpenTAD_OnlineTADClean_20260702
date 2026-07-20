@@ -837,3 +837,22 @@ strict profile → seed-705 screen。诊断若显示静默并非训练剂量问�
 一次更新才到达峰值 LR，且最终模型仍无 birth crossing；它是否能改善
 正负分离仍须由 `1177682` 的真实 calibration 分数决定。该纠偏不改变
 候选代码轴，也不放行训练。
+
+### Optimizer-update LR Semantics
+
+训练循环的真实顺序是“读取当前 LR → optimizer update → scheduler
+step”。据此按调度器源码重新计算 2,010 次实际 update 使用的 LR：
+
+- 旧 `warmup_epoch=1.0`：累计 `0.201000`，平均 `1.0e-4`；
+- 候选 `warmup_epoch=0.1`：累计 `0.380204214288`，平均
+  `1.891563255×10^-4`；
+- 新/旧累计曝光比为 `1.891563255×`，峰值仍为 `2e-4`，第 201 次
+  update 首次使用峰值。
+
+此前 `1.890663×` 的手工值使用了 scheduler step 之后的 LR，现已纠正。
+新增远端 Torch 测试直接实例化正式 scheduler，逐次记录 optimizer
+真正使用的 LR。登录节点上的 Torch 2.0.1 轻量单元检查（单个标量、
+无模型/视频前向、无 GPU）得到 `warmup_steps=201.0`、第 201 次 update
+LR `2e-4`、累计值 `0.3802042142882046`，与推导完全一致。该检查只验证
+scheduler 语义；候选配置、真实前反向、checkpoint 和因果重载仍须由
+下一次同提交 Slurm smoke 权威验证。

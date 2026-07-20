@@ -25,7 +25,9 @@ screening_contract = dict(
     previous_warmup_epoch=1.0,
     warmup_epoch=0.1,
     peak_learning_rate=2e-4,
-    mean_lr_exposure_ratio_vs_full_epoch_warmup=1.89066304675978,
+    optimizer_update_lr_sum=0.3802042142882046,
+    previous_optimizer_update_lr_sum=0.201,
+    mean_lr_exposure_ratio_vs_full_epoch_warmup=1.891563255165197,
 )
 
 # The previous one-epoch screen spent all 2,010 updates in linear warm-up and
