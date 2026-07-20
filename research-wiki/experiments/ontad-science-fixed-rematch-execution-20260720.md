@@ -896,3 +896,10 @@ screen 和 score-diagnosis 四条 submitter 现支持显式
 
 四个 shell 通过语法检查，smoke/profile/screen 工具共 17 项本地测试
 通过。该改动只消除候选部署入口阻断，不改变模型、数据或实验门禁。
+
+候选 worktree 前移到精确提交
+`e32843026da45023c8d55b8d000be07c33a65511` 后，集群 CPU/Torch
+组合测试 27/27 通过，工作区保持干净。另对 smoke submitter 做三项
+无副作用拒绝测试：detached 未给 SHA、短 SHA、错误完整 SHA 均在
+`sbatch` 前以退出码 2 和对应原因拒绝。正确 SHA 路径未在登录节点
+调用，避免提前提交 GPU 作业。
