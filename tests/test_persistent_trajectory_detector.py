@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+import opentad.models.detectors.persistent_trajectory_ontad as trajectory_module
 from opentad.datasets.streaming_feature import StreamingFeatureDataset
 from opentad.evaluations import compute_online_instance_metrics
 from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
@@ -440,6 +441,34 @@ def test_batched_causal_transport_equals_sum_of_individual_pair_losses():
     batched.backward()
     assert current.grad is not None
     assert torch.isfinite(current.grad).all()
+
+
+def test_disabled_transport_skips_lifecycle_mass_construction(monkeypatch):
+    def unexpected_mass_construction(_outputs):
+        raise AssertionError("disabled transport constructed lifecycle mass")
+
+    monkeypatch.setattr(
+        trajectory_module,
+        "_predicted_lifecycle_mass",
+        unexpected_mass_construction,
+    )
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 30.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    detector = _detector(causal_query_transport_loss_weight=0.0).train()
+
+    output = detector.train_episode(
+        torch.randn(1, 4, len(frames)),
+        torch.ones(1, len(frames), dtype=torch.bool),
+        _meta(frames),
+        schedule,
+    )
+
+    assert output.losses["causal_transport_loss"].item() == 0
 
 
 def test_causal_query_transport_is_one_way_from_past_to_current():

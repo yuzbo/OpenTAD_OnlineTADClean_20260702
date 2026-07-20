@@ -995,20 +995,24 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 transition,
                 feature_stride,
             )
-            current_lifecycle_mass = _predicted_lifecycle_mass(outputs)
-            if (
-                self.loss_weights["causal_transport_loss"] > 0
-                and previous_queries is not None
-                and previous_lifecycle_mass is not None
-            ):
-                transport_previous_queries.append(previous_queries)
-                transport_current_queries.append(state.queries)
-                transport_previous_lifecycle_mass.append(
-                    previous_lifecycle_mass
-                )
-                transport_current_lifecycle_mass.append(
-                    current_lifecycle_mass.detach()
-                )
+            current_lifecycle_mass = None
+            if self.loss_weights["causal_transport_loss"] > 0:
+                with torch.no_grad():
+                    current_lifecycle_mass = _predicted_lifecycle_mass(
+                        outputs
+                    )
+                if (
+                    previous_queries is not None
+                    and previous_lifecycle_mass is not None
+                ):
+                    transport_previous_queries.append(previous_queries)
+                    transport_current_queries.append(state.queries)
+                    transport_previous_lifecycle_mass.append(
+                        previous_lifecycle_mass
+                    )
+                    transport_current_lifecycle_mass.append(
+                        current_lifecycle_mass
+                    )
             raw["causal_transport_loss"] = _zero(state.queries)
             if sums is None:
                 sums = {name: value for name, value in raw.items()}
@@ -1020,8 +1024,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 current_frame=source_frame,
                 feature_stride=feature_stride,
             )
-            previous_queries = state.queries.detach()
-            previous_lifecycle_mass = current_lifecycle_mass.detach()
+            if current_lifecycle_mass is not None:
+                previous_queries = state.queries.detach()
+                previous_lifecycle_mass = current_lifecycle_mass
             logits.append(outputs)
             birth_trace.append(self._binding_rows(transition.birth_assignments))
             canonical_trace.append(self._binding_rows(transition.canonical_bindings))
