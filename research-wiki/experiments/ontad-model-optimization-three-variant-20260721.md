@@ -374,3 +374,13 @@ FIXED 训练端口重合，让 B 的下一端口与 C 的训练端口重合。A
 C `1177708` 保持原作业继续运行。旧失败目录只作为诊断证据，不进入最终
 A/B/C 比较；最终比较只采用三条完整产物链。没有取消或修改任何无关作业，
 也没有借该恢复改变模型版本。
+
+06:22 C/SW+CT 的 FIXED 训练审计完成：`2010/2010` 更新成功、零跳步、
+零监督耗尽，transport 在全部 `2010` 次更新中非零，均值
+`0.0108388`，birth margin 始终为零；机制激活正确。但该臂出现
+`5` 次 GT birth/runtime entry-free collision，且 calibration 在冻结
+0.5 阈值下提交 `0` 个最终区间。C 因而已经出现两项科学拒绝信号：
+传输可能让候选更易进入 active、占用出生容量，同时仍未打通 end/commit
+链路。作业不是崩溃，已正常进入 REMATCH 训练；仍需用 REMATCH 和 v2
+target-conditioned birth/alive/end 诊断区分“出生仍不足”与
+“alive/end 生命周期失衡”。
