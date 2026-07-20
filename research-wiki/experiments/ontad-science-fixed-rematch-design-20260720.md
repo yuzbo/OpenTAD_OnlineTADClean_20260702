@@ -75,12 +75,19 @@ FREE -> CANDIDATE -> ACTIVE -> COMMIT -> FREE
 
 At each decision step the controller performs:
 
-1. finish and release existing actions;
-2. cancel unsupported one-step candidates;
-3. rank new birth proposals over currently free slots;
-4. admit at most two new candidates, matching the frozen annotation census;
-5. update remaining active instances;
-6. append final intervals.
+1. freeze the slots that were free at step entry as the legal birth pool;
+2. finish and release existing actions;
+3. cancel unsupported one-step candidates;
+4. rank new birth proposals over the entry-free pool;
+5. admit at most two new candidates, matching the frozen annotation census;
+6. update remaining active instances;
+7. append final intervals.
+
+A slot released by an end or candidate cancellation becomes birth-eligible at
+the next decision step. This avoids asking one slot output to describe an old
+instance end and a different new instance birth simultaneously. Four runtime
+slots remain above the frozen two-slot annotation requirement, so this
+one-decision reuse delay is not a true-capacity workaround.
 
 A candidate becomes ACTIVE when the next causal step supports `alive`; a
 candidate with an immediate `end` can commit as a short action. Otherwise it is
@@ -179,7 +186,7 @@ Focused tests must cover:
 - supervision/runtime state isolation;
 - no target loss under arbitrary predicted occupancy;
 - FIXED binding persistence and legal REMATCH;
-- same-bin end-before-birth ordering;
+- same-bin end/birth handling with bounded next-step slot reuse;
 - bounded candidate lifetime and immediate slot reuse;
 - short actions, adjacent actions, repeated same-class actions, and overlapping
   same-class actions;

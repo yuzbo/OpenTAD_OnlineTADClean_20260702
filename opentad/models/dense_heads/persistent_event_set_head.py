@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -11,6 +11,7 @@ from ..builder import HEADS
 SLOT_FREE = 0
 SLOT_ACTIVE = 1
 SLOT_REFRACTORY = 2
+SLOT_CANDIDATE = 3
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,12 @@ class PersistentEventSetState:
     ledger: List[EventSetEmissionRecord] = field(default_factory=list)
     instance_to_slot: Dict[int, int] = field(default_factory=dict)
     slot_to_instance: Dict[int, int] = field(default_factory=dict)
+    candidate_age: Optional[torch.Tensor] = None
+    peak_class_labels: Optional[torch.Tensor] = None
+    birth_proposals: int = 0
+    birth_admissions: int = 0
+    arbitration_suppressions: int = 0
+    candidate_cancellations: int = 0
 
 
 @HEADS.register_module()
@@ -61,6 +68,9 @@ class PersistentEventSetHead(nn.Module):
         end_threshold=0.5,
         refractory_steps=2,
         max_endpoint_offset=8.0,
+        lifecycle_mode="legacy",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -76,6 +86,9 @@ class PersistentEventSetHead(nn.Module):
         self.end_threshold = float(end_threshold)
         self.refractory_steps = int(refractory_steps)
         self.max_endpoint_offset = float(max_endpoint_offset)
+        self.lifecycle_mode = str(lifecycle_mode)
+        self.candidate_confirmation_steps = int(candidate_confirmation_steps)
+        self.max_births_per_step = int(max_births_per_step)
         if self.query_mode not in {"fresh", "persistent"}:
             raise ValueError("query_mode must be 'fresh' or 'persistent'")
         if self.start_mode not in {"scalar", "pointer"}:
@@ -88,6 +101,14 @@ class PersistentEventSetHead(nn.Module):
             raise ValueError("hidden_dim must be divisible by num_heads")
         if self.refractory_steps < 0:
             raise ValueError("refractory_steps must be non-negative")
+        if self.lifecycle_mode not in {"legacy", "candidate_recycle"}:
+            raise ValueError("lifecycle_mode must be 'legacy' or 'candidate_recycle'")
+        if self.lifecycle_mode == "candidate_recycle" and self.refractory_steps != 0:
+            raise ValueError("candidate_recycle does not permit refractory occupancy")
+        if self.candidate_confirmation_steps != 1:
+            raise ValueError("the scientific route freezes one-step candidate confirmation")
+        if not 1 <= self.max_births_per_step <= self.num_slots:
+            raise ValueError("max_births_per_step must be in [1, num_slots]")
 
         self.input_proj = nn.Sequential(
             nn.Linear(self.in_channels, self.hidden_dim),
@@ -130,6 +151,13 @@ class PersistentEventSetHead(nn.Module):
             refractory=torch.zeros(self.num_slots, dtype=torch.long, device=device),
             start_frames=torch.full((self.num_slots,), float("nan"), dtype=dtype, device=device),
             peak_class_scores=torch.zeros(self.num_slots, dtype=dtype, device=device),
+            candidate_age=torch.zeros(self.num_slots, dtype=torch.long, device=device),
+            peak_class_labels=torch.full(
+                (self.num_slots,),
+                -1,
+                dtype=torch.long,
+                device=device,
+            ),
         )
 
     def _base_queries(self, state, batch_size, device, dtype):
@@ -183,6 +211,12 @@ class PersistentEventSetHead(nn.Module):
             ledger=state.ledger,
             instance_to_slot=state.instance_to_slot,
             slot_to_instance=state.slot_to_instance,
+            candidate_age=state.candidate_age,
+            peak_class_labels=state.peak_class_labels,
+            birth_proposals=state.birth_proposals,
+            birth_admissions=state.birth_admissions,
+            arbitration_suppressions=state.arbitration_suppressions,
+            candidate_cancellations=state.candidate_cancellations,
         )
         return outputs, next_state
 
@@ -217,7 +251,7 @@ class PersistentEventSetHead(nn.Module):
         offset = float(outputs["start_offset"][0, slot].detach().item())
         return max(0, int(round(float(current_frame) - offset * float(feature_stride))))
 
-    def decode_step(self, outputs, state, current_frame, feature_stride=1):
+    def _decode_legacy(self, outputs, state, current_frame, feature_stride=1):
         current_frame = int(current_frame)
         birth = outputs["birth_logits"].detach().sigmoid()[0]
         alive = outputs["alive_logits"].detach().sigmoid()[0]
@@ -300,13 +334,181 @@ class PersistentEventSetHead(nn.Module):
             ledger=ledger,
             instance_to_slot=state.instance_to_slot,
             slot_to_instance=state.slot_to_instance,
+            candidate_age=state.candidate_age,
+            peak_class_labels=state.peak_class_labels,
+            birth_proposals=state.birth_proposals,
+            birth_admissions=state.birth_admissions,
+            arbitration_suppressions=state.arbitration_suppressions,
+            candidate_cancellations=state.candidate_cancellations,
         )
         return emitted, next_state
+
+    def _decode_candidate(self, outputs, state, current_frame, feature_stride=1):
+        current_frame = int(current_frame)
+        birth = outputs["birth_logits"].detach().sigmoid()[0]
+        alive = outputs["alive_logits"].detach().sigmoid()[0]
+        end = outputs["end_hazard_logits"].detach().sigmoid()[0]
+        class_probs = outputs["class_logits"].detach().softmax(dim=-1)[0]
+        class_scores, labels = class_probs.max(dim=-1)
+        offsets = outputs["endpoint_offset"].detach()[0]
+
+        status = state.slot_status.clone()
+        free_at_entry = status.eq(SLOT_FREE)
+        candidate_age = (
+            state.candidate_age.clone()
+            if state.candidate_age is not None
+            else torch.zeros_like(status)
+        )
+        start_frames = state.start_frames.clone()
+        peak_scores = state.peak_class_scores.clone()
+        peak_labels = (
+            state.peak_class_labels.clone()
+            if state.peak_class_labels is not None
+            else torch.full_like(status, -1)
+        )
+        ledger = list(state.ledger)
+        emitted = []
+        released_slots = []
+        candidate_cancellations = int(state.candidate_cancellations)
+
+        def reset_slot(slot):
+            status[slot] = SLOT_FREE
+            candidate_age[slot] = 0
+            start_frames[slot] = float("nan")
+            peak_scores[slot] = 0.0
+            peak_labels[slot] = -1
+            released_slots.append(int(slot))
+
+        def update_peak(slot):
+            if class_scores[slot] > peak_scores[slot]:
+                peak_scores[slot] = class_scores[slot]
+                peak_labels[slot] = labels[slot]
+
+        def commit(slot):
+            update_peak(slot)
+            start_frame = int(round(float(start_frames[slot].item())))
+            end_frame = int(round(current_frame - float(offsets[slot].item())))
+            end_frame = min(current_frame, max(start_frame, end_frame))
+            score = math.sqrt(
+                max(
+                    float(peak_scores[slot].item()) * float(end[slot].item()),
+                    0.0,
+                )
+            )
+            record = EventSetEmissionRecord(
+                stream_key=state.stream_key,
+                slot_id=int(slot),
+                label=int(peak_labels[slot].item()),
+                score=score,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                emit_frame=current_frame,
+                max_source_frame=max(int(frame) for frame in outputs["memory_frames"]),
+            )
+            ledger.append(record)
+            emitted.append(record)
+            reset_slot(slot)
+
+        for slot in range(self.num_slots):
+            slot_status = int(status[slot].item())
+            if slot_status == SLOT_CANDIDATE:
+                update_peak(slot)
+                if end[slot] >= self.end_threshold:
+                    commit(slot)
+                elif alive[slot] >= self.alive_threshold:
+                    status[slot] = SLOT_ACTIVE
+                    candidate_age[slot] = 0
+                else:
+                    candidate_cancellations += 1
+                    reset_slot(slot)
+                continue
+            if slot_status != SLOT_ACTIVE:
+                continue
+            update_peak(slot)
+            if end[slot] >= self.end_threshold:
+                commit(slot)
+            elif alive[slot] < self.alive_threshold:
+                reset_slot(slot)
+
+        eligible = tuple(
+            slot
+            for slot in range(self.num_slots)
+            if bool(free_at_entry[slot].item()) and birth[slot] >= self.birth_threshold
+        )
+        ranked = tuple(
+            sorted(
+                eligible,
+                key=lambda slot: (-float(birth[slot].item()), int(slot)),
+            )
+        )
+        admitted = ranked[: self.max_births_per_step]
+        for slot in admitted:
+            status[slot] = SLOT_CANDIDATE
+            candidate_age[slot] = self.candidate_confirmation_steps
+            start_frames[slot] = float(
+                self._decode_start(outputs, slot, current_frame, feature_stride)
+            )
+            peak_scores[slot] = class_scores[slot]
+            peak_labels[slot] = labels[slot]
+
+        queries = state.queries
+        if released_slots:
+            reset_mask = torch.zeros(
+                self.num_slots,
+                dtype=torch.bool,
+                device=queries.device,
+            )
+            reset_mask[released_slots] = True
+            learned = self.query_embed.weight.to(device=queries.device, dtype=queries.dtype)
+            queries = torch.where(
+                reset_mask.view(1, -1, 1),
+                learned.unsqueeze(0),
+                queries,
+            )
+
+        next_state = PersistentEventSetState(
+            stream_key=state.stream_key,
+            queries=queries,
+            feature_memory=state.feature_memory,
+            memory_frames=state.memory_frames,
+            slot_status=status,
+            refractory=torch.zeros_like(state.refractory),
+            start_frames=start_frames,
+            peak_class_scores=peak_scores,
+            ledger=ledger,
+            instance_to_slot=state.instance_to_slot,
+            slot_to_instance=state.slot_to_instance,
+            candidate_age=candidate_age,
+            peak_class_labels=peak_labels,
+            birth_proposals=int(state.birth_proposals) + len(ranked),
+            birth_admissions=int(state.birth_admissions) + len(admitted),
+            arbitration_suppressions=(
+                int(state.arbitration_suppressions) + len(ranked) - len(admitted)
+            ),
+            candidate_cancellations=candidate_cancellations,
+        )
+        return emitted, next_state
+
+    def decode_step(self, outputs, state, current_frame, feature_stride=1):
+        if self.lifecycle_mode == "candidate_recycle":
+            return self._decode_candidate(
+                outputs,
+                state,
+                current_frame,
+                feature_stride=feature_stride,
+            )
+        return self._decode_legacy(
+            outputs,
+            state,
+            current_frame,
+            feature_stride=feature_stride,
+        )
 
 
 __all__ = [
     "SLOT_FREE",
     "SLOT_ACTIVE",
+    "SLOT_CANDIDATE",
     "SLOT_REFRACTORY",
     "EventSetEmissionRecord",
     "PersistentEventSetState",

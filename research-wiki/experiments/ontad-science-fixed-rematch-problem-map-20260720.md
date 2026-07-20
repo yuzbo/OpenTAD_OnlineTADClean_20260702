@@ -29,16 +29,37 @@ rematching, when every other factor is held constant?
 4. Independent birth logits can activate too many free slots in one step.
 5. The old result gate does not fully reject silent output.
 6. The combined duplicate/fragmentation improvement needs one frozen formula.
-7. The historical Q2 configs are cached-feature only and cannot support a
-   raw-RGB claim.
+7. The historical configs are cached-feature only and cannot support a raw-RGB
+   claim.
 8. No completed formal multi-seed FIXED/REMATCH effectiveness result exists.
+
+## Curated Scientific File Map
+
+- supervision: `opentad/utils/prefix_trajectory_supervision.py`;
+- runtime head: `opentad/models/dense_heads/persistent_event_set_head.py`;
+- detector: `opentad/models/detectors/persistent_trajectory_ontad.py`;
+- chronological feature data:
+  `opentad/datasets/streaming_feature.py`;
+- instance metrics: `opentad/evaluations/online_instance_metrics.py`;
+- frozen result gate:
+  `opentad/evaluations/persistent_binding_gate.py`;
+- matched configs:
+  `configs/causaltad/thumos_persistent_binding_fixed.py` and
+  `configs/causaltad/thumos_persistent_binding_rematch.py`;
+- focused tests: `tests/test_prefix_trajectory_supervision.py`,
+  `tests/test_persistent_event_set_head.py`,
+  `tests/test_persistent_trajectory_detector.py`,
+  `tests/test_online_instance_metrics.py`,
+  `tests/test_persistent_binding_gate.py`,
+  `tests/test_persistent_binding_configs.py`, and
+  `tests/test_streaming_feature_dataset.py`.
 
 ## Required Decisions Encoded by the Design
 
 - Supervision and runtime states are independent.
 - Candidate births require one causal step of support.
 - At most two candidates enter in one step.
-- End and release happen before same-bin birth admission.
+- A slot released this step becomes birth-eligible at the next decision.
 - Completed slots return directly to FREE.
 - `E_id` and its 20% relative-reduction formula are frozen.
 - Silent-output rejection uses prediction/GT ratio and minimum recall.

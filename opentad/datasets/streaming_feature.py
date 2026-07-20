@@ -43,6 +43,7 @@ class StreamingFeatureDataset:
         test_mode=False,
         allow_list=None,
         block_list=None,
+        strict_causal_control=False,
         logger=None,
     ):
         self.ann_file = Path(ann_file)
@@ -52,6 +53,7 @@ class StreamingFeatureDataset:
         self.feature_stride = int(feature_stride)
         self.stream_id = str(stream_id)
         self.test_mode = bool(test_mode)
+        self.strict_causal_control = bool(strict_causal_control)
         self.logger = logger.info if logger is not None else (lambda *_: None)
         if self.chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
@@ -231,16 +233,20 @@ class StreamingFeatureDataset:
 
         is_start = start == 0
         is_end = end == len(item["source_frames"])
+        stream_control = dict(
+            video_id=item["video_name"],
+            is_video_start=is_start,
+        )
+        if not self.strict_causal_control:
+            stream_control.update(
+                chunk_index=item["chunk_index"],
+                is_video_end=is_end,
+            )
         sample = dict(
             inputs=inputs,
             masks=masks,
             metas=meta,
-            stream_control=dict(
-                video_id=item["video_name"],
-                chunk_index=item["chunk_index"],
-                is_video_start=is_start,
-                is_video_end=is_end,
-            ),
+            stream_control=stream_control,
         )
         if not self.test_mode:
             previous_frame = source_frames[0] - self.feature_stride if is_start else item["source_frames"][start - 1]

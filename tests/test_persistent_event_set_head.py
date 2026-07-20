@@ -4,6 +4,7 @@ import torch
 
 from opentad.models.dense_heads.persistent_event_set_head import (
     SLOT_ACTIVE,
+    SLOT_CANDIDATE,
     SLOT_FREE,
     SLOT_REFRACTORY,
     PersistentEventSetHead,
@@ -162,3 +163,127 @@ def test_two_same_class_slots_emit_independently_once_then_rearm():
     repeated, state = head.decode_step(quiet_outputs, state, current_frame=39)
     assert repeated == []
     assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+
+
+def _candidate_outputs(*, birth, alive, end):
+    return {
+        "birth_logits": torch.tensor([birth], dtype=torch.float32),
+        "alive_logits": torch.tensor([alive], dtype=torch.float32),
+        "class_logits": torch.tensor(
+            [[[0.0, 10.0, 0.0], [0.0, 10.0, 0.0]]],
+            dtype=torch.float32,
+        ),
+        "end_hazard_logits": torch.tensor([end], dtype=torch.float32),
+        "endpoint_offset": torch.zeros(1, 2),
+        "start_offset": torch.zeros(1, 2),
+        "memory_frames": (7,),
+    }
+
+
+def test_candidate_lifecycle_bounds_false_birth_and_recycles_without_refractory():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    )
+    state = _state(head)
+
+    _, state = head.decode_step(
+        _candidate_outputs(birth=[10.0, -10.0], alive=[-10.0, -10.0], end=[-10.0, -10.0]),
+        state,
+        current_frame=7,
+    )
+    assert state.slot_status.tolist() == [SLOT_CANDIDATE, SLOT_FREE]
+
+    _, state = head.decode_step(
+        _candidate_outputs(birth=[-10.0, -10.0], alive=[-10.0, -10.0], end=[-10.0, -10.0]),
+        state,
+        current_frame=15,
+    )
+    assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+    assert state.candidate_cancellations == 1
+
+
+def test_candidate_confirmation_then_end_commits_once_and_immediately_frees_slot():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    )
+    state = _state(head)
+    _, state = head.decode_step(
+        _candidate_outputs(birth=[10.0, -10.0], alive=[-10.0, -10.0], end=[-10.0, -10.0]),
+        state,
+        current_frame=7,
+    )
+    _, state = head.decode_step(
+        _candidate_outputs(birth=[-10.0, -10.0], alive=[10.0, -10.0], end=[-10.0, -10.0]),
+        state,
+        current_frame=15,
+    )
+    assert state.slot_status.tolist() == [SLOT_ACTIVE, SLOT_FREE]
+
+    emissions, state = head.decode_step(
+        _candidate_outputs(birth=[-10.0, -10.0], alive=[10.0, -10.0], end=[10.0, -10.0]),
+        state,
+        current_frame=23,
+    )
+    assert len(emissions) == 1
+    assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+
+    repeated, state = head.decode_step(
+        _candidate_outputs(birth=[-10.0, -10.0], alive=[-10.0, -10.0], end=[10.0, -10.0]),
+        state,
+        current_frame=31,
+    )
+    assert repeated == []
+    assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+
+
+def test_candidate_birth_arbitration_admits_only_frozen_per_step_budget():
+    head = PersistentEventSetHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=4,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    ).eval()
+    state = head.initial_state(torch.device("cpu"), torch.float32, "stream")
+    outputs = {
+        "birth_logits": torch.tensor([[1.0, 4.0, 3.0, 2.0]]),
+        "alive_logits": torch.full((1, 4), -10.0),
+        "class_logits": torch.zeros(1, 4, 3),
+        "end_hazard_logits": torch.full((1, 4), -10.0),
+        "endpoint_offset": torch.zeros(1, 4),
+        "start_offset": torch.zeros(1, 4),
+        "memory_frames": (7,),
+    }
+
+    _, state = head.decode_step(outputs, state, current_frame=7)
+
+    assert state.slot_status.tolist() == [
+        SLOT_FREE,
+        SLOT_CANDIDATE,
+        SLOT_CANDIDATE,
+        SLOT_FREE,
+    ]
+    assert state.birth_proposals == 4
+    assert state.birth_admissions == 2
+    assert state.arbitration_suppressions == 2

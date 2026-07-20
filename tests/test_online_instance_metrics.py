@@ -72,8 +72,8 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
 
     duplicates = metrics["duplicates"]
     assert duplicates["duplicate_emission_count"] == 2
-    assert duplicates["rate"] == pytest.approx(0.5)
-    assert duplicates["denominator"] == {"name": "all_emissions", "value": 4}
+    assert duplicates["rate"] == pytest.approx(1.0)
+    assert duplicates["denominator"] == {"name": "all_ground_truth", "value": 2}
     assert duplicates["per_matched_ground_truth"] == [
         {
             "ground_truth_id": "gt-action",
@@ -87,19 +87,16 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
     assert fragmentation["fragmented_ground_truth_count"] == 1
     assert fragmentation["distinct_fragment_count"] == 2
     assert fragmentation["excess_fragment_count"] == 1
-    assert fragmentation["rate"] == pytest.approx(1.0)
-    assert fragmentation["denominator"] == {
-        "name": "matched_ground_truth",
-        "value": 1,
-    }
-    assert "disjoint or overlapping" in fragmentation["definition"]
+    assert fragmentation["rate"] == pytest.approx(0.5)
+    assert fragmentation["denominator"] == {"name": "all_ground_truth", "value": 2}
+    assert "beyond the first" in fragmentation["definition"]
 
     false_emissions = metrics["false_emissions"]
     assert false_emissions["unmatched_emission_count"] == 1
     assert false_emissions["rate"] == pytest.approx(0.25)
     assert false_emissions["emission_ids"] == ["emit-wrong-class"]
-    assert metrics["duplicate_rate"] == pytest.approx(0.5)
-    assert metrics["fragmentation_rate"] == pytest.approx(1.0)
+    assert metrics["duplicate_rate"] == pytest.approx(1.0)
+    assert metrics["fragmentation_rate"] == pytest.approx(0.5)
     assert metrics["false_emission_rate"] == pytest.approx(0.25)
 
     latency = metrics["endpoint_detection_latency_frames"]

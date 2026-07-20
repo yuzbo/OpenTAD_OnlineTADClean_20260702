@@ -516,7 +516,7 @@ def compute_online_instance_metrics(
     tiou_threshold=0.5,
     lifecycle_traces=None,
 ):
-    """Compute auditable Full PETAL metrics over every immutable emission."""
+    """Compute causal instance metrics over every final online emission."""
 
     threshold = _finite_number(tiou_threshold, "tiou_threshold")
     if threshold <= 0 or threshold > 1:
@@ -635,13 +635,11 @@ def compute_online_instance_metrics(
     matched_count = len(primary_pairs)
     emission_count = len(predictions)
     unmatched_count = len(unmatched_emission_ids)
-    fragmentation_denominator = {
-        "name": "matched_ground_truth",
-        "value": matched_count,
-    }
+    identity_denominator = {"name": "all_ground_truth", "value": len(targets)}
     endpoint_latencies = [pair["endpoint_latency_frames"] for pair in primary_pairs]
-    duplicate_rate = _rate(duplicate_count, emission_count)
-    fragmentation_rate = _rate(len(fragmented_targets), matched_count)
+    duplicate_rate = _rate(duplicate_count, len(targets))
+    fragmentation_rate = _rate(excess_fragment_count, len(targets))
+    fragmented_target_rate = _rate(len(fragmented_targets), len(targets))
     false_emission_rate = _rate(unmatched_count, emission_count)
 
     return {
@@ -671,7 +669,7 @@ def compute_online_instance_metrics(
         "duplicates": {
             "duplicate_emission_count": duplicate_count,
             "rate": duplicate_rate,
-            "denominator": {"name": "all_emissions", "value": emission_count},
+            "denominator": identity_denominator,
             "per_matched_ground_truth": duplicate_per_target,
         },
         "fragmentation": {
@@ -679,11 +677,12 @@ def compute_online_instance_metrics(
             "distinct_fragment_count": distinct_fragment_count,
             "excess_fragment_count": excess_fragment_count,
             "rate": fragmentation_rate,
-            "denominator": fragmentation_denominator,
+            "fragmented_target_rate": fragmented_target_rate,
+            "denominator": identity_denominator,
             "definition": (
-                "A matched GT is fragmented when its assigned emissions contain at least two "
-                "distinct segment bounds, whether disjoint or overlapping; exact repeated bounds "
-                "remain duplicates but are not an additional fragment."
+                "Fragmentation error counts distinct assigned segment bounds beyond the first "
+                "for each GT; exact repeated bounds remain duplicates but are not an "
+                "additional fragment."
             ),
             "per_ground_truth": fragmented_targets,
         },

@@ -6,29 +6,29 @@ Date: 2026-07-20
 
 - [x] Create `codex/ontad-science-fixed-rematch` from `b974f3d`.
 - [x] Freeze the scientific design and experiment gates.
-- [ ] Record the exact curated source-file map.
+- [x] Record the exact curated source-file map.
 
 ## Phase 2: Minimal Scientific Port
 
-- [ ] Port prefix trajectory supervision and its focused tests.
-- [ ] Port the persistent trajectory detector without unrelated dependencies.
-- [ ] Reuse and revise the existing persistent event-set head.
-- [ ] Port only the chronological feature-data changes required by the route.
-- [ ] Port and rename the required instance metrics.
-- [ ] Add FIXED and REMATCH configs that differ only in binding mode.
-- [ ] Update registries with only the new scientific classes.
+- [x] Port prefix trajectory supervision and its focused tests.
+- [x] Port the persistent trajectory detector without unrelated dependencies.
+- [x] Reuse and revise the existing persistent event-set head.
+- [x] Port only the chronological feature-data changes required by the route.
+- [x] Port and rename the required instance metrics.
+- [x] Add FIXED and REMATCH configs that differ only in binding mode.
+- [x] Update registries with only the new scientific classes.
 
 ## Phase 3: Lifecycle Repair
 
-- [ ] Make canonical supervision capacity independent of runtime occupancy.
-- [ ] Replace refractory occupancy with one-step CANDIDATE confirmation.
-- [ ] Apply end/release before same-bin birth admission.
-- [ ] Limit same-bin candidate admission to the frozen causal birth census.
-- [ ] Add explicit dropped-target, capacity, and non-degeneracy counters.
+- [x] Make canonical supervision capacity independent of runtime occupancy.
+- [x] Replace refractory occupancy with one-step CANDIDATE confirmation.
+- [x] Freeze the entry-free birth pool and reuse released slots next step.
+- [x] Limit same-bin candidate admission to the frozen causal birth census.
+- [x] Add explicit dropped-target, capacity, and non-degeneracy counters.
 
 ## Phase 4: Verification
 
-- [ ] Run source compilation.
+- [x] Run source compilation.
 - [ ] Run supervision, lifecycle, metric, dataset, and config tests.
 - [ ] Run synthetic repeated/overlapping/adjacent-action streams.
 - [ ] Verify no inference annotation or future fields.
