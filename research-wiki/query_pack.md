@@ -90,7 +90,9 @@ anticipation/future-supervised 部分不采用。
   Torch `c10.dll` 故障不是模型门禁。
 - N16R4 exact `7ba049f`：41 项 Torch/配置/提交器测试通过，47.37 秒；
 - N16R4 exact `1b93a7d`：收紧提交器后 38 项测试通过，40.32 秒；
-- 两次远端测试后 worktree 都是 clean。
+- N16R4 exact `3035f4e`：新增结构化损失激活审计后 116 项相关测试
+  通过，77.56 秒；
+- 三次远端测试后 worktree 都是 clean。
 
 每条 Slurm pilot 会先在自身 exact commit/config 上跑双臂
 50-warmup/200-measured profile；只有自身稳定性、未训练因果等价与
@@ -101,13 +103,19 @@ target-conditioned diagnosis 和 frozen technical gate。
 
 远端 clean detached worktree：
 `/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_ShortWarmup_b61f56a`，
-当前 exact `1b93a7d6421e38c89601580ca34d5003b1859cff`。
+当前 exact `3035f4e88033a68be651fc3b77292a34f3864b10`。
 
 账户 association 固定 `GrpTRES=gres/gpu=16`、`MaxSubmitJobs=16`。
-2026-07-21 03:46 北京时间已有 9 RUNNING + 7 PENDING，恰好无 submit
-slot。不得取消或修改其他任务制造容量。至少空出三个槽后，分别用
-`VARIANT=sw|margin|transport` 和完整 `EXPECTED_COMMIT` 提交；记录三个
-job id/run dir，禁止 duplicate submission。
+2026-07-21 04:04 北京时间仍有 9 RUNNING + 7 PENDING，恰好无 submit
+slot。不得取消或修改其他任务制造容量。每空出一个槽，按
+`VARIANT=sw|margin|transport` 顺序用完整 `EXPECTED_COMMIT` 提交一个
+尚缺版本；记录三个 job id/run dir，禁止 duplicate submission。
+
+每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
+`optimization_activation.json`：SW 两项新增损失都必须休眠，margin
+只激活 `birth_margin_loss`，transport 只激活
+`causal_transport_loss`。未激活或串扰是科学 gate reject，不等同于
+程序崩溃；推理和诊断产物仍须保留。
 
 ## Pilot Gates
 
@@ -157,4 +165,3 @@ frozen features、LoRA 或 backbone 本身声称为新颖。仍存活的窄主�
 在完全匹配的 strict On-TAD 协议下，first-crossing persistent FIXED
 supervision binding 能否在不显著损害 standard mAP 的前提下，降低
 identity-linked duplicate/fragmentation error。
-

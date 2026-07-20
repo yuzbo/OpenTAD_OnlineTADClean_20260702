@@ -94,7 +94,10 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 5. 训练后只在 calibration split 做 target-conditioned 分数诊断；
 6. 首要排序指标是 birth positive/negative gap、pairwise AUC、冻结 0.5
    下的 TPR/FPR 与 committed emissions；不搜索或下调阈值；
-7. reporting split、三种子主结果和 raw-RGB 均继续封锁。
+7. `training_audit.json` 必须结构化记录每项损失的 epoch mean 与非零
+   update 数；A 的两个新增损失均应休眠，B 只能激活 birth margin，
+   C 只能激活 causal transport；
+8. reporting split、三种子主结果和 raw-RGB 均继续封锁。
 
 三个版本是并行的机制 pilot，不以其中任一结果冒充 FIXED/REMATCH
 论文主实验。若 B 或 C 单独通过技术门禁，再做一次受控组合实验；若均失败，
@@ -136,6 +139,12 @@ raw-RGB 端到端扩展。
 - 新增按 `VARIANT=sw|margin|transport` 选择配置的 Slurm submitter，
   每个作业内跑完整一轮双臂训练、calibration-only 推理、target-conditioned
   分数诊断、资源审计和冻结技术门禁。
+- 机制激活审计提交
+  `3035f4e88033a68be651fc3b77292a34f3864b10` 已推送：
+  `training_audit.json` 新增 `mean_losses` 和
+  `loss_nonzero_updates`，并生成 `optimization_activation.json`。
+  如果预期辅助损失从未产生非零信号，或另一个版本的损失意外激活，
+  该 pilot 判为科学门禁失败；作业仍继续保留推理和分数诊断产物。
 - Windows 本地完成 Python 编译、两个 Bash 语法检查、配置/工具等
   29 项 CPU-safe 测试；全部通过。本机 Torch 仍因既有 `c10.dll`
   初始化问题不可用，没有把该环境当作模型证据。
@@ -144,7 +153,12 @@ raw-RGB 端到端扩展。
   `git status --porcelain` 为零行。
 - 首次远端 `git fetch` 遇到 GitHub TLS 中断，第三次有界重试成功；
   这是传输故障，发生在测试前，不是代码或实验失败。
+- N16R4 候选 worktree 已前移到精确提交
+  `3035f4e88033a68be651fc3b77292a34f3864b10`；包含模型、训练审计、
+  三版本配置、提交器和新激活门禁的 116 项测试全部通过，
+  `116 passed in 77.56s`，测试后仍为 clean detached。
 
 部署前队列检查显示账户已有 16 个 Slurm 作业（9 RUNNING、7 PENDING），
 其中既有诊断 `1177682` 仍为 `AssocGrpGRES`。当前没有空余 submit slot；
-不取消或修改其他任务，等待至少三个槽位后提交三条独立 pilot。
+不取消或修改其他任务；每出现一个槽位就按 A→B→C 顺序提交一个尚缺
+pilot，不等待三个槽同时出现，也不重复提交。
