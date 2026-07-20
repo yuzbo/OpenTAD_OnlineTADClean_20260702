@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-20
+updated: 2026-07-21
 status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
@@ -21,12 +21,11 @@ The active experiment is feature-level, not raw RGB: compare first-crossing
 lifecycle, data, thresholds, optimizer, inference, and evaluation are matched.
 Only the post-birth loss-binding rule may differ.
 
-The repair branch passed an earlier real-data Slurm smoke and strict paired
-profile. Shared learnability optimization is implemented at
-`0258b853aa284f9650d931e680116b63b289e192`: fit-only event priors, tempered
-positive weights, a one-token birth-start range, supervised REMATCH costs, and
-removal of unused scalar-route pointer work. The old profile is now only a
-pre-optimization bound; no seed-705 or three-seed result exists.
+The optimized route passed same-commit Slurm smoke `1177580` and strict
+profile `1177582` at `534f85b`. The first seed-705 paired technical screen
+`1177596` then completed within budget but correctly failed: both FIXED and
+REMATCH made zero calibration emissions after one stable epoch. No three-seed
+or paper result exists.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -38,13 +37,12 @@ Read:
 
 ## Current Blocking Gaps
 
-1. **Same-commit Torch validation:** Windows cannot load PyTorch `c10.dll`;
-   the new adjacent-action end-to-end regression and full focused bundle must
-   pass inside N16R4 Slurm.
-2. **Re-profile after model change:** old job `1177511` cannot authorize the
-   optimized commit; rerun smoke and strict profile without changing code.
-3. **One-epoch non-degeneracy:** seed-705 FIXED/REMATCH must both update,
-   emit causally, and avoid silent/explosive outputs on calibration only.
+1. **Lifecycle-score diagnosis:** quantify calibration-only birth/alive/end
+   score distributions for both failed seed-705 checkpoints.
+2. **Shared model repair:** if confirmed, align output-head initialization
+   with the registered weighted BCE while keeping thresholds/splits frozen.
+3. **One-epoch non-degeneracy rerun:** both arms must update, emit causally,
+   and avoid silent/explosive outputs on calibration only.
 4. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
    main result and cannot prove the identity-error claim.
 5. **Raw RGB:** joint visual training stays blocked until the complete
@@ -62,19 +60,24 @@ Read:
   `0.00550069/0.0799036/0.0636912`; every birth start lies within one token;
 - commit `0258b85` implements the shared model optimization, adjacent-action
   test, one-epoch screen, calibration-only result gate, and hash provenance;
-- 21 current CPU-safe tests plus compilation and Bash syntax pass locally;
+- optimized smoke `1177580` passed 82 remote tests and exact causal reload;
+- optimized one-epoch profile gate is `1.404134 GPU-hours`, below the cap;
+- screen `1177596` used `0.871944 GPU-hours`; both arms completed 2010/2010
+  updates with zero training/capacity/causal errors but emitted zero intervals;
+- both checkpoint birth biases remain about `-5.125` (probability `0.00591`);
 - none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
   latency, or any paper headline.
 
 ## Immediate Implementation Order
 
-1. Commit this wiki checkpoint and run the optimized code through N16R4 smoke.
-2. At the exact same commit, rerun the paired 50-warmup/200-measured profile.
-3. If its one-epoch estimate remains within two GPU-hours, run seed 705 for
-   FIXED and REMATCH sequentially on one RTX 4090.
-4. Apply the frozen calibration-only non-degeneracy gate without threshold
-   edits and write all job IDs, hashes, metrics, and failures back to the wiki.
-5. Only after a pass, design the affordable multi-epoch/three-seed feature
+1. Commit the calibration-only score-diagnosis tool and this negative-result
+   wiki checkpoint.
+2. Diagnose both failed checkpoints without reporting access or threshold
+   edits.
+3. If weighted-loss initialization mismatch is confirmed, repair the shared
+   model and test the exact bias math.
+4. Rerun same-commit smoke, profile, and seed-705 FIXED/REMATCH screen.
+5. Only after a technical pass, design the affordable multi-epoch/three-seed
    protocol; raw RGB remains later and conditional.
 
 ## Feature-Level Gates
@@ -132,11 +135,9 @@ duplicate/fragmentation error without unacceptable standard-mAP loss?
 
 ## Current Final Goal
 
-Implement the scientific-contract repair now. Do not start a new Pro discussion,
-submit seed 705, run three seeds, or begin raw-RGB training first.
-
-After repair, smoke and re-profile. If the repaired protocol is scientifically
-closed and a new budget is explicitly registered, run one matched feature seed
-as a non-degeneracy screen, freeze shared calibration rules, and then run the
-paired three-seed falsification. Raw-RGB frozen/PEFT/joint training is permitted
-only after both feature-level technical and scientific gates pass.
+Diagnose and repair the silent birth/lifecycle scores now. No new Pro
+discussion is required. Do not lower thresholds, access reporting, run three
+seeds, or begin raw-RGB training first. After the shared model repair, repeat
+smoke/profile/seed-705; only a technical pass can advance to the paired
+multi-seed feature falsification. Raw-RGB remains conditional on the complete
+feature-level technical and scientific gates.

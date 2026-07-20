@@ -38,7 +38,7 @@ paired-profile, and final-decision checkpoint.
       N16R4 PyTorch environment (55 focused tests passed on 2026-07-20).
 - [x] Cover repeated and overlapping same-class actions with focused synthetic
       supervision and lifecycle tests.
-- [ ] Run an end-to-end adjacent-action synthetic stream through dataset,
+- [x] Run an end-to-end adjacent-action synthetic stream through dataset,
       detector, emission serialization, and evaluator.
 - [x] Verify no inference annotation, terminal, or future fields.
 - [x] Verify the two resolved configs differ only in binding mode.
@@ -56,7 +56,8 @@ paired-profile, and final-decision checkpoint.
       final-token short action, exactly once.
 - [x] Implement the exact adjacent-action synthetic stream, including
       same-step old-end/new-birth and released-slot deferral.
-- [ ] Execute that end-to-end regression in the N16R4 PyTorch environment.
+- [x] Execute that end-to-end regression in the N16R4 PyTorch environment
+      (Slurm `1177580`, 82 focused tests passed).
 - [x] Split video identity from runtime stream identity and normalize all
       instance metrics to one explicit coordinate system.
 - [x] Replace chronological greedy primary matching with the frozen global
@@ -93,11 +94,20 @@ paired-profile, and final-decision checkpoint.
       conservative locked-report reserve, under the unchanged 2-hour cap.
 - [x] Implement and locally validate the screen-only launcher, result
       artifact, calibration-only gate, and hash-linked evidence contract.
-- [ ] Rerun smoke and strict profiling after model-optimization commit
-      `0258b853aa284f9650d931e680116b63b289e192`.
-- [ ] Validate the adjacent-action and complete Torch test bundle on N16R4.
-- [ ] Run the registered seed-705 technical screen without accessing the
-      reporting split.
+- [x] Rerun repaired smoke after model optimization
+      (Slurm `1177580`, commit `534f85b`, gate passed).
+- [x] Rerun strict profiling at the same commit
+      (Slurm `1177582`; one-epoch gate `1.404134 GPU·hours`, passed).
+- [x] Validate the adjacent-action and complete Torch test bundle on N16R4.
+- [x] Run the registered seed-705 technical screen without accessing the
+      reporting split (Slurm `1177596`; budget passed, both arms were silent,
+      so the frozen technical gate correctly failed).
+- [ ] Run calibration-only lifecycle-score diagnosis on both failed
+      checkpoints and record birth/alive/end distributions and bias margins.
+- [ ] Repair shared model initialization only if the diagnosis confirms the
+      registered weighted-BCE mismatch; keep thresholds and splits frozen.
+- [ ] Rerun same-commit smoke, strict profile, and seed-705 screen after the
+      model repair.
 - [ ] BLOCKED: freeze validation-selected thresholds.
 - [ ] BLOCKED: run seeds 705, 706, and 707 through Slurm.
 - [ ] Report paired standard and instance metrics.
