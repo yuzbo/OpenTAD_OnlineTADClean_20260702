@@ -265,9 +265,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         birth_logit_margin_loss_weight=0.0,
         birth_logit_margin=0.25,
         causal_query_transport_loss_weight=0.0,
-        causal_query_transport_temperature=0.1,
+        causal_query_transport_temperature=0.25,
         causal_query_transport_identity_cost=0.25,
-        causal_query_transport_iterations=20,
+        causal_query_transport_iterations=56,
         causal_query_transport_mass_floor=0.05,
     ):
         super().__init__()

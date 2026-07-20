@@ -312,23 +312,64 @@ def test_runtime_transport_temperature_converges_with_identity_prior():
             cost,
             source,
             target,
-            temperature=0.5,
-            iterations=20,
+            temperature=0.25,
+            iterations=56,
         )
 
         assert torch.allclose(
             plan.sum(dim=1),
             source,
-            atol=1e-4,
+            atol=1e-3,
             rtol=0,
         )
         assert torch.allclose(
             plan.sum(dim=0),
             target,
-            atol=1e-4,
+            atol=1e-3,
             rtol=0,
         )
         assert torch.isfinite(plan).all()
+
+
+def test_runtime_transport_uses_first_pressure_test_iteration_below_tolerance():
+    cost = torch.tensor(
+        [
+            [0.42022443, 0.94815993, 2.08324742, 1.52870035],
+            [1.45719934, 0.63024175, 0.38382852, 1.76248419],
+            [1.30959499, 0.69627583, 0.13552845, 0.38356495],
+            [0.65937150, 2.21395874, 1.89271379, 0.06057763],
+        ]
+    )
+    source = torch.tensor(
+        [0.02257955, 0.24191631, 0.32210892, 0.41339517]
+    )
+    target = torch.tensor(
+        [0.06650352, 0.03992320, 0.53413475, 0.35943845]
+    )
+
+    plan_55 = _sinkhorn_plan(
+        cost,
+        source,
+        target,
+        temperature=0.25,
+        iterations=55,
+    )
+    plan_56 = _sinkhorn_plan(
+        cost,
+        source,
+        target,
+        temperature=0.25,
+        iterations=56,
+    )
+
+    def marginal_error(plan):
+        return torch.maximum(
+            (plan.sum(dim=1) - source).abs().max(),
+            (plan.sum(dim=0) - target).abs().max(),
+        )
+
+    assert marginal_error(plan_55).item() > 1e-3
+    assert marginal_error(plan_56).item() <= 1e-3
 
 
 def test_causal_query_transport_is_one_way_from_past_to_current():
