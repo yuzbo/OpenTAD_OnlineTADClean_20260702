@@ -528,3 +528,21 @@ persistent query：
 截至本次精确检索，没有找到可核验的同名 “ChronoTransport” On-TAD
 论文；该词继续只指本项目已经被 C 实验否证的 previous→current
 prediction-only transport 思路，不作为外部论文或新颖性主张。
+
+### M8 第四版自身画像放行
+
+`1177720` 在 exact `d87a116` 上完成四条 profile，稳定性、未训练
+FIXED/REMATCH 推理等价、严格因果和预算门全部通过：
+
+- FIXED/REMATCH 训练均值 `0.716867/0.718284 秒/step`；
+- FIXED/REMATCH calibration 推理均值 `0.205037/0.199186 秒/step`；
+- 安全系数前双臂总量 `1.159255 GPU·h`，乘 `1.25` 后
+  `1.449069 GPU·h < 2.0 GPU·h`；
+- 两条训练画像均为零 runtime capacity exhaustion；
+- 三项 margin 均产生非零画像损失，transport 为零；
+- 未训练推理仍为零 emission，且 future-end/source、负延迟和非单调
+  emission 违规均为零。
+
+`pilot_contract.json` 已固定 commit、双臂配置、seed 705、一轮、
+calibration-only、无 threshold search、无 reporting/raw-RGB，并记录
+四端口块。画像通过后，作业已进入正式 FIXED 一轮训练。

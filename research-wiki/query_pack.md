@@ -278,3 +278,6 @@ identity-linked duplicate/fragmentation error。
   MATR 的“当前 end、过去 memory 检索 start”分解和 OpenHOUSE 对相邻
   动作边界的启示，做 strictly causal transition-end 分支；不复制它们的
   anticipation、NMS、VLM 或层级任务。
+- `1177720` 自身画像已 PASS：FIXED/REMATCH 训练
+  `0.716867/0.718284 秒/step`，安全系数后双臂
+  `1.449069 GPU·h < 2`，零容量/因果违规；现处于 FIXED 正式训练。
