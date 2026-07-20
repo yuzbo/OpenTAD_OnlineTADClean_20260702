@@ -182,6 +182,13 @@ prediction、0 Recall@0.3。C 已确定无 P1 资格，作业继续生成三通�
 和完整拒绝产物；这些分数只决定是否保留“仅 confirmed-active 槽
 transport”的后续想法，不会挽回本版资格。
 
+C 最终 `FAILED 1:0` 是预期 scientific gate reject：activation 和
+`1.08 GPU·h` budget 均通过，technical gate 拒绝。FIXED 的
+birth/alive/end AUC 为 `0.313/0.296/0.566`，birth/alive 均值差为负；
+REMATCH 为 `0.552/0.482/0.530`，所有通道冻结 TPR 仍为零；两臂 birth
+最大概率仅 `0.22687/0.14236`。因此停止 C 及其权重/作用域搜索，下一
+模型选择只由 A/B 结果决定。
+
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
 只激活 `birth_margin_loss`，transport 只激活

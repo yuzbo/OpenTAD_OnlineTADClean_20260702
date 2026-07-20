@@ -394,3 +394,19 @@ P1 资格；其 Slurm 最终出现非零退出码将是预期科学 gate reject�
 运行崩溃。仍保留随后生成的 birth/alive/end AUC、gap、TPR/FPR，用于
 判断 future work 是否值得把 transport 严格限制到已确认 active 槽；若
 这些判别指标也无改善，则停止该路线。
+
+C 的完整产物随后生成并以预期科学拒绝结束：activation gate `PASS`，
+真实双臂用量 `1.08 GPU·h`、budget `PASS`；technical gate 因上述容量
+碰撞、零提交、零 prediction/GT 和零 Recall 而 `FAIL`。v2 分数诊断显示：
+
+| C 通道 | FIXED AUC / 均值差 | REMATCH AUC / 均值差 | 两臂冻结 TPR |
+| --- | --- | --- | ---: |
+| birth | `0.31315 / -0.05976` | `0.55220 / +0.00115` | `0 / 0` |
+| alive | `0.29555 / -0.15628` | `0.48246 / +0.00020` | `0 / 0` |
+| end | `0.56641 / +0.01265` | `0.52970 / +0.00065` | `0 / 0` |
+
+最终 checkpoint 的 FIXED/REMATCH birth 最大概率仅
+`0.22687/0.14236`，calibration runtime 均为零 birth proposal。C 不仅
+没有形成最终区间，FIXED 的 birth/alive 判别方向还明显反转；因此不做
+transport 权重搜索，也不把“仅 confirmed-active 槽 transport”列为紧接
+下一版。当前优先级回到 A/B 所检验的优化与生命周期决策边界。
