@@ -267,6 +267,10 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         fail_on_supervision_exhaustion=False,
         birth_logit_margin_loss_weight=0.0,
         birth_logit_margin=0.25,
+        alive_logit_margin_loss_weight=0.0,
+        alive_logit_margin=0.25,
+        end_logit_margin_loss_weight=0.0,
+        end_logit_margin=0.25,
         causal_query_transport_loss_weight=0.0,
         causal_query_transport_temperature=0.25,
         causal_query_transport_identity_cost=0.25,
@@ -310,6 +314,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "start_loss": float(start_loss_weight),
             "end_loss": float(end_loss_weight),
             "birth_margin_loss": float(birth_logit_margin_loss_weight),
+            "alive_margin_loss": float(alive_logit_margin_loss_weight),
+            "end_margin_loss": float(end_logit_margin_loss_weight),
             "causal_transport_loss": float(
                 causal_query_transport_loss_weight
             ),
@@ -319,12 +325,19 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             for value in self.loss_weights.values()
         ):
             raise ValueError("loss weights must be non-negative and finite")
-        self.birth_logit_margin = float(birth_logit_margin)
-        if (
-            not math.isfinite(self.birth_logit_margin)
-            or self.birth_logit_margin <= 0
-        ):
-            raise ValueError("birth_logit_margin must be positive and finite")
+        self.logit_margins = {
+            "birth": float(birth_logit_margin),
+            "alive": float(alive_logit_margin),
+            "end": float(end_logit_margin),
+        }
+        for channel, margin in self.logit_margins.items():
+            if not math.isfinite(margin) or margin <= 0:
+                raise ValueError(
+                    f"{channel}_logit_margin must be positive and finite"
+                )
+        self.birth_logit_margin = self.logit_margins["birth"]
+        self.alive_logit_margin = self.logit_margins["alive"]
+        self.end_logit_margin = self.logit_margins["end"]
         self.causal_transport = {
             "temperature": float(causal_query_transport_temperature),
             "identity_cost": float(causal_query_transport_identity_cost),
@@ -765,6 +778,26 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 if self.loss_weights["birth_margin_loss"] > 0
                 else _zero(outputs["birth_logits"])
             ),
+            "alive_margin_loss": (
+                _balanced_binary_logit_margin(
+                    outputs["alive_logits"],
+                    alive_target,
+                    alive_mask,
+                    self.alive_logit_margin,
+                )
+                if self.loss_weights["alive_margin_loss"] > 0
+                else _zero(outputs["alive_logits"])
+            ),
+            "end_margin_loss": (
+                _balanced_binary_logit_margin(
+                    outputs["end_hazard_logits"],
+                    end_target,
+                    end_mask,
+                    self.end_logit_margin,
+                )
+                if self.loss_weights["end_margin_loss"] > 0
+                else _zero(outputs["end_hazard_logits"])
+            ),
         }
 
     @staticmethod
@@ -1098,6 +1131,14 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 "birth_margin_loss"
             ],
             "birth_logit_margin": self.birth_logit_margin,
+            "alive_logit_margin_loss_weight": self.loss_weights[
+                "alive_margin_loss"
+            ],
+            "alive_logit_margin": self.alive_logit_margin,
+            "end_logit_margin_loss_weight": self.loss_weights[
+                "end_margin_loss"
+            ],
+            "end_logit_margin": self.end_logit_margin,
             "causal_query_transport_loss_weight": self.loss_weights[
                 "causal_transport_loss"
             ],

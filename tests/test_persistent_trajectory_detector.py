@@ -537,6 +537,46 @@ def test_enabled_model_optimization_losses_are_finite_and_differentiable():
     assert detector.head.birth_head.weight.grad is not None
 
 
+def test_lifecycle_logit_margins_cover_birth_alive_and_end_boundaries():
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 17.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    detector = _detector(
+        birth_logit_margin_loss_weight=0.5,
+        alive_logit_margin_loss_weight=0.5,
+        end_logit_margin_loss_weight=0.5,
+    ).train()
+
+    output = detector.train_episode(
+        torch.randn(1, 4, len(frames)),
+        torch.ones(1, len(frames), dtype=torch.bool),
+        _meta(frames),
+        schedule,
+    )
+    output.losses["cost"].backward()
+
+    for key in (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+    ):
+        assert output.losses[key].item() > 0
+    assert torch.isfinite(output.losses["cost"])
+    assert detector.last_episode_audit[
+        "alive_logit_margin_loss_weight"
+    ] == pytest.approx(0.5)
+    assert detector.last_episode_audit[
+        "end_logit_margin_loss_weight"
+    ] == pytest.approx(0.5)
+    assert detector.head.birth_head.weight.grad is not None
+    assert detector.head.alive_head.weight.grad is not None
+    assert detector.head.end_head.weight.grad is not None
+
+
 def test_detector_aligns_prior_biases_with_weighted_binary_losses():
     head = PersistentEventSetHead(
         in_channels=4,

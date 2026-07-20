@@ -123,6 +123,8 @@ def test_three_model_optimization_pilots_are_matched_and_isolated():
         assert fixed.screening_contract.optimization_variant == variant
         assert fixed.optimization_pilot_contract.optimization_variant == variant
         assert fixed.model.birth_logit_margin_loss_weight == margin_weight
+        assert fixed.model.alive_logit_margin_loss_weight == 0.0
+        assert fixed.model.end_logit_margin_loss_weight == 0.0
         assert (
             fixed.model.causal_query_transport_loss_weight
             == transport_weight

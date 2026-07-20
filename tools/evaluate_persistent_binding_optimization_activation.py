@@ -9,12 +9,19 @@ from pathlib import Path
 AUDIT_SCHEMA = "persistent_binding_training_audit.v1"
 AUXILIARY_LOSSES = (
     "birth_margin_loss",
+    "alive_margin_loss",
+    "end_margin_loss",
     "causal_transport_loss",
 )
-ACTIVE_LOSS = {
-    "sw": None,
-    "margin": "birth_margin_loss",
-    "transport": "causal_transport_loss",
+ACTIVE_LOSSES = {
+    "sw": (),
+    "margin": ("birth_margin_loss",),
+    "transport": ("causal_transport_loss",),
+    "lifecycle": (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+    ),
 }
 
 
@@ -63,8 +70,10 @@ def _normalize_arm(payload, arm):
 
 
 def evaluate_activation(variant, fixed_payload, rematch_payload):
-    if variant not in ACTIVE_LOSS:
-        raise ValueError("variant must be sw, margin, or transport")
+    if variant not in ACTIVE_LOSSES:
+        raise ValueError(
+            "variant must be sw, margin, transport, or lifecycle"
+        )
     arms = {
         "fixed": _normalize_arm(fixed_payload, "fixed"),
         "rematch": _normalize_arm(rematch_payload, "rematch"),
@@ -74,14 +83,14 @@ def evaluate_activation(variant, fixed_payload, rematch_payload):
         "rematch": "prefix_rematch_active_pool",
     }
     failures = []
-    active_loss = ACTIVE_LOSS[variant]
+    active_losses = ACTIVE_LOSSES[variant]
     for arm, row in arms.items():
         if row["binding_mode"] != expected_bindings[arm]:
             failures.append(
                 f"{arm}: binding_mode={row['binding_mode']!r}"
             )
         for key, evidence in row["losses"].items():
-            should_be_active = key == active_loss
+            should_be_active = key in active_losses
             observed_active = (
                 evidence["mean"] > 0
                 and evidence["nonzero_updates"] > 0
@@ -101,7 +110,10 @@ def evaluate_activation(variant, fixed_payload, rematch_payload):
     return {
         "schema_version": "persistent_binding_optimization_activation.v1",
         "variant": variant,
-        "active_loss": active_loss,
+        "active_loss": (
+            active_losses[0] if len(active_losses) == 1 else None
+        ),
+        "active_losses": list(active_losses),
         "passed": not failures,
         "failures": failures,
         "arms": arms,
@@ -110,7 +122,11 @@ def evaluate_activation(variant, fixed_payload, rematch_payload):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--variant", required=True, choices=tuple(ACTIVE_LOSS))
+    parser.add_argument(
+        "--variant",
+        required=True,
+        choices=tuple(ACTIVE_LOSSES),
+    )
     parser.add_argument("--fixed-audit", required=True)
     parser.add_argument("--rematch-audit", required=True)
     parser.add_argument("--output", required=True)

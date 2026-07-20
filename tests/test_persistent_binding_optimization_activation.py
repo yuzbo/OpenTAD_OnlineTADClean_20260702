@@ -13,16 +13,24 @@ def _module():
     return module
 
 
-def _audit(binding_mode, active_loss=None):
+def _audit(binding_mode, active_losses=()):
     means = {
         "birth_margin_loss": 0.0,
+        "alive_margin_loss": 0.0,
+        "end_margin_loss": 0.0,
         "causal_transport_loss": 0.0,
     }
     counts = {
         "birth_margin_loss": 0,
+        "alive_margin_loss": 0,
+        "end_margin_loss": 0,
         "causal_transport_loss": 0,
     }
-    if active_loss is not None:
+    if active_losses is None:
+        active_losses = ()
+    elif isinstance(active_losses, str):
+        active_losses = (active_losses,)
+    for active_loss in active_losses:
         means[active_loss] = 0.125
         counts[active_loss] = 37
     return {
@@ -47,6 +55,14 @@ def test_activation_gate_accepts_each_isolated_variant():
         ("sw", None),
         ("margin", "birth_margin_loss"),
         ("transport", "causal_transport_loss"),
+        (
+            "lifecycle",
+            (
+                "birth_margin_loss",
+                "alive_margin_loss",
+                "end_margin_loss",
+            ),
+        ),
     ):
         result = evaluator.evaluate_activation(
             variant,
@@ -80,3 +96,17 @@ def test_activation_gate_rejects_cross_variant_loss_leakage():
 
     assert result["passed"] is False
     assert any("unintended causal_transport_loss" in item for item in result["failures"])
+
+
+def test_lifecycle_activation_gate_rejects_a_missing_boundary():
+    evaluator = _module()
+    active = ("birth_margin_loss", "alive_margin_loss")
+    result = evaluator.evaluate_activation(
+        "lifecycle",
+        _audit("fixed_birth_slot", active),
+        _audit("prefix_rematch_active_pool", active),
+    )
+
+    assert result["passed"] is False
+    assert len(result["failures"]) == 2
+    assert all("end_margin_loss did not activate" in item for item in result["failures"])
