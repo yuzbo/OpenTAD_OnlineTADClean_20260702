@@ -1,7 +1,7 @@
 # Clean Scientific FIXED/REMATCH Design
 
 Date: 2026-07-20
-Status: implementation boundary frozen
+Status: method boundary frozen; current implementation requires scientific-contract repair
 
 ## Objective
 
@@ -90,8 +90,11 @@ slots remain above the frozen two-slot annotation requirement, so this
 one-decision reuse delay is not a true-capacity workaround.
 
 A candidate becomes ACTIVE when the next causal step supports `alive`; a
-candidate with an immediate `end` can commit as a short action. Otherwise it is
-released. There is no capacity-holding refractory state.
+candidate with an immediate `end` must commit as a short action. Otherwise it
+is released. There is no capacity-holding refractory state. The readiness
+review found that commit `95fa963` does not yet implement the immediate-end
+part: newborns are admitted after the current step's end processing. This is a
+blocking implementation defect, not a change to the intended lifecycle.
 
 An ACTIVE slot is released without emission when both alive and end evidence
 fall below their frozen thresholds. It commits exactly once when end evidence
@@ -204,3 +207,47 @@ end-to-end smoke passed on N16R4 for commit `097bc72` in job `1176737`; this
 proves execution and protocol compatibility only. A failed scientific gate
 stops this route. A pass unlocks a separate raw-RGB causal encoder and
 PEFT/joint-training stage without changing the instance lifecycle.
+
+## Pre-Training Cost Gate Outcome
+
+The strict deterministic paired profiler ran on N16R4 in job `1176983` at
+commit `95fa963`. Both 250-step training profiles had zero dropped GT births,
+zero runtime capacity exhaustions, real head updates, and about 141 MiB peak
+GPU memory. FIXED and REMATCH untrained inference produced the exact same
+10,029-row causal ledger digest with zero no-future violations.
+
+The registered 12-epoch pair nevertheless estimates to 12.572 GPU-hours after
+the frozen 1.25 safety factor, compared with the 2 GPU-hour one-seed cap.
+Therefore the budget gate is false and the seed-705 screen was not submitted.
+This is a resource/protocol rejection, not an effectiveness result about the
+FIXED hypothesis. The full record is
+`ontad-science-fixed-rematch-profile-20260720.md`.
+
+Any next run requires a separately registered budget revision. The project
+must not silently reduce epochs, shrink the fit split, raise the cap, or inspect
+the locked reporting results to justify that revision. Raw-RGB work remains
+blocked.
+
+## Scientific Readiness Review Outcome
+
+The external readiness review pinned to `27a59de` was archived byte-identically
+and independently rechecked against `95fa963`, smoke job `1176737`, and profile
+job `1176983`.
+
+The review's principal `REVISE BEFORE SCIENTIFIC RUN` verdict is accepted.
+Smoke and profiling closed several engineering unknowns, but the following
+scientific contracts remain open:
+
+- binary endpoint currently uses an unsupervised offset;
+- REMATCH can move a newborn away from its birth slot on the birth step;
+- same-step birth+end and final-token short actions can be lost;
+- generic training reads the locked reporting split every epoch;
+- instance matching, fragmentation, coordinate, mAP-unit, and result-provenance
+  contracts do not yet match this frozen design;
+- formal readiness and capacity counters are not fully fail-closed.
+
+The full source is
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`; the
+accept/qualify/supersede matrix is
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`.
+These repairs precede any budget revision or seed-705 submission.

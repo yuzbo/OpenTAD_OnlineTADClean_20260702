@@ -892,3 +892,65 @@ Sources:
 Reversibility:
 
 - Reversible after the Pro identifiability verdict and author discussion. Any revised pilot must remain within the 10 GPU-hour Stage-1 ceiling and preserve the fixed fully supervised On-TAD boundary.
+
+## DR-028: Repair the FIXED/REMATCH Scientific Contract Before Any Seed Run
+
+Status: active; supersedes DR-027 as the immediate executable decision while
+preserving the standard On-TAD task.
+
+Decision:
+
+> Do not submit seed 705 or revise the budget first. Implement the verified
+> scientific-contract repairs, rerun Slurm smoke and strict paired profiling,
+> then decide whether a new one-seed protocol can be registered.
+
+Accepted readiness findings:
+
+- binary endpoint emission depends on an unsupervised offset;
+- REMATCH can move newborn class/start/end losses away from the birth slot on
+  the birth step;
+- same-step birth+end and final-token short actions can be lost;
+- generic training repeatedly reads the locked reporting split;
+- instance stream/coordinate normalization, global matching, fragmentation,
+  standard-mAP units, and gate schema are not closed;
+- formal result provenance, readiness enforcement, counter separation, and
+  launcher-consumed census are incomplete.
+
+New evidence that qualifies the source review:
+
+- smoke job `1176737` closes the old crash-only/Slurm/checkpoint uncertainty;
+- strict profile job `1176983` closes the missing-profiler uncertainty and
+  proves exact pre-training FIXED/REMATCH inference equivalence;
+- the same profile rejects the registered pair at `12.572 GPU·hours`, so the
+  source review's low-cost assumption is false;
+- FP32 with fail-on-nonfinite is retained because the actual AMP smoke produced
+  a non-finite first-step gradient;
+- the ledger extension and feature-only optimizer construction are already
+  repaired, while the formal ledger schema remains incomplete.
+
+Resolution:
+
+1. repair endpoint, newborn binding, and immediate short-action commit;
+2. implement fit-only train, symmetric calibration/checkpoint freeze, and
+   report-once evaluation;
+3. freeze the instance matching/fragmentation and standard-mAP gate contracts;
+4. emit one hash-linked result artifact and fail closed on readiness/census;
+5. rerun counterexample tests, Slurm smoke, and strict paired profile;
+6. only after those pass, register a new budget and one-seed screen.
+
+No further high-cost discussion is needed before the repair. Raw-RGB remains
+blocked until the feature-level technical and scientific gates pass.
+
+Sources:
+
+- `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`;
+- `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`;
+- [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md);
+- [experiments/ontad-science-fixed-rematch-profile-20260720.md](experiments/ontad-science-fixed-rematch-profile-20260720.md).
+
+Reversibility:
+
+- The exact implementation of the repairs and the later budget can be revised
+  before seed 705. The prohibition on scientific runs with open P0 contracts,
+  repeated locked-reporting access, or unregistered budget overrun is not
+  reversible without new evidence.

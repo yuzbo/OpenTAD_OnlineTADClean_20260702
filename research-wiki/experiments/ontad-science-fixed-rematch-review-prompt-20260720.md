@@ -1,10 +1,25 @@
 # On-TAD FIXED/REMATCH Scientific Review Prompt
 
 Date: 2026-07-20
-Status: ready for code and experiment-readiness review
+Status: review completed and absorbed; do not resend before repair
+
+本 Prompt 已获得完整审查。审查原文固定到较早提交 `27a59de`，已逐字节归档为
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`；针对当前
+`95fa963` 代码、Slurm smoke 和严格画像的独立复核已记录在
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`。
+
+- 审查原文：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md
+- 独立复核与吸收：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md
+
+当前结论是“先修科学合同”，不是“继续讨论预算”。在 endpoint、出生步 REMATCH、
+same-step short action、reporting 隔离、指标/gate/provenance 和 fail-closed census
+修复并重新通过 smoke/profile 之前，不应再次发送本 Prompt，也不应提交 seed 705。
 
 下面的中文 Prompt 可直接交给另一位研究审查者。代码链接固定到已通过
-N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
+N16R4 严格确定性画像的提交
+`95fa963e7e2f3a05779907999df7f9311be4f4fd`。
 
 ---
 
@@ -28,36 +43,44 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
 - 科学分支：
   https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/codex/ontad-science-fixed-rematch
 - 本次审查的固定代码提交：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/27a59dec445f6b4ed9651abab1168c358a8db7e3
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/95fa963e7e2f3a05779907999df7f9311be4f4fd
 - 冻结设计：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/research-wiki/experiments/ontad-science-fixed-rematch-design-20260720.md
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/research-wiki/experiments/ontad-science-fixed-rematch-design-20260720.md
 - 问题地图：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/research-wiki/experiments/ontad-science-fixed-rematch-problem-map-20260720.md
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/research-wiki/experiments/ontad-science-fixed-rematch-problem-map-20260720.md
 - 当前实验计划：
   https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/research-wiki/experiments/ontad-science-fixed-rematch-plan-20260720.md
+- 严格确定性画像与预算裁决：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/research-wiki/experiments/ontad-science-fixed-rematch-profile-20260720.md
 
 ## 重点代码
 
 - 持久实例监督器：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/utils/prefix_trajectory_supervision.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/utils/prefix_trajectory_supervision.py
 - 持久查询头与生命周期：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/models/dense_heads/persistent_event_set_head.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/models/dense_heads/persistent_event_set_head.py
 - 在线检测器：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/models/detectors/persistent_trajectory_ontad.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/models/detectors/persistent_trajectory_ontad.py
 - 严格因果特征数据：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/datasets/streaming_feature.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/datasets/streaming_feature.py
 - 实例错误指标：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/evaluations/online_instance_metrics.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/evaluations/online_instance_metrics.py
 - 冻结结果门槛：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/opentad/evaluations/persistent_binding_gate.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/opentad/evaluations/persistent_binding_gate.py
 - 共享基础配置：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/configs/causaltad/thumos_persistent_binding_base.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/configs/causaltad/thumos_persistent_binding_base.py
 - FIXED 配置：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/configs/causaltad/thumos_persistent_binding_fixed.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/configs/causaltad/thumos_persistent_binding_fixed.py
 - REMATCH 配置：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/27a59dec445f6b4ed9651abab1168c358a8db7e3/configs/causaltad/thumos_persistent_binding_rematch.py
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/configs/causaltad/thumos_persistent_binding_rematch.py
 - 聚焦测试：
-  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/27a59dec445f6b4ed9651abab1168c358a8db7e3/tests
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/tree/95fa963e7e2f3a05779907999df7f9311be4f4fd/tests
+- 严格确定性画像器：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/tools/profile_persistent_binding.py
+- 画像稳定性与预算门禁：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/tools/evaluate_persistent_binding_profile.py
+- N16R4 Slurm 画像入口：
+  https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/95fa963e7e2f3a05779907999df7f9311be4f4fd/tools/remote/submit_persistent_binding_profile_n16r4.sh
 
 ## 已知背景与当前状态
 
@@ -81,8 +104,18 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
    有真实权重变化；重新加载后的流式账本逐项一致；最终区间非空且无未来违规。
    详细记录见：
    https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/research-wiki/experiments/ontad-science-fixed-rematch-smoke-20260720.md
-8. 尚未完成单种子配对筛选、三种子正式实验和论文主结果。因此目前只能说
-   “整链路可以进入效果筛选”，不能说科学假设已经成立。
+8. 严格确定性画像已在提交 `95fa963`、作业 `1176983` 上完成。FIXED/REMATCH
+   各自连续训练 250 个真实 chunk，均为零 dropped GT birth、零 runtime capacity
+   exhaustion；两条未训练推理产生完全相同的 10,029 条最终发射账本，且无未来违规。
+9. 冻结预算门禁拒绝了原定实验：双臂 12 epoch 预计为 12.572 GPU·小时，而上限为
+   2 GPU·小时。因此 seed-705 未提交；这不是方法效果失败，而是当前训练协议不能
+   在已注册预算内执行。
+10. 尚未完成单种子配对筛选、三种子正式实验和论文主结果。因此不能说科学假设
+    已经成立，也不能进入 raw-RGB。
+11. 后续 readiness review 又确认了 9 个 P0 和 10 个 P1 问题。当前仍成立的核心
+    P0 是：未监督 endpoint offset、出生步 REMATCH、same-step birth+end 漏提交、
+    locked reporting 被逐 epoch 访问，以及 instance metric/standard mAP/result
+    provenance 未闭合。完整逐条裁决见上面的 absorption 文件。
 
 ## 请逐项审查的全部问题
 
@@ -148,8 +181,8 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
 
 ### F. 尚未完成的整链路风险
 
-1. `formal_training_ready=False` 目前是否应继续保持；列出单种子配对筛选通过后
-   改成 `True` 之前仍缺少的最小检查。
+1. `formal_training_ready=False` 必须继续保持；列出预算协议修订并通过单种子
+   配对筛选后，改成 `True` 之前仍缺少的最小检查。
 2. 审计已经通过的 Slurm smoke 是否确实覆盖：真实 manifest、少量视频、一次前向、
    一次反向、一次 checkpoint、一次重载、一次流式推理、一次 emission 序列化和
    一次评测。
@@ -159,20 +192,28 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
    是否一致。
 5. 给出单种子筛选失败时的停止条件；不得通过事后放宽阈值、压低 birth 或增加槽位
    来制造“零容量错误”。
+6. 审查冻结的成本公式和画像结果。若保留 2 GPU·小时上限，给出不偷看 reporting
+   结果、且不把欠训练当作方法失败的最小可证伪协议；若建议提高预算，必须同时说明
+   与原三种子 10 GPU·小时总上限的冲突。
+7. 当前通用 `tools/train.py` 会按照 `val_eval_interval=1` 在每个 epoch 调用
+   `dataset.test`。正式路线必须改为 fit 训练、calibration 选阈值、冻结后仅一次
+   reporting；请审查这一专用入口的最小实现要求。
 
 ### G. 从当前阶段到论文主实验
 
 请给出完整、按依赖排序的实验表，至少包括：
 
 1. 已完成 Slurm 整链路 smoke 的证据复核；
-2. 单种子 FIXED/REMATCH 非退化筛选；
-3. 仅用 calibration split 冻结共享阈值；
-4. seeds `705/706/707` 的配对正式实验；
-5. 标准 On-TAD 指标、实例指标、延时与资源报告；
-6. 必要消融：绑定策略、候选确认、容量预算，以及重复/重叠同类子集；
-7. 与合理在线基线的公平比较；
-8. 失败分析和可视化；
-9. 只有双门槛通过后才安排 raw-RGB frozen encoder 与 PEFT/joint training。
+2. 已完成严格确定性画像及 2 GPU·小时预算拒绝的证据复核；
+3. 明确注册预算兼容的训练协议，以及 fit/calibration/report-once 专用入口；
+4. 单种子 FIXED/REMATCH 非退化筛选；
+5. 仅用 calibration split 冻结共享阈值；
+6. seeds `705/706/707` 的配对正式实验；
+7. 标准 On-TAD 指标、实例指标、延时与资源报告；
+8. 必要消融：绑定策略、候选确认、容量预算，以及重复/重叠同类子集；
+9. 与合理在线基线的公平比较；
+10. 失败分析和可视化；
+11. 只有双门槛通过后才安排 raw-RGB frozen encoder 与 PEFT/joint training。
 
 每项写清：要证明的命题、FIXED/REMATCH 自变量与控制量、数据 split、seeds、输入
 类型、输出指标、通过/停止条件、前置依赖和预估 GPU 成本。不得把 raw-RGB 结果与
@@ -180,7 +221,8 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
 
 ## 期望输出格式
 
-1. **一句话结论**：`可提交单种子 smoke / 需先修复 / 当前设计不可证伪` 三选一。
+1. **一句话结论**：`可注册预算修订 / 必须先改训练协议 / 当前设计无法在预算内证伪`
+   三选一。
 2. **P0/P1/P2 问题表**：每项给出代码链接、触发条件、影响、最小修复和必须新增的
    测试；没有证据的问题不要臆测为已发生。
 3. **因果与状态不变量表**：逐条写“成立/不成立/证据不足”。

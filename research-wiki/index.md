@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-11
+updated: 2026-07-20
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -13,18 +13,30 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 2. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) before the next Pro-led route selection.
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
-5. [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) for the only approved current experiment; [ideas/petal-ontad.md](ideas/petal-ontad.md) records why the full route was demoted.
+5. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) for the current readiness verdict, then [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the repair and experiment order.
 6. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
 7. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
 8. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
-The task is fixed to standard fully supervised On-TAD. Full PETAL is demoted after a Pro `REVISE` and independent verification of the TrackFormer/On-TAD/causal-backbone reconstruction attack.
+The task remains standard, fully supervised, strictly causal On-TAD. The active
+route is a clean feature-level comparison of **FIXED first-crossing binding**
+against **per-prefix REMATCH**, with identical runtime lifecycle and cached
+causal features. Raw-RGB joint training remains conditional and blocked.
 
-The only approved current experiment is **Persistent Event-Set Stage 1**: compare FRESH, Temporal TrackFormer, and PES on identical frozen causal features under a 10 GPU-hour budget. This is a mechanism kill test, not a paper claim. Raw-video adaptation, LoRA, extra lifecycle heads, and formal full-model training remain blocked.
+The capacity/lifecycle repair has passed a real-data Slurm smoke and a strict
+deterministic paired profile. These are engineering and protocol results only.
+The registered 12-epoch pair failed its resource gate at `12.572 GPU·hours`
+versus a `2 GPU·hour` cap, and no seed-level effectiveness result exists.
 
-PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remains rejected because it leaves the task. Anytime-valid alarms remain archived outside the current fixed On-TAD route.
+The 2026-07-20 readiness review was independently accepted with qualifications.
+The next approved task is a scientific-contract repair: binary endpoint,
+birth-step REMATCH, same-step short actions, fit/calibration/report isolation,
+instance matching/coordinates, mAP/gate units, result provenance, and
+fail-closed census/counters. After repair, rerun smoke and profiling before
+registering any seed-705 protocol. Another high-cost review and raw-RGB work are
+not currently authorized.
 
 ## Ideas
 
@@ -110,6 +122,8 @@ PCEH/CESR remains causal infrastructure and negative-baseline code. PIVOT remain
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
+| [exp:ontad-fixed-rematch-readiness-review-20260720](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) | revise before scientific run | Review and independent recheck preserve the FIXED/REMATCH feature falsification question but require scientific-contract repair before seed 705. |
+| [FIXED/REMATCH strict profile](experiments/ontad-science-fixed-rematch-profile-20260720.md) | stability/causality pass; budget fail | Exact pre-training inference equivalence and zero immediate capacity loss; registered pair estimated at 12.572 GPU·hours. |
 
 ## Source Records
 
@@ -123,6 +137,8 @@ Local review records that informed this wiki:
 - `PRO_PETAL_DEEP_REVIEW_20260712.md`
 - `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`
 - `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`
+- `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`
+- `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`
 - `THREE_CLOCK_TASK_METHOD_DESIGN_20260711.md`
 - `THREE_CLOCK_COMPETITION_REVIEW_20260711.md`
 - `PRO_THREE_CLOCK_DEEP_REVIEW_PROMPT_20260711.md`

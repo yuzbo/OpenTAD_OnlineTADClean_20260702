@@ -1,6 +1,6 @@
 ---
 type: log
-updated: 2026-07-11
+updated: 2026-07-20
 status: active
 scope: Append-only timeline of wiki mutations and major research decisions.
 ---
@@ -68,3 +68,14 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-12: Fixed the post-run checker after bare `python` selected Python 2 on the login shell; commit `d6b0bca3f146046f9f6cb938f26561b32df105ed` requires Python 3 by default and was revalidated against the completed smoke artifacts.
 - 2026-07-12: Kept the three-seed pilot unsubmitted because smoke is not scientific evidence and the FRESH/TTF/PES design still needs Pro review for controlled identifiability.
 - 2026-07-12: Added `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md`, pinned to public code-review commit `d6b0bca3f146046f9f6cb938f26561b32df105ed`, with mandatory repository audit, task-definition gate, code findings, Stage-1 identifiability review, fresh competition search, strongest rejection, claim map, cost control, and two-round author clarification.
+- 2026-07-20: Created the clean `codex/ontad-science-fixed-rematch` route, repaired supervision/runtime capacity separation and the candidate lifecycle, and passed the real-data Slurm smoke in job `1176737`.
+- 2026-07-20: Added the paired 50-warmup/200-measured profile gate, made the route FP32 and strictly deterministic with math SDP, and verified exact pre-training FIXED/REMATCH inference equivalence.
+- 2026-07-20: Profile job `1176983` passed stability, update, capacity, and strict-causality checks but rejected the registered 12-epoch pair at 12.572 GPU-hours versus the frozen 2-hour cap. Seed-705, multi-seed, and raw-RGB training remain blocked pending an explicit protocol revision.
+- 2026-07-20: Archived the complete FIXED/REMATCH science-readiness review byte-identically as `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`; verified 61,985 bytes, 643 logical lines, and SHA-256 `D463A28BC64E8418AC697263EB7AB6866EBC719718A91735B7A53E52FCD0E88F`.
+- 2026-07-20: Added `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md` and independently rechecked all P0/P1/P2 findings against `95fa963`, smoke job `1176737`, profile job `1176983`, and primary CAG-QIL/SimOn/MATR sources.
+- 2026-07-20: Preserved the review's `REVISE BEFORE SCIENTIFIC RUN` verdict; marked smoke execution, the profiler, FP32 numerical policy, ledger extension, and feature-only optimizer as later corrections without treating them as effectiveness evidence.
+- 2026-07-20: Added `exp:ontad-fixed-rematch-readiness-review-20260720`, DR-028, T21, source-map entries, and updated the index, design, problem map, plan, and completed-review Prompt.
+- 2026-07-20: Set the next task to direct scientific-contract repair: endpoint semantics, birth-step REMATCH, same-step short actions, fit/calibration/report isolation, instance matching and coordinates, standard-mAP gate units, provenance, fail-closed counters, and launcher-consumed census. No new Pro discussion, seed run, or raw-RGB work precedes it.
+- 2026-07-20: Rebuilt `query_pack.md` to 7,807 characters so future tasks load the current FIXED/REMATCH repair decision instead of the superseded FRESH/TTF/PES-only state.
+- 2026-07-20: Corrected the MATR paper node title/authors and attached its direct source `arXiv:2408.02957`; retained CAG-QIL and SimOn as separately verified direct On-TAL sources.
+- 2026-07-20: Validated archive hash, 24/24 review-item coverage, Markdown links, graph JSONL/node/edge integrity, query-pack budget, and `git diff --check`; 35 non-Torch focused tests passed locally. Windows PyTorch head/detector collection was unavailable because `c10.dll` failed to initialize, so the frozen N16R4 Torch evidence remains the applicable execution record.

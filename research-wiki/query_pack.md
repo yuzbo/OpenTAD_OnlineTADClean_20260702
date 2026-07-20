@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-12
+updated: 2026-07-20
 status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
@@ -9,81 +9,147 @@ scope: Compressed memory to prepend before any new ideation or implementation pl
 
 ## Project Direction
 
-The task is fixed to standard fully supervised Online Temporal Action Detection/Localization: causal RGB stream in, one immutable `{start, end, class, score}` instance emitted when an action end is detected. Do not introduce sensors, new observability labels, semantic-maintenance outputs, or a replacement task.
+The task is fixed to standard, fully supervised, strictly causal Online
+Temporal Action Detection/Localization. At decision time `t`, inference sees
+only current and past video evidence, maintains action-instance
+start/ongoing/end state, and emits one immutable final
+`{start, end, class, score}` interval with low delay. Do not change the task,
+add new labels/sensors, expose mutable outputs, or introduce offline cleanup.
 
-PIVOT is rejected as out of scope. Incremental PCEH/CESR remains demoted. Full PETAL is also demoted after a Pro `REVISE`: causal backbones, direct On-TAD state/query methods, and TrackFormer-style persistence can reconstruct most of the package. Read `PRO_PETAL_DEEP_REVIEW_ABSORPTION_20260712.md`, DR-026, and `experiments/persistent-feature-kill-test-20260712.md` before proposing or training anything.
+The active experiment is feature-level, not raw RGB: compare first-crossing
+**FIXED** supervision binding against per-prefix **REMATCH** while runtime
+lifecycle, data, thresholds, optimizer, inference, and evaluation are matched.
+Only the post-birth loss-binding rule may differ.
 
-The only active route is a **matched frozen-feature mechanism kill test**, not an accepted paper method: FRESH versus Temporal TrackFormer versus Persistent Event-Set. Raw-video training remains blocked.
+The clean branch has passed a real-data Slurm smoke and strict paired profile.
+Those are engineering/protocol results, not method-effectiveness evidence. The
+profile estimates the registered 12-epoch pair at `12.572 GPU·hours`, above the
+frozen `2 GPU·hour` cap. No seed-705 or three-seed result exists.
 
-## Top Gaps
+The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
+Read:
 
-1. **Raw-video instance-level joint training is missing.** Current On-TAD leaders use frozen/pre-extracted TSN, I3D, SlowFast, or pickle features; raw-video online methods predominantly solve frame-level OAD.
-2. **Window rediscovery is a structural failure.** Independent windows repeatedly rediscover one action, causing fragmentation, duplicates, same-class merging, and online-NMS dependence.
-3. **Current PCEH is scientifically blocked.** End/emit coupling, repeated late positives, class-level targets, end=emit decode, detached state, and GT proximity remain core concerns.
-4. **Full-packet training is unaffordable.** About 152,670 packet-level optimizer events and 7h/epoch are dominated by fine-grained I/O, preprocessing, dispatch, and repeated cache projection.
-5. **Generic streaming pretraining is occupied.** StreamFormer blocks the claim that a causal streaming backbone alone is new; BSP and offline E2E-TAD block generic boundary pretraining or PEFT claims.
-6. **The required intersection remains open.** Strict causal raw-video adaptation, persistent action-instance identity, standard immutable On-TAD emission, and prefix-equivalent efficient training must all hold together.
-7. **Same-class repetition and overlap remain direct risks.** ActionSwitch is the closest baseline and must be matched fairly.
-8. **Evaluation must prevent future use and duplicate cleanup.** Full chronological evaluation, fixed thresholds, immutable outputs, recall/FN, delay, and no offline NMS remain mandatory.
+1. `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`;
+2. `experiments/ontad-science-fixed-rematch-readiness-review-20260720.md`;
+3. DR-028;
+4. `experiments/ontad-science-fixed-rematch-plan-20260720.md`.
 
-## Candidate Portfolio
+## Current Blocking Gaps
 
-- **Persistent Event-Set Stage 1:** only approved active experiment. It must beat both FRESH and a faithful Temporal TrackFormer under matched features.
-- **Full raw-video PETAL:** demoted/blocked. A Stage-1 pass only retains it for five-seed confirmation and renewed novelty review.
-- **OnlineTAD-specific pretraining:** supporting option only after PETAL's mechanism works; generic pretraining is not the headline.
-- **CESR/PCEH:** causal infrastructure and negative baselines only, not paper framing.
-- **PIVOT/T01/T03/P01/L01:** rejected as current main task or held outside the fixed On-TAD scope.
-- **Cache/LoRA/ETAD-style gradient sampling:** cost-control tools, not standalone novelty.
+1. **Endpoint identifiability:** binary commit still uses an endpoint offset
+   with no offset loss.
+2. **Birth-step fairness:** REMATCH may move newborn class/start/end losses
+   away from the canonical birth slot on the same decision.
+3. **Short actions:** newborn same-step end and final-token short actions can be
+   lost.
+4. **Adjacent actions:** entry-free slot freezing delays reuse after a
+   same-step old end; this is not yet proven harmless.
+5. **Reporting isolation:** generic training constructs and evaluates the
+   locked reporting split every epoch.
+6. **Instance metrics:** video/runtime keys and frame/second coordinates can
+   mismatch; greedy matching and distinct-bounds fragmentation do not implement
+   the frozen definition.
+7. **Gate closure:** standard mAP, budgeted AP, gate field names, ranges, tIoU
+   sets, and percentage-point units are not one schema.
+8. **Provenance:** no repository-owned result artifact joins checkpoint,
+   config, manifest, ledger, audit, metrics, latency, resource use, and hashes.
+9. **Fail-closed execution:** readiness, canonical exhaustion, runtime
+   collision, arbitration suppression, cancellation, and abandonment are not
+   fully separated and enforced.
+10. **Census:** birth-per-step, end+birth, final-token coverage, delayed reuse,
+    and clipped starts are not a hashed launcher-consumed artifact.
+11. **Budget:** the registered protocol is too expensive; budget revision must
+    wait for repair and re-profiling.
 
-## Stage-1 Exact Question
+## Evidence Already Established
 
-Defensible sentence:
+- supervision state is separate from runtime state;
+- predicted runtime occupancy cannot remove canonical GT birth supervision;
+- the capacity/refractory failure behind 2,206 exhausted births is repaired;
+- four slots exceed observed concurrency two, but fuller census is required;
+- FIXED/REMATCH resolved configs differ only in binding mode and work directory;
+- the mode affects training supervision, not the inference decoder;
+- job `1176737` passed FP32 update, checkpoint/reload, streaming inference, and ledger consistency;
+- job `1176983` passed 250-step stability, zero immediate capacity loss, and exact pre-training ledger equivalence;
+- both untrained arms emitted 10,029 causal rows with identical digest and zero protocol violations;
+- none of this shows FIXED improves duplicate, fragmentation, mAP, or latency.
 
-> Under identical causal features and capacity, does prefix-observable persistent instance state improve standard completion-triggered On-TAD beyond both fresh queries and a Temporal TrackFormer reconstruction because it reduces identity-linked localization errors?
+## Immediate Implementation Order
 
-No raw-video, end-to-end, or novelty claim is currently active. Persistent tracks are internal state; standard immutable On-TAD outputs and metrics remain unchanged.
+1. Make binary endpoint equal the current decision frame.
+2. Keep newborns on canonical slots for the birth step; allow REMATCH next step.
+3. Commit same-step birth+end exactly once, including final-token actions.
+4. Add end-to-end adjacent/short/repeated/overlapping same-class counterexamples.
+5. Implement fit-only train, symmetric calibration/checkpoint freeze, and
+   report-once evaluation.
+6. Normalize video identity and metric coordinates.
+7. Freeze global one-to-one matching and disjoint-component fragmentation.
+8. Freeze standard-mAP percentage-point gate schema.
+9. Emit one hash-linked formal result artifact and split all capacity counters.
+10. Generate and consume the exact frozen census.
+11. Rerun focused tests, Slurm smoke, and strict paired profiling.
+12. Only then register a budget-compatible seed-705 screen.
 
-## Failed / Blocked Claims
+## Feature-Level Gates
 
-- PIVOT/three-clock event verification: rejected because it changes the project task.
-- Generic causal backbone, generic memory, generic pretraining, LoRA, raw-frame input, or online cache alone: occupied and insufficient.
-- Early proposals or mutable user-visible revisions: outside the fixed standard On-TAD output protocol.
-- Current THUMOS PCEH, full-packet training first, zero-shot wrapper, and offline distillation headline: rejected.
-- PETAL is also rejected if it reduces to TrackFormer plus a one-dimensional interval head without an On-TAD-specific trajectory mechanism or measurable matched gain.
+Every arm and seed must have:
 
-## Closest Prior Work
+- zero causal violations;
+- zero dropped GT birth targets;
+- zero unexplained runtime capacity failures;
+- nonzero committed predictions;
+- prediction/GT ratio in `[0.25, 4.0]`;
+- Recall@tIoU 0.3 of at least `0.25`;
+- explicit successful-update and scheduler-step parity.
 
-### PETAL
+Across paired seeds 705/706/707:
 
-- **MATR 2024:** strongest direct window/query On-TAD reference; freezes TSN/I3D and uses online NMS.
-- **HAT/OAT:** historical or window-anchor On-TAD over pre-extracted features.
-- **ActionSwitch 2024:** overlap and same-class state-switch baseline; no persistent semantic instance query or raw-video joint training.
-- **E2E-LOAD 2023:** raw-video end-to-end OAD; frame-level output only.
-- **StreamFormer 2025:** causal raw-video backbone; downstream frozen and frame-level OAD.
-- **E2E-TAD/TIA, LoSA, Re2TAL, ETAD:** raw-video adaptation and efficient gradient methods for offline TAL.
-- **TrackFormer/online VIS:** persistent query precedent and the strongest obviousness attack.
+- `E_id = 0.5 × (duplicate_rate + fragmentation_rate)`;
+- FIXED relative `E_id` reduction at least 20%;
+- FIXED improves at least two of three seeds;
+- standard average mAP decline no worse than `0.5` percentage points;
+- report absolute delta, components, paired video bootstrap uncertainty,
+  standard mAP, budgeted AP, GT-end latency, resource use, and failure subsets.
 
-## Persistent-State Mandatory Gates
+These are falsification/resource gates, not universal significance theorems.
 
-1. **Mechanism:** PES beats both FRESH and Temporal TrackFormer on identical cached features.
-2. **Failure mode:** gains include fewer duplicates/fragmentation or better same-class/overlap performance, not only aggregate mAP noise.
-3. **Assignment:** main training uses prefix-observable births, Hungarian assignment, and fixed post-birth identity; full-future assignment is only a privileged upper bound.
-4. **Causality:** future perturbation, prefix cut, and batched-versus-stepwise equivalence tests pass.
-5. **Protocol:** standard immutable On-TAD output, no offline cleanup, fixed class map, late FP and missed GT retained.
-6. **Novelty:** Pro review does not reduce the method to E2E-LOAD/StreamFormer + MATR or TrackFormer applied to time.
-7. **Cost:** chunked training materially reduces optimizer events and wall time versus packet-wise training; profile before formal runs.
-8. **Reproducibility:** three matched seeds are only a kill test; any retained claim needs five seeds, paired uncertainty, and a dense/overlap benchmark.
+## Closest Prior Work and Claim Limits
 
-Stage-1 invalidation: protocol taint, slot exhaustion, unmatched seeds, or more than 10 total GPU-hours. Kill/revise if PES fails to improve each baseline by at least 2.0 mOnlineAP points or 20% duplicate/fragmentation error at score parity. These are project resource gates, not universal significance thresholds.
+- **CAG-QIL/SimOn:** direct future-free On-TAL grouping or current-query/past-context instance prediction.
+- **MATR:** current segment estimates end and memory estimates start.
+- **ActionSwitch:** direct threat for overlap and repeated same-class actions.
+- **TrackFormer/MOTR:** persistent query identity and assignment precedent;
+  blocks generic “tracking queries over time” novelty.
+- **E2E-LOAD/StreamFormer:** raw-video causal OAD/backbone precedents.
+- **Offline E2E-TAD/PEFT:** later raw-RGB context, not current evidence.
 
-## Infrastructure Laws
+Do not claim that persistence, memory, lifecycle state, causal attention,
+end-to-end terminology, frozen features, LoRA, or a raw-video backbone alone is
+novel. The surviving claim is narrow: under a matched strict On-TAD protocol,
+does first-crossing persistent supervision binding reduce identity-linked
+duplicate/fragmentation error without unacceptable standard-mAP loss?
 
-- Keep PCEH correctness repairs only for baselines; do not transfer its endpoint/emission hazard framing into PETAL by default.
-- Keep strict causal reads, full chronological validation, immutable committed outputs, miss/late-FP accounting, and no-future replay audits.
-- Persistent slot identity must be explicit and trajectory-level; repeated proposals are not tracks.
-- Batched causal training and incremental inference must agree numerically at every prefix cut.
-- Training-time GT trajectory assignment is permitted; model inputs and inference state remain future-free.
+## Failed / Blocked Routes
+
+- PIVOT and other sensor/observability tasks: rejected because they leave
+  standard On-TAD.
+- PCEH/CESR: demoted to causal infrastructure/components.
+- Full PETAL raw-video package first: demoted after reconstruction by prior work.
+- FRESH/TTF/PES Stage 1 as-is: historical mechanism audit, superseded as the
+  immediate executable route by the cleaner FIXED/REMATCH single-axis study.
+- Full-packet, visual-tower-first, zero-shot, adaptive selection, and
+  distillation headline: blocked or support-only.
+- Silent or nearly silent birth control as a capacity fix: invalid.
+- Changing epochs, split size, slots, thresholds, or budget after seeing
+  reporting results: prohibited.
 
 ## Current Final Goal
 
-Do not start raw-video formal training. The frozen SigLIP2 cache and bounded GPU smoke have passed, but no scientific pilot has been submitted. First obtain a Pro verdict on whether the registered FRESH/TTF/PES comparison identifies persistent-state value or needs a minimal controlled bridge set; then run only the approved Stage-1 falsification design. Even a pass authorizes only five-seed confirmation, paired error analysis, and renewed novelty review; raw-video PEFT requires a separate explicit decision.
+Implement the scientific-contract repair now. Do not start a new Pro discussion,
+submit seed 705, run three seeds, or begin raw-RGB training first.
+
+After repair, smoke and re-profile. If the repaired protocol is scientifically
+closed and a new budget is explicitly registered, run one matched feature seed
+as a non-degeneracy screen, freeze shared calibration rules, and then run the
+paired three-seed falsification. Raw-RGB frozen/PEFT/joint training is permitted
+only after both feature-level technical and scientific gates pass.

@@ -1,8 +1,8 @@
 ---
 type: paper
 node_id: paper:matr2024-memory
-title: "Memory-Augmented Transformer for Online Temporal Action Localization"
-authors: []
+title: "Online Temporal Action Localization with Memory-Augmented Transformer"
+authors: ["Youngkil Song", "Dongkeun Kim", "Minsu Cho", "Suha Kwak"]
 year: 2024
 venue: "ECCV"
 external_ids:
@@ -12,7 +12,7 @@ tags: ["On-TAL", "memory", "start-retrieval", "baseline"]
 added: 2026-07-11
 ---
 
-# MATR 2024
+# Online Temporal Action Localization with Memory-Augmented Transformer
 
 ## One-line thesis
 
@@ -21,6 +21,11 @@ Use current evidence to predict action end and retrieve action start from a hist
 ## Relevance to This Project
 
 MATR is a strong online span baseline. It shows that memory-based end-to-start localization is already covered.
+
+Primary source: [arXiv:2408.02957](https://arxiv.org/abs/2408.02957). The
+2026-07-20 FIXED/REMATCH readiness review correctly described MATR's role but
+attached that sentence to the CAG-QIL CVF footnote; this page records the
+correct direct source.
 
 ## Overlap
 

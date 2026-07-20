@@ -641,3 +641,51 @@ Artifact:
 Current decision:
 
 > Use the public review anchor plus the complete Prompt for a two-round Pro audit. Keep raw-video training blocked and do not treat any smoke evidence as a paper result.
+
+### T21: FIXED/REMATCH Readiness Review Is Archived and Independently Absorbed
+
+User requested:
+
+> Completely record, independently verify, and absorb the On-TAD
+> FIXED/REMATCH science/readiness review.
+
+Source integrity:
+
+- archived the 61,985-byte, 643-line UTF-8 response byte-identically as
+  `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`;
+- verified SHA-256
+  `D463A28BC64E8418AC697263EB7AB6866EBC719718A91735B7A53E52FCD0E88F`;
+- preserved its original code anchor `27a59de`;
+- rechecked every P0/P1/P2 item against current commit `95fa963`, smoke job
+  `1176737`, and profile job `1176983`.
+
+Independent verdict:
+
+- accept eight P0 findings and qualify one;
+- accept six P1 findings and mark four partially resolved/qualified;
+- accept four P2 risks and close the missing-profiler item;
+- preserve the overall `REVISE BEFORE SCIENTIFIC RUN` verdict.
+
+Important corrections:
+
+- smoke is now complete, so the route is no longer crash-only;
+- FP32 replaces the source review's AMP expectation because real AMP produced
+  a non-finite first-step gradient;
+- the ledger filename and feature-only optimizer construction are repaired;
+- strict profiling disproves the “low-cost” assumption: the registered pair is
+  estimated at `12.572 GPU·hours`, not within the 2-hour cap;
+- the source's MATR baseline statement is valid but must cite
+  `arXiv:2408.02957`, not the CAG-QIL CVF page.
+
+Current decision:
+
+> Implement the scientific-contract repair before any budget revision, seed
+> run, further high-cost review, or raw-RGB work. Then rerun counterexample
+> tests, Slurm smoke, and strict paired profiling.
+
+Artifacts:
+
+- [`../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md`](../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md)
+- [`../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`](../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md)
+- [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md)
+- [decision_register.md#dr-028-repair-the-fixedrematch-scientific-contract-before-any-seed-run](decision_register.md)

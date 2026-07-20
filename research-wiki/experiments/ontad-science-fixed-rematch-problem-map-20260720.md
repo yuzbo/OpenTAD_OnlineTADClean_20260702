@@ -23,15 +23,55 @@ rematching, when every other factor is held constant?
 
 ## Code Problems to Close
 
-1. The historical detector imports components outside the scientific method.
-2. Runtime predicted occupancy can remove a real training target.
-3. Refractory slots consume capacity after an interval is complete.
-4. Independent birth logits can activate too many free slots in one step.
-5. The old result gate does not fully reject silent output.
-6. The combined duplicate/fragmentation improvement needs one frozen formula.
-7. The historical configs are cached-feature only and cannot support a raw-RGB
-   claim.
-8. No completed formal multi-seed FIXED/REMATCH effectiveness result exists.
+Closed structural problems:
+
+1. The clean detector no longer imports the historical route as a unit.
+2. Canonical supervision capacity is independent of runtime prediction
+   occupancy.
+3. Post-completion refractory occupancy has been removed.
+4. Runtime births are bounded by a shared two-candidate arbitration rule.
+
+Open scientific-contract problems, independently confirmed against commit
+`95fa963`:
+
+1. Binary endpoint emission still depends on an `endpoint_offset_head` that has
+   no endpoint-offset loss.
+2. REMATCH may move a newborn's class/start/end loss away from its canonical
+   birth slot on the birth step itself.
+3. A newborn with an end crossing in the same decision step is admitted only
+   after end processing and therefore cannot commit; last-token short actions
+   may disappear.
+4. Entry-free slot freezing makes a slot released in the current step
+   unavailable to a same-step adjacent birth. This is a deliberate controller
+   choice but is not yet proven harmless.
+5. The generic training runner constructs the locked reporting dataset and,
+   with `val_eval_interval=1`, evaluates it every epoch.
+6. The instance evaluator mismatches composite runtime stream keys with
+   ground-truth video IDs and can compare prediction frames with GT seconds.
+7. Its chronological greedy matching and "different bounds" fragmentation
+   rule do not implement the frozen best-match/disjoint-component definition.
+8. `OnlineAPBudgeted.average_mOnlineAP` and
+   `persistent_binding_gate.average_map` do not share a frozen metric schema,
+   range, tIoU set, or percentage-point unit.
+9. A formal run cannot yet emit one repository-owned, hash-linked result row
+   joining checkpoint, config, manifest, ledger, audit counters, standard mAP,
+   instance metrics, latency, and resource use.
+10. `formal_training_ready=False`, canonical exhaustion, and the distinction
+    among supervision exhaustion, runtime collision, arbitration suppression,
+    cancellation, and abandonment are not all enforced fail-closed by the
+    generic runner.
+11. The exact birth/end/cache-coverage/start-history census is not yet a hashed
+    launcher-consumed artifact.
+12. Threshold calibration and final-checkpoint selection are not yet frozen as
+    one symmetric, reporting-blind algorithm.
+13. The strict deterministic profiler estimates the registered 12-epoch pair
+    at 12.572 GPU-hours, so the current protocol cannot enter the frozen
+    2-hour one-seed gate.
+14. No completed formal FIXED/REMATCH effectiveness result exists.
+
+The complete source and point-by-point disposition are archived in
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md` and
+`../../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`.
 
 ## Curated Scientific File Map
 
@@ -74,4 +114,5 @@ Stop or demote the FIXED hypothesis if:
 - either arm becomes silent or nearly silent;
 - FIXED fails to reduce combined identity error by 20%;
 - FIXED loses more than 0.5 mAP points;
-- the comparison changes more than the binding rule.
+- the comparison changes more than the binding rule;
+- the proposed run exceeds its preregistered GPU-hour budget.
