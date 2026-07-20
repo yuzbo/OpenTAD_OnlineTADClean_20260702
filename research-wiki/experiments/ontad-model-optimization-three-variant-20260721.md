@@ -103,6 +103,28 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 论文主实验。若 B 或 C 单独通过技术门禁，再做一次受控组合实验；若均失败，
 回到 head/lifecycle 表示而不是修改评测阈值。
 
+## 结果前冻结的三版本选择规则
+
+比较器在任何 A/B/C 结果可见前冻结于
+`f742dce035d4cdc2bff3fd94bc934b2871ef87b0`，并由 12 项 CPU-safe
+测试覆盖。一个版本只有同时满足机制激活、技术 screen、预算、精确
+provenance 和 calibration-only 分数诊断，才有资格进入 P1。资格版本按
+以下字典序比较；所有“最差”均取 FIXED/REMATCH 两臂中较差者，防止只优化
+某一臂：
+
+1. 最大化最差臂 Recall@tIoU 0.3；
+2. 最大化两臂、birth/alive/end 三通道中的最低 pairwise AUC；
+3. 最大化冻结 0.5 下最差臂 birth TPR；
+4. 最大化最差臂 birth positive-negative mean gap；
+5. 最小化冻结 0.5 下两臂较高的 birth FPR；
+6. 最小化真实双臂 GPU·小时；
+7. 仅在数值完全相同的最终平局下，使用固定 A→B→C 顺序。
+
+比较器输出全部原始臂级数值、资格失败原因、训练提交、分析提交和脚本
+SHA-256。若三个版本都被门禁拒绝，则 `selected_variant=null`，回到共享
+head/lifecycle 设计；不得下调阈值。即使存在胜出版本，也只授权 P1
+特征级多轮收敛，不授权论文效果结论或 raw-RGB。
+
 ## 从当前 pilot 到论文主实验
 
 | 阶段 | 实验 | 主要证明什么 | 放行条件 |

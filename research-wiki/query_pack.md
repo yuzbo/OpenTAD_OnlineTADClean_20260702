@@ -126,6 +126,12 @@ pilot-contract 三重去重后，三条 exact-commit pilot 已提交：
 `causal_transport_loss`。未激活或串扰是科学 gate reject，不等同于
 程序崩溃；推理和诊断产物仍须保留。
 
+三版本选择规则已在结果出现前冻结于 `f742dce`：先要求 activation、
+technical screen、budget、provenance、calibration diagnosis 全过；再按
+“最差臂 Recall@0.3 → 两臂三通道最低 AUC → 最差 birth TPR → 最差 birth
+gap → 较高 birth FPR → GPU·小时”字典序排名。若全拒绝则不选 winner，
+回到 head/lifecycle；有 winner 也只进入 P1，不授权 raw-RGB。
+
 ## Pilot Gates
 
 每个版本/每臂必须：
