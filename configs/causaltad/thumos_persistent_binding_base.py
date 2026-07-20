@@ -40,6 +40,7 @@ experiment_contract = dict(
 )
 
 profile_contract = dict(
+    seed=705,
     warmup_steps=50,
     measured_steps=200,
     one_seed_gpu_hour_cap=2,
