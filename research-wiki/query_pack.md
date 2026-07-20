@@ -281,3 +281,6 @@ identity-linked duplicate/fragmentation error。
 - `1177720` 自身画像已 PASS：FIXED/REMATCH 训练
   `0.716867/0.718284 秒/step`，安全系数后双臂
   `1.449069 GPU·h < 2`，零容量/因果违规；现处于 FIXED 正式训练。
+- 训练结果前已冻结失败分流：排序保留但 birth TPR=0 → 独立校准头；
+  birth crossing 后 end 仍弱 → causal transition-end；REMATCH
+  birth/alive AUC 任一 `<0.60` → 拒绝三头 margin、不做调权 sweep。

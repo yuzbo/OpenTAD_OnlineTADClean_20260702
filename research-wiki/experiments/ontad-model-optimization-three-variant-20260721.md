@@ -546,3 +546,23 @@ FIXED/REMATCH 推理等价、严格因果和预算门全部通过：
 `pilot_contract.json` 已固定 commit、双臂配置、seed 705、一轮、
 calibration-only、无 threshold search、无 reporting/raw-RGB，并记录
 四端口块。画像通过后，作业已进入正式 FIXED 一轮训练。
+
+### M9 第四版结果判读规则（训练结果出现前冻结）
+
+第四版只有现有 `screen_gate.json` 同时通过 activation、technical、
+budget、provenance 才能进入 P1；任何诊断改善都不能替代 technical pass。
+若技术门失败，按以下互斥优先级决定下一模型，不进行本轮权重或阈值搜索：
+
+1. 若两臂 birth TPR 仍为零，但 REMATCH birth/alive AUC 保持至少
+   `0.70/0.70`，判为“排序存在、决策校准不足”；下一候选是独立的小型
+   current-label calibration head，推理阈值仍固定 0.5。
+2. 若 birth 已有 crossing，而任一臂 end TPR 为零或 end AUC 小于
+   `0.55`，判为结束边界瓶颈；进入 M7 的 causal transition-end /
+   past-start factorization。
+3. 若 REMATCH birth 或 alive AUC 低于 `0.60`，判为三头 margin 破坏
+   表示；直接拒绝本候选，不做 0.1 周围的调权 sweep。
+4. 若出现任何 GT-birth/runtime collision、监督耗尽或 skipped update，
+   先修 lifecycle/capacity；不得用 mAP 或 AUC 掩盖技术错误。
+
+仅当双臂非零最终区间、prediction/GT、Recall 和所有完整性门均合格，
+才讨论多轮收敛；本表不授权 reporting、多种子或 raw-RGB。
