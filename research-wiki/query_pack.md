@@ -37,7 +37,8 @@ again made zero emissions after 2010/2010 stable updates, so the frozen gate
 failed. Calibration-only diagnosis `1177682` is now selecting the next single
 shared change without threshold/reporting access. A short-warmup candidate is
 local but untrained. Parameter deltas show birth weights did update (~19%);
-small stationary-bias motion alone is not evidence of undertraining.
+small bias motion alone is not evidence of undertraining. Target-conditioned
+diagnosis v2 is prepared for later; pending `1177682` remains v1.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -66,8 +67,6 @@ Read:
   but the 12-epoch pair costs `12.512897 GPU·hours` and is rejected;
 - fit-only balance census: birth/alive/end positive rates are
   `0.00550069/0.0799036/0.0636912`; every birth start lies within one token;
-- commit `0258b85` implements the shared model optimization, adjacent-action
-  test, one-epoch screen, calibration-only result gate, and hash provenance;
 - optimized smoke `1177580` passed 82 remote tests and exact causal reload;
 - optimized one-epoch profile gate is `1.404134 GPU-hours`, below the cap;
 - screen `1177596` used `0.871944 GPU-hours`; both arms completed 2010/2010

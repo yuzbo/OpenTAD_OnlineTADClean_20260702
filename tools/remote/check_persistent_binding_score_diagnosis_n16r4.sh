@@ -45,6 +45,22 @@ for arm in ("fixed", "rematch"):
             }
             for channel in ("birth", "alive", "end")
         },
+        "target_conditioned": {
+            channel: {
+                key: payload["target_conditioned_score_distributions"][
+                    channel
+                ].get(key)
+                for key in (
+                    "positive_rate",
+                    "mean_score_gap",
+                    "median_score_gap",
+                    "pairwise_auc",
+                    "threshold_true_positive_rate",
+                    "threshold_false_positive_rate",
+                )
+            }
+            for channel in ("birth", "alive", "end")
+        } if "target_conditioned_score_distributions" in payload else None,
         "biases": {
             channel: payload["prior_and_checkpoint_bias_audit"][channel]
             for channel in ("birth", "alive", "end")

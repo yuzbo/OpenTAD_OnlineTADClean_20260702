@@ -856,3 +856,22 @@ step”。据此按调度器源码重新计算 2,010 次实际 update 使用的 
 LR `2e-4`、累计值 `0.3802042142882046`，与推导完全一致。该检查只验证
 scheduler 语义；候选配置、真实前反向、checkpoint 和因果重载仍须由
 下一次同提交 Slurm smoke 权威验证。
+
+## Target-conditioned Score Diagnosis v2 — Prepared, Not Submitted
+
+仅看全体槽位的 max/p95 仍不能区分“正负已分离但整体未校准”和“模型
+没有学到 birth 判别”。因此准备 diagnosis v2，约束如下：
+
+- 数据仍严格限定 40-video calibration，继续检查与 locked reporting
+  零交集；
+- `infer_step` 的实参仍只有 inputs、masks、因果 meta 和模型 runtime，
+  `prefix_schedule` 不传入模型；
+- 模型输出产生后，另一个不进入 runtime 的监督状态按训练时完全相同的
+  birth mask、alive occupancy、end at-risk mask 将分数分成正/负两组；
+- 报告正负均值/中位数差、pairwise AUC，以及冻结阈值 0.5 下的
+  TPR/FPR；不搜索、不推荐、不写回任何新阈值；
+- 任一监督容量耗尽、token 不对齐或正样本落在 mask 外都会硬失败。
+
+当前已排队的 `1177682` 仍保持提交 `8dff64c` 上的 v1，不取消、不替换。
+v2 是后续候选诊断能力，当前没有 GPU 结果，也不构成 short-warmup
+放行证据。

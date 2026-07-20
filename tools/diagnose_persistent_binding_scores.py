@@ -1,6 +1,7 @@
 """Audit calibration-only lifecycle score distributions for a trained screen arm."""
 
 import argparse
+from bisect import bisect_left, bisect_right
 import hashlib
 import json
 import logging
@@ -24,6 +25,9 @@ from opentad.datasets import build_dataloader, build_dataset  # noqa: E402
 from opentad.models import build_detector  # noqa: E402
 from opentad.utils import configure_strict_determinism, set_seed  # noqa: E402
 from opentad.utils.device import move_data_to_device  # noqa: E402
+from opentad.utils.prefix_trajectory_supervision import (  # noqa: E402
+    PrefixTrajectorySupervisionState,
+)
 
 
 CHANNELS = {
@@ -125,6 +129,85 @@ def summarize_probabilities(values, threshold):
     }
 
 
+def summarize_binary_discrimination(positive_values, negative_values, threshold):
+    positive_values = [float(value) for value in positive_values]
+    negative_values = [float(value) for value in negative_values]
+    if not positive_values or not negative_values:
+        raise ValueError(
+            "binary discrimination requires positive and negative scores"
+        )
+    ordered_negative = sorted(negative_values)
+    pairwise_wins = 0.0
+    for positive in positive_values:
+        strictly_lower = bisect_left(ordered_negative, positive)
+        equal = bisect_right(ordered_negative, positive) - strictly_lower
+        pairwise_wins += strictly_lower + 0.5 * equal
+    positive = summarize_probabilities(positive_values, threshold)
+    negative = summarize_probabilities(negative_values, threshold)
+    return {
+        "positive": positive,
+        "negative": negative,
+        "positive_rate": (
+            len(positive_values)
+            / (len(positive_values) + len(negative_values))
+        ),
+        "mean_score_gap": positive["mean"] - negative["mean"],
+        "median_score_gap": positive["p50"] - negative["p50"],
+        "pairwise_auc": (
+            pairwise_wins
+            / (len(positive_values) * len(negative_values))
+        ),
+        "threshold_true_positive_rate": positive[
+            "threshold_crossing_rate"
+        ],
+        "threshold_false_positive_rate": negative[
+            "threshold_crossing_rate"
+        ],
+    }
+
+
+def append_target_conditioned_scores(store, probabilities, transition):
+    specifications = {
+        "birth": (
+            tuple(bool(value) for value in transition.birth_mask),
+            {
+                int(binding.slot_id)
+                for binding in transition.birth_assignments
+            },
+        ),
+        "alive": (
+            tuple(True for _ in probabilities["alive"]),
+            {
+                int(slot)
+                for slot in transition.audit.occupied_slots_for_supervision
+            },
+        ),
+        "end": (
+            tuple(bool(value) for value in transition.at_risk_mask),
+            {int(slot) for slot in transition.endpoint_slots},
+        ),
+    }
+    for channel, (mask, positive_slots) in specifications.items():
+        channel_probabilities = probabilities[channel]
+        if len(mask) != len(channel_probabilities):
+            raise ValueError(
+                f"{channel} target mask and probabilities do not align"
+            )
+        if not positive_slots.issubset(
+            {slot for slot, enabled in enumerate(mask) if enabled}
+        ):
+            raise ValueError(
+                f"{channel} positive target lies outside its supervised mask"
+            )
+        for slot, (enabled, probability) in enumerate(
+            zip(mask, channel_probabilities)
+        ):
+            if not enabled:
+                continue
+            target = "positive" if slot in positive_slots else "negative"
+            store[channel][target].append(float(probability))
+
+
 def _normalized_state_dict(checkpoint):
     state_dict = checkpoint.get("state_dict")
     if not isinstance(state_dict, dict) or not state_dict:
@@ -221,7 +304,9 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
     if calibration_ids.intersection(reporting_ids):
         raise ValueError("calibration and reporting manifests overlap")
     dataset_cfg = dict(cfg.dataset.val)
-    dataset_cfg["test_mode"] = True
+    # Calibration prefix labels are retained only for post-forward score
+    # grouping. They are never passed into infer_step or runtime state.
+    dataset_cfg["test_mode"] = False
     logger = logging.getLogger("PersistentBindingScoreDiagnosis")
     dataset = build_dataset(dataset_cfg, default_args=dict(logger=logger))
     dataset_ids = set(dataset.packet_manifests)
@@ -252,10 +337,16 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
         channel: [[] for _ in range(model.head.num_slots)]
         for channel in CHANNELS
     }
+    target_conditioned_values = {
+        channel: {"positive": [], "negative": []}
+        for channel in CHANNELS
+    }
     runtime_totals = {}
     runtime = None
+    supervision = None
     current_video = None
     tokens = 0
+    target_conditioned_tokens = 0
     chunks = 0
     direct_emissions = 0
     with torch.no_grad():
@@ -268,9 +359,25 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                 if runtime is not None:
                     _add_counts(runtime_totals, _runtime_counts(runtime))
                 runtime = None
+                supervision = PrefixTrajectorySupervisionState(
+                    num_slots=model.head.num_slots,
+                    mode=model.supervision_mode,
+                )
                 current_video = video_id
-            elif runtime is None or video_id != current_video:
+            elif (
+                runtime is None
+                or supervision is None
+                or video_id != current_video
+            ):
                 raise ValueError("calibration chunks are not a chronological stream")
+            schedule_batch = batch.get("prefix_schedule")
+            if (
+                not isinstance(schedule_batch, list)
+                or len(schedule_batch) != 1
+            ):
+                raise ValueError(
+                    "calibration diagnosis requires one isolated prefix schedule"
+                )
             output = model.infer_step(
                 batch["inputs"],
                 batch["masks"],
@@ -282,7 +389,17 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
             direct_emissions += len(output.emissions)
             chunks += 1
             tokens += len(output.logits)
-            for token_output in output.logits:
+            schedule = tuple(schedule_batch[0])
+            if len(schedule) != len(output.logits):
+                raise ValueError(
+                    "prefix schedule and diagnostic logits do not align"
+                )
+            feature_stride = meta.get(
+                "feature_stride",
+                meta.get("snippet_stride", 1),
+            )
+            for token_output, schedule_step in zip(output.logits, schedule):
+                token_probabilities = {}
                 for channel, (logit_name, _, _) in CHANNELS.items():
                     probabilities = (
                         token_output[logit_name]
@@ -292,13 +409,36 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                         .cpu()
                         .tolist()
                     )
+                    token_probabilities[channel] = probabilities
                     values[channel].extend(probabilities)
                     for slot, probability in enumerate(probabilities):
                         per_slot[channel][slot].append(probability)
+                transition = supervision.transition(
+                    schedule_step,
+                    model._cost_provider(
+                        token_output,
+                        schedule_step,
+                        feature_stride,
+                    ),
+                )
+                if transition.exhaustion:
+                    raise ValueError(
+                        "calibration target conditioning exhausted supervision slots"
+                    )
+                append_target_conditioned_scores(
+                    target_conditioned_values,
+                    token_probabilities,
+                    transition,
+                )
+                target_conditioned_tokens += 1
     if runtime is not None:
         _add_counts(runtime_totals, _runtime_counts(runtime))
     if tokens <= 0 or chunks <= 0:
         raise ValueError("calibration score diagnosis produced no tokens")
+    if target_conditioned_tokens != tokens:
+        raise ValueError(
+            "target-conditioned and inference token counts differ"
+        )
     if direct_emissions != runtime_totals.get("committed_emissions", 0):
         raise ValueError("direct and runtime emission counts differ")
 
@@ -312,8 +452,18 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                 for slot_values in per_slot[channel]
             ],
         }
+    target_conditioned_reports = {}
+    for channel, (_, threshold_name, _) in CHANNELS.items():
+        threshold = float(getattr(model.head, threshold_name))
+        target_conditioned_reports[channel] = (
+            summarize_binary_discrimination(
+                target_conditioned_values[channel]["positive"],
+                target_conditioned_values[channel]["negative"],
+                threshold,
+            )
+        )
     return {
-        "schema_version": "persistent_binding_score_diagnosis.v1",
+        "schema_version": "persistent_binding_score_diagnosis.v2",
         "passed": True,
         "purpose": "calibration_only_model_score_diagnosis",
         "effectiveness_claim_authorized": False,
@@ -340,6 +490,17 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
         "dataset_video_ids_sha256": _canonical_sha256(sorted(dataset_ids)),
         "num_slots": int(model.head.num_slots),
         "channel_score_distributions": channel_reports,
+        "target_conditioned_score_distributions": (
+            target_conditioned_reports
+        ),
+        "target_conditioning": {
+            "split": "calibration",
+            "prefix_observable_only": True,
+            "passed_to_model_forward": False,
+            "runtime_state_contains_gt": False,
+            "tokens": target_conditioned_tokens,
+            "supervision_exhaustions": 0,
+        },
         "lifecycle_counts": runtime_totals,
         "prior_and_checkpoint_bias_audit": _prior_audit(model, cfg),
         "strict_determinism": configure_strict_determinism(),

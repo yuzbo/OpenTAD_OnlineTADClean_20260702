@@ -1,6 +1,7 @@
 import math
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -11,6 +12,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from diagnose_persistent_binding_scores import (  # noqa: E402
     _normalized_state_dict,
+    append_target_conditioned_scores,
+    summarize_binary_discrimination,
     summarize_probabilities,
 )
 
@@ -30,6 +33,68 @@ def test_probability_summary_exposes_threshold_margin_and_crossings():
 def test_probability_summary_rejects_empty_score_channels():
     with pytest.raises(ValueError, match="cannot be empty"):
         summarize_probabilities([], threshold=0.5)
+
+
+def test_binary_discrimination_exposes_separation_without_selecting_threshold():
+    summary = summarize_binary_discrimination(
+        [0.7, 0.9],
+        [0.1, 0.3],
+        threshold=0.5,
+    )
+
+    assert summary["pairwise_auc"] == pytest.approx(1.0)
+    assert summary["mean_score_gap"] == pytest.approx(0.6)
+    assert summary["median_score_gap"] == pytest.approx(0.6)
+    assert summary["threshold_true_positive_rate"] == pytest.approx(1.0)
+    assert summary["threshold_false_positive_rate"] == pytest.approx(0.0)
+    assert "selected_threshold" not in summary
+
+
+def test_binary_discrimination_counts_ties_as_half_a_pairwise_win():
+    summary = summarize_binary_discrimination(
+        [0.5],
+        [0.5],
+        threshold=0.5,
+    )
+
+    assert summary["pairwise_auc"] == pytest.approx(0.5)
+
+
+def test_target_conditioning_follows_training_masks_and_bindings():
+    store = {
+        channel: {"positive": [], "negative": []}
+        for channel in ("birth", "alive", "end")
+    }
+    transition = SimpleNamespace(
+        birth_mask=(True, True, False, True),
+        birth_assignments=(SimpleNamespace(slot_id=1),),
+        at_risk_mask=(True, False, True, False),
+        endpoint_slots=(2,),
+        audit=SimpleNamespace(occupied_slots_for_supervision=(1, 2)),
+    )
+
+    append_target_conditioned_scores(
+        store,
+        {
+            "birth": [0.1, 0.8, 0.9, 0.2],
+            "alive": [0.1, 0.8, 0.7, 0.2],
+            "end": [0.2, 0.9, 0.8, 0.1],
+        },
+        transition,
+    )
+
+    assert store["birth"] == {
+        "positive": [0.8],
+        "negative": [0.1, 0.2],
+    }
+    assert store["alive"] == {
+        "positive": [0.8, 0.7],
+        "negative": [0.1, 0.2],
+    }
+    assert store["end"] == {
+        "positive": [0.8],
+        "negative": [0.2],
+    }
 
 
 def test_checkpoint_state_normalization_removes_one_ddp_prefix():
