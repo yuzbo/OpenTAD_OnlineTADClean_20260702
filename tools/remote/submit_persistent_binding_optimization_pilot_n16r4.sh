@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VARIANT=${VARIANT:?set VARIANT to sw, margin, or transport}
+VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, or lifecycle}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
@@ -26,8 +26,12 @@ case "$VARIANT" in
         FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_transport_fixed.py
         REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_transport_rematch.py
         ;;
+    lifecycle)
+        FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_lifecycle_fixed.py
+        REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_lifecycle_rematch.py
+        ;;
     *)
-        echo "VARIANT must be sw, margin, or transport" >&2
+        echo "VARIANT must be sw, margin, transport, or lifecycle" >&2
         exit 2
         ;;
 esac
@@ -134,6 +138,7 @@ python -m pytest \
     tests/test_persistent_binding_score_diagnosis.py \
     tests/test_core_single_process_contracts.py \
     tests/test_persistent_binding_optimization_comparison.py \
+    tests/test_persistent_binding_optimization_activation.py \
     -q -p no:cacheprovider
 
 python tools/census_persistent_binding.py \
@@ -243,6 +248,7 @@ payload = {
     "raw_rgb_authorized": False,
     "same_commit_profile_required": True,
     "transport_numerical_revision": "batched_soft_sinkhorn_0p25_iter56_v3",
+    "rendezvous_port_block_size": 4,
 }
 Path(output).write_text(
     json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -250,7 +256,8 @@ Path(output).write_text(
 )
 PY
 
-MASTER_PORT=${MASTER_PORT:-$((20000 + ${SLURM_JOB_ID:-0} % 40000))}
+JOB_PORT_SLOT=$((${SLURM_JOB_ID:-0} % 10000))
+MASTER_PORT=${MASTER_PORT:-$((20000 + JOB_PORT_SLOT * 4))}
 
 run_arm() {
     local arm=$1

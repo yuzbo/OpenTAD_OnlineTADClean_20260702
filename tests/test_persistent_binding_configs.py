@@ -77,11 +77,13 @@ def test_seed705_screen_is_one_epoch_feature_only_and_single_variable():
     assert fixed.raw_video_finetuning is False
 
 
-def test_three_model_optimization_pilots_are_matched_and_isolated():
+def test_model_optimization_pilots_are_matched_and_isolated():
     variants = {
         "sw": (
             "thumos_persistent_binding_opt_sw_fixed.py",
             "thumos_persistent_binding_opt_sw_rematch.py",
+            0.0,
+            0.0,
             0.0,
             0.0,
             "short_warmup",
@@ -91,20 +93,35 @@ def test_three_model_optimization_pilots_are_matched_and_isolated():
             "thumos_persistent_binding_opt_margin_rematch.py",
             0.5,
             0.0,
+            0.0,
+            0.0,
             "short_warmup_birth_margin",
         ),
         "transport": (
             "thumos_persistent_binding_opt_transport_fixed.py",
             "thumos_persistent_binding_opt_transport_rematch.py",
             0.0,
+            0.0,
+            0.0,
             0.05,
             "short_warmup_causal_transport",
+        ),
+        "lifecycle": (
+            "thumos_persistent_binding_opt_lifecycle_fixed.py",
+            "thumos_persistent_binding_opt_lifecycle_rematch.py",
+            0.1,
+            0.1,
+            0.1,
+            0.0,
+            "short_warmup_lifecycle_margin",
         ),
     }
     for (
         fixed_name,
         rematch_name,
-        margin_weight,
+        birth_margin_weight,
+        alive_margin_weight,
+        end_margin_weight,
         transport_weight,
         variant,
     ) in variants.values():
@@ -122,15 +139,24 @@ def test_three_model_optimization_pilots_are_matched_and_isolated():
         )
         assert fixed.screening_contract.optimization_variant == variant
         assert fixed.optimization_pilot_contract.optimization_variant == variant
-        assert fixed.model.birth_logit_margin_loss_weight == margin_weight
-        assert fixed.model.alive_logit_margin_loss_weight == 0.0
-        assert fixed.model.end_logit_margin_loss_weight == 0.0
+        assert (
+            fixed.model.birth_logit_margin_loss_weight
+            == birth_margin_weight
+        )
+        assert (
+            fixed.model.alive_logit_margin_loss_weight
+            == alive_margin_weight
+        )
+        assert fixed.model.end_logit_margin_loss_weight == end_margin_weight
         assert (
             fixed.model.causal_query_transport_loss_weight
             == transport_weight
         )
         assert fixed.model.causal_query_transport_temperature == 0.25
         assert fixed.model.causal_query_transport_iterations == 56
+        assert fixed.model.birth_logit_margin == 0.25
+        assert fixed.model.alive_logit_margin == 0.25
+        assert fixed.model.end_logit_margin == 0.25
         assert (
             fixed.optimization_pilot_contract.transport_numerical_revision
             == "batched_soft_sinkhorn_0p25_iter56_v3"
@@ -152,6 +178,12 @@ def test_three_model_optimization_pilots_are_matched_and_isolated():
         assert fixed.optimization_pilot_contract.frozen_birth_threshold == 0.5
         assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
         assert fixed.raw_video_finetuning is False
+
+        if variant == "short_warmup_lifecycle_margin":
+            assert (
+                fixed.optimization_pilot_contract.lifecycle_margin_revision
+                == "balanced_birth_alive_end_0p1x0p25_v1"
+            )
 
 
 def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():

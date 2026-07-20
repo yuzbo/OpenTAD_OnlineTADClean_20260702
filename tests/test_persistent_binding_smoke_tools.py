@@ -178,7 +178,7 @@ def test_all_persistent_binding_submitters_guard_detached_exact_commits():
         assert "COMMIT_SHA=$CURRENT_COMMIT" in source
 
 
-def test_model_optimization_submitter_deploys_three_feature_only_variants():
+def test_model_optimization_submitter_deploys_feature_only_variants():
     submit = (
         ROOT
         / "tools/remote/submit_persistent_binding_optimization_pilot_n16r4.sh"
@@ -188,11 +188,12 @@ def test_model_optimization_submitter_deploys_three_feature_only_variants():
         / "tools/remote/check_persistent_binding_optimization_pilot_n16r4.sh"
     ).read_text(encoding="utf-8")
 
-    for variant in ("sw", "margin", "transport"):
+    for variant in ("sw", "margin", "transport", "lifecycle"):
         assert f"{variant})" in submit
     assert "thumos_persistent_binding_opt_sw_fixed.py" in submit
     assert "thumos_persistent_binding_opt_margin_fixed.py" in submit
     assert "thumos_persistent_binding_opt_transport_fixed.py" in submit
+    assert "thumos_persistent_binding_opt_lifecycle_fixed.py" in submit
     assert "--allow-unready-screen" in submit
     assert "profile_persistent_binding.py" in submit
     assert "evaluate_persistent_binding_profile.py" in submit
@@ -203,6 +204,9 @@ def test_model_optimization_submitter_deploys_three_feature_only_variants():
     assert "diagnose_persistent_binding_scores.py" in submit
     assert "evaluate_persistent_binding_optimization_activation.py" in submit
     assert "optimization_activation.json" in submit
+    assert "JOB_PORT_SLOT=$((${SLURM_JOB_ID:-0} % 10000))" in submit
+    assert "20000 + JOB_PORT_SLOT * 4" in submit
+    assert '"rendezvous_port_block_size": 4' in submit
     assert "reporting_accessed" in submit
     assert '"raw_rgb_authorized": False' in submit
     assert "#SBATCH --gres=gpu:1" in submit
