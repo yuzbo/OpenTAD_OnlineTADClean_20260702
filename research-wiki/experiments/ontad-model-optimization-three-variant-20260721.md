@@ -298,3 +298,20 @@ GPU profile 比较不会让控制组承担 C 的隐藏开销。
 05:03 账户仍为 16/16；提交器在创建新目录前正确停止。现在只认 exact
 `d390779` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
 A→B→C 重新提交；旧取消目录不算重复。
+
+### M4.2 最终精确提交重新部署
+
+05:37 一个既有训练作业完成后，账户活跃数从 16 降至 15。先暂停自动
+提交并重新核验：候选 HEAD 为 exact `d390779443bccc4926bc8fb2bff1875834383c21`、
+worktree clean、无新版 `pb_opt_*`、无该 SHA 的 pilot contract。只使用
+这一个空槽提交：
+
+| 版本 | 新 Slurm job | 新运行目录 | 当前状态 |
+| --- | ---: | --- | --- |
+| A / SW | `1177706` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_053819` | PENDING / AssocGrpGRES、零 GPU |
+| B / SW+BM | — | — | 等待下一 submit slot |
+| C / SW+CT | — | — | 等待下一 submit slot |
+
+作业脚本内 `COMMIT_SHA` 已复核为 exact `d390779`。提交后账户回到
+16/16；没有取消、修改或抢占任何无关作业。下一槽按冻结顺序提交 B，
+再下一槽提交 C。

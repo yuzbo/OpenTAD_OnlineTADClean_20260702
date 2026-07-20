@@ -150,6 +150,11 @@ query 模拟的同槽质量只有 `0.46641`；0.25/20 为 `0.60779`，身份保�
 16/16；随后移除 A/B 的无用边际计算。新三版本等待槽位按 A→B→C 重提；
 只认 exact `d390779`，旧取消目录不算 duplicate。
 
+05:37 出现一个 submit slot；精确 SHA、clean 状态与零重复项复核后，
+A/SW 已提交为 job `1177706`，run
+`model_opt_sw_seed705_20260721_053819`，当前 `PENDING/AssocGrpGRES`、
+零 GPU。账户回到 16/16；B/C 继续按顺序等待新槽，没有动无关作业。
+
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
 只激活 `birth_margin_loss`，transport 只激活
