@@ -86,6 +86,14 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
   层级任务不同，因此当前 A/B/C 不照搬其 VLM、层级标签或伪标签；只把
   progress-hazard 记录为“birth 已恢复但 end/相邻动作仍失败”时的有条件
   后续模型候选。
+- [OZ-TAL（2026 预印本）](https://arxiv.org/abs/2605.09976) 同样把任务
+  定义为动作完成时立即定位，并指出近期路线正从 OAD 帧聚合转向实例级
+  理解；这支持 persistent instance 建模方向，但其 zero-shot、training-free
+  VLM 设定不属于当前标准全监督实验。
+- [OnPoint（2026 预印本）](https://arxiv.org/abs/2607.00289) 研究点监督
+  Online TAL，并使用离线教师、伪区间和 anticipatory window distillation；
+  这些都不是当前 full-supervision FIXED/REMATCH 问题，因此不吸收到
+  A/B/C 代码或主张中。
 
 截至 2026-07-21 的精确检索仍未找到可唯一对应的 “ChronoTransport”
 On-TAD 论文；检索命中主要是无关词义。因此 C 的命名与引用边界保持不变：

@@ -91,6 +91,10 @@ ICCV 2025 OpenHOUSE 进一步支持当前 strict OAD-based On-TAL 口径：
 不采用 VLM、层级标签或伪标签。精确检索仍未找到可信的同名
 “ChronoTransport” On-TAD 论文。
 
+2026 前沿边界：OZ-TAL 的 zero-shot/training-free VLM 路线支持
+“实例级 online localization”趋势，但不是本项目设定；OnPoint 是点监督、
+离线教师与 anticipatory distillation，也不吸收到标准全监督主线。
+
 验证：
 
 - Windows Python 编译、Bash syntax 与 29 项 CPU-safe 测试通过；本机
