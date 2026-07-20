@@ -189,7 +189,7 @@ REMATCH 为 `0.552/0.482/0.530`，所有通道冻结 TPR 仍为零；两臂 birt
 最大概率仅 `0.22687/0.14236`。因此停止 C 及其权重/作用域搜索，下一
 模型选择只由 A/B 结果决定。
 
-三版 FIXED 均零输出后，`6b0ffd68922ea879f17ae82651a60b2aa454302d`
+三版 FIXED 均零输出后，`6b0ffd63c07d6c9ea0db1ddcb8055ad90b7d115d`
 已加入默认关闭的 alive/end balanced logit margin，与现有 birth margin
 组成候选 lifecycle decision margins；三者都只用当前监督 mask，不读
 未来。原 A/B/C 的新权重由测试锁为零，正在运行的实验仍是 exact

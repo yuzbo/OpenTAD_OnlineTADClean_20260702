@@ -414,7 +414,7 @@ transport 权重搜索，也不把“仅 confirmed-active 槽 transport”列为
 ### M5 下一轮 lifecycle 决策边界能力
 
 三版 FIXED calibration 均已确认零最终区间后，提交
-`6b0ffd68922ea879f17ae82651a60b2aa454302d` 实现默认关闭的下一轮核心
+`6b0ffd63c07d6c9ea0db1ddcb8055ad90b7d115d` 实现默认关闭的下一轮核心
 能力：在既有 birth balanced logit margin 旁，为 alive 和 end 分别增加
 同构 margin。三者都只使用当前 prefix 的全监督 target/mask：
 
