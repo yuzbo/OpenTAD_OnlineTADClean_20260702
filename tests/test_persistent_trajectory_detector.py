@@ -17,7 +17,10 @@ from opentad.models.dense_heads.persistent_event_set_head import (
 from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
     PersistentTrajectoryRuntimeState,
+    _balanced_binary_logit_margin,
+    _causal_query_transport_loss,
     _masked_bce,
+    _sinkhorn_plan,
 )
 from opentad.utils.online_protocol import (
     ProtocolViolation,
@@ -248,6 +251,115 @@ def test_positive_weight_temperately_amplifies_rare_positive_binary_targets():
 
     assert balanced > unweighted
     assert torch.equal(negative_only, negative_reference)
+
+
+def test_birth_logit_margin_pushes_positive_and_negative_across_zero():
+    logits = torch.tensor([[-1.0, 1.0]], requires_grad=True)
+    target = torch.tensor([[1.0, 0.0]])
+    mask = torch.ones_like(target, dtype=torch.bool)
+
+    loss = _balanced_binary_logit_margin(
+        logits,
+        target,
+        mask,
+        margin=0.25,
+    )
+    loss.backward()
+
+    assert loss.item() > 0
+    assert logits.grad[0, 0].item() < 0
+    assert logits.grad[0, 1].item() > 0
+    no_birth = _balanced_binary_logit_margin(
+        logits.detach(),
+        torch.zeros_like(target),
+        mask,
+        margin=0.25,
+    )
+    assert no_birth.item() == 0
+
+
+def test_sinkhorn_plan_matches_requested_lifecycle_marginals():
+    cost = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+    source = torch.tensor([0.7, 0.3])
+    target = torch.tensor([0.4, 0.6])
+
+    plan = _sinkhorn_plan(
+        cost,
+        source,
+        target,
+        temperature=0.2,
+        iterations=50,
+    )
+
+    assert torch.allclose(plan.sum(dim=1), source, atol=1e-5)
+    assert torch.allclose(plan.sum(dim=0), target, atol=1e-5)
+    assert torch.isfinite(plan).all()
+
+
+def test_causal_query_transport_is_one_way_from_past_to_current():
+    previous = torch.tensor(
+        [[[1.0, 0.0], [0.0, 1.0]]],
+        requires_grad=True,
+    )
+    current = torch.tensor(
+        [[[0.8, 0.2], [0.3, 0.7]]],
+        requires_grad=True,
+    )
+    previous_mass = torch.tensor([[0.8, 0.2]])
+    current_mass = torch.tensor([[0.6, 0.4]])
+
+    loss = _causal_query_transport_loss(
+        previous,
+        current,
+        previous_mass,
+        current_mass,
+        temperature=0.1,
+        identity_cost=0.25,
+        iterations=30,
+        mass_floor=0.05,
+    )
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert loss.item() >= 0
+    assert previous.grad is None
+    assert current.grad is not None
+    assert torch.isfinite(current.grad).all()
+
+
+def test_enabled_model_optimization_losses_are_finite_and_differentiable():
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 30.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    inputs = torch.randn(1, 4, len(frames))
+    masks = torch.ones(1, len(frames), dtype=torch.bool)
+    detector = _detector(
+        birth_logit_margin_loss_weight=0.5,
+        causal_query_transport_loss_weight=0.05,
+    ).train()
+
+    output = detector.train_episode(
+        inputs,
+        masks,
+        _meta(frames),
+        schedule,
+    )
+    output.losses["cost"].backward()
+
+    assert output.losses["birth_margin_loss"].item() >= 0
+    assert output.losses["causal_transport_loss"].item() >= 0
+    assert torch.isfinite(output.losses["cost"])
+    assert detector.last_episode_audit[
+        "birth_logit_margin_loss_weight"
+    ] == pytest.approx(0.5)
+    assert detector.last_episode_audit[
+        "causal_query_transport_loss_weight"
+    ] == pytest.approx(0.05)
+    assert detector.head.birth_head.weight.grad is not None
 
 
 def test_detector_aligns_prior_biases_with_weighted_binary_losses():

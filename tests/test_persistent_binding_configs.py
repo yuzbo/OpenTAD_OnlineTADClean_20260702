@@ -77,6 +77,67 @@ def test_seed705_screen_is_one_epoch_feature_only_and_single_variable():
     assert fixed.raw_video_finetuning is False
 
 
+def test_three_model_optimization_pilots_are_matched_and_isolated():
+    variants = {
+        "sw": (
+            "thumos_persistent_binding_opt_sw_fixed.py",
+            "thumos_persistent_binding_opt_sw_rematch.py",
+            0.0,
+            0.0,
+            "short_warmup",
+        ),
+        "margin": (
+            "thumos_persistent_binding_opt_margin_fixed.py",
+            "thumos_persistent_binding_opt_margin_rematch.py",
+            0.5,
+            0.0,
+            "short_warmup_birth_margin",
+        ),
+        "transport": (
+            "thumos_persistent_binding_opt_transport_fixed.py",
+            "thumos_persistent_binding_opt_transport_rematch.py",
+            0.0,
+            0.05,
+            "short_warmup_causal_transport",
+        ),
+    }
+    for (
+        fixed_name,
+        rematch_name,
+        margin_weight,
+        transport_weight,
+        variant,
+    ) in variants.values():
+        fixed = _load(fixed_name)
+        rematch = _load(rematch_name)
+
+        assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+        assert (
+            rematch.model.trajectory_binding_mode
+            == "prefix_rematch_active_pool"
+        )
+        assert _normalized(fixed) == _normalized(rematch)
+        assert fixed.route_stage == (
+            "persistent_binding_feature_model_optimization_pilot"
+        )
+        assert fixed.screening_contract.optimization_variant == variant
+        assert fixed.optimization_pilot_contract.optimization_variant == variant
+        assert fixed.model.birth_logit_margin_loss_weight == margin_weight
+        assert (
+            fixed.model.causal_query_transport_loss_weight
+            == transport_weight
+        )
+        assert fixed.scheduler.warmup_epoch == 0.1
+        assert fixed.workflow.end_epoch == 1
+        assert fixed.workflow.fit_only is True
+        assert fixed.screening_contract.reporting_videos_accessed == 0
+        assert fixed.optimization_pilot_contract.reporting_accessed is False
+        assert fixed.optimization_pilot_contract.threshold_search is False
+        assert fixed.optimization_pilot_contract.frozen_birth_threshold == 0.5
+        assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
+        assert fixed.raw_video_finetuning is False
+
+
 def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     cfg = _load("thumos_persistent_binding_fixed.py")
 

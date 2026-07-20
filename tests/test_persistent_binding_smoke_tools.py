@@ -163,6 +163,7 @@ def test_all_persistent_binding_submitters_guard_detached_exact_commits():
         "submit_persistent_binding_profile_n16r4.sh",
         "submit_persistent_binding_screen_n16r4.sh",
         "submit_persistent_binding_score_diagnosis_n16r4.sh",
+        "submit_persistent_binding_optimization_pilot_n16r4.sh",
     )
 
     for name in names:
@@ -175,3 +176,30 @@ def test_all_persistent_binding_submitters_guard_detached_exact_commits():
         assert "Deployment checkout does not match EXPECTED_COMMIT" in source
         assert "Detached deployment requires EXPECTED_COMMIT" in source
         assert "COMMIT_SHA=$CURRENT_COMMIT" in source
+
+
+def test_model_optimization_submitter_deploys_three_feature_only_variants():
+    submit = (
+        ROOT
+        / "tools/remote/submit_persistent_binding_optimization_pilot_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    check = (
+        ROOT
+        / "tools/remote/check_persistent_binding_optimization_pilot_n16r4.sh"
+    ).read_text(encoding="utf-8")
+
+    for variant in ("sw", "margin", "transport"):
+        assert f"{variant})" in submit
+    assert "thumos_persistent_binding_opt_sw_fixed.py" in submit
+    assert "thumos_persistent_binding_opt_margin_fixed.py" in submit
+    assert "thumos_persistent_binding_opt_transport_fixed.py" in submit
+    assert "--allow-unready-screen" in submit
+    assert "--evaluation-role calibration" in submit
+    assert "diagnose_persistent_binding_scores.py" in submit
+    assert "reporting_accessed" in submit
+    assert '"raw_rgb_authorized": False' in submit
+    assert "#SBATCH --gres=gpu:1" in submit
+    assert "sbatch" in submit
+    assert "squeue" in check
+    assert "sacct" in check
+    assert "fixed_score_diagnosis.json" in check

@@ -1,0 +1,48 @@
+_base_ = ["./thumos_persistent_binding_screen_base.py"]
+
+# One-epoch, feature-only mechanism pilots. These configs are not paper-result
+# configs and never access the reporting split during training or diagnosis.
+route_stage = "persistent_binding_feature_model_optimization_pilot"
+formal_training_ready = False
+screening_only = True
+screening_training_ready = True
+
+screening_contract = dict(
+    schema_version="persistent_binding_model_optimization_pilot.v1",
+    seed=705,
+    epochs=1,
+    reporting_videos_accessed=0,
+    purpose="shared_model_optimization_non_degeneracy",
+    effectiveness_claim_authorized=False,
+    raw_rgb_authorized=False,
+    optimization_variant="UNSET_BY_VARIANT",
+    changed_axis="UNSET_BY_VARIANT",
+    comparison_control="short_warmup_v1",
+)
+
+optimization_pilot_contract = dict(
+    schema_version="persistent_binding_model_optimization_pilot.v1",
+    optimization_variant="UNSET_BY_VARIANT",
+    reference_variant="short_warmup",
+    seed=705,
+    epochs=1,
+    input="fixed_cached_causal_features",
+    fit_only=True,
+    calibration_diagnosis_only=True,
+    reporting_accessed=False,
+    fixed_rematch_shared=True,
+    threshold_search=False,
+    frozen_birth_threshold=0.5,
+    raw_rgb_authorized=False,
+)
+
+model = dict(
+    birth_logit_margin_loss_weight=0.0,
+    birth_logit_margin=0.25,
+    causal_query_transport_loss_weight=0.0,
+    causal_query_transport_temperature=0.1,
+    causal_query_transport_identity_cost=0.25,
+    causal_query_transport_iterations=20,
+    causal_query_transport_mass_floor=0.05,
+)
+

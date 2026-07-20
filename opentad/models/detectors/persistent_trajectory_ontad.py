@@ -66,6 +66,113 @@ def _masked_bce(logits, target, mask, positive_weight=1.0):
     )
 
 
+def _balanced_binary_logit_margin(logits, target, mask, margin):
+    """Balanced positive/negative margin on decisions that contain a positive."""
+
+    mask = mask.to(device=logits.device, dtype=torch.bool)
+    positive = mask & target.gt(0.5)
+    if not positive.any():
+        return _zero(logits)
+    negative = mask & ~target.gt(0.5)
+    margin = logits.new_tensor(float(margin))
+    positive_loss = F.relu(margin - logits[positive]).square().mean()
+    if not negative.any():
+        return positive_loss
+    negative_loss = F.relu(margin + logits[negative]).square().mean()
+    return 0.5 * (positive_loss + negative_loss)
+
+
+def _sinkhorn_plan(cost, source_mass, target_mass, temperature, iterations):
+    """Return a balanced entropic transport plan in log space."""
+
+    if cost.ndim != 2 or cost.shape[0] != cost.shape[1]:
+        raise ValueError("causal transport cost must be square")
+    if source_mass.shape != (cost.shape[0],):
+        raise ValueError("source transport mass does not align with cost")
+    if target_mass.shape != (cost.shape[1],):
+        raise ValueError("target transport mass does not align with cost")
+    log_kernel = -cost / float(temperature)
+    log_source = source_mass.log()
+    log_target = target_mass.log()
+    log_u = torch.zeros_like(log_source)
+    log_v = torch.zeros_like(log_target)
+    for _ in range(int(iterations)):
+        log_u = log_source - torch.logsumexp(
+            log_kernel + log_v.unsqueeze(0),
+            dim=1,
+        )
+        log_v = log_target - torch.logsumexp(
+            log_kernel + log_u.unsqueeze(1),
+            dim=0,
+        )
+    return torch.exp(log_kernel + log_u.unsqueeze(1) + log_v.unsqueeze(0))
+
+
+def _causal_query_transport_loss(
+    previous_queries,
+    current_queries,
+    previous_lifecycle_mass,
+    current_lifecycle_mass,
+    *,
+    temperature,
+    identity_cost,
+    iterations,
+    mass_floor,
+):
+    """Align current persistent queries to the immediately preceding queries."""
+
+    if previous_queries.shape != current_queries.shape:
+        raise ValueError("causal transport query shapes must match")
+    if previous_queries.ndim != 3 or previous_queries.shape[0] != 1:
+        raise ValueError("causal transport queries must have shape [1,S,D]")
+    num_slots = previous_queries.shape[1]
+    expected_mass_shape = (1, num_slots)
+    if previous_lifecycle_mass.shape != expected_mass_shape:
+        raise ValueError("previous lifecycle mass does not align with queries")
+    if current_lifecycle_mass.shape != expected_mass_shape:
+        raise ValueError("current lifecycle mass does not align with queries")
+
+    # The past is a fixed source for this one-way causal alignment. Gradients
+    # optimize the current representation only.
+    previous = F.normalize(previous_queries[0].detach().float(), dim=-1)
+    current = F.normalize(current_queries[0].float(), dim=-1)
+    cosine_cost = (
+        1.0 - torch.matmul(previous, current.transpose(0, 1))
+    ).clamp_min(0.0)
+    with torch.no_grad():
+        source_mass = previous_lifecycle_mass[0].float().clamp_min(
+            float(mass_floor)
+        )
+        target_mass = current_lifecycle_mass[0].float().clamp_min(
+            float(mass_floor)
+        )
+        source_mass = source_mass / source_mass.sum()
+        target_mass = target_mass / target_mass.sum()
+        off_diagonal = 1.0 - torch.eye(
+            num_slots,
+            device=cosine_cost.device,
+            dtype=cosine_cost.dtype,
+        )
+        plan = _sinkhorn_plan(
+            cosine_cost.detach() + float(identity_cost) * off_diagonal,
+            source_mass,
+            target_mass,
+            temperature,
+            iterations,
+        ).detach()
+    return (plan * cosine_cost).sum()
+
+
+def _predicted_lifecycle_mass(outputs):
+    """Prediction-only persistence mass; no supervision or future target enters."""
+
+    return (
+        outputs["alive_logits"].sigmoid()
+        * (1.0 - outputs["birth_logits"].sigmoid())
+        * (1.0 - outputs["end_hazard_logits"].sigmoid())
+    )
+
+
 def _stream_key(meta):
     video = meta.get("video_id", meta.get("video_name"))
     if video is None:
@@ -155,6 +262,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         end_positive_weight=1.0,
         prior_bias_mode="raw_probability",
         fail_on_supervision_exhaustion=False,
+        birth_logit_margin_loss_weight=0.0,
+        birth_logit_margin=0.25,
+        causal_query_transport_loss_weight=0.0,
+        causal_query_transport_temperature=0.1,
+        causal_query_transport_identity_cost=0.25,
+        causal_query_transport_iterations=20,
+        causal_query_transport_mass_floor=0.05,
     ):
         super().__init__()
         self.head = head if isinstance(head, nn.Module) else build_head(head)
@@ -192,7 +306,53 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "class_loss": float(class_loss_weight),
             "start_loss": float(start_loss_weight),
             "end_loss": float(end_loss_weight),
+            "birth_margin_loss": float(birth_logit_margin_loss_weight),
+            "causal_transport_loss": float(
+                causal_query_transport_loss_weight
+            ),
         }
+        if any(
+            not math.isfinite(value) or value < 0
+            for value in self.loss_weights.values()
+        ):
+            raise ValueError("loss weights must be non-negative and finite")
+        self.birth_logit_margin = float(birth_logit_margin)
+        if (
+            not math.isfinite(self.birth_logit_margin)
+            or self.birth_logit_margin <= 0
+        ):
+            raise ValueError("birth_logit_margin must be positive and finite")
+        self.causal_transport = {
+            "temperature": float(causal_query_transport_temperature),
+            "identity_cost": float(causal_query_transport_identity_cost),
+            "iterations": int(causal_query_transport_iterations),
+            "mass_floor": float(causal_query_transport_mass_floor),
+        }
+        if (
+            not math.isfinite(self.causal_transport["temperature"])
+            or self.causal_transport["temperature"] <= 0
+        ):
+            raise ValueError(
+                "causal_query_transport_temperature must be positive and finite"
+            )
+        if (
+            not math.isfinite(self.causal_transport["identity_cost"])
+            or self.causal_transport["identity_cost"] < 0
+        ):
+            raise ValueError(
+                "causal_query_transport_identity_cost must be non-negative and finite"
+            )
+        if self.causal_transport["iterations"] <= 0:
+            raise ValueError(
+                "causal_query_transport_iterations must be positive"
+            )
+        if (
+            not math.isfinite(self.causal_transport["mass_floor"])
+            or not 0 < self.causal_transport["mass_floor"] <= 1
+        ):
+            raise ValueError(
+                "causal_query_transport_mass_floor must be in (0, 1]"
+            )
         self.positive_weights = {
             "birth_loss": float(birth_positive_weight),
             "alive_loss": float(alive_positive_weight),
@@ -592,6 +752,16 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 end_mask,
                 self.positive_weights["end_loss"],
             ),
+            "birth_margin_loss": (
+                _balanced_binary_logit_margin(
+                    outputs["birth_logits"],
+                    birth_target,
+                    birth_mask,
+                    self.birth_logit_margin,
+                )
+                if self.loss_weights["birth_margin_loss"] > 0
+                else _zero(outputs["birth_logits"])
+            ),
         }
 
     @staticmethod
@@ -782,6 +952,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         runtime_entry_free_collisions = 0
         rematch_swaps = 0
         valid_steps = 0
+        previous_queries = None
+        previous_lifecycle_mass = None
         feature_stride = meta.get("feature_stride", meta.get("snippet_stride", 1))
         for index, (source_frame, schedule_step) in enumerate(
             zip(source_frames, supervision_schedule)
@@ -816,6 +988,26 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 transition,
                 feature_stride,
             )
+            current_lifecycle_mass = _predicted_lifecycle_mass(outputs)
+            if (
+                self.loss_weights["causal_transport_loss"] > 0
+                and previous_queries is not None
+                and previous_lifecycle_mass is not None
+            ):
+                raw["causal_transport_loss"] = (
+                    _causal_query_transport_loss(
+                        previous_queries,
+                        state.queries,
+                        previous_lifecycle_mass,
+                        current_lifecycle_mass,
+                        temperature=self.causal_transport["temperature"],
+                        identity_cost=self.causal_transport["identity_cost"],
+                        iterations=self.causal_transport["iterations"],
+                        mass_floor=self.causal_transport["mass_floor"],
+                    )
+                )
+            else:
+                raw["causal_transport_loss"] = _zero(state.queries)
             if sums is None:
                 sums = {name: value for name, value in raw.items()}
             else:
@@ -826,6 +1018,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 current_frame=source_frame,
                 feature_stride=feature_stride,
             )
+            previous_queries = state.queries
+            previous_lifecycle_mass = current_lifecycle_mass
             logits.append(outputs)
             birth_trace.append(self._binding_rows(transition.birth_assignments))
             canonical_trace.append(self._binding_rows(transition.canonical_bindings))
@@ -882,6 +1076,14 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         audit = {
             "binding_mode": self.trajectory_binding_mode,
             "prior_bias_mode": self.prior_bias_mode,
+            "birth_logit_margin_loss_weight": self.loss_weights[
+                "birth_margin_loss"
+            ],
+            "birth_logit_margin": self.birth_logit_margin,
+            "causal_query_transport_loss_weight": self.loss_weights[
+                "causal_transport_loss"
+            ],
+            "causal_query_transport": dict(self.causal_transport),
             "birth_assignments": tuple(birth_trace),
             "canonical_lifecycle": tuple(canonical_trace),
             "loss_bindings": tuple(loss_binding_trace),
