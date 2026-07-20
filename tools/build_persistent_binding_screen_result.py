@@ -194,6 +194,8 @@ def build_screen_result(
         raise ValueError("training audit route stage mismatch")
     if audit.get("binding_mode") != expected_mode:
         raise ValueError("training audit binding mode mismatch")
+    if audit.get("prior_bias_mode") != cfg.model.prior_bias_mode:
+        raise ValueError("training audit prior-bias mode mismatch")
     if len(audit.get("epochs", ())) != 1:
         raise ValueError("screen training audit must contain exactly one epoch")
     totals = audit.get("totals", {})
@@ -320,6 +322,7 @@ def build_screen_result(
     gate_row = {
         "arm": arm,
         "binding_mode": expected_mode,
+        "prior_bias_mode": str(cfg.model.prior_bias_mode),
         "seed": int(seed),
         "screen_epochs": 1,
         "metric_schema": standard_metrics["schema_version"],
@@ -372,6 +375,7 @@ def build_screen_result(
         "schema_version": SCHEMA_VERSION,
         "arm": arm,
         "binding_mode": expected_mode,
+        "prior_bias_mode": str(cfg.model.prior_bias_mode),
         "seed": int(seed),
         "purpose": "convergence_and_non_degeneracy_only",
         "reporting_accessed": False,

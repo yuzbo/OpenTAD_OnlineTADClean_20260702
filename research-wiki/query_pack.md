@@ -27,6 +27,13 @@ profile `1177582` at `534f85b`. The first seed-705 paired technical screen
 REMATCH made zero calibration emissions after one stable epoch. No three-seed
 or paper result exists.
 
+Calibration-only diagnosis `1177634` then confirmed the common bottleneck:
+across 28,730 tokens per arm, FIXED/REMATCH birth maxima were
+`0.433135/0.346657` with zero 0.5 crossings. Both trained birth biases remained
+about `2.526 logit` below the registered weighted-BCE stationary point. The
+shared `weighted_bce_stationary` initialization repair is implemented; its
+same-commit smoke/profile/screen rerun is now the active gate.
+
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
 
@@ -37,10 +44,10 @@ Read:
 
 ## Current Blocking Gaps
 
-1. **Lifecycle-score diagnosis:** quantify calibration-only birth/alive/end
-   score distributions for both failed seed-705 checkpoints.
-2. **Shared model repair:** if confirmed, align output-head initialization
-   with the registered weighted BCE while keeping thresholds/splits frozen.
+1. **Repair validation:** pass the full remote Torch bundle, real-feature
+   update, serialization, strict-causal reload, and census on one exact commit.
+2. **Same-commit budget profile:** remeasure the repaired FIXED/REMATCH route
+   before spending the frozen one-epoch screen budget.
 3. **One-epoch non-degeneracy rerun:** both arms must update, emit causally,
    and avoid silent/explosive outputs on calibration only.
 4. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
@@ -64,19 +71,23 @@ Read:
 - optimized one-epoch profile gate is `1.404134 GPU-hours`, below the cap;
 - screen `1177596` used `0.871944 GPU-hours`; both arms completed 2010/2010
   updates with zero training/capacity/causal errors but emitted zero intervals;
-- both checkpoint birth biases remain about `-5.125` (probability `0.00591`);
+- diagnosis `1177634` passed 22 tests and found zero birth-threshold crossings
+  in either arm; trained birth biases were about `2.526 logit` below the
+  weighted-BCE stationary initialization;
+- the shared repair changes only binary-head initialization mode; empirical
+  priors, positive weights, thresholds, data, lifecycle, and comparison axis
+  remain frozen;
 - none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
   latency, or any paper headline.
 
 ## Immediate Implementation Order
 
-1. Commit the calibration-only score-diagnosis tool and this negative-result
-   wiki checkpoint.
-2. Diagnose both failed checkpoints without reporting access or threshold
-   edits.
-3. If weighted-loss initialization mismatch is confirmed, repair the shared
-   model and test the exact bias math.
-4. Rerun same-commit smoke, profile, and seed-705 FIXED/REMATCH screen.
+1. Commit and remotely validate the weighted-BCE stationary initialization
+   repair and exact bias math.
+2. Rerun the full Slurm smoke at that exact commit.
+3. Rerun the strict paired profile at the same commit.
+4. If the one-epoch estimate remains below two GPU-hours, rerun seed-705
+   FIXED/REMATCH without reporting access or threshold edits.
 5. Only after a technical pass, design the affordable multi-epoch/three-seed
    protocol; raw RGB remains later and conditional.
 
@@ -135,9 +146,9 @@ duplicate/fragmentation error without unacceptable standard-mAP loss?
 
 ## Current Final Goal
 
-Diagnose and repair the silent birth/lifecycle scores now. No new Pro
-discussion is required. Do not lower thresholds, access reporting, run three
-seeds, or begin raw-RGB training first. After the shared model repair, repeat
-smoke/profile/seed-705; only a technical pass can advance to the paired
-multi-seed feature falsification. Raw-RGB remains conditional on the complete
-feature-level technical and scientific gates.
+Validate the evidence-backed birth/lifecycle repair now. No new Pro discussion
+is required. Do not lower thresholds, access reporting, run three seeds, or
+begin raw-RGB training first. Repeat smoke/profile/seed-705 at one exact
+commit; only a technical pass can advance to the paired multi-seed feature
+falsification. Raw-RGB remains conditional on the complete feature-level
+technical and scientific gates.

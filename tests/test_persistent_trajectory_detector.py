@@ -1,6 +1,7 @@
 from dataclasses import fields, replace
 import hashlib
 import json
+import math
 
 import numpy as np
 import pytest
@@ -247,6 +248,57 @@ def test_positive_weight_temperately_amplifies_rare_positive_binary_targets():
 
     assert balanced > unweighted
     assert torch.equal(negative_only, negative_reference)
+
+
+def test_detector_aligns_prior_biases_with_weighted_binary_losses():
+    head = PersistentEventSetHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=2,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        refractory_steps=0,
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        birth_prior_probability=0.01,
+        alive_prior_probability=0.08,
+        end_prior_probability=0.06,
+    )
+    weights = {
+        "birth": 9.0,
+        "alive": 3.0,
+        "end": 4.0,
+    }
+
+    detector = PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode="fixed_birth_slot",
+        birth_positive_weight=weights["birth"],
+        alive_positive_weight=weights["alive"],
+        end_positive_weight=weights["end"],
+        prior_bias_mode="weighted_bce_stationary",
+    )
+
+    assert detector.prior_bias_mode == "weighted_bce_stationary"
+    for channel in ("birth", "alive", "end"):
+        prior = getattr(head, f"{channel}_prior_probability")
+        expected_logit = math.log(prior / (1.0 - prior)) + math.log(
+            weights[channel]
+        )
+        assert getattr(head, f"{channel}_head").bias.item() == pytest.approx(
+            expected_logit
+        )
+
+
+def test_detector_rejects_unknown_prior_bias_mode():
+    with pytest.raises(ValueError, match="prior_bias_mode"):
+        _detector(prior_bias_mode="guess")
 
 
 def test_post_birth_rematch_cost_ignores_unsupervised_start_prediction():

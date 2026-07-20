@@ -99,6 +99,45 @@ def test_fit_prior_probabilities_are_encoded_exactly_in_output_biases():
     assert torch.sigmoid(head.end_head.bias).item() == pytest.approx(0.06)
 
 
+def test_prior_biases_can_match_weighted_bce_stationary_probabilities():
+    priors = dict(
+        birth_prior_probability=0.01,
+        alive_prior_probability=0.08,
+        end_prior_probability=0.06,
+    )
+    weights = dict(
+        birth_positive_weight=9.0,
+        alive_positive_weight=3.0,
+        end_positive_weight=4.0,
+    )
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        **priors,
+    )
+
+    head.initialize_prior_biases(**weights)
+
+    for channel in ("birth", "alive", "end"):
+        prior = priors[f"{channel}_prior_probability"]
+        weight = weights[f"{channel}_positive_weight"]
+        expected = weight * prior / (weight * prior + 1.0 - prior)
+        layer = getattr(head, f"{channel}_head")
+        assert torch.sigmoid(layer.bias).item() == pytest.approx(expected)
+
+
+def test_weighted_prior_initialization_requires_registered_priors():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+    )
+
+    with pytest.raises(ValueError, match="requires all binary priors"):
+        head.initialize_prior_biases(birth_positive_weight=2.0)
+
+
 def test_end_hazard_targets_cover_only_instance_aware_risk_slots():
     head = _head(query_mode="persistent", start_mode="pointer")
     reference = torch.zeros(1, 2)

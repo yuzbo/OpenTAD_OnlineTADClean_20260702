@@ -38,6 +38,7 @@ def _payload(arm, *, ratio=1.0, recall=0.5, identity_shift=0.0):
         "schema_version": "persistent_binding_screen_result.v1",
         "arm": arm,
         "binding_mode": binding_mode,
+        "prior_bias_mode": "weighted_bce_stationary",
         "seed": 705,
         "reporting_accessed": False,
         "effectiveness_claim_authorized": False,
@@ -45,6 +46,7 @@ def _payload(arm, *, ratio=1.0, recall=0.5, identity_shift=0.0):
         "gate_row": {
             "arm": arm,
             "binding_mode": binding_mode,
+            "prior_bias_mode": "weighted_bce_stationary",
             "seed": 705,
             "screen_epochs": 1,
             "metric_schema": "standard_ontad_map.v1",

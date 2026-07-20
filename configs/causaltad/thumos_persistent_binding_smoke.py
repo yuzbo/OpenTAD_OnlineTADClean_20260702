@@ -7,6 +7,7 @@ smoke_only = True
 # The integration smoke must exercise serialization before meaningful
 # training. Formal/screen configs retain their fit-derived low event priors.
 model = dict(
+    prior_bias_mode="raw_probability",
     head=dict(
         birth_prior_probability=0.5,
         alive_prior_probability=0.5,

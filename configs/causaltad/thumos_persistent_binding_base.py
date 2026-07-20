@@ -123,6 +123,7 @@ model = dict(
     birth_positive_weight=13.446021031128877,
     alive_positive_weight=3.393388193562092,
     end_positive_weight=3.8341561094639838,
+    prior_bias_mode="weighted_bce_stationary",
     fail_on_supervision_exhaustion=True,
     head=dict(
         type="PersistentEventSetHead",

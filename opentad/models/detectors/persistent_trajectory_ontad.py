@@ -153,6 +153,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         birth_positive_weight=1.0,
         alive_positive_weight=1.0,
         end_positive_weight=1.0,
+        prior_bias_mode="raw_probability",
         fail_on_supervision_exhaustion=False,
     ):
         super().__init__()
@@ -203,6 +204,21 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         ):
             raise ValueError(
                 "positive supervision weights must be positive and finite"
+            )
+        self.prior_bias_mode = str(prior_bias_mode)
+        if self.prior_bias_mode not in {
+            "raw_probability",
+            "weighted_bce_stationary",
+        }:
+            raise ValueError(
+                "prior_bias_mode must be raw_probability or "
+                "weighted_bce_stationary"
+            )
+        if self.prior_bias_mode == "weighted_bce_stationary":
+            self.head.initialize_prior_biases(
+                birth_positive_weight=self.positive_weights["birth_loss"],
+                alive_positive_weight=self.positive_weights["alive_loss"],
+                end_positive_weight=self.positive_weights["end_loss"],
             )
         self._runtime_states = {}
         self._supervision_states = {}
@@ -865,6 +881,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         }
         audit = {
             "binding_mode": self.trajectory_binding_mode,
+            "prior_bias_mode": self.prior_bias_mode,
             "birth_assignments": tuple(birth_trace),
             "canonical_lifecycle": tuple(canonical_trace),
             "loss_bindings": tuple(loss_binding_trace),

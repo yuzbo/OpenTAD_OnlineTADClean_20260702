@@ -192,11 +192,66 @@ class PersistentEventSetHead(nn.Module):
         return value
 
     @staticmethod
-    def _initialize_prior_bias(layer, probability):
+    def prior_bias_logit(probability, positive_weight=1.0):
         if probability is None:
+            return None
+        probability = float(probability)
+        positive_weight = float(positive_weight)
+        if not 0.0 < probability < 1.0:
+            raise ValueError("prior probability must be in (0, 1)")
+        if not math.isfinite(positive_weight) or positive_weight <= 0:
+            raise ValueError("prior positive weight must be positive and finite")
+        return (
+            math.log(probability / (1.0 - probability))
+            + math.log(positive_weight)
+        )
+
+    @classmethod
+    def _initialize_prior_bias(
+        cls,
+        layer,
+        probability,
+        positive_weight=1.0,
+    ):
+        logit = cls.prior_bias_logit(probability, positive_weight)
+        if logit is None:
             return
-        logit = math.log(probability / (1.0 - probability))
         nn.init.constant_(layer.bias, logit)
+
+    def initialize_prior_biases(
+        self,
+        *,
+        birth_positive_weight=1.0,
+        alive_positive_weight=1.0,
+        end_positive_weight=1.0,
+    ):
+        settings = (
+            (
+                self.birth_head,
+                self.birth_prior_probability,
+                birth_positive_weight,
+            ),
+            (
+                self.alive_head,
+                self.alive_prior_probability,
+                alive_positive_weight,
+            ),
+            (
+                self.end_head,
+                self.end_prior_probability,
+                end_positive_weight,
+            ),
+        )
+        if any(probability is None for _, probability, _ in settings):
+            raise ValueError(
+                "weighted prior initialization requires all binary priors"
+            )
+        logits = tuple(
+            self.prior_bias_logit(probability, positive_weight)
+            for _, probability, positive_weight in settings
+        )
+        for (layer, _, _), logit in zip(settings, logits):
+            nn.init.constant_(layer.bias, logit)
 
     def initial_state(self, device, dtype, stream_key):
         queries = self.query_embed.weight.to(device=device, dtype=dtype).unsqueeze(0)

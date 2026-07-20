@@ -56,6 +56,10 @@ def _validate_common_profile(profile, mode, binding_mode):
         f"profile does not use {binding_mode}",
     )
     _require(
+        profile.get("prior_bias_mode") == "weighted_bce_stationary",
+        "profile does not use weighted-BCE stationary prior biases",
+    )
+    _require(
         int(profile.get("seed", -1)) == EXPECTED_PROFILE_SEED,
         f"profile seed must be frozen at {EXPECTED_PROFILE_SEED}",
     )

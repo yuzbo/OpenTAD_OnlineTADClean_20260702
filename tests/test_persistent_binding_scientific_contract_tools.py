@@ -100,6 +100,7 @@ def test_split_census_passes_a_complete_nonoverlapping_synthetic_route(tmp_path)
                 "    birth_positive_weight=18 ** 0.5,",
                 "    alive_positive_weight=3.0,",
                 "    end_positive_weight=1.0,",
+                "    prior_bias_mode='weighted_bce_stationary',",
                 "    head=dict(",
                 "        max_births_per_step=1,",
                 "        max_start_offset=1.0,",
@@ -144,6 +145,12 @@ def test_split_census_passes_a_complete_nonoverlapping_synthetic_route(tmp_path)
     assert payload["fit_supervision_balance"]["birth"][
         "positive_rate"
     ] > 0
+    assert payload["prior_bias_mode"] == "weighted_bce_stationary"
+    assert payload["prior_bias_initialization"]["birth"][
+        "initialized_probability"
+    ] == pytest.approx(
+        (18 ** 0.5) / (18 ** 0.5 + 18)
+    )
     assert payload["totals"]["max_birth_start_offset_tokens"] <= 1.0
     assert payload["expected_split_counts"] == {
         "fit_core": 1,

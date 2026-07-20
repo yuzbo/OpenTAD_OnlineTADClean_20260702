@@ -287,6 +287,7 @@ def main():
         "mode": args.mode,
         "config": os.path.abspath(args.config),
         "binding_mode": str(cfg.model.trajectory_binding_mode),
+        "prior_bias_mode": str(cfg.model.prior_bias_mode),
         "split": args.split,
         "seed": args.seed,
         "warmup_steps": args.warmup_steps,

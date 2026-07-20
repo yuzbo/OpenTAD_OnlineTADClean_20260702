@@ -369,6 +369,9 @@ def main():
                     "binding_mode": str(
                         cfg.model.get("trajectory_binding_mode", "")
                     ),
+                    "prior_bias_mode": str(
+                        cfg.model.get("prior_bias_mode", "")
+                    ),
                     "screening_only": bool(
                         cfg.get("screening_only", False)
                     ),

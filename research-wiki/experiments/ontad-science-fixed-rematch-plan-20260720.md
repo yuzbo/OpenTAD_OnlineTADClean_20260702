@@ -102,10 +102,10 @@ paired-profile, and final-decision checkpoint.
 - [x] Run the registered seed-705 technical screen without accessing the
       reporting split (Slurm `1177596`; budget passed, both arms were silent,
       so the frozen technical gate correctly failed).
-- [ ] Run calibration-only lifecycle-score diagnosis on both failed
+- [x] Run calibration-only lifecycle-score diagnosis on both failed
       checkpoints and record birth/alive/end distributions and bias margins.
-- [ ] Repair shared model initialization only if the diagnosis confirms the
-      registered weighted-BCE mismatch; keep thresholds and splits frozen.
+- [x] Repair shared model initialization after the diagnosis confirmed the
+      registered weighted-BCE mismatch; thresholds and splits remain frozen.
 - [ ] Rerun same-commit smoke, strict profile, and seed-705 screen after the
       model repair.
 - [ ] BLOCKED: freeze validation-selected thresholds.

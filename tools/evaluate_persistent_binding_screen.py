@@ -79,9 +79,13 @@ def _normalize(payload, arm):
     }[arm]
     if payload.get("binding_mode") != expected_binding:
         raise ValueError(f"{arm} screen has the wrong binding mode")
+    if payload.get("prior_bias_mode") != "weighted_bce_stationary":
+        raise ValueError(f"{arm} screen has the wrong prior-bias mode")
     row = dict(payload["gate_row"])
     if row.get("arm") != arm or row.get("binding_mode") != expected_binding:
         raise ValueError(f"{arm} gate row has the wrong arm or binding mode")
+    if row.get("prior_bias_mode") != "weighted_bce_stationary":
+        raise ValueError(f"{arm} gate row has the wrong prior-bias mode")
     for field in (
         "reporting_accessed",
         "effectiveness_claim_authorized",

@@ -329,6 +329,9 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
         "source_screen_result": str(screen_result_path),
         "source_screen_result_sha256": _sha256(screen_result_path),
         "binding_mode": expected_mode,
+        "prior_bias_mode": str(
+            cfg.model.get("prior_bias_mode", "raw_probability")
+        ),
         "seed": int(seed),
         "input": "fixed_cached_causal_features",
         "dataset_videos": len(dataset_ids),

@@ -126,6 +126,10 @@ def _verify_direct_reports(paths):
         _require(report.get("passed") is True, f"direct smoke did not pass: {path}")
         _require(report.get("mode") == "train_step", f"unexpected direct smoke mode: {path}")
         _require(
+            report.get("prior_bias_mode") == "weighted_bce_stationary",
+            f"direct smoke has the wrong prior-bias mode: {path}",
+        )
+        _require(
             int(report.get("gt_supervision_exhaustions", -1)) == 0,
             f"direct smoke exhausted GT supervision capacity: {path}",
         )
@@ -138,6 +142,7 @@ def _verify_direct_reports(paths):
             {
                 "path": str(Path(path).resolve()),
                 "binding_mode": report.get("binding_mode"),
+                "prior_bias_mode": report.get("prior_bias_mode"),
                 "chunks_processed": int(report.get("chunks_processed", 0)),
                 "dropped_gt_birth_targets": int(report["dropped_gt_birth_targets"]),
                 "runtime_capacity_exhaustions": int(
@@ -191,6 +196,10 @@ def _verify(args):
     _require(cfg.inference.load_from_raw_predictions is False, "raw prediction loading is forbidden")
     _require(cfg.raw_video_finetuning is False, "raw-RGB training must remain disabled")
     _require(cfg.solver.amp is False, "persistent-binding feature smoke must use stable FP32")
+    _require(
+        cfg.model.prior_bias_mode == "raw_probability",
+        "serialization smoke must keep explicit raw-probability priors",
+    )
     _require(cfg.workflow.fail_on_nonfinite is True, "non-finite training must be a hard failure")
     allowed = _allowed_videos(args.allowed_videos)
     checkpoint = _verify_checkpoint(args.checkpoint, cfg, args.seed)

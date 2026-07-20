@@ -367,8 +367,17 @@ def build_census(config_path):
     fit_balance = _balance_summary(
         split_reports["fit_core"]["totals"]
     )
+    prior_bias_mode = str(
+        cfg.model.get("prior_bias_mode", "raw_probability")
+    )
+    prior_bias_initialization = {}
     balance_contract = cfg.get("supervision_balance_contract")
     if balance_contract is not None:
+        if prior_bias_mode != "weighted_bce_stationary":
+            failures.append(
+                "fit-balanced route requires weighted_bce_stationary "
+                "prior bias initialization"
+            )
         expected_balance_counts = {
             "tokens": int(balance_contract.tokens),
             "birth_positive_targets": int(
@@ -413,6 +422,17 @@ def build_census(config_path):
         }
         for channel, (prior, positive_weight) in channel_settings.items():
             measured = fit_balance[channel]
+            raw_logit = math.log(prior / (1.0 - prior))
+            initialized_logit = raw_logit + math.log(positive_weight)
+            prior_bias_initialization[channel] = {
+                "fit_positive_rate": prior,
+                "positive_weight": positive_weight,
+                "raw_probability_logit": raw_logit,
+                "initialized_logit": initialized_logit,
+                "initialized_probability": (
+                    1.0 / (1.0 + math.exp(-initialized_logit))
+                ),
+            }
             if not math.isclose(
                 prior,
                 measured["positive_rate"],
@@ -451,6 +471,8 @@ def build_census(config_path):
         "max_start_offset_tokens": max_start_offset_tokens,
         "max_start_offset_frames": max_start_offset_frames,
         "fit_supervision_balance": fit_balance,
+        "prior_bias_mode": prior_bias_mode,
+        "prior_bias_initialization": prior_bias_initialization,
         "split_overlap": overlap,
         "expected_split_counts": expected_counts,
         "limits": limits,

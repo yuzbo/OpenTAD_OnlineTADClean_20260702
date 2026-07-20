@@ -191,6 +191,7 @@ def main():
         "mode": "train_step" if args.train_step else "inference",
         "config": os.path.abspath(args.config),
         "binding_mode": str(cfg.model.trajectory_binding_mode),
+        "prior_bias_mode": str(cfg.model.prior_bias_mode),
         "split": args.split,
         "seed": args.seed,
         "max_chunks": args.max_chunks,

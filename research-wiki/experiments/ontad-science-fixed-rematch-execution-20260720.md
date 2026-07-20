@@ -559,3 +559,70 @@ calibration-only 全分数分布诊断验证；不得通过降低冻结阈值来
 birth/alive/end 分数分布诊断；若证实初始化失配，则在两臂共享模型中实现
 加权 BCE 一致的先验 bias 初始化，重新走 smoke → profile → seed-705
 筛选。多种子主实验与 raw RGB 继续等待修复后的技术门禁。
+
+## Calibration-only 分数诊断 — Slurm 1177634
+
+只读分数诊断已在失败筛选的两个原始 checkpoint 上完成，并确认 birth
+是共同的生命周期瓶颈。
+
+- 分析提交：
+  `5d3daecce03d6819638f0619b8fe51798f7c69de`；
+- checkpoint 训练提交：
+  `534f85b38a61a5e7f02bef14d4968239059525b6`；
+- 运行目录：
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/score_diagnosis_20260721_004912`；
+- RTX 4090 `g0017`，Slurm `COMPLETED 0:0`，耗时 `00:05:50`；
+- 22 项远端 Torch 前置测试全部通过；
+- 两臂都只扫描同一批 40 个冻结 calibration 视频、28,730 个 token，
+  reporting 未访问，阈值未修改，raw prediction/EMA/AMP 均未启用。
+
+全 slot 分数结果：
+
+| Arm / channel | Mean | P50 | P95 | P99 | Max | `>=0.5` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| FIXED birth | 0.141209 | 0.201967 | 0.246720 | 0.281521 | 0.433135 | 0 |
+| FIXED alive | 0.296946 | 0.411529 | 0.459273 | 0.478746 | 0.508811 | 23 |
+| FIXED end | 0.300550 | 0.278174 | 0.411108 | 0.443589 | 0.661820 | 271 |
+| REMATCH birth | 0.100255 | 0.123584 | 0.218989 | 0.276584 | 0.346657 | 0 |
+| REMATCH alive | 0.232148 | 0.314106 | 0.387726 | 0.421811 | 0.567618 | 83 |
+| REMATCH end | 0.175814 | 0.178640 | 0.237733 | 0.300635 | 0.414860 | 0 |
+
+两臂 birth 均没有一次达到冻结的 0.5 门槛，因此没有 birth proposal、
+admission 或最终 emission。FIXED 的 alive/end 已能过线，REMATCH 的 alive
+也能过线；这排除了“所有头共同数值失效”，并把首要故障定位到 birth 门。
+
+fit-only birth 原始先验 logit 为 `-5.197366`，但在
+`13.446021×` positive weight 下，加权 BCE 对常数预测的平衡 logit 应为
+`-2.598683`，对应概率 `0.069223`。一轮训练后：
+
+- FIXED birth bias 为 `-5.125290`，距加权平衡点 `-2.526607`；
+- REMATCH birth bias 为 `-5.124843`，距加权平衡点 `-2.526159`。
+
+alive 和 end 也存在同类但较小的偏差。因而“损失按加权目标优化、输出头却按
+未加权概率起步”的失配假设被两臂共同证实。
+
+诊断 SHA-256：
+
+- FIXED：
+  `794145067f8a618342fc3c70cbfebebdb0bf6b93838549d4519ac2364b9b30db`；
+- REMATCH：
+  `ce65cfc810537f095b10f797c5d8b70b66e9fc8dadec0d6d7b2a607b34ca19f0`；
+- hash 清单：
+  `ffa8f5b2111fcf3f443146d77ff9fbd2beeb8a6069414a74451b9dbff3feebbb`。
+
+## 共享模型单变量修复
+
+根据上述证据，实现一个显式的 `prior_bias_mode`：
+
+- 正式 FIXED/REMATCH 特征路线使用 `weighted_bce_stationary`；
+- 三个二元头的初始 logit 统一为
+  `logit(fit_positive_rate) + log(positive_weight)`；
+- 经验先验、平方根正样本权重、0.5 阈值、优化器、scheduler、数据划分、
+  lifecycle 和 FIXED/REMATCH 唯一比较轴全部不变；
+- serialization smoke 显式保留 `raw_probability` 和 0.5 priors，避免把
+  技术序列化用的高先验与正式模型初始化混为一谈；
+- census、profile、training audit 和 screen gate 都记录或检查该模式。
+
+该修改仍只是有根因证据支持的可学习性修复，不构成效果结论。下一步必须在
+新精确提交上依次重跑 Slurm smoke、strict profile 和 seed-705 双臂筛选；
+只有新筛选同时避免静默与爆炸，才可讨论多种子特征级主实验。

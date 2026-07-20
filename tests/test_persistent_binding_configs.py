@@ -88,6 +88,7 @@ def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     assert cfg.model.birth_positive_weight > 1.0
     assert cfg.model.alive_positive_weight > 1.0
     assert cfg.model.end_positive_weight > 1.0
+    assert cfg.model.prior_bias_mode == "weighted_bce_stationary"
     assert (
         head.birth_prior_probability
         == cfg.supervision_balance_contract.birth_positive_rate
@@ -101,6 +102,15 @@ def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
         == cfg.supervision_balance_contract.end_positive_rate
     )
     assert cfg.census_contract.max_gt_entry_free_deficits == 0
+
+
+def test_smoke_keeps_explicit_raw_probability_biases_for_serialization():
+    cfg = _load("thumos_persistent_binding_smoke.py")
+
+    assert cfg.model.prior_bias_mode == "raw_probability"
+    assert cfg.model.head.birth_prior_probability == 0.5
+    assert cfg.model.head.alive_prior_probability == 0.5
+    assert cfg.model.head.end_prior_probability == 0.5
 
 
 def test_route_sources_do_not_reference_historical_route_labels():
