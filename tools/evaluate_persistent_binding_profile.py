@@ -189,8 +189,8 @@ def evaluate_profiles(
         )
         summary = profile.get("emission_summary", {})
         _require(
-            int(summary.get("num_emissions", 0)) > 0,
-            "inference profile produced no final intervals",
+            int(summary.get("num_emissions", -1)) >= 0,
+            "inference profile has an invalid emission count",
         )
         no_future = summary.get("no_future", {})
         _require(

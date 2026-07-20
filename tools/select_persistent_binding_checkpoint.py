@@ -87,6 +87,9 @@ def select_checkpoint(candidate_paths, output):
         "selected_epoch": selected["epoch"],
         "selected_checkpoint_path": selected["checkpoint_path"],
         "selected_checkpoint_sha256": selected["checkpoint_sha256"],
+        "selected_emission_ledger_sha256": selected[
+            "emission_ledger_sha256"
+        ],
         "candidate_count": len(candidates),
         "candidate_summary_sha256": [
             _sha256(path) for path in candidate_paths

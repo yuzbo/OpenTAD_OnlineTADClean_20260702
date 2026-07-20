@@ -27,6 +27,30 @@ def test_fixed_and_rematch_are_a_single_variable_comparison():
     assert _normalized(fixed) == _normalized(rematch)
 
 
+def test_seed705_screen_is_one_epoch_feature_only_and_single_variable():
+    fixed = _load("thumos_persistent_binding_fixed_screen.py")
+    rematch = _load("thumos_persistent_binding_rematch_screen.py")
+
+    assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+    assert rematch.model.trajectory_binding_mode == "prefix_rematch_active_pool"
+    assert _normalized(fixed) == _normalized(rematch)
+    assert fixed.route_stage == "persistent_binding_feature_seed705_screen"
+    assert fixed.formal_training_ready is False
+    assert fixed.screening_only is True
+    assert fixed.screening_training_ready is True
+    assert fixed.screening_contract.seed == 705
+    assert fixed.screening_contract.epochs == 1
+    assert fixed.screening_contract.reporting_videos_accessed == 0
+    assert fixed.screening_contract.effectiveness_claim_authorized is False
+    assert fixed.screening_contract.raw_rgb_authorized is False
+    assert fixed.workflow.end_epoch == 1
+    assert fixed.workflow.fit_only is True
+    assert fixed.workflow.val_eval_interval == -1
+    assert fixed.scheduler.max_epoch == 12
+    assert fixed.scheduler.warmup_epoch == 1
+    assert fixed.raw_video_finetuning is False
+
+
 def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     cfg = _load("thumos_persistent_binding_fixed.py")
 
@@ -60,6 +84,22 @@ def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     assert head.refractory_steps == 0
     assert head.num_slots == 4
     assert "max_endpoint_offset" not in head
+    assert head.max_start_offset == 1.0
+    assert cfg.model.birth_positive_weight > 1.0
+    assert cfg.model.alive_positive_weight > 1.0
+    assert cfg.model.end_positive_weight > 1.0
+    assert (
+        head.birth_prior_probability
+        == cfg.supervision_balance_contract.birth_positive_rate
+    )
+    assert (
+        head.alive_prior_probability
+        == cfg.supervision_balance_contract.alive_positive_rate
+    )
+    assert (
+        head.end_prior_probability
+        == cfg.supervision_balance_contract.end_positive_rate
+    )
     assert cfg.census_contract.max_gt_entry_free_deficits == 0
 
 

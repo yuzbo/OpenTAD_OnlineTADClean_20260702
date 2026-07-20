@@ -1,5 +1,6 @@
 from dataclasses import replace
 
+import pytest
 import torch
 
 from opentad.models.dense_heads.persistent_event_set_head import (
@@ -60,6 +61,42 @@ def test_scalar_start_offset_is_decoded_in_feature_steps_not_raw_frames():
     outputs = {"start_offset": torch.tensor([[2.0, 0.0]])}
 
     assert head._decode_start(outputs, slot=0, current_frame=31, feature_stride=8) == 15
+
+
+def test_scalar_route_uses_bounded_offset_and_skips_pointer_branch():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        max_start_offset=1.0,
+    )
+    outputs, _ = head.step(
+        torch.tensor([[0.1, 0.2, 0.3, 0.4]]),
+        _state(head),
+        source_frame=7,
+    )
+
+    assert outputs["start_offset"].min().item() >= 0.0
+    assert outputs["start_offset"].max().item() <= 1.0
+    assert "start_pointer_logits" not in outputs
+    assert head.before_memory is None
+
+
+def test_fit_prior_probabilities_are_encoded_exactly_in_output_biases():
+    priors = dict(
+        birth_prior_probability=0.01,
+        alive_prior_probability=0.08,
+        end_prior_probability=0.06,
+    )
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        **priors,
+    )
+
+    assert torch.sigmoid(head.birth_head.bias).item() == pytest.approx(0.01)
+    assert torch.sigmoid(head.alive_head.bias).item() == pytest.approx(0.08)
+    assert torch.sigmoid(head.end_head.bias).item() == pytest.approx(0.06)
 
 
 def test_end_hazard_targets_cover_only_instance_aware_risk_slots():
@@ -420,7 +457,6 @@ def test_all_binary_route_parameters_receive_gradient():
         + outputs["class_logits"].sum()
         + outputs["end_hazard_logits"].sum()
         + outputs["start_offset"].sum()
-        + outputs["start_pointer_logits"].sum()
     )
     loss.backward()
 

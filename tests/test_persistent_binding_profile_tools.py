@@ -52,7 +52,7 @@ def _train_profile(binding_mode, step_seconds=0.05, runtime_exhaustions=0):
     }
 
 
-def _inference_profile(binding_mode, step_seconds=0.02):
+def _inference_profile(binding_mode, step_seconds=0.02, num_emissions=10):
     return {
         "passed": True,
         "mode": "inference",
@@ -85,7 +85,7 @@ def _inference_profile(binding_mode, step_seconds=0.02):
         "dataset_video_ids_sha256": "d" * 64,
         "emission_ledger_sha256": "a" * 64,
         "emission_summary": {
-            "num_emissions": 10,
+            "num_emissions": num_emissions,
             "no_future": {
                 "future_end_violations": 0,
                 "future_source_violations": 0,
@@ -173,6 +173,23 @@ def test_profile_gate_rejects_warn_only_determinism():
         assert "strict deterministic" in str(error)
     else:
         raise AssertionError("warn-only deterministic mode must reject the profile")
+
+
+def test_profile_gate_allows_identical_empty_untrained_ledgers():
+    result = evaluate_profiles(
+        _train_profile("fixed_birth_slot"),
+        _train_profile("prefix_rematch_active_pool"),
+        _inference_profile("fixed_birth_slot", num_emissions=0),
+        _inference_profile(
+            "prefix_rematch_active_pool",
+            num_emissions=0,
+        ),
+        reporting_chunks=2719,
+        epochs=1,
+    )
+
+    assert result["stability_passed"] is True
+    assert result["binding_inference_equivalence_passed"] is True
 
 
 def test_profiler_and_n16r4_launcher_freeze_scope_and_measurement_contracts():

@@ -4,6 +4,16 @@ route_stage = "persistent_binding_feature_slurm_smoke"
 formal_training_ready = False
 smoke_only = True
 
+# The integration smoke must exercise serialization before meaningful
+# training. Formal/screen configs retain their fit-derived low event priors.
+model = dict(
+    head=dict(
+        birth_prior_probability=0.5,
+        alive_prior_probability=0.5,
+        end_prior_probability=0.5,
+    )
+)
+
 scheduler = dict(
     type="LinearWarmupCosineAnnealingLR",
     warmup_epoch=0,

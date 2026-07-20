@@ -43,6 +43,14 @@ def parse_args():
         action="store_true",
         help="allow only an explicitly smoke_only config while formal training is locked",
     )
+    parser.add_argument(
+        "--allow-unready-screen",
+        action="store_true",
+        help=(
+            "allow only an explicitly registered screening_only config while "
+            "formal training remains locked"
+        ),
+    )
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     args = parser.parse_args()
     return args
@@ -68,14 +76,59 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
     formal_training_ready = bool(cfg.get("formal_training_ready", True))
     smoke_only = bool(cfg.get("smoke_only", False))
-    if not formal_training_ready and not (
-        args.allow_unready_smoke and smoke_only
+    screening_only = bool(cfg.get("screening_only", False))
+    screening_training_ready = bool(
+        cfg.get("screening_training_ready", False)
+    )
+    if args.allow_unready_smoke and args.allow_unready_screen:
+        raise RuntimeError(
+            "smoke and screen readiness overrides are mutually exclusive"
+        )
+    if args.allow_unready_smoke and not smoke_only:
+        raise RuntimeError(
+            "--allow-unready-smoke requires an explicit smoke_only config"
+        )
+    if args.allow_unready_screen and not (
+        screening_only and screening_training_ready
     ):
         raise RuntimeError(
-            "formal_training_ready is false; only an explicit smoke_only "
-            "config may run with --allow-unready-smoke"
+            "--allow-unready-screen requires an explicitly registered "
+            "screening_only config"
+        )
+    smoke_authorized = args.allow_unready_smoke and smoke_only
+    screen_authorized = (
+        args.allow_unready_screen
+        and screening_only
+        and screening_training_ready
+    )
+    if not formal_training_ready and not (
+        smoke_authorized or screen_authorized
+    ):
+        raise RuntimeError(
+            "formal_training_ready is false; only an explicit smoke_only or "
+            "registered screening_only config may use its matching override"
         )
     fit_only = bool(cfg.workflow.get("fit_only", False))
+    if screen_authorized:
+        contract = cfg.get("screening_contract", {})
+        expected_seed = int(contract.get("seed", -1))
+        expected_epochs = int(contract.get("epochs", -1))
+        if args.seed != expected_seed:
+            raise RuntimeError(
+                f"screen seed must remain frozen at {expected_seed}"
+            )
+        if int(cfg.workflow.get("end_epoch", -1)) != expected_epochs:
+            raise RuntimeError(
+                "screen workflow does not match its registered epoch count"
+            )
+        if expected_epochs != 1:
+            raise RuntimeError("the registered technical screen is one epoch")
+        if not fit_only:
+            raise RuntimeError("screen training must remain fit-only")
+        if bool(cfg.get("raw_video_finetuning", False)):
+            raise RuntimeError("the registered screen is feature-only")
+        if args.resume is not None:
+            raise RuntimeError("the registered screen must start from seed initialization")
     persistent_route = cfg.get("route_stage", "").startswith(
         "persistent_binding"
     )
@@ -312,6 +365,13 @@ def main():
                     "schema_version": "persistent_binding_training_audit.v1",
                     "seed": int(args.seed),
                     "fit_only": fit_only,
+                    "route_stage": str(cfg.get("route_stage", "")),
+                    "binding_mode": str(
+                        cfg.model.get("trajectory_binding_mode", "")
+                    ),
+                    "screening_only": bool(
+                        cfg.get("screening_only", False)
+                    ),
                     "epochs": training_audit_rows,
                     "totals": totals,
                 },

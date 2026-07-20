@@ -96,7 +96,27 @@ def test_split_census_passes_a_complete_nonoverlapping_synthetic_route(tmp_path)
                 "feature_stride = 8",
                 "num_slots = 2",
                 "memory_size = 4",
-                "model = dict(head=dict(max_births_per_step=1))",
+                "model = dict(",
+                "    birth_positive_weight=18 ** 0.5,",
+                "    alive_positive_weight=3.0,",
+                "    end_positive_weight=1.0,",
+                "    head=dict(",
+                "        max_births_per_step=1,",
+                "        max_start_offset=1.0,",
+                "        birth_prior_probability=1 / 19,",
+                "        alive_prior_probability=2 / 20,",
+                "        end_prior_probability=1 / 2,",
+                "    ),",
+                ")",
+                "supervision_balance_contract = dict(",
+                "    tokens=10,",
+                "    birth_positive_targets=1,",
+                "    birth_supervised_targets=19,",
+                "    alive_positive_targets=2,",
+                "    alive_supervised_targets=20,",
+                "    end_positive_targets=1,",
+                "    end_supervised_targets=2,",
+                ")",
                 "census_contract = dict(",
                 "    expected_split_counts=dict(fit_core=1, calibration=1, reporting_locked=1),",
                 "    max_gt_entry_free_deficits=0,",
@@ -118,6 +138,18 @@ def test_split_census_passes_a_complete_nonoverlapping_synthetic_route(tmp_path)
     assert payload["totals"]["instances"] == 3
     assert payload["totals"]["max_births_per_step"] == 1
     assert payload["totals"]["uncovered_endpoint_instances"] == 0
+    assert payload["splits"]["fit_core"]["totals"][
+        "birth_positive_targets"
+    ] == 1
+    assert payload["fit_supervision_balance"]["birth"][
+        "positive_rate"
+    ] > 0
+    assert payload["totals"]["max_birth_start_offset_tokens"] <= 1.0
+    assert payload["expected_split_counts"] == {
+        "fit_core": 1,
+        "calibration": 1,
+        "reporting_locked": 1,
+    }
 
 
 def test_calibration_selection_is_deterministic_and_one_shot(tmp_path):
@@ -136,6 +168,7 @@ def test_calibration_selection_is_deterministic_and_one_shot(tmp_path):
         "calibration_protocol_sha256": "e" * 64,
         "metric_name": "average_mOnlineAP",
         "metric_unit": "fraction",
+        "emission_ledger_sha256": "f" * 64,
         "reporting_accessed": False,
     }
     candidates = []

@@ -70,9 +70,13 @@ class PersistentEventSetHead(nn.Module):
         end_threshold=0.5,
         refractory_steps=2,
         max_endpoint_offset=8.0,
+        max_start_offset=None,
         lifecycle_mode="legacy",
         candidate_confirmation_steps=1,
         max_births_per_step=2,
+        birth_prior_probability=None,
+        alive_prior_probability=None,
+        end_prior_probability=None,
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -88,9 +92,26 @@ class PersistentEventSetHead(nn.Module):
         self.end_threshold = float(end_threshold)
         self.refractory_steps = int(refractory_steps)
         self.max_endpoint_offset = float(max_endpoint_offset)
+        self.max_start_offset = float(
+            self.memory_size
+            if max_start_offset is None
+            else max_start_offset
+        )
         self.lifecycle_mode = str(lifecycle_mode)
         self.candidate_confirmation_steps = int(candidate_confirmation_steps)
         self.max_births_per_step = int(max_births_per_step)
+        self.birth_prior_probability = self._validated_prior(
+            birth_prior_probability,
+            "birth_prior_probability",
+        )
+        self.alive_prior_probability = self._validated_prior(
+            alive_prior_probability,
+            "alive_prior_probability",
+        )
+        self.end_prior_probability = self._validated_prior(
+            end_prior_probability,
+            "end_prior_probability",
+        )
         if self.query_mode not in {"fresh", "persistent"}:
             raise ValueError("query_mode must be 'fresh' or 'persistent'")
         if self.start_mode not in {"scalar", "pointer"}:
@@ -103,6 +124,8 @@ class PersistentEventSetHead(nn.Module):
             raise ValueError("hidden_dim must be divisible by num_heads")
         if self.refractory_steps < 0:
             raise ValueError("refractory_steps must be non-negative")
+        if not math.isfinite(self.max_start_offset) or self.max_start_offset <= 0:
+            raise ValueError("max_start_offset must be positive and finite")
         if self.lifecycle_mode not in {"legacy", "candidate_recycle"}:
             raise ValueError("lifecycle_mode must be 'legacy' or 'candidate_recycle'")
         if self.lifecycle_mode == "candidate_recycle" and self.refractory_steps != 0:
@@ -132,7 +155,10 @@ class PersistentEventSetHead(nn.Module):
         )
         self.update_cell = nn.GRUCell(self.hidden_dim, self.hidden_dim)
         self.query_norm = nn.LayerNorm(self.hidden_dim)
-        self.before_memory = nn.Parameter(torch.empty(self.hidden_dim))
+        if self.start_mode == "pointer":
+            self.before_memory = nn.Parameter(torch.empty(self.hidden_dim))
+        else:
+            self.register_parameter("before_memory", None)
 
         self.birth_head = nn.Linear(self.hidden_dim, 1)
         self.alive_head = nn.Linear(self.hidden_dim, 1)
@@ -141,7 +167,36 @@ class PersistentEventSetHead(nn.Module):
         if self.endpoint_mode == "hazard":
             self.endpoint_offset_head = nn.Linear(self.hidden_dim, 1)
         self.start_offset_head = nn.Linear(self.hidden_dim, 1)
-        nn.init.normal_(self.before_memory, std=0.02)
+        if self.before_memory is not None:
+            nn.init.normal_(self.before_memory, std=0.02)
+        self._initialize_prior_bias(
+            self.birth_head,
+            self.birth_prior_probability,
+        )
+        self._initialize_prior_bias(
+            self.alive_head,
+            self.alive_prior_probability,
+        )
+        self._initialize_prior_bias(
+            self.end_head,
+            self.end_prior_probability,
+        )
+
+    @staticmethod
+    def _validated_prior(value, name):
+        if value is None:
+            return None
+        value = float(value)
+        if not math.isfinite(value) or not 0.0 < value < 1.0:
+            raise ValueError(f"{name} must be in (0, 1)")
+        return value
+
+    @staticmethod
+    def _initialize_prior_bias(layer, probability):
+        if probability is None:
+            return
+        logit = math.log(probability / (1.0 - probability))
+        nn.init.constant_(layer.bias, logit)
 
     def initial_state(self, device, dtype, stream_key):
         queries = self.query_embed.weight.to(device=device, dtype=dtype).unsqueeze(0)
@@ -188,17 +243,31 @@ class PersistentEventSetHead(nn.Module):
         ).reshape_as(base)
         queries = self.query_norm(queries)
 
-        pointer_scores = torch.einsum("bkd,bmd->bkm", queries, memory) / math.sqrt(self.hidden_dim)
-        sentinel = torch.einsum("bkd,d->bk", queries, self.before_memory.to(queries)).unsqueeze(-1)
         outputs = {
             "birth_logits": self.birth_head(queries).squeeze(-1),
             "alive_logits": self.alive_head(queries).squeeze(-1),
             "class_logits": self.class_head(queries),
             "end_hazard_logits": self.end_head(queries).squeeze(-1),
-            "start_offset": self.start_offset_head(queries).sigmoid().squeeze(-1) * self.memory_size,
-            "start_pointer_logits": torch.cat([sentinel, pointer_scores], dim=-1),
+            "start_offset": (
+                self.start_offset_head(queries).sigmoid().squeeze(-1)
+                * self.max_start_offset
+            ),
             "memory_frames": memory_frames,
         }
+        if self.start_mode == "pointer":
+            pointer_scores = (
+                torch.einsum("bkd,bmd->bkm", queries, memory)
+                / math.sqrt(self.hidden_dim)
+            )
+            sentinel = torch.einsum(
+                "bkd,d->bk",
+                queries,
+                self.before_memory.to(queries),
+            ).unsqueeze(-1)
+            outputs["start_pointer_logits"] = torch.cat(
+                [sentinel, pointer_scores],
+                dim=-1,
+            )
         if self.endpoint_mode == "hazard":
             outputs["endpoint_offset"] = (
                 self.endpoint_offset_head(queries).sigmoid().squeeze(-1)

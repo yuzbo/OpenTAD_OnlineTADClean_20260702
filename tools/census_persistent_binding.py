@@ -4,6 +4,7 @@ import argparse
 from collections import Counter
 import hashlib
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -61,7 +62,7 @@ def _census_video(
     cached,
     *,
     num_slots,
-    memory_frames,
+    max_start_offset_frames,
     feature_stride,
 ):
     source_frames = tuple(int(value) for value in cached.get("source_frames", ()))
@@ -95,6 +96,7 @@ def _census_video(
     result["video_frames"] = int(video["frame"])
     max_births = 0
     max_visible = 0
+    max_birth_start_offset_tokens = 0.0
 
     for step_index, step in enumerate(schedule):
         births = {int(item.instance_id) for item in step.births}
@@ -108,6 +110,12 @@ def _census_video(
         entry_deficit = max(0, len(births) - free_at_entry)
         result["birth_events"] += len(births)
         result["end_events"] += len(ends)
+        result["birth_positive_targets"] += len(births)
+        result["birth_supervised_targets"] += free_at_entry
+        result["alive_positive_targets"] += len(visible)
+        result["alive_supervised_targets"] += num_slots
+        result["end_positive_targets"] += len(ends)
+        result["end_supervised_targets"] += len(visible)
         result["gt_entry_free_deficits"] += entry_deficit
         result["same_step_short_instances"] += len(same_instance_short)
         if old_ends and new_births:
@@ -127,9 +135,17 @@ def _census_video(
             for item in step.births
         }
         for item in birth_items.values():
-            if (
+            offset_frames = (
                 float(step.current_frame) - float(item.start_frame)
-                > float(memory_frames)
+            )
+            offset_tokens = offset_frames / float(feature_stride)
+            max_birth_start_offset_tokens = max(
+                max_birth_start_offset_tokens,
+                offset_tokens,
+            )
+            if (
+                offset_frames
+                > float(max_start_offset_frames) + 1e-9
             ):
                 result["clipped_start_supervision_targets"] += 1
 
@@ -144,7 +160,32 @@ def _census_video(
     result["uncovered_endpoint_instances"] = len(segments) - len(seen_ends)
     result["max_births_per_step"] = max_births
     result["max_visible_instances"] = max_visible
+    result["max_birth_start_offset_tokens"] = (
+        max_birth_start_offset_tokens
+    )
     return dict(result)
+
+
+def _balance_summary(totals):
+    summary = {}
+    for channel in ("birth", "alive", "end"):
+        positive = int(totals[f"{channel}_positive_targets"])
+        supervised = int(totals[f"{channel}_supervised_targets"])
+        if positive <= 0 or supervised <= positive:
+            raise ValueError(
+                f"{channel} supervision balance requires positives and negatives"
+            )
+        negative = supervised - positive
+        summary[channel] = {
+            "positive_targets": positive,
+            "negative_targets": negative,
+            "supervised_targets": supervised,
+            "positive_rate": positive / supervised,
+            "sqrt_negative_to_positive_ratio": math.sqrt(
+                negative / positive
+            ),
+        }
+    return summary
 
 
 def build_census(config_path):
@@ -202,6 +243,12 @@ def build_census(config_path):
     global_max_births = 0
     global_max_visible = 0
     memory_frames = int(cfg.memory_size) * int(cfg.feature_stride)
+    max_start_offset_tokens = float(
+        cfg.model.head.get("max_start_offset", cfg.memory_size)
+    )
+    max_start_offset_frames = (
+        max_start_offset_tokens * int(cfg.feature_stride)
+    )
     for name, (manifest_path, expected_subset) in split_specs.items():
         totals = Counter()
         per_video = {}
@@ -220,7 +267,7 @@ def build_census(config_path):
                 video,
                 cache_videos[video_id],
                 num_slots=int(cfg.num_slots),
-                memory_frames=memory_frames,
+                max_start_offset_frames=max_start_offset_frames,
                 feature_stride=int(cfg.feature_stride),
             )
             per_video[video_id] = row
@@ -233,6 +280,7 @@ def build_census(config_path):
                         "max_visible_instances",
                         "last_source_frame",
                         "video_frames",
+                        "max_birth_start_offset_tokens",
                     }
                 }
             )
@@ -243,6 +291,10 @@ def build_census(config_path):
             totals["max_visible_instances"] = max(
                 totals["max_visible_instances"],
                 row["max_visible_instances"],
+            )
+            totals["max_birth_start_offset_tokens"] = max(
+                totals["max_birth_start_offset_tokens"],
+                row["max_birth_start_offset_tokens"],
             )
         split_reports[name] = {
             "manifest_path": str(manifest_path),
@@ -268,11 +320,16 @@ def build_census(config_path):
                 if key not in {
                     "max_births_per_step",
                     "max_visible_instances",
+                    "max_birth_start_offset_tokens",
                 }
             }
         )
     global_totals["max_births_per_step"] = global_max_births
     global_totals["max_visible_instances"] = global_max_visible
+    global_totals["max_birth_start_offset_tokens"] = max(
+        report["totals"]["max_birth_start_offset_tokens"]
+        for report in split_reports.values()
+    )
 
     limits = {
         "max_births_per_step": int(cfg.model.head.max_births_per_step),
@@ -297,6 +354,86 @@ def build_census(config_path):
         actual = int(global_totals[field])
         if actual > limit:
             failures.append(f"{field}={actual} exceeds frozen limit {limit}")
+    if (
+        float(global_totals["max_birth_start_offset_tokens"])
+        > max_start_offset_tokens + 1e-9
+    ):
+        failures.append(
+            "max_birth_start_offset_tokens="
+            f"{global_totals['max_birth_start_offset_tokens']} exceeds "
+            f"head limit {max_start_offset_tokens}"
+        )
+
+    fit_balance = _balance_summary(
+        split_reports["fit_core"]["totals"]
+    )
+    balance_contract = cfg.get("supervision_balance_contract")
+    if balance_contract is not None:
+        expected_balance_counts = {
+            "tokens": int(balance_contract.tokens),
+            "birth_positive_targets": int(
+                balance_contract.birth_positive_targets
+            ),
+            "birth_supervised_targets": int(
+                balance_contract.birth_supervised_targets
+            ),
+            "alive_positive_targets": int(
+                balance_contract.alive_positive_targets
+            ),
+            "alive_supervised_targets": int(
+                balance_contract.alive_supervised_targets
+            ),
+            "end_positive_targets": int(
+                balance_contract.end_positive_targets
+            ),
+            "end_supervised_targets": int(
+                balance_contract.end_supervised_targets
+            ),
+        }
+        fit_totals = split_reports["fit_core"]["totals"]
+        for field, expected in expected_balance_counts.items():
+            if int(fit_totals[field]) != expected:
+                failures.append(
+                    f"fit_core {field}={fit_totals[field]} "
+                    f"differs from registered {expected}"
+                )
+        channel_settings = {
+            "birth": (
+                float(cfg.model.head.birth_prior_probability),
+                float(cfg.model.birth_positive_weight),
+            ),
+            "alive": (
+                float(cfg.model.head.alive_prior_probability),
+                float(cfg.model.alive_positive_weight),
+            ),
+            "end": (
+                float(cfg.model.head.end_prior_probability),
+                float(cfg.model.end_positive_weight),
+            ),
+        }
+        for channel, (prior, positive_weight) in channel_settings.items():
+            measured = fit_balance[channel]
+            if not math.isclose(
+                prior,
+                measured["positive_rate"],
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            ):
+                failures.append(
+                    f"{channel} prior {prior} differs from fit-only "
+                    f"rate {measured['positive_rate']}"
+                )
+            if not math.isclose(
+                positive_weight,
+                measured["sqrt_negative_to_positive_ratio"],
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            ):
+                failures.append(
+                    f"{channel} positive weight {positive_weight} differs "
+                    "from the registered fit-only square-root balance "
+                    f"{measured['sqrt_negative_to_positive_ratio']}"
+                )
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -311,6 +448,9 @@ def build_census(config_path):
         "num_slots": int(cfg.num_slots),
         "memory_size_tokens": int(cfg.memory_size),
         "memory_horizon_frames": memory_frames,
+        "max_start_offset_tokens": max_start_offset_tokens,
+        "max_start_offset_frames": max_start_offset_frames,
+        "fit_supervision_balance": fit_balance,
         "split_overlap": overlap,
         "expected_split_counts": expected_counts,
         "limits": limits,

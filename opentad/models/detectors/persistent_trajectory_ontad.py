@@ -54,11 +54,16 @@ def _zero(reference):
     return reference.float().sum() * 0.0
 
 
-def _masked_bce(logits, target, mask):
+def _masked_bce(logits, target, mask, positive_weight=1.0):
     mask = mask.to(device=logits.device, dtype=torch.bool)
     if not mask.any():
         return _zero(logits)
-    return F.binary_cross_entropy_with_logits(logits[mask], target[mask])
+    pos_weight = logits.new_tensor(float(positive_weight))
+    return F.binary_cross_entropy_with_logits(
+        logits[mask],
+        target[mask],
+        pos_weight=pos_weight,
+    )
 
 
 def _stream_key(meta):
@@ -145,6 +150,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         class_loss_weight=1.0,
         start_loss_weight=1.0,
         end_loss_weight=1.0,
+        birth_positive_weight=1.0,
+        alive_positive_weight=1.0,
+        end_positive_weight=1.0,
         fail_on_supervision_exhaustion=False,
     ):
         super().__init__()
@@ -184,6 +192,18 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "start_loss": float(start_loss_weight),
             "end_loss": float(end_loss_weight),
         }
+        self.positive_weights = {
+            "birth_loss": float(birth_positive_weight),
+            "alive_loss": float(alive_positive_weight),
+            "end_loss": float(end_positive_weight),
+        }
+        if any(
+            not math.isfinite(value) or value <= 0
+            for value in self.positive_weights.values()
+        ):
+            raise ValueError(
+                "positive supervision weights must be positive and finite"
+            )
         self._runtime_states = {}
         self._supervision_states = {}
         self.last_episode_audit = {}
@@ -405,6 +425,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def _cost_provider(self, outputs, schedule_step, feature_stride):
         targets = self._targets_by_id(schedule_step)
         class_log_probs = outputs["class_logits"][0].log_softmax(dim=-1)
+        ending_instance_ids = {
+            int(item.instance_id) for item in schedule_step.ends
+        }
 
         def provider(phase, instance_ids, slot_ids):
             rows = []
@@ -413,19 +436,45 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 target_offset = (
                     float(schedule_step.current_frame) - float(target.start_frame)
                 ) / max(float(feature_stride), 1.0)
-                target_offset = min(max(target_offset, 0.0), float(self.head.memory_size))
+                target_offset = min(
+                    max(target_offset, 0.0),
+                    float(self.head.max_start_offset),
+                )
                 row = []
                 for slot in slot_ids:
                     class_cost = -class_log_probs[int(slot), int(target.label)]
-                    start_cost = F.smooth_l1_loss(
-                        outputs["start_offset"][0, int(slot)],
-                        outputs["start_offset"].new_tensor(target_offset),
+                    endpoint_target = outputs[
+                        "end_hazard_logits"
+                    ].new_tensor(
+                        float(int(instance_id) in ending_instance_ids)
+                    )
+                    endpoint_cost = F.binary_cross_entropy_with_logits(
+                        outputs["end_hazard_logits"][0, int(slot)],
+                        endpoint_target,
                         reduction="sum",
                     )
-                    cost = class_cost + start_cost
                     if phase == "birth":
-                        cost = cost - F.logsigmoid(outputs["birth_logits"][0, int(slot)])
-                    elif phase != "rematch":
+                        start_cost = F.smooth_l1_loss(
+                            outputs["start_offset"][0, int(slot)],
+                            outputs["start_offset"].new_tensor(
+                                target_offset
+                            ),
+                            reduction="sum",
+                        )
+                        cost = (
+                            class_cost
+                            + endpoint_cost
+                            + start_cost
+                            - F.logsigmoid(
+                                outputs["birth_logits"][0, int(slot)]
+                            )
+                        )
+                    elif phase == "rematch":
+                        # Start is decoded and supervised only at birth. Using
+                        # it again here would let an unsupervised nuisance
+                        # prediction decide post-birth identity binding.
+                        cost = class_cost + endpoint_cost
+                    else:
                         raise ValueError(f"unknown supervision assignment phase {phase!r}")
                     row.append(cost.detach())
                 rows.append(torch.stack(row))
@@ -494,7 +543,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                             / max(float(feature_stride), 1.0),
                             0.0,
                         ),
-                        float(self.head.memory_size),
+                        float(self.head.max_start_offset),
                     )
                     for binding in transition.birth_assignments
                 ],
@@ -507,11 +556,26 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             )
 
         return {
-            "birth_loss": _masked_bce(outputs["birth_logits"], birth_target, birth_mask),
-            "alive_loss": _masked_bce(outputs["alive_logits"], alive_target, alive_mask),
+            "birth_loss": _masked_bce(
+                outputs["birth_logits"],
+                birth_target,
+                birth_mask,
+                self.positive_weights["birth_loss"],
+            ),
+            "alive_loss": _masked_bce(
+                outputs["alive_logits"],
+                alive_target,
+                alive_mask,
+                self.positive_weights["alive_loss"],
+            ),
             "class_loss": class_loss,
             "start_loss": start_loss,
-            "end_loss": _masked_bce(outputs["end_hazard_logits"], end_target, end_mask),
+            "end_loss": _masked_bce(
+                outputs["end_hazard_logits"],
+                end_target,
+                end_mask,
+                self.positive_weights["end_loss"],
+            ),
         }
 
     @staticmethod

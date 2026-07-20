@@ -48,6 +48,23 @@ profile_contract = dict(
     submit_via_slurm_only=True,
 )
 
+supervision_balance_contract = dict(
+    source_split="fit_core",
+    tokens=123940,
+    birth_positive_targets=2523,
+    birth_supervised_targets=458670,
+    alive_positive_targets=39613,
+    alive_supervised_targets=495760,
+    end_positive_targets=2523,
+    end_supervised_targets=39613,
+    birth_positive_rate=0.0055006867682647655,
+    alive_positive_rate=0.07990358237857027,
+    end_positive_rate=0.06369121248075127,
+    weighting_rule="sqrt_negative_to_positive_ratio",
+    start_offset_unit="feature_tokens",
+    max_start_offset_tokens=1.0,
+)
+
 census_contract = dict(
     expected_split_counts=dict(
         fit_core=160,
@@ -103,6 +120,9 @@ model = dict(
     class_loss_weight=1.0,
     start_loss_weight=1.0,
     end_loss_weight=1.0,
+    birth_positive_weight=13.446021031128877,
+    alive_positive_weight=3.393388193562092,
+    end_positive_weight=3.8341561094639838,
     fail_on_supervision_exhaustion=True,
     head=dict(
         type="PersistentEventSetHead",
@@ -115,7 +135,11 @@ model = dict(
         dropout=0.1,
         query_mode="persistent",
         start_mode="scalar",
+        max_start_offset=1.0,
         endpoint_mode="binary",
+        birth_prior_probability=0.0055006867682647655,
+        alive_prior_probability=0.07990358237857027,
+        end_prior_probability=0.06369121248075127,
         birth_threshold=0.5,
         alive_threshold=0.5,
         end_threshold=0.5,

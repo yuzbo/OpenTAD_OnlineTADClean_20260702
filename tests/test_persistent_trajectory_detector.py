@@ -1,8 +1,14 @@
 from dataclasses import fields, replace
+import hashlib
+import json
 
+import numpy as np
 import pytest
 import torch
 
+from opentad.datasets.streaming_feature import StreamingFeatureDataset
+from opentad.evaluations import compute_online_instance_metrics
+from opentad.evaluations.online_budgeted_map import OnlineAPBudgeted
 from opentad.models.dense_heads.persistent_event_set_head import (
     EventSetEmissionRecord,
     PersistentEventSetHead,
@@ -10,8 +16,13 @@ from opentad.models.dense_heads.persistent_event_set_head import (
 from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
     PersistentTrajectoryRuntimeState,
+    _masked_bce,
 )
-from opentad.utils.online_protocol import ProtocolViolation
+from opentad.utils.online_protocol import (
+    ProtocolViolation,
+    summarize_emission_ledger,
+    validate_emission_ledger_summary,
+)
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
 from opentad.utils.prefix_trajectory_supervision import (
     PrefixTrajectorySupervisionState,
@@ -214,6 +225,70 @@ def test_start_regression_is_supervised_only_on_the_shared_birth_assignment():
             assert losses["start_loss"].item() == 0
 
 
+def test_positive_weight_temperately_amplifies_rare_positive_binary_targets():
+    logits = torch.zeros(1, 2)
+    target = torch.tensor([[1.0, 0.0]])
+    mask = torch.ones_like(target, dtype=torch.bool)
+
+    unweighted = _masked_bce(logits, target, mask, positive_weight=1.0)
+    balanced = _masked_bce(logits, target, mask, positive_weight=4.0)
+    negative_only = _masked_bce(
+        logits,
+        torch.zeros_like(target),
+        mask,
+        positive_weight=4.0,
+    )
+    negative_reference = _masked_bce(
+        logits,
+        torch.zeros_like(target),
+        mask,
+        positive_weight=1.0,
+    )
+
+    assert balanced > unweighted
+    assert torch.equal(negative_only, negative_reference)
+
+
+def test_post_birth_rematch_cost_ignores_unsupervised_start_prediction():
+    detector = _detector("prefix_rematch_active_pool").train()
+    frames = (7, 15)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 30.0], [3.0, 31.0]],
+        labels=[0, 1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    state = detector.head.initial_state(
+        torch.device("cpu"),
+        torch.float32,
+        "stream",
+    )
+    _, state = detector.head.step(torch.randn(1, 4), state, frames[0])
+    outputs, _ = detector.head.step(torch.randn(1, 4), state, frames[1])
+    instance_ids = tuple(
+        sorted(item.instance_id for item in schedule[1].active)
+    )
+    slot_ids = (0, 1)
+
+    baseline = detector._cost_provider(
+        outputs,
+        schedule[1],
+        feature_stride=8,
+    )("rematch", instance_ids, slot_ids)
+    changed = dict(outputs)
+    changed["start_offset"] = torch.tensor(
+        [[0.0, 999.0]],
+        dtype=outputs["start_offset"].dtype,
+    )
+    perturbed = detector._cost_provider(
+        changed,
+        schedule[1],
+        feature_stride=8,
+    )("rematch", instance_ids, slot_ids)
+
+    assert (baseline == perturbed).all()
+
+
 def test_predicted_runtime_occupancy_cannot_delete_ground_truth_birth_supervision():
     detector = _detector("fixed_birth_slot").train()
     frames = (7,)
@@ -347,3 +422,161 @@ def test_future_feature_perturbation_does_not_change_earlier_prefix_logits():
             changed.logits[index]["class_logits"],
             atol=1e-6,
         )
+
+
+def test_adjacent_actions_survive_dataset_detector_ledger_and_metrics(
+    tmp_path,
+    monkeypatch,
+):
+    feature_dir = tmp_path / "features"
+    feature_dir.mkdir()
+    np.save(
+        feature_dir / "adjacent.npy",
+        np.arange(20, dtype=np.float32).reshape(5, 4),
+    )
+    annotation = {
+        "database": {
+            "adjacent": {
+                "subset": "validation",
+                "duration": 5.0,
+                "frame": 5,
+                "annotations": [
+                    {"segment": [0.0, 2.0], "label": "A"},
+                    {"segment": [2.0, 4.0], "label": "A"},
+                ],
+            }
+        }
+    }
+    annotation_path = tmp_path / "annotations.json"
+    annotation_path.write_text(json.dumps(annotation), encoding="utf-8")
+    class_map_path = tmp_path / "classes.txt"
+    class_map_path.write_text("A\n", encoding="utf-8")
+    manifest = {
+        "schema": "ontad_feature_cache_v1",
+        "annotation_sha256": hashlib.sha256(
+            annotation_path.read_bytes()
+        ).hexdigest(),
+        "encoder_id": "deterministic-adjacent-action-fixture",
+        "feature_policy": "packet_recent_frame",
+        "timestamp_convention": "zero_based_source_frame",
+        "feature_stride": 1,
+        "feature_dim": 4,
+        "dtype": "float32",
+        "videos": {
+            "adjacent": {
+                "file": "adjacent.npy",
+                "num_tokens": 5,
+                "source_frames": [0, 1, 2, 3, 4],
+            }
+        },
+    }
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    dataset = StreamingFeatureDataset(
+        ann_file=annotation_path,
+        subset_name="validation",
+        class_map=class_map_path,
+        data_path=feature_dir,
+        cache_manifest=manifest_path,
+        chunk_size=5,
+        feature_stride=1,
+        stream_id="adjacent-action-e2e",
+        test_mode=True,
+        strict_causal_control=True,
+    )
+
+    head = PersistentEventSetHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=1,
+        num_slots=1,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        birth_threshold=0.5,
+        alive_threshold=0.5,
+        end_threshold=0.5,
+        refractory_steps=0,
+        max_start_offset=1.0,
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=1,
+    )
+    original_step = head.step
+
+    def scripted_step(feature, state, source_frame):
+        outputs, next_state = original_step(feature, state, source_frame)
+        frame = int(source_frame)
+        outputs.update(
+            birth_logits=feature.new_tensor(
+                [[10.0 if frame in (0, 2, 3) else -10.0]]
+            ),
+            alive_logits=feature.new_tensor(
+                [[10.0 if frame == 1 else -10.0]]
+            ),
+            class_logits=feature.new_tensor([[[10.0]]]),
+            end_hazard_logits=feature.new_tensor(
+                [[10.0 if frame in (2, 4) else -10.0]]
+            ),
+            start_offset=feature.new_tensor(
+                [[1.0 if frame == 3 else 0.0]]
+            ),
+        )
+        return outputs, next_state
+
+    monkeypatch.setattr(head, "step", scripted_step)
+    detector = PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode="fixed_birth_slot",
+        detach_stream_state=True,
+    ).eval()
+    sample = dataset[0]
+    results = detector.forward(
+        torch.from_numpy(sample["inputs"]).unsqueeze(0),
+        torch.from_numpy(sample["masks"]).unsqueeze(0),
+        metas=[sample["metas"]],
+        stream_control=[sample["stream_control"]],
+        return_loss=False,
+        ext_cls=dataset.class_map,
+    )
+
+    rows = results["adjacent"]
+    assert [(row["start_frame"], row["end_frame"]) for row in rows] == [
+        (0, 2),
+        (2, 4),
+    ]
+    assert [row["sequence_id"] for row in rows] == [0, 1]
+    assert all(row["immutable"] is True and row["final"] is True for row in rows)
+    runtime = next(iter(detector._runtime_states.values()))
+    assert runtime.deferred_birth_due_to_release == 1
+
+    summary = summarize_emission_ledger(results)
+    validate_emission_ledger_summary(summary)
+    assert summary["num_emissions"] == 2
+    assert not any(summary["no_future"].values())
+
+    instance_metrics = compute_online_instance_metrics(
+        annotation,
+        results,
+        tiou_threshold=0.5,
+        fps=1.0,
+    )
+    assert instance_metrics["counts"]["matched_ground_truth"] == 2
+    assert instance_metrics["counts"]["duplicate_emissions"] == 0
+    assert instance_metrics["fragmentation_rate"] == 0.0
+
+    budgeted = OnlineAPBudgeted(
+        ground_truth_filename=annotation,
+        prediction_filename={"results": results},
+        subset="validation",
+        tiou_thresholds=[0.5],
+        latency_budgets_sec=[0.0],
+        allowed_videos=["adjacent"],
+        fps=1.0,
+        require_ledger=True,
+        require_no_future=True,
+    ).evaluate()
+    assert budgeted["average_mOnlineAP"] == 1.0
