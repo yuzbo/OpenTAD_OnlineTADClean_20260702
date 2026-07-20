@@ -7,6 +7,7 @@ smoke_only = True
 scheduler = dict(
     type="LinearWarmupCosineAnnealingLR",
     warmup_epoch=0,
+    warmup_start_lr=2e-4,
     max_epoch=1,
 )
 

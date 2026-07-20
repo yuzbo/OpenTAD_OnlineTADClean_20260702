@@ -32,6 +32,7 @@ def test_smoke_config_is_one_epoch_feature_only_and_not_formally_unlocked():
     assert cfg.workflow.val_eval_interval == 1
     assert cfg.workflow.fail_on_nonfinite is True
     assert cfg.solver.amp is False
+    assert cfg.scheduler.warmup_start_lr == cfg.optimizer.lr
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
     assert cfg.post_processing.emission_ledger_filename.endswith(".json")
