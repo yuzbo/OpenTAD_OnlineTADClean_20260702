@@ -21,10 +21,12 @@ The active experiment is feature-level, not raw RGB: compare first-crossing
 lifecycle, data, thresholds, optimizer, inference, and evaluation are matched.
 Only the post-birth loss-binding rule may differ.
 
-The clean branch has passed a real-data Slurm smoke and strict paired profile.
-Those are engineering/protocol results, not method-effectiveness evidence. The
-profile estimates the registered 12-epoch pair at `12.572 GPU·hours`, above the
-frozen `2 GPU·hour` cap. No seed-705 or three-seed result exists.
+The repair branch passed an earlier real-data Slurm smoke and strict paired
+profile. Shared learnability optimization is implemented at
+`0258b853aa284f9650d931e680116b63b289e192`: fit-only event priors, tempered
+positive weights, a one-token birth-start range, supervised REMATCH costs, and
+removal of unused scalar-route pointer work. The old profile is now only a
+pre-optimization bound; no seed-705 or three-seed result exists.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -36,59 +38,44 @@ Read:
 
 ## Current Blocking Gaps
 
-1. **Endpoint identifiability:** binary commit still uses an endpoint offset
-   with no offset loss.
-2. **Birth-step fairness:** REMATCH may move newborn class/start/end losses
-   away from the canonical birth slot on the same decision.
-3. **Short actions:** newborn same-step end and final-token short actions can be
-   lost.
-4. **Adjacent actions:** entry-free slot freezing delays reuse after a
-   same-step old end; this is not yet proven harmless.
-5. **Reporting isolation:** generic training constructs and evaluates the
-   locked reporting split every epoch.
-6. **Instance metrics:** video/runtime keys and frame/second coordinates can
-   mismatch; greedy matching and distinct-bounds fragmentation do not implement
-   the frozen definition.
-7. **Gate closure:** standard mAP, budgeted AP, gate field names, ranges, tIoU
-   sets, and percentage-point units are not one schema.
-8. **Provenance:** no repository-owned result artifact joins checkpoint,
-   config, manifest, ledger, audit, metrics, latency, resource use, and hashes.
-9. **Fail-closed execution:** readiness, canonical exhaustion, runtime
-   collision, arbitration suppression, cancellation, and abandonment are not
-   fully separated and enforced.
-10. **Census:** birth-per-step, end+birth, final-token coverage, delayed reuse,
-    and clipped starts are not a hashed launcher-consumed artifact.
-11. **Budget:** the registered protocol is too expensive; budget revision must
-    wait for repair and re-profiling.
+1. **Same-commit Torch validation:** Windows cannot load PyTorch `c10.dll`;
+   the new adjacent-action end-to-end regression and full focused bundle must
+   pass inside N16R4 Slurm.
+2. **Re-profile after model change:** old job `1177511` cannot authorize the
+   optimized commit; rerun smoke and strict profile without changing code.
+3. **One-epoch non-degeneracy:** seed-705 FIXED/REMATCH must both update,
+   emit causally, and avoid silent/explosive outputs on calibration only.
+4. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
+   main result and cannot prove the identity-error claim.
+5. **Raw RGB:** joint visual training stays blocked until the complete
+   feature-level scientific gate passes.
 
 ## Evidence Already Established
 
-- supervision state is separate from runtime state;
-- predicted runtime occupancy cannot remove canonical GT birth supervision;
-- the capacity/refractory failure behind 2,206 exhausted births is repaired;
-- four slots exceed observed concurrency two, but fuller census is required;
-- FIXED/REMATCH resolved configs differ only in binding mode and work directory;
-- the mode affects training supervision, not the inference decoder;
-- job `1176737` passed FP32 update, checkpoint/reload, streaming inference, and ledger consistency;
-- job `1176983` passed 250-step stability, zero immediate capacity loss, and exact pre-training ledger equivalence;
-- both untrained arms emitted 10,029 causal rows with identical digest and zero protocol violations;
-- none of this shows FIXED improves duplicate, fragmentation, mAP, or latency.
+- full census: 411 videos, 320,205 tokens, 6,328 instances, every birth/end
+  covered, max two births and four visible instances, zero capacity deficit;
+- repaired smoke `1177438`: 76 tests, one real update, exact checkpoint reload,
+  84 immutable emissions, zero future-information violations;
+- profile `1177511`: both arms stable and exactly equivalent before training,
+  but the 12-epoch pair costs `12.512897 GPU·hours` and is rejected;
+- fit-only balance census: birth/alive/end positive rates are
+  `0.00550069/0.0799036/0.0636912`; every birth start lies within one token;
+- commit `0258b85` implements the shared model optimization, adjacent-action
+  test, one-epoch screen, calibration-only result gate, and hash provenance;
+- 21 current CPU-safe tests plus compilation and Bash syntax pass locally;
+- none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
+  latency, or any paper headline.
 
 ## Immediate Implementation Order
 
-1. Make binary endpoint equal the current decision frame.
-2. Keep newborns on canonical slots for the birth step; allow REMATCH next step.
-3. Commit same-step birth+end exactly once, including final-token actions.
-4. Add end-to-end adjacent/short/repeated/overlapping same-class counterexamples.
-5. Implement fit-only train, symmetric calibration/checkpoint freeze, and
-   report-once evaluation.
-6. Normalize video identity and metric coordinates.
-7. Freeze global one-to-one matching and disjoint-component fragmentation.
-8. Freeze standard-mAP percentage-point gate schema.
-9. Emit one hash-linked formal result artifact and split all capacity counters.
-10. Generate and consume the exact frozen census.
-11. Rerun focused tests, Slurm smoke, and strict paired profiling.
-12. Only then register a budget-compatible seed-705 screen.
+1. Commit this wiki checkpoint and run the optimized code through N16R4 smoke.
+2. At the exact same commit, rerun the paired 50-warmup/200-measured profile.
+3. If its one-epoch estimate remains within two GPU-hours, run seed 705 for
+   FIXED and REMATCH sequentially on one RTX 4090.
+4. Apply the frozen calibration-only non-degeneracy gate without threshold
+   edits and write all job IDs, hashes, metrics, and failures back to the wiki.
+5. Only after a pass, design the affordable multi-epoch/three-seed feature
+   protocol; raw RGB remains later and conditional.
 
 ## Feature-Level Gates
 

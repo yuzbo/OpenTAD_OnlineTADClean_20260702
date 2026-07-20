@@ -310,3 +310,68 @@ profiling. Before submission, the repository must add a screen-only config,
 launcher, calibration-only result builder/gate, and the still-missing
 adjacent-action end-to-end regression. C5 remains open until those checks and
 the seed-705 screen finish.
+
+## 模型优化与技术筛选实现节点 — commit 0258b85
+
+本节点把工作重心从单纯“跑通流程”转到模型本身的可学习性。精确代码提交为
+`0258b853aa284f9650d931e680116b63b289e192`。它仍然是固定特征级实验，
+FIXED 与 REMATCH 仍只在出生后的监督绑定方式上不同；没有接入 raw RGB，
+也没有读取 211 个 reporting 视频。
+
+### 训练集事实
+
+仅使用 160 个 fit-core 视频重新统计了监督分布：
+
+- 123,940 个因果特征 token；
+- birth：2,523 个正目标 / 458,670 个受监督目标，正率
+  `0.0055006868`；
+- alive：39,613 / 495,760，正率 `0.0799035824`；
+- end：2,523 / 39,613，正率 `0.0636912125`；
+- 2,523 个出生起点偏移全部位于一个特征 token 内，最大值约
+  `0.998521`，中位数约 `0.507`。
+
+这说明原始无先验普通 BCE 很容易先学成“全不出生”，而随机零偏置又会在
+未训练推理时产生大量无意义区间；原先允许起点回归覆盖 192 个 token，也
+远大于实际出生起点的可辨识范围。
+
+### 共享模型改进
+
+1. birth/alive/end 三个输出头用各自在 fit-core 上的正率初始化 bias；
+2. 三个二分类损失使用温和的
+   `sqrt(negative/positive)` 正样本权重，分别为
+   `13.446021`、`3.393388`、`3.834156`，避免直接使用约 181 倍的
+   极端 birth 权重；
+3. scalar start 的合法范围从 192 token 收紧到 1 token，与全部真实出生
+   目标一致；
+4. REMATCH 的出生后匹配代价只使用有监督的 class 与 endpoint，不再让
+   出生后未受监督的 start 输出左右身份匹配；
+5. scalar start 路线不再创建或计算仅供 pointer start 使用的参数和
+   相似度矩阵，减少无效参数与计算。
+
+这些改动在两条实验臂完全共享，不改变严格因果推理、候选生命周期、最终
+区间协议或 FIXED/REMATCH 的单变量比较。
+
+### 新增验证与筛选闭环
+
+- 新增相邻动作端到端回归：真实 `StreamingFeatureDataset` 输入经过
+  detector、released-slot deferral、不可变 emission ledger、无未来审计、
+  instance metrics 和 `OnlineAPBudgeted`；预期得到 `[0,2]` 与 `[2,4]`
+  两个且仅两个区间；
+- 新增一轮 seed-705、双臂各一 epoch 的 screen-only 配置和 Slurm
+  启动/检查脚本；
+- 筛选只评 40 个 calibration 视频，明确禁止 reporting 访问、论文效果
+  结论和 raw-RGB 放行；
+- 训练审计、校准收据、checkpoint、实际 emission ledger、census、
+  smoke/profile gate 和资源报告必须用 SHA-256 串成同一证据链；
+- 技术门禁继续拒绝静默输出、爆炸输出、漏更新、因果/容量错误和超过
+  2 GPU-hour 的实际双臂资源消耗。
+
+本地证据：相关 Python 文件编译通过，21 项 CPU-safe 配置/画像/census/
+筛选测试通过，两个 Bash 启动脚本通过 `bash -n`，`git diff --check`
+通过。Windows 本机仍因 PyTorch `c10.dll` 初始化故障无法执行 Torch
+回归，因此上述相邻动作测试和全部 Torch 测试必须在 N16R4 Slurm 内完成。
+
+旧 profile `1177511` 只能作为优化前预算上界，不能为新提交直接放行。
+下一顺序固定为：同提交 smoke → 同提交 strict profile → 若一 epoch 仍在
+2 GPU-hour 内，再提交 seed-705 FIXED/REMATCH 技术筛选。筛选通过也只说明
+模型没有静默或爆炸且能开始收敛；C5、三种子论文主结果和 raw RGB 仍未完成。

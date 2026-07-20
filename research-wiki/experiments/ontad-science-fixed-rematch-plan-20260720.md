@@ -54,8 +54,9 @@ paired-profile, and final-decision checkpoint.
       decision; permit REMATCH only from the next causal decision.
 - [x] Commit a newborn whose birth and end cross in the same step, including a
       final-token short action, exactly once.
-- [ ] Add the exact adjacent-action synthetic stream that is still missing,
-      including same-step old-end/new-birth and released-slot deferral.
+- [x] Implement the exact adjacent-action synthetic stream, including
+      same-step old-end/new-birth and released-slot deferral.
+- [ ] Execute that end-to-end regression in the N16R4 PyTorch environment.
 - [x] Split video identity from runtime stream identity and normalize all
       instance metrics to one explicit coordinate system.
 - [x] Replace chronological greedy primary matching with the frozen global
@@ -90,8 +91,11 @@ paired-profile, and final-decision checkpoint.
 - [x] Register a one-epoch seed-705 convergence/non-degeneracy screen at
       `1.691339 GPU·hours`, including the frozen safety factor and a
       conservative locked-report reserve, under the unchanged 2-hour cap.
-- [ ] Implement and validate the screen-only launcher, result artifact, gate,
-      and missing adjacent-action end-to-end regression.
+- [x] Implement and locally validate the screen-only launcher, result
+      artifact, calibration-only gate, and hash-linked evidence contract.
+- [ ] Rerun smoke and strict profiling after model-optimization commit
+      `0258b853aa284f9650d931e680116b63b289e192`.
+- [ ] Validate the adjacent-action and complete Torch test bundle on N16R4.
 - [ ] Run the registered seed-705 technical screen without accessing the
       reporting split.
 - [ ] BLOCKED: freeze validation-selected thresholds.

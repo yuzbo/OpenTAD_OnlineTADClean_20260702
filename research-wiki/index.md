@@ -25,18 +25,18 @@ route is a clean feature-level comparison of **FIXED first-crossing binding**
 against **per-prefix REMATCH**, with identical runtime lifecycle and cached
 causal features. Raw-RGB joint training remains conditional and blocked.
 
-The capacity/lifecycle repair has passed a real-data Slurm smoke and a strict
-deterministic paired profile. These are engineering and protocol results only.
-The registered 12-epoch pair failed its resource gate at `12.572 GPU·hours`
-versus a `2 GPU·hour` cap, and no seed-level effectiveness result exists.
+The lifecycle/scientific-contract repair has passed its earlier real-data
+Slurm smoke and deterministic profile. Shared model optimization is now
+implemented at `0258b853aa284f9650d931e680116b63b289e192`: fit-only priors,
+tempered class-imbalance weights, a one-token birth-start range, supervised
+REMATCH costs, and removal of scalar-route pointer work. These changes are
+shared across both arms and preserve the single-variable comparison.
 
-The 2026-07-20 readiness review was independently accepted with qualifications.
-The next approved task is a scientific-contract repair: binary endpoint,
-birth-step REMATCH, same-step short actions, fit/calibration/report isolation,
-instance matching/coordinates, mAP/gate units, result provenance, and
-fail-closed census/counters. After repair, rerun smoke and profiling before
-registering any seed-705 protocol. Another high-cost review and raw-RGB work are
-not currently authorized.
+The old profile is only a pre-optimization upper bound. The active order is
+same-commit N16R4 smoke, same-commit strict profile, then the registered
+one-epoch seed-705 calibration-only technical screen if the two-GPU-hour cap
+still passes. No seed-level result currently exists; multi-seed paper evidence
+and raw-RGB joint training remain conditional and blocked.
 
 ## Ideas
 
@@ -123,6 +123,7 @@ not currently authorized.
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |
 | [exp:persistent-feature-kill-test-20260712](experiments/persistent-feature-kill-test-20260712.md) | cache and smoke passed; Pro review pending | Registered FRESH/TTF/PES mechanism kill test with strict protocol and cost gates; no scientific pilot result exists. |
 | [exp:ontad-fixed-rematch-readiness-review-20260720](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) | revise before scientific run | Review and independent recheck preserve the FIXED/REMATCH feature falsification question but require scientific-contract repair before seed 705. |
+| [exp:ontad-fixed-rematch-execution-20260720](experiments/ontad-science-fixed-rematch-execution-20260720.md) | active; model optimization implemented | Persistent recovery record for repair, smoke/profile evidence, model optimization commit `0258b85`, and the pending same-commit screen sequence. |
 | [FIXED/REMATCH strict profile](experiments/ontad-science-fixed-rematch-profile-20260720.md) | stability/causality pass; budget fail | Exact pre-training inference equivalence and zero immediate capacity loss; registered pair estimated at 12.572 GPU·hours. |
 
 ## Source Records
