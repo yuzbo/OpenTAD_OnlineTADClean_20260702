@@ -48,6 +48,18 @@ profile_contract = dict(
     submit_via_slurm_only=True,
 )
 
+optimization_contract = dict(
+    schedule_revision="short_warmup_v1",
+    changed_axis="shared_linear_warmup_fraction_only",
+    previous_warmup_epoch=1.0,
+    warmup_epoch=0.1,
+    max_epoch=12,
+    peak_learning_rate=2e-4,
+    update_count_unchanged=True,
+    fixed_rematch_shared=True,
+    motivation="repaired_heads_moved_less_than_0p02_logit_during_full_epoch_warmup",
+)
+
 supervision_balance_contract = dict(
     source_split="fit_core",
     tokens=123940,
@@ -152,7 +164,11 @@ model = dict(
 )
 
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.05)
-scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=1, max_epoch=12)
+scheduler = dict(
+    type="LinearWarmupCosineAnnealingLR",
+    warmup_epoch=0.1,
+    max_epoch=12,
+)
 
 inference = dict(
     load_from_raw_predictions=False,

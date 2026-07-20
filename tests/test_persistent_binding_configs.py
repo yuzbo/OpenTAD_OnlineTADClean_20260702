@@ -47,7 +47,33 @@ def test_seed705_screen_is_one_epoch_feature_only_and_single_variable():
     assert fixed.workflow.fit_only is True
     assert fixed.workflow.val_eval_interval == -1
     assert fixed.scheduler.max_epoch == 12
-    assert fixed.scheduler.warmup_epoch == 1
+    assert fixed.scheduler.warmup_epoch == 0.1
+    assert fixed.screening_contract.shared_schedule_revision == "short_warmup_v1"
+    assert (
+        fixed.screening_contract.changed_axis
+        == "shared_linear_warmup_fraction_only"
+    )
+    assert fixed.screening_contract.previous_warmup_epoch == 1.0
+    assert fixed.screening_contract.warmup_epoch == 0.1
+    assert fixed.screening_contract.peak_learning_rate == 2e-4
+    assert (
+        fixed.screening_contract.warmup_epoch
+        == fixed.optimization_contract.warmup_epoch
+        == fixed.scheduler.warmup_epoch
+    )
+    assert (
+        fixed.screening_contract.shared_schedule_revision
+        == fixed.optimization_contract.schedule_revision
+    )
+    assert (
+        fixed.screening_contract.peak_learning_rate
+        == fixed.optimization_contract.peak_learning_rate
+        == fixed.optimizer.lr
+    )
+    assert (
+        fixed.screening_contract.mean_lr_exposure_ratio_vs_full_epoch_warmup
+        > 1.8
+    )
     assert fixed.raw_video_finetuning is False
 
 
@@ -61,6 +87,15 @@ def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     assert cfg.experiment_contract.raw_video_joint_training is False
     assert cfg.raw_video_finetuning is False
     assert cfg.solver.amp is False
+    assert cfg.optimization_contract.schedule_revision == "short_warmup_v1"
+    assert cfg.optimization_contract.changed_axis == (
+        "shared_linear_warmup_fraction_only"
+    )
+    assert cfg.optimization_contract.update_count_unchanged is True
+    assert cfg.optimization_contract.fixed_rematch_shared is True
+    assert cfg.scheduler.warmup_epoch == 0.1
+    assert cfg.scheduler.max_epoch == 12
+    assert cfg.optimizer.lr == 2e-4
     assert cfg.workflow.fail_on_nonfinite is True
     assert cfg.visual_training_allowed is False
     assert cfg.inference.load_from_raw_predictions is False

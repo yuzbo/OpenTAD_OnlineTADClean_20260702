@@ -36,7 +36,8 @@ same-commit smoke `1177637` and one-epoch profile gate `1177639` passed.
 Repaired screen `1177653` at `8dff64c` used `0.955278 GPU-hours`; both arms
 again made zero emissions after 2010/2010 stable updates, so the frozen gate
 failed. Calibration-only diagnosis `1177682` is now selecting the next single
-shared model/optimization change without threshold or reporting access.
+shared change without threshold/reporting access. A short-warmup candidate is
+locally implemented but remains untrained until that diagnosis.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -77,9 +78,8 @@ Read:
 - the shared repair changes only binary-head initialization mode; empirical
   priors, positive weights, thresholds, data, lifecycle, and comparison axis
   remain frozen;
-- repaired smoke `1177637` passed 87 tests, real updates, exact reload, and
-  zero future violations; repaired profile `1177639` passed the one-epoch
-  budget gate at `1.419566 GPU-hours`;
+- repaired smoke `1177637` passed 87 tests and exact causal reload; profile
+  `1177639` passed the one-epoch gate at `1.419566 GPU-hours`;
 - repaired screen `1177653` used `0.955278 GPU-hours`; both arms had 2010/2010
   clean updates but zero intervals, so initialization alone was insufficient;
 - none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
@@ -88,8 +88,7 @@ Read:
 ## Immediate Implementation Order
 
 1. Complete score diagnosis `1177682` on both repaired checkpoints.
-2. Select and implement exactly one evidence-backed shared
-   model/optimization change; do not edit thresholds or access reporting.
+2. Confirm or reject the prepared shared short-warmup candidate.
 3. Rerun same-commit smoke, strict profile, and seed-705 technical screen.
 4. Only after a technical pass, design the affordable multi-epoch/three-seed
    protocol; raw RGB remains later and conditional.

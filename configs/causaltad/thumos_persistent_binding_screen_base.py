@@ -20,10 +20,18 @@ screening_contract = dict(
     purpose="convergence_and_non_degeneracy_only",
     effectiveness_claim_authorized=False,
     raw_rgb_authorized=False,
+    shared_schedule_revision="short_warmup_v1",
+    changed_axis="shared_linear_warmup_fraction_only",
+    previous_warmup_epoch=1.0,
+    warmup_epoch=0.1,
+    peak_learning_rate=2e-4,
+    mean_lr_exposure_ratio_vs_full_epoch_warmup=1.89066304675978,
 )
 
-# Preserve the exact first epoch of the registered 12-epoch optimizer and
-# scheduler. Only the stopping point changes.
+# The previous one-epoch screen spent all 2,010 updates in linear warm-up and
+# moved each repaired lifecycle bias by less than 0.02 logit. This shared
+# schedule repair keeps the update count and peak LR fixed while reaching the
+# peak after the first 10% of the fit epoch.
 workflow = dict(
     fit_only=True,
     logging_interval=50,

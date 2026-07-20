@@ -116,6 +116,9 @@ paired-profile, and final-decision checkpoint.
 - [ ] Run calibration-only score diagnosis `1177682` on the repaired
       checkpoints, then choose at most one shared model/optimization change
       from the measured threshold margins.
+- [x] Prepare, without remote training, the single-variable shared
+      short-warmup candidate (`1.0 -> 0.1` epoch; peak LR and update count
+      unchanged); keep its Slurm execution gated on diagnosis `1177682`.
 - [ ] BLOCKED: freeze validation-selected thresholds.
 - [ ] BLOCKED: run seeds 705, 706, and 707 through Slurm.
 - [ ] Report paired standard and instance metrics.

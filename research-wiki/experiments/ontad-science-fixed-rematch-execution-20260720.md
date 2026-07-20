@@ -786,3 +786,35 @@ Recall@0.3 低于 `0.25`”三项失败。该结果证明：
 诊断先量化新 checkpoint 的 birth/alive/end 分布、0.5 margin、过线次数及
 bias 位移。只有诊断证据支持，才实施一个两臂共享的单变量优化；不得降低
 阈值或访问 reporting。
+
+## Shared Short-warmup Candidate — Local Only
+
+GPU score diagnosis `1177682` 因账户 `GrpTRES=gres/gpu=16` 已被其他作业
+占满而暂时排队。为不停止模型侧推进，先完成一个**未提交训练**的本地
+共享优化候选；GPU 分布诊断仍是其 Slurm 放行门禁。
+
+已有筛选产物给出两条独立证据：
+
+1. 轻量只读 checkpoint 检查显示，一轮训练后 FIXED/REMATCH 的 birth
+   bias 分别为 `-2.586621/-2.579974`，相对加权平衡初始值约
+   `-2.598683` 仅移动 `+0.012/+0.019 logit`；alive/end bias 同样只作
+   小幅移动；
+2. 当前 `warmup_epoch=1.0` 使全部 2,010 次更新都处于线性 warm-up，
+   平均 LR 为 `1.000995×10^-4`。若仅将 warm-up 压缩为 0.1 epoch，
+   同样 2,010 次更新、同样峰值 `2×10^-4` 下，平均和累计 LR 都变为
+   原来的 `1.890663×`。
+
+候选修改严格限定为：
+
+- 两臂共享 `warmup_epoch: 1.0 → 0.1`；
+- 峰值 LR 仍为 `2×10^-4`，`max_epoch=12` 不变；
+- 模型结构、先验、positive weights、loss weights、阈值、数据划分、
+  update 数、lifecycle 和 FIXED/REMATCH 比较轴全部不变；
+- config 中新增显式 `optimization_contract` 和 screen provenance 字段；
+- 15 项 CPU-safe 配置、screen 与科学合约测试通过，Python 编译及
+  `git diff --check` 通过。
+
+该节点只代表候选实现就绪，不代表远端 Torch、稳定性、预算或技术门禁
+通过。执行顺序仍为：GPU score diagnosis → 候选同提交 smoke →
+strict profile → seed-705 screen。诊断若显示静默并非训练剂量问题，
+则不得提交该候选训练。
