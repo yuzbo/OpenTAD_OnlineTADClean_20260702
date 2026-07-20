@@ -151,14 +151,30 @@ query 模拟的同槽质量只有 `0.46641`；0.25/20 为 `0.60779`，身份保�
 16/16；随后移除 A/B 的无用边际计算。新三版本等待槽位按 A→B→C 重提；
 只认 exact `d390779`，旧取消目录不算 duplicate。
 
-05:37 出现一个 submit slot；精确 SHA、clean 状态与零重复项复核后，
-A/SW 已提交为 job `1177706`，run
-`model_opt_sw_seed705_20260721_053819`，当前 `PENDING/AssocGrpGRES`、
-零 GPU。随后两个槽依次出现，B/SW+BM 为 `1177707` /
-`model_opt_margin_seed705_20260721_054136`，C/SW+CT 为 `1177708` /
-`model_opt_transport_seed705_20260721_054210`。05:50 三条均在 `g0003`
-运行；三份脚本 SHA 均正确。三条自身 profile 全过，A/B/C 安全系数后
-预计 `1.3966/1.4108/1.4080 GPU·h`，均低于 2；现已进入训练。
+05:37 后依次提交 A `1177706`、B `1177707`、C `1177708`；三条自身
+profile 全过，A/B/C 安全系数后预计
+`1.3966/1.4108/1.4080 GPU·h`，均低于 2。连续 job id 暴露出提交器的
+端口块重叠：作业内每次 `torchrun` 把端口 `+1`，A 的 FIXED 校准因此与
+B 的 FIXED 训练相撞，B 的下一阶段又与 C 相撞。A/B 均已先完成
+`2010/2010` FIXED 更新、零跳步/监督耗尽/容量碰撞后，才在校准启动处
+以 `Address already in use` 退出；这两条保留为启动诊断，不进入比较。
+
+模型、配置、数据、seed 和 exact `d390779` 均未改变。使用显式不重叠
+端口块重新通过 Slurm 提交最终 A/B：
+
+- A/SW：job `1177711`，run
+  `model_opt_sw_seed705_20260721_062012`，端口 `45100–45103`；
+- B/SW+BM：job `1177712`，run
+  `model_opt_margin_seed705_20260721_062013`，端口 `45200–45203`；
+- C/SW+CT：继续 job `1177708`，run
+  `model_opt_transport_seed705_20260721_054210`。
+
+C/FIXED 已完成：`2010/2010` 稳定更新，transport 在全部更新中激活、
+均值 `0.0108388`，margin 为零；但出现 5 次 GT-birth/runtime 容量碰撞，
+calibration 在冻结 0.5 阈值下提交 0 个区间。C 正常进入 REMATCH，
+不是程序崩溃；该结果已指向“transport 促使候选占用容量但未打通
+end/commit”的风险。最终判断仍等待两臂三通道诊断。A/B 恢复作业已经
+通过各自 exact profile 并进入确定性 FIXED 训练。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
