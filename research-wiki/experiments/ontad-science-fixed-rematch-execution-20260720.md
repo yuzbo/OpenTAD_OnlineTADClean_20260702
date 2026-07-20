@@ -903,3 +903,17 @@ screen 和 score-diagnosis 四条 submitter 现支持显式
 无副作用拒绝测试：detached 未给 SHA、短 SHA、错误完整 SHA 均在
 `sbatch` 前以退出码 2 和对应原因拒绝。正确 SHA 路径未在登录节点
 调用，避免提前提交 GPU 作业。
+
+## GPU-capacity Fallback Audit
+
+账户 association 的限制为 `GrpTRES=gres/gpu=16`，当前 16 卡均被同账户
+其他作业占用，`1177682` 因 `AssocGrpGRES` 排队且无预计开始时间。
+集群只有 `gpu` partition；一次 1 CPU、1 GiB、1 分钟且不申请 GPU 的
+Slurm 探针在提交阶段被站点 Lua 策略拒绝（每个作业强制申请 1–8 GPU），
+未产生 job id，因此没有 CPU-partition 备援。
+
+本机虽有 RTX 4070 Ti SUPER，但现有环境分别缺 OpenTAD NMS/mmcv、
+新版 mmaction registry，或存在 NumPy/pandas/tqdm 二进制/依赖冲突。
+按预设边界停止本机旁路：未安装或拼接依赖，未同步 40-video calibration
+特征或 checkpoint，也未产生本机诊断结果。权威路线保持为等待 Slurm
+`1177682`；不得用异构本机环境结果代替门禁。

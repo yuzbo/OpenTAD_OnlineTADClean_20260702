@@ -116,6 +116,8 @@ paired-profile, and final-decision checkpoint.
 - [ ] Run calibration-only score diagnosis `1177682` on the repaired
       checkpoints, then choose at most one shared model/optimization change
       from the measured threshold margins.
+      CPU-only Slurm is unavailable because the site forces 1–8 GPUs per job;
+      incompatible local environments are not accepted as a gate substitute.
 - [x] Prepare, without remote training, the single-variable shared
       short-warmup candidate (`1.0 -> 0.1` epoch; peak LR and update count
       unchanged); keep its Slurm execution gated on diagnosis `1177682`.
