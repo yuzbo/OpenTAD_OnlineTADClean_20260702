@@ -340,3 +340,37 @@ worktree clean、无新版 `pb_opt_*`、无该 SHA 的 pilot contract。只使�
 `0.326206/0.380038/0.388141`，三通道阈值 crossing 都是零。该 v1
 诊断没有 target-conditioned gap/AUC；它只补强旧模型静默结论，不参与
 A/B/C 冻结比较。
+
+### M4.4 首臂训练完整性与启动端口隔离恢复
+
+06:14 A/SW 的 FIXED 训练完成并写出结构化审计：`2010/2010` 次更新成功、
+`scheduler_steps=2010`、`skipped_updates=0`，且
+`gt_supervision_exhaustions=0`、`gt_birth_runtime_entry_free_collisions=0`。
+birth/alive/class/start/end 损失按预期激活，`birth_margin_loss` 与
+`causal_transport_loss` 的非零更新均为零，证明 A 是只修改预热的干净
+控制组。06:18 B/SW+BM 的 FIXED 训练也完成同样的 `2010/2010`、零跳步、
+零监督耗尽和零容量碰撞审计；其 birth margin 在 `1156/2010` 个更新中
+非零，均值 `0.0826192`，transport 始终为零，证明 B 的新增机制真实激活
+且没有串入 C。
+
+随后发现原三条连续 Slurm job 的默认端口规则存在启动链路冲突。每个 job
+以 `20000 + job_id % 40000` 为首端口，并在 FIXED 训练、FIXED 校准、
+REMATCH 训练、REMATCH 校准之间逐次 `+1`；连续 job
+`1177706/1177707/1177708` 因而让 A 的 FIXED 校准端口 `37707` 与 B 的
+FIXED 训练端口重合，让 B 的下一端口与 C 的训练端口重合。A
+`1177706` 因 `torchrun` rendezvous `Address already in use` 以
+`FAILED 1:0 / 00:36:21` 退出；其完整 checkpoint/audit 已保留。这是
+训练后的阶段启动冲突，不是模型、数值、数据、监督、容量或科学门禁失败。
+
+不修改冻结模型、配置、数据、seed 或超参数，仍从 exact
+`d390779443bccc4926bc8fb2bff1875834383c21` 干净 detached checkout
+通过 Slurm 提交两条恢复作业，并显式划分不重叠端口块：
+
+| 版本 | 恢复 job | 恢复运行目录 | 显式端口块 |
+| --- | ---: | --- | --- |
+| A / SW | `1177711` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_062012` | `45100–45103` |
+| B / SW+BM | `1177712` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_062013` | `45200–45203` |
+
+C `1177708` 保持原作业继续运行。旧失败目录只作为诊断证据，不进入最终
+A/B/C 比较；最终比较只采用三条完整产物链。没有取消或修改任何无关作业，
+也没有借该恢复改变模型版本。
