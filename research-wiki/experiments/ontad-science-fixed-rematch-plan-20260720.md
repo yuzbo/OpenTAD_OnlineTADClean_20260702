@@ -29,13 +29,20 @@ Date: 2026-07-20
 ## Phase 4: Verification
 
 - [x] Run source compilation.
-- [ ] Run supervision, lifecycle, metric, dataset, and config tests.
-- [ ] Run synthetic repeated/overlapping/adjacent-action streams.
-- [ ] Verify no inference annotation or future fields.
-- [ ] Verify the two resolved configs differ only in binding mode.
+- [x] Run supervision, lifecycle, metric, dataset, and config tests in the
+      N16R4 PyTorch environment (55 focused tests passed on 2026-07-20).
+- [x] Cover repeated and overlapping same-class actions with focused synthetic
+      supervision and lifecycle tests.
+- [ ] Run an end-to-end adjacent-action synthetic stream through dataset,
+      detector, emission serialization, and evaluator.
+- [x] Verify no inference annotation, terminal, or future fields.
+- [x] Verify the two resolved configs differ only in binding mode.
 
 ## Phase 5: Feature Falsification
 
+- [x] Verify the annotation, class map, cached-feature manifest, and frozen
+      160/40/211 split files on N16R4.
+- [ ] Run a Slurm end-to-end train/inference smoke job.
 - [ ] Run one matched seed as a convergence and non-degeneracy screen.
 - [ ] Freeze validation-selected thresholds.
 - [ ] Run seeds 705, 706, and 707 through Slurm.
