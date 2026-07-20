@@ -256,3 +256,21 @@ frozen features、LoRA 或 backbone 本身声称为新颖。仍存活的窄主�
 在完全匹配的 strict On-TAD 协议下，first-crossing persistent FIXED
 supervision binding 能否在不显著损害 standard mAP 的前提下，降低
 identity-linked duplicate/fragmentation error。
+
+## 2026-07-21 07:35 恢复点
+
+- A `1177711`、B `1177712`、C `1177708` 均已完成完整 FIXED/REMATCH
+  产物链；三版双臂最终区间均为零。
+- 冻结比较器输出 `selected_variant=null`、`next_stage_authorized=false`、
+  `raw_rgb_authorized_next=false`。旧三版不进多轮、多种子或 raw-RGB。
+- A/REMATCH birth/alive AUC 为 `0.778/0.823`，说明已有排序信号，但
+  birth positive 最大值 `0.495894` 尚未越过冻结 0.5；B 的 0.5 birth
+  margin 把 REMATCH 三通道压到约随机，C transport 也被拒绝。
+- 下一版不是放大 B，而是 exact `d87a116` 的 lifecycle 小权重版本：
+  birth/alive/end margin 均 `0.25`、权重均 `0.1`、transport 为零。
+- N16R4 exact `d87a116` 上 `126 passed in 74.03s`，clean detached；
+  Slurm job `1177720` 已在 `g0003` 运行，run 为
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_lifecycle_seed705_20260721_073454`。
+- 提交器现在按 job id 分配四端口块；`1177720` 使用
+  `50880–50883`。下一恢复点先看自身 profile gate，再看三项 margin
+  activation、双臂最终区间与三通道诊断。

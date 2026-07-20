@@ -431,3 +431,71 @@ alive/end margin 均为零，因此该提交不追认或改变正在运行的 ex
 编译与 11 项 CPU-safe 配置/activation 测试通过；Torch 梯度测试因已知
 Windows `c10.dll` 初始化故障未在本机形成证据，等待 N16R4 干净环境。
 具体 margin 数值和是否部署，继续由 A/B 两臂 v2 分数诊断决定。
+
+### M6 三版本终局、冻结比较与第四版部署
+
+07:24–07:25，恢复后的 A `1177711` 和 B `1177712` 完成全部双臂训练、
+校准、activation、v2 分数诊断、资源审计与 screen gate。两条作业均以
+预期的科学拒绝 `FAILED 1:0` 结束，不是程序崩溃：
+
+| 版本 | 实际双臂 GPU·h | FIXED birth/alive/end AUC | REMATCH birth/alive/end AUC | 双臂最终区间 |
+| --- | ---: | --- | --- | ---: |
+| A / SW | `1.06583` | `0.451/0.370/0.529` | `0.778/0.823/0.519` | `0 / 0` |
+| B / SW+BM | `1.07333` | `0.474/0.511/0.478` | `0.484/0.500/0.476` | `0 / 0` |
+| C / SW+CT | `1.08000` | `0.313/0.296/0.566` | `0.552/0.482/0.530` | `0 / 0` |
+
+A/B 两臂均为 `2010/2010` 更新、零 skip、零监督耗尽和零
+GT-birth/runtime collision。A 的 REMATCH 已学到可用的相对排序：
+birth positive 最大值 `0.495894`，仅略低于冻结 0.5；alive TPR 为
+`0.8604`，但 FPR 仍为 `0.2028`，end 判别接近随机。B 的 0.5 birth
+margin 虽把 FIXED birth/alive AUC 从 `0.451/0.370` 提至
+`0.474/0.511`，却把 REMATCH 三通道压到约 `0.48–0.50`。这说明下一版
+不能简单增大 birth margin，也不能继续调 transport。
+
+预先冻结的比较器在分析提交
+`68cc9d924d5deafee97c13f1147e340c03c5e53a` 上读取三条完整产物，
+确认三版 activation、预算和 provenance 完整，但三版 technical screen
+均因双臂零最终区间失败；正式输出为：
+
+- `eligible_variants_in_rank_order=[]`；
+- `selected_variant=null`；
+- `next_stage_authorized=false`；
+- `raw_rgb_authorized_next=false`。
+
+因此 A/B/C 没有胜出者，不进入 P1 多轮、P2 多种子、reporting 或
+raw-RGB。下一步仍是特征级 head/lifecycle 修复。
+
+依据上述诊断，第四版冻结为保守的全生命周期 margin：
+
+- birth/alive/end 的 margin 均保持 `0.25`；
+- 三项辅助权重均为 `0.1`，总名义权重 `0.3`，低于 B 的单项 `0.5`；
+- transport 权重为零，阈值仍为 0.5，不搜索阈值；
+- 只使用当前 prefix 的 birth/occupied/endpoint target 与同一步负槽。
+
+这样做的目的不是保证“抬分”，而是检验较小、分散的生命周期边界梯度
+能否保留 A/REMATCH 的排序，同时让 FIXED 和 end 通道不再静默。部署提交
+为 `d87a116d3a30fb5a83af7ee7c9c3c311bc8bc30c`。提交器同时把端口规则
+修为“每个 Slurm job 预留连续四端口块”，避免连续 job 再次交叉占端口。
+
+本地配置、activation、提交器共 `17 passed`；独立 N16R4 clean detached
+检出
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_LifecycleMargin_6b0ffd6`
+在 exact `d87a116` 上完成 Bash 语法、Torch 梯度、配置、评测和提交器
+`126 passed in 74.03s`，测试后零改动。服务器访问 GitHub 超时后使用
+增量 Git bundle 传递原始 Git 对象，提交 SHA 未重建或改写，也未触碰
+旧 `d390779` 运行目录。
+
+第四版已通过 Slurm 提交：
+
+| 项目 | 值 |
+| --- | --- |
+| job | `1177720` |
+| run | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_lifecycle_seed705_20260721_073454` |
+| exact commit | `d87a116d3a30fb5a83af7ee7c9c3c311bc8bc30c` |
+| 配置 | `thumos_persistent_binding_opt_lifecycle_{fixed,rematch}.py` |
+| 自动端口块 | `50880–50883` |
+| 初始状态 | `RUNNING / g0003` |
+
+该作业仍先跑自身 FIXED/REMATCH 画像和 2 GPU·小时门；通过后才运行一轮
+双臂训练。无论结果通过或拒绝，都必须留下三项 margin 的非零更新计数、
+三通道 AUC/gap/TPR/FPR、生命周期计数和完整因果/资源审计。
