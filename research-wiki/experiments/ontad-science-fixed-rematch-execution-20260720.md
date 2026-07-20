@@ -626,3 +626,163 @@ alive 和 end 也存在同类但较小的偏差。因而“损失按加权目标
 该修改仍只是有根因证据支持的可学习性修复，不构成效果结论。下一步必须在
 新精确提交上依次重跑 Slurm smoke、strict profile 和 seed-705 双臂筛选；
 只有新筛选同时避免静默与爆炸，才可讨论多种子特征级主实验。
+
+## Weighted-prior Repaired Smoke — Slurm 1177637
+
+共享偏置修复后的同提交整链路 smoke 已通过。
+
+- 精确提交：
+  `8dff64c958ebbad2ce0dad285b74007536c7f5ab`；
+- 运行目录：
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459`；
+- RTX 4090 `g0006`，Slurm `COMPLETED 0:0`，耗时 `00:06:11`；
+- 87 项远端 Torch 测试通过；
+- 全 411 视频、320,205 token、6,328 实例 census 再次通过。
+
+Census 明确记录正式路线使用 `weighted_bce_stationary`，解析初始概率为
+birth `0.069223`、alive `0.227615`、end `0.206861`。FIXED/REMATCH
+真实特征直接更新均通过，且两臂都是 0 GT supervision exhaustion、
+0 GT-birth/runtime collision 和 0 runtime capacity exhaustion。
+
+标准 serialization smoke 仍显式使用 `raw_probability` 和 0.5 priors：
+它完成 1/1 optimizer update、1 scheduler step、0 skip；checkpoint 与
+严格因果重载各发射 67 个不可变最终区间，两个 ledger 逐字节同哈希，且
+future-end/source、negative-latency、non-monotonic 违规全为 0。
+
+关键 SHA-256：
+
+- census：
+  `103810a4df69a7fc876fbccd84b4ca28454e5dd978cdbcad20b32de1ed170d1b`；
+- smoke gate：
+  `b4849650fe4caa6001ec50fa3a0a7d65b335feb671cd55356fdfa6c619bb0efc`；
+- training audit：
+  `a665075ae4f786d45d4a17d6cc4bdec78bfb38b7caa9277e59f03e35cbbd7432`；
+- checkpoint：
+  `8e8cdc04b6e32181ca79615fdc845a7aad1b62592bb917845212d56179fdaefb`；
+- train/reload ledger：
+  `e21bc03a3a50cd4ae01767f36e00b3c9e7163309a27911000341f8d78c498359`。
+
+该节点证明修复没有破坏模型构建、梯度、容量、序列化和严格因果协议；
+它不证明一轮训练后能避免静默或爆炸。下一门禁是在同一提交上重新画像。
+
+## Weighted-prior Strict Profile — Slurm 1177639
+
+同提交画像四项全部完成；Slurm 最终 `FAILED 1:0` 只代表冻结的 12-epoch
+方案继续超出 2 GPU-hour cap。
+
+- 提交：`8dff64c958ebbad2ce0dad285b74007536c7f5ab`；
+- 目录：
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/profile_20260721_011216`；
+- RTX 4090 `g0006`，耗时 `00:11:27`；
+- 27 项前置测试通过；
+- seed 705、FP32、严格确定性、每个画像 50 warm-up + 200 measured。
+
+训练画像：
+
+| Arm | Mean step | Full fit epoch | Peak MiB |
+| --- | ---: | ---: | ---: |
+| FIXED | 0.689554 s | 0.385001 GPU h | 140.443 |
+| REMATCH | 0.692710 s | 0.386763 GPU h | 140.443 |
+
+两臂均有 29 个参数改变、28 个参数获得非零梯度，且 GT supervision
+exhaustion、GT-birth/runtime collision、runtime capacity exhaustion 均为 0。
+
+未训练 calibration 画像仍没有发射，说明加权平衡初始化本身没有造成爆量：
+
+- FIXED `0.204952 s/step`、完整 split `0.026701 GPU h`；
+- REMATCH `0.205963 s/step`；
+- 两臂 0 emission、同一 canonical ledger SHA-256
+  `41539d028e27acc98117c09c4d78ae4c0c7f70fa2c2bcec9b65068ba06aa3309`；
+- 所有未来信息和时序违规为 0。
+
+预算结论：
+
+- 12 epoch：training `9.261172`、calibration `0.053533`、
+  locked-report reserve `0.310355`，加 1.25 后
+  `12.031325 GPU h`，**FAIL**；
+- seed-705 一 epoch：training `0.771764`、calibration `0.053533`、
+  reserve `0.310355`，加 1.25 后 `1.419566 GPU h`，**PASS**。
+
+Profile SHA-256：
+
+- FIXED train：
+  `f8593149b2eea5eb678a725b4cf6b0df91d78c4fca1afc3c5a8d2d5ec4096060`；
+- REMATCH train：
+  `8b4de6f89a05b27b7a21e238c0b2e0e29dcf2c9f73ef8f5ca296faeb9c9f18f7`；
+- FIXED inference：
+  `864e06421771ebffee5196091ee90dda2f4bde68de3fa487b266aa7eaa6b2aa9`；
+- REMATCH inference：
+  `930e65e6473271165214ca0aea4bc684a9706e48b645510b465684f3973e4ee8`；
+- 12-epoch rejection gate：
+  `0ac674c7e00f66c285d1fe75a6ca7cc16e8844102a12cc980066f9f8f36bab7a`；
+- one-epoch screen gate：
+  `375d907289b3dc3730ff53514dda77ade55fa491dd86f28720e99f9609f736df`。
+
+因此同提交 seed-705 双臂筛选已获资源放行；该放行不改变技术门槛，也不
+授权 reporting、效果结论、多种子或 raw RGB。
+
+## Weighted-prior Seed-705 Screen — Slurm 1177653
+
+加权 BCE 一致初始化后的双臂 seed-705 技术筛选已在同一精确提交上完整
+结束。Slurm 最终 `FAILED 1:0` 是冻结技术 gate 的预期拒绝，不是训练、
+checkpoint、推理或评测程序崩溃。
+
+- 提交：`8dff64c958ebbad2ce0dad285b74007536c7f5ab`；
+- 目录：
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/screen_seed705_20260721_012521`；
+- RTX 4090 `g0006`，Slurm `1177653`，耗时 `00:57:23`；
+- 双臂实际资源 `0.955278 GPU·hours`，低于冻结的
+  `2 GPU·hours` 上限；
+- 前置测试、全量 census、FIXED 训练/校准、REMATCH 训练/校准及最终
+  paired gate 全部执行到终点；
+- reporting split 未访问，阈值、数据、损失权重、优化器、生命周期和
+  FIXED/REMATCH 比较轴均未在看结果后修改。
+
+两臂各自都完成：
+
+- `2010/2010` successful/expected updates；
+- `2010` scheduler steps、`0` skipped updates；
+- `0` GT supervision exhaustion；
+- `0` GT-birth/runtime-entry collision；
+- `0` causal protocol violation。
+
+但 calibration-only 最终结果仍共同静默：
+
+| Arm | 最终区间 | prediction/GT | Recall@0.3 | average mAP |
+| --- | ---: | ---: | ---: | ---: |
+| FIXED | 0 | 0 | 0 | 0 |
+| REMATCH | 0 | 0 | 0 | 0 |
+
+因此冻结 gate 对每臂均触发“无最终预测、prediction/GT 低于 `0.25`、
+Recall@0.3 低于 `0.25`”三项失败。该结果证明：
+
+1. weighted-prior 修复没有导致预测爆量，也没有破坏训练或因果协议；
+2. 单独修复初始化不足以在当前一轮全 warm-up 日程内解除 birth/lifecycle
+   静默；
+3. 两臂共同失败且训练轨迹接近，当前首要瓶颈位于共享模型/优化过程，
+   而不是 FIXED/REMATCH 绑定差异；
+4. 不能放行多种子、reporting、论文效果结论或 raw RGB。
+
+关键 SHA-256：
+
+- census：
+  `d3da34ca23c35794b954db78ad401370812c8721c96eed5bbc95392b963553ef`；
+- FIXED checkpoint：
+  `5cd789c9035ac79a079b33670d46ab1ffafaaa1c6093e6a5b95f203f3d7ae254`；
+- REMATCH checkpoint：
+  `0f74595ebdb1bde686c66a4df5c567f8c2bbab7e37933fa87a7cb87318537832`；
+- FIXED screen result：
+  `087a24c2cf308d5083b00e6313005e0d1651b0f2319a0aab8ed270ba4e6277b1`；
+- REMATCH screen result：
+  `887ee6962591b04a59c49daecfc1082dfbc35fd6c1f57da204a573625a8f328a`；
+- pair resource：
+  `a09e2b9b5debfcf6e42b2e0baa64c4941af6819d31d4d76da9e9bb2b801eb2dd`；
+- screen gate：
+  `dc3fd87baf115722d8ddbf9214a9de09974b32363f908b883db8b68bbdbadb50`。
+
+下一节点固定为只读 calibration score diagnosis
+`1177682`（目录
+`/data/run01/sczc063/yuzibo/runs/persistent_binding/score_diagnosis_20260721_022330`）。
+诊断先量化新 checkpoint 的 birth/alive/end 分布、0.5 margin、过线次数及
+bias 位移。只有诊断证据支持，才实施一个两臂共享的单变量优化；不得降低
+阈值或访问 reporting。

@@ -106,8 +106,16 @@ paired-profile, and final-decision checkpoint.
       checkpoints and record birth/alive/end distributions and bias margins.
 - [x] Repair shared model initialization after the diagnosis confirmed the
       registered weighted-BCE mismatch; thresholds and splits remain frozen.
-- [ ] Rerun same-commit smoke, strict profile, and seed-705 screen after the
-      model repair.
+- [x] Rerun same-commit smoke after the model repair
+      (Slurm `1177637`, 87 tests, gate passed).
+- [x] Rerun strict profile at the repaired smoke commit
+      (Slurm `1177639`; one-epoch gate `1.419566 GPU·hours`, passed).
+- [x] Rerun seed-705 screen at the repaired smoke/profile commit
+      (Slurm `1177653`; budget and execution passed, but both arms remained
+      silent and the frozen technical gate correctly failed).
+- [ ] Run calibration-only score diagnosis `1177682` on the repaired
+      checkpoints, then choose at most one shared model/optimization change
+      from the measured threshold margins.
 - [ ] BLOCKED: freeze validation-selected thresholds.
 - [ ] BLOCKED: run seeds 705, 706, and 707 through Slurm.
 - [ ] Report paired standard and instance metrics.

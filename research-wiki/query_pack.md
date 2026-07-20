@@ -32,7 +32,11 @@ across 28,730 tokens per arm, FIXED/REMATCH birth maxima were
 `0.433135/0.346657` with zero 0.5 crossings. Both trained birth biases remained
 about `2.526 logit` below the registered weighted-BCE stationary point. The
 shared `weighted_bce_stationary` initialization repair is implemented; its
-same-commit smoke/profile/screen rerun is now the active gate.
+same-commit smoke `1177637` and one-epoch profile gate `1177639` passed.
+Repaired screen `1177653` at `8dff64c` used `0.955278 GPU-hours`; both arms
+again made zero emissions after 2010/2010 stable updates, so the frozen gate
+failed. Calibration-only diagnosis `1177682` is now selecting the next single
+shared model/optimization change without threshold or reporting access.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -44,15 +48,11 @@ Read:
 
 ## Current Blocking Gaps
 
-1. **Repair validation:** pass the full remote Torch bundle, real-feature
-   update, serialization, strict-causal reload, and census on one exact commit.
-2. **Same-commit budget profile:** remeasure the repaired FIXED/REMATCH route
-   before spending the frozen one-epoch screen budget.
-3. **One-epoch non-degeneracy rerun:** both arms must update, emit causally,
-   and avoid silent/explosive outputs on calibration only.
-4. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
+1. **Shared model/optimization bottleneck:** initialization repair did not
+   remove silence; diagnose score margins before one shared change.
+2. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
    main result and cannot prove the identity-error claim.
-5. **Raw RGB:** joint visual training stays blocked until the complete
+3. **Raw RGB:** joint visual training stays blocked until the complete
    feature-level scientific gate passes.
 
 ## Evidence Already Established
@@ -77,18 +77,21 @@ Read:
 - the shared repair changes only binary-head initialization mode; empirical
   priors, positive weights, thresholds, data, lifecycle, and comparison axis
   remain frozen;
+- repaired smoke `1177637` passed 87 tests, real updates, exact reload, and
+  zero future violations; repaired profile `1177639` passed the one-epoch
+  budget gate at `1.419566 GPU-hours`;
+- repaired screen `1177653` used `0.955278 GPU-hours`; both arms had 2010/2010
+  clean updates but zero intervals, so initialization alone was insufficient;
 - none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
   latency, or any paper headline.
 
 ## Immediate Implementation Order
 
-1. Commit and remotely validate the weighted-BCE stationary initialization
-   repair and exact bias math.
-2. Rerun the full Slurm smoke at that exact commit.
-3. Rerun the strict paired profile at the same commit.
-4. If the one-epoch estimate remains below two GPU-hours, rerun seed-705
-   FIXED/REMATCH without reporting access or threshold edits.
-5. Only after a technical pass, design the affordable multi-epoch/three-seed
+1. Complete score diagnosis `1177682` on both repaired checkpoints.
+2. Select and implement exactly one evidence-backed shared
+   model/optimization change; do not edit thresholds or access reporting.
+3. Rerun same-commit smoke, strict profile, and seed-705 technical screen.
+4. Only after a technical pass, design the affordable multi-epoch/three-seed
    protocol; raw RGB remains later and conditional.
 
 ## Feature-Level Gates
