@@ -271,6 +271,10 @@ Sinkhorn。提交 `5c02ccca6142a9e9c8919fe4b0830d1dad3480a3` 将这些
 继续 stop-gradient，梯度仍只到当前 query。确定性测试证明 batched plan
 等于逐对 plan、batched loss 等于逐对 loss 之和且反向梯度有限，因此
 科学目标和损失标度均未改变，只消除小 kernel 启动放大。
+N16R4 登录节点的单线程 CPU 代理计时（63 个相邻对）为
+`4.507844 ms` batched 对 `194.348725 ms` individual，即 `43.11×`；
+最大数值差为零。该计时只验证实现优化方向，不替代作业内 RTX 4090
+strict profile 或 GPU-hour 门禁。
 
 因此旧 `1177693/1177694/1177695` 在零 GPU 消耗时受控取消，旧目录保留
 审计且均无 `pilot_contract.json`。没有取消或修改旧诊断及任何无关作业。
