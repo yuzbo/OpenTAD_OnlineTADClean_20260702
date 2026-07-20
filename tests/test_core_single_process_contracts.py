@@ -130,3 +130,32 @@ def test_build_optimizer_supports_unwrapped_single_process_model():
     assert isinstance(optimizer, torch.optim.AdamW)
     assert id(model.backbone.weight) in optimizer_param_ids
     assert id(model.head.weight) in optimizer_param_ids
+
+
+def test_build_optimizer_supports_feature_detector_with_no_backbone():
+    torch = _torch_or_skip()
+
+    from opentad.cores.optimizer import build_optimizer
+
+    class FeatureDetector(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.backbone = None
+            self.head = torch.nn.Linear(4, 2)
+
+    model = FeatureDetector()
+    optimizer = build_optimizer(
+        dict(type="AdamW", lr=2e-4, weight_decay=0.05),
+        model,
+        _Logger(),
+    )
+
+    optimizer_param_ids = {
+        id(param)
+        for group in optimizer.param_groups
+        for param in group["params"]
+    }
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert id(model.head.weight) in optimizer_param_ids
+    assert id(model.head.bias) in optimizer_param_ids

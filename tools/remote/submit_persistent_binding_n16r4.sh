@@ -124,6 +124,7 @@ python -m pytest \
     tests/test_persistent_binding_configs.py \
     tests/test_streaming_feature_dataset.py \
     tests/test_persistent_binding_smoke_tools.py \
+    tests/test_core_single_process_contracts.py \
     -q -p no:cacheprovider
 
 python tools/smoke_persistent_binding.py \
