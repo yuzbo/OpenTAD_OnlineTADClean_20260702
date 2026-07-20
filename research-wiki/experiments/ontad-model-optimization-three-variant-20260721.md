@@ -61,11 +61,24 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 设计思想。当前检索没有核实到可唯一对应的同名 On-TAD 论文，因此不会把
 本实现错误归因给一个未核实的方法。直接相关的公开依据是：
 
-- CausalTAD：限制时间上下文方向，说明因果时序建模对 TAD 有效；
-- MATR：使用过去记忆维护 On-TAL 的长时上下文；
-- CAG-QIL：明确要求未来不可见且历史提案不可回改；
-- Temporally Consistent Unbalanced OT：把时间一致性先验编码进
+- [CausalTAD](https://arxiv.org/abs/2407.17792)：限制时间上下文方向，
+  说明因果时序建模对 TAD 有效；
+- [MATR](https://arxiv.org/abs/2408.02957)：使用过去记忆维护 On-TAL
+  的长时上下文；
+- [CAG-QIL](https://openaccess.thecvf.com/content/ICCV2021/html/Kang_CAG-QIL_Context-Aware_Actionness_Grouping_via_Q_Imitation_Learning_for_Online_ICCV_2021_paper.html)：
+  明确要求未来不可见且历史提案不可回改；
+- [Temporally Consistent Unbalanced OT](https://openaccess.thecvf.com/content/CVPR2024/html/Xu_Temporally_Consistent_Unbalanced_Optimal_Transport_for_Unsupervised_Action_Segmentation_CVPR_2024_paper.html)：
+  把时间一致性先验编码进
   optimal transport；本实验只借鉴该原则，不照搬其无监督分割设定。
+
+补充边界：
+
+- [ActionSwitch](https://arxiv.org/abs/2407.12987) 的 conservativeness loss
+  说明抑制不必要的在线状态波动可减少 fragmentation；C 处理的是 persistent
+  query 表示传输，不复刻其上一状态伪标签。
+- [HAT](https://arxiv.org/abs/2408.06437) 与 MATR 都支持“历史信息有用”，
+  但它们包含 anticipation/future-supervised 设计；本项目不采用这些部分，
+  只保留推理时从过去到当前的严格因果信息流。
 
 ## 共同 pilot 门禁
 
@@ -86,6 +99,21 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 三个版本是并行的机制 pilot，不以其中任一结果冒充 FIXED/REMATCH
 论文主实验。若 B 或 C 单独通过技术门禁，再做一次受控组合实验；若均失败，
 回到 head/lifecycle 表示而不是修改评测阈值。
+
+## 从当前 pilot 到论文主实验
+
+| 阶段 | 实验 | 主要证明什么 | 放行条件 |
+| --- | --- | --- | --- |
+| P0（当前） | A/B/C、seed 705、一轮、双臂 | 找到不静默且不爆量的共享模型/优化路线 | 自身画像过预算；两臂均有非零预测、合格 prediction/GT 与 Recall@0.3；零训练/容量/因果错误 |
+| P1 | 胜出单版本，seed 705，预先冻结的多轮收敛 pilot | 改进是否能持续，而非一轮偶然 crossing | 在 calibration 上冻结 epoch/阈值；不访问 reporting；新画像仍过预算 |
+| P2 | seeds 705/706/707 的 FIXED/REMATCH 特征主实验 | first-crossing 固定绑定是否稳定减少 duplicate/fragmentation | FIXED 在至少 2/3 seeds 改善，`E_id` 相对下降至少 20%，平均 mAP 下降不超过 0.5 个百分点 |
+| P3 | 冻结 checkpoint 的一次性 reporting | 给出论文标准 mAP、online budgeted AP、延时和实例错误主表 | 一次性锁、完整 SHA provenance、零 future/monotonicity 违规 |
+| P4 | 受控消融和失败子集 | 分清 warmup、margin、transport、FIXED binding 各自贡献 | 每项只改一个因素；报告重复同类、重叠、相邻动作、长短实例 |
+| P5（条件） | raw-RGB frozen / PEFT / joint 三阶梯 | 特征级机制能否扩展到真正端到端视频训练 | 只有 P2/P3 通过才启动；严格因果视觉编码、相同 lifecycle 与评测合同 |
+
+论文主结果不是当前三个一轮 pilot。当前 P0 只回答“模型能否学会可靠地开门
+并完成生命周期”；P2/P3 才回答 FIXED/REMATCH 的论文主假设；P5 才回答
+raw-RGB 端到端扩展。
 
 ## 关键节点
 

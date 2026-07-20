@@ -5,152 +5,156 @@ status: active
 scope: Compressed memory to prepend before any new ideation or implementation planning.
 ---
 
-# Query Pack: Online/Causal TAD Project Memory
+# Query Pack: Strictly Causal On-TAD
 
-## Project Direction
+## Fixed Goal
 
-The task is fixed to standard, fully supervised, strictly causal Online
-Temporal Action Detection/Localization. At decision time `t`, inference sees
-only current and past evidence, maintains instance lifecycle, and emits an
-immutable `{start, end, class, score}` interval with low delay. Do not add
-labels/sensors, mutable outputs, or offline cleanup.
+研究对象是标准、全监督、严格因果的 Online Temporal Action
+Detection/Localization。决策时刻 `t` 只能读取当前与过去视频证据；模型在线
+维护实例出生、持续和结束，并在动作结束后低延时写出不可修改的
+`{start, end, class, score}` 最终区间。
 
-The active experiment is feature-level, not raw RGB: compare first-crossing
-**FIXED** supervision binding against per-prefix **REMATCH** while runtime
-lifecycle, data, thresholds, optimizer, inference, and evaluation are matched.
-Only the post-birth loss-binding rule may differ.
+不要引入额外传感器、未来终点预测、offline NMS、全视频回改、开放词汇主线，
+也不要转向网络安全、宿主或 TCB 叙事。
 
-The optimized route passed same-commit Slurm smoke `1177580` and strict
-profile `1177582` at `534f85b`. The first seed-705 paired technical screen
-`1177596` then completed within budget but correctly failed: both FIXED and
-REMATCH made zero calibration emissions after one stable epoch. No three-seed
-or paper result exists.
+当前仍是**特征级**实验：输入为冻结的 causal SigLIP2 stride-8、768-d
+缓存特征。只有完整特征级技术门与科学门通过后，才进入 raw-RGB
+frozen/PEFT/joint 三阶梯。
 
-Calibration-only diagnosis `1177634` then confirmed the common bottleneck:
-across 28,730 tokens per arm, FIXED/REMATCH birth maxima were
-`0.433135/0.346657` with zero 0.5 crossings. Both trained birth biases remained
-about `2.526 logit` below the registered weighted-BCE stationary point. The
-shared `weighted_bce_stationary` initialization repair is implemented; its
-same-commit smoke `1177637` and one-epoch profile gate `1177639` passed.
-Repaired screen `1177653` at `8dff64c` used `0.955278 GPU-hours`; both arms
-again made zero emissions after 2010/2010 stable updates, so the frozen gate
-failed. Calibration-only diagnosis `1177682` is now selecting the next single
-shared change without threshold/reporting access. A short-warmup candidate is
-local but untrained. Parameter deltas show birth weights did update (~19%);
-small bias motion alone is not evidence of undertraining. Target-conditioned
-diagnosis v2 passed 10 remote unit tests; pending `1177682` remains v1.
-Detached candidate launches now require an exact 40-character commit.
+## Frozen Scientific Comparison
 
-The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
-Read:
+主假设是 first-crossing **FIXED** supervision binding 与 per-prefix
+**REMATCH** 的配对比较：
 
-1. `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`;
-2. `experiments/ontad-science-fixed-rematch-readiness-review-20260720.md`;
-3. DR-028;
-4. `experiments/ontad-science-fixed-rematch-plan-20260720.md`.
+- 两臂共享 first-crossing birth、canonical supervision lifecycle、
+  runtime lifecycle、槽位数、数据、优化器、阈值、推理与评测；
+- 唯一主比较轴是出生后的 target-to-slot loss binding；
+- runtime state 不含 GT identity；推理不接收 annotation、terminal 或
+  future fields；
+- 最终区间只提交一次，历史输出不能修改。
 
-## Current Blocking Gaps
+四槽容量与 candidate lifecycle 已修复。全 411 视频 census：
+320,205 token、6,328 实例、最大同一步 birth 2、最大可见并发 4，
+所有 birth/end 覆盖，零 oracle capacity deficit。
 
-1. **Shared model/optimization bottleneck:** initialization repair did not
-   remove silence; diagnose score margins before one shared change.
-2. **Paper evidence:** one seed/one epoch is not the three-seed, multi-epoch
-   main result and cannot prove the identity-error claim.
-3. **Raw RGB:** joint visual training stays blocked until the complete
-   feature-level scientific gate passes.
+## Established Execution Evidence
 
-## Evidence Already Established
+- 科学合同修复 smoke `1177438`：76 tests、真实更新、checkpoint reload
+  精确复现 84 条 causal emission。
+- repaired profile `1177511`：稳定、严格确定性、未训练两臂推理完全相同；
+  12-epoch pair 需约 `12.512897 GPU·h`，被 2-hour cap 拒绝。
+- fit-only 正率：birth/alive/end =
+  `0.00550069/0.0799036/0.0636912`；所有 birth start 在一个 token 内。
+- 优化后 smoke/profile `1177580/1177582` 通过；首个 seed-705 screen
+  `1177596` 用 `0.871944 GPU·h`，两臂均 2010/2010 更新但零 emission。
+- diagnosis `1177634`：28,730 calibration token/arm，birth 最大值仅
+  FIXED `0.433135`、REMATCH `0.346657`，冻结 0.5 crossing 均为零。
+- shared `weighted_bce_stationary` prior 修复后 smoke/profile
+  `1177637/1177639` 通过；screen `1177653` 用 `0.955278 GPU·h`，
+  两臂再次 2010/2010 稳定更新但零 emission。
+- `1177682` 是 repaired checkpoint 的 calibration-only score diagnosis，
+  仍因 `AssocGrpGRES` 排队；不取消、不重复提交。它是补充诊断，不再阻塞
+  用户明确要求的三个模型优化 pilot。
 
-- full census: 411 videos, 320,205 tokens, 6,328 instances, every birth/end
-  covered, max two births and four visible instances, zero capacity deficit;
-- repaired smoke `1177438`: 76 tests, one real update, exact checkpoint reload,
-  84 immutable emissions, zero future-information violations;
-- profile `1177511`: both arms stable and exactly equivalent before training,
-  but the 12-epoch pair costs `12.512897 GPU·hours` and is rejected;
-- fit-only balance census: birth/alive/end positive rates are
-  `0.00550069/0.0799036/0.0636912`; every birth start lies within one token;
-- optimized smoke `1177580` passed 82 remote tests and exact causal reload;
-- optimized one-epoch profile gate is `1.404134 GPU-hours`, below the cap;
-- screen `1177596` used `0.871944 GPU-hours`; both arms completed 2010/2010
-  updates with zero training/capacity/causal errors but emitted zero intervals;
-- diagnosis `1177634` passed 22 tests and found zero birth-threshold crossings
-  in either arm; trained birth biases were about `2.526 logit` below the
-  weighted-BCE stationary initialization;
-- the shared repair changes only binary-head initialization mode; empirical
-  priors, positive weights, thresholds, data, lifecycle, and comparison axis
-  remain frozen;
-- repaired smoke `1177637` passed 87 tests and exact causal reload; profile
-  `1177639` passed the one-epoch gate at `1.419566 GPU-hours`;
-- repaired screen `1177653` used `0.955278 GPU-hours`; both arms had 2010/2010
-  clean updates but zero intervals, so initialization alone was insufficient;
-- none of this yet shows FIXED improves duplicate rate, fragmentation, mAP,
-  latency, or any paper headline.
+这些证据只定位共同 birth/lifecycle 瓶颈，不证明 FIXED 的论文效果。
 
-## Immediate Implementation Order
+## Current Three Model-Optimization Pilots
 
-1. Complete score diagnosis `1177682` on both checkpoints.
-2. Confirm or reject the prepared shared short-warmup candidate.
-3. Rerun same-commit smoke, strict profile, and seed-705 technical screen.
-4. Only after a technical pass, design the affordable multi-epoch/three-seed
-   protocol; raw RGB remains later and conditional.
+实现提交：`7ba049f530c5fac856de3c4d527aebfc8666fb04`。
+部署合同收紧提交：
+`1b93a7d6421e38c89601580ca34d5003b1859cff`。
 
-## Feature-Level Gates
+三个版本均为 seed 705、一个 epoch、fit-only、feature-only；每个版本内部
+都有严格配对的 FIXED/REMATCH，B 与 C 不叠加：
 
-Every arm and seed must have:
+1. **A / SW**：只用 `warmup_epoch=0.1`。检验旧一轮直到最后更新才达到
+   peak LR 是否造成有效 LR 暴露不足。
+2. **B / SW+BM**：A 加 birth-frame balanced logit margin（weight 0.5，
+   margin 0.25）。只在当前 first-crossing 有正 birth 时启用，正槽推到
+   logit `+0.25`，同一步负槽推到 `-0.25`；不读未来。
+3. **C / SW+CT**：A 加 causal query transport（weight 0.05）。上一有效
+   token queries stop-gradient 后向当前 queries 做 Sinkhorn 软传输；
+   边际来自 prediction-only
+   `alive*(1-birth)*(1-end)` mass，代价为 cosine distance 加同槽位时间
+   identity prior；不使用 GT identity 或未来标签。
 
-- zero causal violations;
-- zero dropped GT birth targets;
-- zero unexplained runtime capacity failures;
-- nonzero committed predictions;
-- prediction/GT ratio in `[0.25, 4.0]`;
-- Recall@tIoU 0.3 of at least `0.25`;
-- explicit successful-update and scheduler-step parity.
+“ChronoTransport”仅作为时间有序的 past-to-current optimal-transport
+思想。未核实到唯一对应的同名 On-TAD 论文，不得冒认。直接依据是
+CausalTAD 的因果方向、MATR/HAT 的历史上下文、ActionSwitch 的在线状态
+保守性，以及 temporally consistent OT 的时序传输原则；HAT/MATR 的
+anticipation/future-supervised 部分不采用。
 
-Across paired seeds 705/706/707:
+验证：
 
-- `E_id = 0.5 × (duplicate_rate + fragmentation_rate)`;
-- FIXED relative `E_id` reduction at least 20%;
-- FIXED improves at least two of three seeds;
-- standard average mAP decline no worse than `0.5` percentage points;
-- report absolute delta, components, paired video bootstrap uncertainty,
-  standard mAP, budgeted AP, GT-end latency, resource use, and failure subsets.
+- Windows Python 编译、Bash syntax 与 29 项 CPU-safe 测试通过；本机
+  Torch `c10.dll` 故障不是模型门禁。
+- N16R4 exact `7ba049f`：41 项 Torch/配置/提交器测试通过，47.37 秒；
+- N16R4 exact `1b93a7d`：收紧提交器后 38 项测试通过，40.32 秒；
+- 两次远端测试后 worktree 都是 clean。
 
-These are falsification/resource gates, not universal significance theorems.
+每条 Slurm pilot 会先在自身 exact commit/config 上跑双臂
+50-warmup/200-measured profile；只有自身稳定性、未训练因果等价与
+one-epoch 2 GPU-hour gate 通过，才继续完整训练、calibration inference、
+target-conditioned diagnosis 和 frozen technical gate。
 
-## Closest Prior Work and Claim Limits
+## Deployment State
 
-- **CAG-QIL/SimOn:** direct future-free On-TAL grouping or current-query/past-context instance prediction.
-- **MATR:** current segment estimates end and memory estimates start.
-- **ActionSwitch:** direct threat for overlap and repeated same-class actions.
-- **TrackFormer/MOTR:** persistent query identity and assignment precedent;
-  blocks generic “tracking queries over time” novelty.
-- **E2E-LOAD/StreamFormer:** raw-video causal OAD/backbone precedents.
-- **Offline E2E-TAD/PEFT:** later raw-RGB context, not current evidence.
+远端 clean detached worktree：
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_ShortWarmup_b61f56a`，
+当前 exact `1b93a7d6421e38c89601580ca34d5003b1859cff`。
 
-Do not claim that persistence, memory, lifecycle state, causal attention,
-end-to-end terminology, frozen features, LoRA, or a raw-video backbone alone is
-novel. The surviving claim is narrow: under a matched strict On-TAD protocol,
-does first-crossing persistent supervision binding reduce identity-linked
-duplicate/fragmentation error without unacceptable standard-mAP loss?
+账户 association 固定 `GrpTRES=gres/gpu=16`、`MaxSubmitJobs=16`。
+2026-07-21 03:46 北京时间已有 9 RUNNING + 7 PENDING，恰好无 submit
+slot。不得取消或修改其他任务制造容量。至少空出三个槽后，分别用
+`VARIANT=sw|margin|transport` 和完整 `EXPECTED_COMMIT` 提交；记录三个
+job id/run dir，禁止 duplicate submission。
 
-## Failed / Blocked Routes
+## Pilot Gates
 
-- PIVOT and other sensor/observability tasks: rejected because they leave
-  standard On-TAD.
-- PCEH/CESR: demoted to causal infrastructure/components.
-- Full PETAL raw-video package first: demoted after reconstruction by prior work.
-- FRESH/TTF/PES Stage 1 as-is: historical mechanism audit, superseded as the
-  immediate executable route by the cleaner FIXED/REMATCH single-axis study.
-- Full-packet, visual-tower-first, zero-shot, adaptive selection, and
-  distillation headline: blocked or support-only.
-- Silent or nearly silent birth control as a capacity fix: invalid.
-- Changing epochs, split size, slots, thresholds, or budget after seeing
-  reporting results: prohibited.
+每个版本/每臂必须：
 
-## Current Final Goal
+- nonzero committed predictions；
+- prediction/GT in `[0.25, 4.0]`；
+- Recall@tIoU 0.3 至少 `0.25`；
+- zero causal violations、GT supervision exhaustion、
+  GT-birth/runtime collision 和 skipped updates；
+- successful updates = expected updates = scheduler steps；
+- 报告 birth positive/negative gap、pairwise AUC、冻结 0.5 下 TPR/FPR；
+- 不搜索/下调阈值，不访问 reporting。
 
-Validate the evidence-backed birth/lifecycle repair now. No new Pro discussion
-is required. Do not lower thresholds, access reporting, run three seeds, or
-begin raw-RGB training first. Repeat smoke/profile/seed-705 at one exact
-commit; only a technical pass can advance to the paired multi-seed feature
-falsification. Raw-RGB remains conditional on the complete feature-level
-technical and scientific gates.
+P0 pilot 只回答“共享模型能否可靠开门并完成 lifecycle”。若 B 或 C 单独
+通过，再做预注册的组合/多轮收敛实验；若都失败，修改 head/lifecycle
+表示，不修改评测门槛。
+
+## Path to Paper
+
+1. P0：当前 A/B/C 技术优化 pilot。
+2. P1：胜出版本的 seed-705 多轮收敛与 calibration freeze。
+3. P2：seeds 705/706/707 的 feature-level FIXED/REMATCH 主实验。
+4. P3：冻结 checkpoint 的一次性 reporting，给出 standard mAP、
+   budgeted AP、延时和实例错误主表。
+5. P4：warmup/margin/transport/binding 单因素消融及相邻、重复同类、
+   重叠、长短实例失败分析。
+6. P5：仅在 feature science gate 通过后，做 raw-RGB
+   frozen encoder → PEFT → joint causal training。
+
+三种子科学门：
+
+- `E_id = 0.5 * (duplicate_rate + fragmentation_rate)`；
+- FIXED 相对降低至少 20%，且至少 2/3 seeds 改善；
+- standard average mAP delta 不低于 `-0.5` percentage points；
+- 全部报告 paired video bootstrap uncertainty、资源和因果审计。
+
+## Claim Limits
+
+CAG-QIL/SimOn/OAT/MATR/HAT/ActionSwitch 是直接 On-TAL 邻近工作；
+TrackFormer/MOTR 已占据 persistent query/identity assignment 先例；
+CausalTAD、E2E-LOAD、StreamFormer 已占据因果 temporal/raw-video
+表示先例。
+
+不要把 persistence、memory、lifecycle、causal attention、end-to-end、
+frozen features、LoRA 或 backbone 本身声称为新颖。仍存活的窄主张是：
+在完全匹配的 strict On-TAD 协议下，first-crossing persistent FIXED
+supervision binding 能否在不显著损害 standard mAP 的前提下，降低
+identity-linked duplicate/fragmentation error。
+
