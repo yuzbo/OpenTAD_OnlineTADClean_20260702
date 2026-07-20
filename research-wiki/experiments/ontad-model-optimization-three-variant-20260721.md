@@ -124,7 +124,7 @@ raw-RGB 端到端扩展。
 - [x] M1：冻结 A/B/C 三个版本与不越界合同。
 - [x] M2：实现模型损失、配置、测试和实验清单。
 - [x] M3：本地 CPU-safe 验证与远端 N16R4 轻量验证。
-- [ ] M4：提交精确代码提交并部署三条 Slurm 作业。
+- [x] M4：提交精确代码提交并部署三条 Slurm 作业。
 - [ ] M5：记录 job id、run dir、队列/完成状态和下一门禁。
 
 ## M2/M3 实现与验证记录
@@ -162,3 +162,20 @@ raw-RGB 端到端扩展。
 其中既有诊断 `1177682` 仍为 `AssocGrpGRES`。当前没有空余 submit slot；
 不取消或修改其他任务；每出现一个槽位就按 A→B→C 顺序提交一个尚缺
 pilot，不等待三个槽同时出现，也不重复提交。
+
+## M4 部署记录
+
+2026-07-21 04:09 北京时间，账户活跃作业从 16 降为 12。再次确认三种
+job name、`model_opt_*_seed705_*` 目录和 `pilot_contract.json` 均不存在
+后，使用同一精确代码提交
+`3035f4e88033a68be651fc3b77292a34f3864b10` 提交：
+
+| 版本 | Slurm job | 运行目录 | 提交后状态 |
+| --- | ---: | --- | --- |
+| A / SW | `1177693` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_041045` | PENDING / Priority |
+| B / SW+BM | `1177694` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_041046` | PENDING / transitional None |
+| C / SW+CT | `1177695` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_041047` | PENDING / transitional None |
+
+提交后三条均出现在 `squeue`，账户活跃作业为 15/16；没有取消、修改或
+抢占任何无关作业。心跳已从“寻找提交槽”切换为“只读监控三条 pilot 与
+旧诊断 `1177682`”，明确禁止重复提交。

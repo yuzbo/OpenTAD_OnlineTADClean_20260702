@@ -106,10 +106,19 @@ target-conditioned diagnosis 和 frozen technical gate。
 当前 exact `3035f4e88033a68be651fc3b77292a34f3864b10`。
 
 账户 association 固定 `GrpTRES=gres/gpu=16`、`MaxSubmitJobs=16`。
-2026-07-21 04:04 北京时间仍有 9 RUNNING + 7 PENDING，恰好无 submit
-slot。不得取消或修改其他任务制造容量。每空出一个槽，按
-`VARIANT=sw|margin|transport` 顺序用完整 `EXPECTED_COMMIT` 提交一个
-尚缺版本；记录三个 job id/run dir，禁止 duplicate submission。
+2026-07-21 04:09 北京时间作业数降到 12；完成 job-name、run-dir 和
+pilot-contract 三重去重后，三条 exact-commit pilot 已提交：
+
+- A/SW：job `1177693`，run `model_opt_sw_seed705_20260721_041045`；
+- B/SW+BM：job `1177694`，run
+  `model_opt_margin_seed705_20260721_041046`；
+- C/SW+CT：job `1177695`，run
+  `model_opt_transport_seed705_20260721_041047`。
+
+完整 run root 均为
+`/data/run01/sczc063/yuzibo/runs/persistent_binding/`。提交后账户为
+15/16，三条均在 `squeue`；没有取消或修改无关作业。现在只监控，
+禁止 duplicate submission。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
