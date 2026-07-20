@@ -77,7 +77,7 @@ frozen/PEFT/joint 三阶梯。
    边际来自 prediction-only
    `alive*(1-birth)*(1-end)` mass，代价为 cosine distance 加同槽位时间
    identity prior；不使用 GT identity 或未来标签。数值设置为 temperature
-   `0.5`、identity cost `0.25`、20 次 log-space Sinkhorn。
+   `0.25`、identity cost `0.25`、56 次 log-space Sinkhorn。
 
 “ChronoTransport”仅作为时间有序的 past-to-current optimal-transport
 思想。未核实到唯一对应的同名 On-TAD 论文，不得冒认。直接依据是
@@ -106,7 +106,9 @@ ICCV 2025 OpenHOUSE 进一步支持当前 strict OAD-based On-TAL 口径：
   通过，77.56 秒；
 - N16R4 exact `22aa93b`：加入 transport 收敛修订和比较器预检后
   120 项测试通过，76.64 秒；
-- 四次远端测试后 worktree 都是 clean。
+- N16R4 exact `f6bd9e1`：最终 transport 温度/迭代边界与回归测试就绪，
+  128 项相关测试通过；候选仍为 clean detached。
+- 五次远端测试后 worktree 都是 clean。
 
 每条 Slurm pilot 会先在自身 exact commit/config 上跑双臂
 50-warmup/200-measured profile；只有自身稳定性、未训练因果等价与
@@ -117,7 +119,7 @@ target-conditioned diagnosis 和 frozen technical gate。
 
 远端 clean detached worktree：
 `/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_ShortWarmup_b61f56a`，
-当前 exact `22aa93bd1b2b2441ba0810e1923a0fb35e0d5776`。
+当前 exact `f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`。
 
 账户 association 固定 `GrpTRES=gres/gpu=16`、`MaxSubmitJobs=16`。
 2026-07-21 04:09 北京时间作业数降到 12；完成 job-name、run-dir 和
@@ -133,11 +135,12 @@ pilot-contract 三重去重后，三条 exact-commit pilot 已提交：
 `/data/run01/sczc063/yuzibo/runs/persistent_binding/`。提交后账户为
 15/16，三条均在 `squeue`。随后在它们仍为 PENDING、零 GPU 时发现 C 的
 temperature 0.1/20-iteration Sinkhorn 边际未充分收敛；为保持同一提交，
-旧三 job 受控取消并保留目录审计。temperature 0.5 的 1,000 样本误差
-mean/p99/max 为 `1.48e-7/1.70e-6/1.77e-5`，零样本超过 `1e-3`；
-旧 0.1 则有 `484/1000` 超过 `1e-3`。04:34 账户被新无关作业填回
-16/16，新三版本等待槽位按 A→B→C 重新提交；只认 exact `22aa93b`，
-旧取消目录不算 duplicate。
+旧三 job 受控取消并保留目录审计。temperature 0.5/20 虽收敛，但真实
+query 模拟的同槽质量只有 `0.46641`；0.25/20 为 `0.60779`，身份保持
+更强。2,000 个四槽压力样本中，0.25/55 的最坏边际误差
+`1.05056e-3` 未过门，0.25/56 为 `9.84639e-4` 且零超标，故冻结
+0.25/56。04:54 账户仍为 16/16，新三版本等待槽位按 A→B→C 重提；
+只认 exact `f6bd9e1`，旧取消目录不算 duplicate。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin

@@ -52,7 +52,7 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
   传输边际由两时刻预测的 alive mass 构造并 stop-gradient，代价是 query
   cosine distance 加同槽位时间身份先验；Sinkhorn 计划也 stop-gradient，
   梯度只优化当前表示距离。
-- 数值设置冻结为 soft temperature `0.5`、identity cost `0.25`、20 次
+- 数值设置冻结为 soft temperature `0.25`、identity cost `0.25`、56 次
   log-space Sinkhorn；该设置由四槽不均衡质量的真实迭代收敛回归约束。
 - 不使用 GT identity、未来帧、未来终点或 reporting 数据，因此不会修改
   FIXED/REMATCH 的监督比较轴。
@@ -221,9 +221,9 @@ job name、`model_opt_*_seed705_*` 目录和 `pilot_contract.json` 均不存在
 
 | 版本 | Slurm job | 运行目录 | 提交后状态 |
 | --- | ---: | --- | --- |
-| A / SW | `1177693` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_041045` | PENDING / Priority |
-| B / SW+BM | `1177694` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_041046` | PENDING / transitional None |
-| C / SW+CT | `1177695` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_041047` | PENDING / transitional None |
+| A / SW | `1177693` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_041045` | CANCELLED / PENDING、零 GPU |
+| B / SW+BM | `1177694` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_041046` | CANCELLED / PENDING、零 GPU |
+| C / SW+CT | `1177695` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_041047` | CANCELLED / PENDING、零 GPU |
 
 提交后三条均出现在 `squeue`，账户活跃作业为 15/16；没有取消、修改或
 抢占任何无关作业。心跳已从“寻找提交槽”切换为“只读监控三条 pilot 与
@@ -239,21 +239,39 @@ Sinkhorn。temperature `0.1`、20 次迭代的 1,000 个固定 seed 随机样本
 - max `0.127763`；
 - `484/1000` 样本误差大于 `1e-3`。
 
-单纯增加到 200 次虽降低均值，但会把每 token 小算子循环放大十倍。保持
-20 次迭代、把 soft temperature 改为 `0.5` 后，同一 1,000 样本：
+单纯增加到 200 次虽降低均值，但会把每 token 小算子循环放大十倍。把
+soft temperature 改为 `0.5` 并保持 20 次后，同一 1,000 样本：
 
 - mean error `1.48095e-7`；
 - p99 `1.69873e-6`；
 - max `1.76728e-5`；
 - 零样本大于 `1e-3`。
 
+但数值收敛不等于身份传输质量合适。模拟“当前 query = 上一 query +
+0.2 噪声”的持续实例时，0.5/20 的平均同槽传输质量只有 `0.46641`、
+熵为 `2.3036`；0.25/20 则为 `0.60779`、熵为 `2.0378`，更能保留
+同一实例，同时其 mean/p99/max 边际误差仅
+`8.68e-7/1.57e-5/4.50e-5`。因此进一步对 2,000 个固定 seed 四槽不均衡
+压力样本扫描 0.25 的迭代边界：
+
+- 50 次仍有 1 例超过 `1e-3`，max `0.00145200`；
+- 55 次 max `0.00105056`，仍未通过；
+- 56 次 max `0.000984639`，首次全部通过；
+- 60 次 max `0.000759363`，但多出的 4 次不再是过门所需。
+
+最终冻结 temperature `0.25`、56 iterations，并加入同一最坏样本
+“55 失败、56 通过”的确定性回归。这样同时约束边际正确性、身份保留和
+小算子成本，而不是只追求一个更软、更容易收敛的传输计划。
+
 因此旧 `1177693/1177694/1177695` 在零 GPU 消耗时受控取消，旧目录保留
 审计且均无 `pilot_contract.json`。没有取消或修改旧诊断及任何无关作业。
-修复提交 `adbd0bbd6a3b3ffe3de36f3c0f8ef506eef7ed48` 把 pilot temperature
-冻结为 `0.5` 并新增真实 20-iteration/identity-prior 收敛回归；部署提交
-`22aa93bd1b2b2441ba0810e1923a0fb35e0d5776` 将比较器测试并入作业前置。
-N16R4 在该精确提交完成 `120 passed in 76.64s`，测试后 worktree 仍 clean。
+中间提交 `adbd0bbd6a3b3ffe3de36f3c0f8ef506eef7ed48` 与
+`22aa93bd1b2b2441ba0810e1923a0fb35e0d5776` 分别完成初步数值修复和
+比较器预检；最终部署代码提交为
+`f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`。本地 16 项 CPU-safe
+配置/提交器/比较器测试通过；N16R4 在该精确提交分两组完成
+`88 + 40 = 128` 项相关测试，候选 worktree 仍为 clean detached。
 
-04:34 重新提交前账户被 4 条新无关作业填回 16/16；提交器在创建新目录前
-正确停止。现在只认 exact `22aa93b` 的活跃 job 或 pilot contract，每出现
-一个 submit slot 就按 A→B→C 重新提交；旧取消目录不算重复。
+04:54 账户仍为 16/16；提交器在创建新目录前正确停止。现在只认 exact
+`f6bd9e1` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
+A→B→C 重新提交；旧取消目录不算重复。
