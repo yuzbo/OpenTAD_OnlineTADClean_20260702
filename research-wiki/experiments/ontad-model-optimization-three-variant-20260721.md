@@ -88,7 +88,32 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 
 - [x] M0：恢复任务、代码、Wiki、Slurm 和预算上下文。
 - [x] M1：冻结 A/B/C 三个版本与不越界合同。
-- [ ] M2：实现模型损失、配置、测试和实验清单。
-- [ ] M3：本地 CPU-safe 验证与远端 N16R4 轻量验证。
+- [x] M2：实现模型损失、配置、测试和实验清单。
+- [x] M3：本地 CPU-safe 验证与远端 N16R4 轻量验证。
 - [ ] M4：提交精确代码提交并部署三条 Slurm 作业。
 - [ ] M5：记录 job id、run dir、队列/完成状态和下一门禁。
+
+## M2/M3 实现与验证记录
+
+- 实现提交：
+  `7ba049f530c5fac856de3c4d527aebfc8666fb04`，已推送到
+  `origin/codex/ontad-science-fixed-rematch`。
+- 新增三组各自成对的 FIXED/REMATCH 配置；配置测试证明每一组除
+  `trajectory_binding_mode` 与 `work_dir` 外完全相同。
+- 新增 `birth_margin_loss` 和 `causal_transport_loss`；A 中两者权重均为
+  零，B 只启用前者 `0.5`，C 只启用后者 `0.05`。
+- 新增按 `VARIANT=sw|margin|transport` 选择配置的 Slurm submitter，
+  每个作业内跑完整一轮双臂训练、calibration-only 推理、target-conditioned
+  分数诊断、资源审计和冻结技术门禁。
+- Windows 本地完成 Python 编译、两个 Bash 语法检查、配置/工具等
+  29 项 CPU-safe 测试；全部通过。本机 Torch 仍因既有 `c10.dll`
+  初始化问题不可用，没有把该环境当作模型证据。
+- N16R4 干净 detached worktree 在精确实现提交上完成 41 项
+  PyTorch/配置/提交器测试，`41 passed in 47.37s`；测试后
+  `git status --porcelain` 为零行。
+- 首次远端 `git fetch` 遇到 GitHub TLS 中断，第三次有界重试成功；
+  这是传输故障，发生在测试前，不是代码或实验失败。
+
+部署前队列检查显示账户已有 16 个 Slurm 作业（9 RUNNING、7 PENDING），
+其中既有诊断 `1177682` 仍为 `AssocGrpGRES`。当前没有空余 submit slot；
+不取消或修改其他任务，等待至少三个槽位后提交三条独立 pilot。
