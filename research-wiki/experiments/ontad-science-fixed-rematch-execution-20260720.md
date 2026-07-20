@@ -57,11 +57,11 @@ experiment task. Update it at every critical node before continuing.
 
 ## Required Next Checkpoints
 
-- [ ] C1 — core lifecycle and supervision repairs implemented with focused
+- [x] C1 — core lifecycle and supervision repairs implemented with focused
       regression tests.
 - [x] C2 — metrics, gate, fit/report isolation, provenance, and census
       contracts implemented; all local CPU-safe checks pass.
-- [ ] C3 — repaired code committed and pushed; N16R4 Slurm end-to-end smoke
+- [x] C3 — repaired code committed and pushed; N16R4 Slurm end-to-end smoke
       passes from the exact commit.
 - [ ] C4 — strict paired profile rerun; budget-compatible protocol either
       passes the frozen cap or remains explicitly blocked.
@@ -155,3 +155,71 @@ Diagnosis and correction:
 
 The failed job is retained as negative evidence. A new commit and smoke job
 must show zero clipped birth-start targets before C1 or C3 can pass.
+
+## Repaired End-to-End Smoke — Slurm 1177438
+
+C1 and C3 passed after the birth-only start-supervision correction.
+
+- Exact code commit:
+  `9036bd21838596543f87d705fe6daa06a49e0470`, pushed on
+  `codex/ontad-science-fixed-rematch`.
+- Run directory:
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260720_221637`.
+- Submission artifact: `job.sbatch` in that directory. It pins the commit,
+  requires a clean checkout, runs the full census, the focused test bundle,
+  direct real-feature FIXED and REMATCH train steps, one standard
+  `tools/train.py --allow-unready-smoke` update, checkpoint reload inference,
+  and `tools/verify_persistent_binding_smoke.py`.
+- Allocation: one RTX 4090 on `g0003`; `nvidia-smi` passed inside the
+  allocation.
+- Slurm result: `COMPLETED 0:0` in `00:03:47`.
+- Remote focused tests: `76 passed` in `100.40 s`.
+
+Full frozen-data census:
+
+- 411 videos, 320,205 causal feature tokens, and 6,328 instances;
+- 6,328/6,328 births/endpoints covered;
+- maximum two births per decision and maximum four visible instances;
+- zero GT entry-free deficit and zero oracle capacity overflow;
+- 208 old-end/new-birth decisions containing 263 pairs;
+- zero same-decision birth+end instances at the registered stride;
+- no census failures, including zero clipped *birth* start targets;
+- artifact SHA-256:
+  `10cd30f02a4f26ed1c8877e222c4437f9d91ce2d34d30be56c0c4a2a140b8184`.
+
+Training and lifecycle evidence:
+
+- both direct real-feature FIXED and REMATCH forward/backward/update steps
+  passed with zero GT supervision exhaustion and zero runtime entry-free
+  collision;
+- the standard training path recorded exactly one expected update, one
+  successful update, one scheduler step, and zero skipped updates;
+- lifecycle totals were one arbitration suppression, five candidate
+  cancellations, zero active abandonments, and 17 births deferred until a
+  released slot became eligible;
+- training-audit SHA-256:
+  `7c2d4ac90a642479fef70d1decaa778348921557d54c6fcc8e5e8dfc92656c24`.
+
+Checkpoint and strict-causal inference evidence:
+
+- strict determinism was active with warning-only disabled, flash and
+  memory-efficient SDP disabled, and math SDP enabled;
+- 29 state tensors changed, 29 optimizer-state entries were created, and the
+  total state delta L2 was `0.6226117403130047`;
+- checkpoint SHA-256:
+  `3a7ff1e952d1821c4a2bd2f9f03c41ab6893dc7f585e9b1ab1769b1c10609a6d`;
+- train-time and reload inference ledgers were byte-identical, each with
+  SHA-256
+  `796a526159ab8f2ed94502b4b408f73a6c1042e161f4dced5950b9722b6ce2ce`;
+- all 84 immutable final emissions carried separate video/runtime identities,
+  ended and emitted on the current causal decision frame, and had zero future
+  endpoint/source, negative-latency, or monotonicity violations;
+- the joined smoke gate passed; its SHA-256 is
+  `a27d91f046f89dfe9e183511dbfa05d968393a327f178b2680a38fb2928bdaa7`.
+
+The zero AP values from one update on one held-out video are deliberately not
+interpreted as effectiveness evidence. This smoke proves only that the
+scientific contracts, gradients, checkpointing, strict-causal final emission,
+reload determinism, and evaluator wiring work end to end. The next authorized
+node is C4: rerun the paired resource profile at this exact repaired commit
+before deciding whether any single-seed screening run is affordable.
