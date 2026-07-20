@@ -499,3 +499,32 @@ raw-RGB。下一步仍是特征级 head/lifecycle 修复。
 该作业仍先跑自身 FIXED/REMATCH 画像和 2 GPU·小时门；通过后才运行一轮
 双臂训练。无论结果通过或拒绝，都必须留下三项 margin 的非零更新计数、
 三通道 AUC/gap/TPR/FPR、生命周期计数和完整因果/资源审计。
+
+### M7 前沿方法给出的下一模型方向（条件项）
+
+当前证据把后续问题拆成“出生校准”和“结束判别”，不再笼统归因于
+persistent query：
+
+- [MATR](https://arxiv.org/abs/2408.02957) 用当前段判断 end，再以 end
+  query 从过去 memory 检索 start；其消融中把 start/end 双 decoder 合并
+  为单 decoder 时 average mAP 从 `49.5` 降到 `42.7`。这支持“开始与结束
+  不应只靠同一生命周期标量头”的方向。
+- 但 MATR 还使用 sliding window、历史 proposal NMS，并在训练中包含
+  当前时刻之后的 anticipation region；这些均不能直接移入本项目的
+  immutable、无未来、无离线后处理协议。这里只吸收“当前 end + 过去
+  start retrieval”的结构分解。
+- [OpenHOUSE](https://openaccess.thecvf.com/content/ICCV2025/papers/Kang_Open-ended_Hierarchical_Streaming_Video_Understanding_with_Vision_Language_Models_ICCV_2025_paper.pdf)
+  用 actionness 检测 start、用 progress 的突然下降检测相邻动作的 end。
+  它说明相邻动作无背景时，单纯 actionness 转移会合并实例；但其 progress
+  target 由完整区间计算，且任务含层级/VLM，不作为当前标准全监督主实验
+  的直接替代。
+
+因此，若 `1177720` 仍表现为 birth 接近过线而 end AUC/TPR 失败，下一项
+预注册候选是**因果 transition-end / past-start factorization**：end 分支
+只接收当前 query、上一时刻同槽 query 及其差分，start 只从已观察 memory
+检索；不预测未来终点、不回改区间、不使用 NMS。若 `1177720` 的三头 margin
+已经使双臂形成合格最终区间，则先做 P1 收敛，不再同时引入该结构。
+
+截至本次精确检索，没有找到可核验的同名 “ChronoTransport” On-TAD
+论文；该词继续只指本项目已经被 C 实验否证的 previous→current
+prediction-only transport 思路，不作为外部论文或新颖性主张。

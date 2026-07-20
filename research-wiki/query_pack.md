@@ -274,3 +274,7 @@ identity-linked duplicate/fragmentation error。
 - 提交器现在按 job id 分配四端口块；`1177720` 使用
   `50880–50883`。下一恢复点先看自身 profile gate，再看三项 margin
   activation、双臂最终区间与三通道诊断。
+- 若 lifecycle 仍是“birth 接近 0.5、end 失败”，下一模型候选只吸收
+  MATR 的“当前 end、过去 memory 检索 start”分解和 OpenHOUSE 对相邻
+  动作边界的启示，做 strictly causal transition-end 分支；不复制它们的
+  anticipation、NMS、VLM 或层级任务。
