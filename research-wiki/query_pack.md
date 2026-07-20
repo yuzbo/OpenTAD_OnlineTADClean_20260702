@@ -78,7 +78,8 @@ frozen/PEFT/joint 三阶梯。
    `alive*(1-birth)*(1-end)` mass，代价为 cosine distance 加同槽位时间
    identity prior；不使用 GT identity 或未来标签。数值设置为 temperature
    `0.25`、identity cost `0.25`、56 次 log-space Sinkhorn；一段内全部
-   相邻 token 对批量计算，和逐对损失严格等价。
+   相邻 token 对批量计算，和逐对损失严格等价；A/B 权重为零时不构造
+   transport 边际，C 的边际在 no-grad 下构造。
 
 “ChronoTransport”仅作为时间有序的 past-to-current optimal-transport
 思想。未核实到唯一对应的同名 On-TAD 论文，不得冒认。直接依据是
@@ -111,7 +112,9 @@ ICCV 2025 OpenHOUSE 进一步支持当前 strict OAD-based On-TAL 口径：
   128 项相关测试通过；候选仍为 clean detached。
 - N16R4 exact `5c02ccc`：把逐 token Sinkhorn 改为段内批量等价计算，
   新增批量/逐对计划、损失和梯度回归；130 项相关测试在 80.42 秒通过。
-- 六次远端测试后 worktree 都是 clean。
+- N16R4 exact `d390779`：隔离 A/B 的零 transport 计算路径，新增禁用
+  分支回归；131 项相关测试在 81.02 秒通过。
+- 七次远端测试后 worktree 都是 clean。
 
 每条 Slurm pilot 会先在自身 exact commit/config 上跑双臂
 50-warmup/200-measured profile；只有自身稳定性、未训练因果等价与
@@ -122,7 +125,7 @@ target-conditioned diagnosis 和 frozen technical gate。
 
 远端 clean detached worktree：
 `/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_ShortWarmup_b61f56a`，
-当前 exact `5c02ccca6142a9e9c8919fe4b0830d1dad3480a3`。
+当前 exact `d390779443bccc4926bc8fb2bff1875834383c21`。
 
 账户 association 固定 `GrpTRES=gres/gpu=16`、`MaxSubmitJobs=16`。
 2026-07-21 04:09 北京时间作业数降到 12；完成 job-name、run-dir 和
@@ -144,8 +147,8 @@ query 模拟的同槽质量只有 `0.46641`；0.25/20 为 `0.60779`，身份保�
 `1.05056e-3` 未过门，0.25/56 为 `9.84639e-4` 且零超标，故冻结
 0.25/56。随后把一段内 `T-1` 个相邻传输从逐对各跑 56 轮改为批量共享
 56 轮，损失与梯度语义不变，避免大量 4×4 小 kernel。05:03 账户仍为
-16/16，新三版本等待槽位按 A→B→C 重提；只认 exact `5c02ccc`，旧取消
-目录不算 duplicate。
+16/16；随后移除 A/B 的无用边际计算。新三版本等待槽位按 A→B→C 重提；
+只认 exact `d390779`，旧取消目录不算 duplicate。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin

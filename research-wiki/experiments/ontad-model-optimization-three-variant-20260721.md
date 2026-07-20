@@ -276,16 +276,25 @@ N16R4 登录节点的单线程 CPU 代理计时（63 个相邻对）为
 最大数值差为零。该计时只验证实现优化方向，不替代作业内 RTX 4090
 strict profile 或 GPU-hour 门禁。
 
+最后的控制路径复核发现 A/B 虽然 transport 权重为零，旧代码仍无用地
+构造每 token 的 lifecycle mass。提交
+`d390779443bccc4926bc8fb2bff1875834383c21` 将该计算严格放进
+`causal_transport_loss_weight > 0` 分支，并在 no-grad 下构造 C 的预测
+边际。新增回归直接把边际构造函数替换为报错函数，证明禁用 transport
+的 A/B 训练不会触达它；因此 A/B 保持真正零 transport 计算，三版本
+GPU profile 比较不会让控制组承担 C 的隐藏开销。
+
 因此旧 `1177693/1177694/1177695` 在零 GPU 消耗时受控取消，旧目录保留
 审计且均无 `pilot_contract.json`。没有取消或修改旧诊断及任何无关作业。
 中间提交 `adbd0bbd6a3b3ffe3de36f3c0f8ef506eef7ed48` 与
 `22aa93bd1b2b2441ba0810e1923a0fb35e0d5776` 分别完成初步数值修复和
 比较器预检；最终部署代码提交为
-`f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`；最终批量部署代码为
-`5c02ccca6142a9e9c8919fe4b0830d1dad3480a3`。本地 16 项 CPU-safe
-配置/提交器/比较器测试通过；N16R4 在 `f6bd9e1` 完成 128 项后，又在
-exact `5c02ccc` 完成 `130 passed in 80.42s`，候选始终 clean detached。
+`f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`；批量版本为
+`5c02ccca6142a9e9c8919fe4b0830d1dad3480a3`；最终部署代码为
+`d390779443bccc4926bc8fb2bff1875834383c21`。本地 16 项 CPU-safe
+配置/提交器/比较器测试通过；N16R4 依次完成 128、130 项，最终 exact
+`d390779` 为 `131 passed in 81.02s`，候选始终 clean detached。
 
 05:03 账户仍为 16/16；提交器在创建新目录前正确停止。现在只认 exact
-`5c02ccc` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
+`d390779` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
 A→B→C 重新提交；旧取消目录不算重复。
