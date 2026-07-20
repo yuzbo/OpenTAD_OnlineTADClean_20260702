@@ -372,6 +372,76 @@ def test_runtime_transport_uses_first_pressure_test_iteration_below_tolerance():
     assert marginal_error(plan_56).item() <= 1e-3
 
 
+def test_batched_sinkhorn_matches_individual_transport_plans():
+    torch.manual_seed(705)
+    cost = torch.rand(3, 4, 4)
+    source = torch.rand(3, 4).clamp_min(0.05)
+    target = torch.rand(3, 4).clamp_min(0.05)
+    source = source / source.sum(dim=-1, keepdim=True)
+    target = target / target.sum(dim=-1, keepdim=True)
+
+    batched = _sinkhorn_plan(
+        cost,
+        source,
+        target,
+        temperature=0.25,
+        iterations=56,
+    )
+    individual = torch.stack(
+        [
+            _sinkhorn_plan(
+                cost[index],
+                source[index],
+                target[index],
+                temperature=0.25,
+                iterations=56,
+            )
+            for index in range(cost.shape[0])
+        ]
+    )
+
+    assert torch.allclose(batched, individual, atol=1e-6, rtol=0)
+
+
+def test_batched_causal_transport_equals_sum_of_individual_pair_losses():
+    torch.manual_seed(706)
+    previous = torch.randn(3, 4, 8)
+    current = torch.randn(3, 4, 8, requires_grad=True)
+    previous_mass = torch.rand(3, 4)
+    current_mass = torch.rand(3, 4)
+    kwargs = dict(
+        temperature=0.25,
+        identity_cost=0.25,
+        iterations=56,
+        mass_floor=0.05,
+    )
+
+    batched = _causal_query_transport_loss(
+        previous,
+        current,
+        previous_mass,
+        current_mass,
+        **kwargs,
+    )
+    individual = torch.stack(
+        [
+            _causal_query_transport_loss(
+                previous[index : index + 1],
+                current[index : index + 1],
+                previous_mass[index : index + 1],
+                current_mass[index : index + 1],
+                **kwargs,
+            )
+            for index in range(previous.shape[0])
+        ]
+    ).sum()
+
+    assert torch.allclose(batched, individual, atol=1e-6, rtol=0)
+    batched.backward()
+    assert current.grad is not None
+    assert torch.isfinite(current.grad).all()
+
+
 def test_causal_query_transport_is_one_way_from_past_to_current():
     previous = torch.tensor(
         [[[1.0, 0.0], [0.0, 1.0]]],

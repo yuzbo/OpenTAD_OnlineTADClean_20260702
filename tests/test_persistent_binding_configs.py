@@ -131,7 +131,7 @@ def test_three_model_optimization_pilots_are_matched_and_isolated():
         assert fixed.model.causal_query_transport_iterations == 56
         assert (
             fixed.optimization_pilot_contract.transport_numerical_revision
-            == "soft_sinkhorn_temperature_0p25_iter56_v2"
+            == "batched_soft_sinkhorn_0p25_iter56_v3"
         )
         assert (
             fixed.optimization_pilot_contract.causal_query_transport_temperature

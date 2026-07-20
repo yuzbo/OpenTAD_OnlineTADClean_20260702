@@ -34,7 +34,7 @@ optimization_pilot_contract = dict(
     threshold_search=False,
     frozen_birth_threshold=0.5,
     raw_rgb_authorized=False,
-    transport_numerical_revision="soft_sinkhorn_temperature_0p25_iter56_v2",
+    transport_numerical_revision="batched_soft_sinkhorn_0p25_iter56_v3",
     causal_query_transport_temperature=0.25,
     causal_query_transport_iterations=56,
 )

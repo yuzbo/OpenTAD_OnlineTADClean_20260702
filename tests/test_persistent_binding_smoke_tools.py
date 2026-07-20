@@ -198,7 +198,7 @@ def test_model_optimization_submitter_deploys_three_feature_only_variants():
     assert "evaluate_persistent_binding_profile.py" in submit
     assert "--epochs 1" in submit
     assert "same_commit_profile_required" in submit
-    assert "soft_sinkhorn_temperature_0p25_iter56_v2" in submit
+    assert "batched_soft_sinkhorn_0p25_iter56_v3" in submit
     assert "--evaluation-role calibration" in submit
     assert "diagnose_persistent_binding_scores.py" in submit
     assert "evaluate_persistent_binding_optimization_activation.py" in submit

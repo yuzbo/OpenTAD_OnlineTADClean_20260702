@@ -85,11 +85,12 @@ def _balanced_binary_logit_margin(logits, target, mask, margin):
 def _sinkhorn_plan(cost, source_mass, target_mass, temperature, iterations):
     """Return a balanced entropic transport plan in log space."""
 
-    if cost.ndim != 2 or cost.shape[0] != cost.shape[1]:
-        raise ValueError("causal transport cost must be square")
-    if source_mass.shape != (cost.shape[0],):
+    if cost.ndim not in (2, 3) or cost.shape[-2] != cost.shape[-1]:
+        raise ValueError("causal transport cost must be square or batched square")
+    expected_mass_shape = cost.shape[:-1]
+    if source_mass.shape != expected_mass_shape:
         raise ValueError("source transport mass does not align with cost")
-    if target_mass.shape != (cost.shape[1],):
+    if target_mass.shape != expected_mass_shape:
         raise ValueError("target transport mass does not align with cost")
     log_kernel = -cost / float(temperature)
     log_source = source_mass.log()
@@ -98,14 +99,16 @@ def _sinkhorn_plan(cost, source_mass, target_mass, temperature, iterations):
     log_v = torch.zeros_like(log_target)
     for _ in range(int(iterations)):
         log_u = log_source - torch.logsumexp(
-            log_kernel + log_v.unsqueeze(0),
-            dim=1,
+            log_kernel + log_v.unsqueeze(-2),
+            dim=-1,
         )
         log_v = log_target - torch.logsumexp(
-            log_kernel + log_u.unsqueeze(1),
-            dim=0,
+            log_kernel + log_u.unsqueeze(-1),
+            dim=-2,
         )
-    return torch.exp(log_kernel + log_u.unsqueeze(1) + log_v.unsqueeze(0))
+    return torch.exp(
+        log_kernel + log_u.unsqueeze(-1) + log_v.unsqueeze(-2)
+    )
 
 
 def _causal_query_transport_loss(
@@ -123,10 +126,10 @@ def _causal_query_transport_loss(
 
     if previous_queries.shape != current_queries.shape:
         raise ValueError("causal transport query shapes must match")
-    if previous_queries.ndim != 3 or previous_queries.shape[0] != 1:
-        raise ValueError("causal transport queries must have shape [1,S,D]")
-    num_slots = previous_queries.shape[1]
-    expected_mass_shape = (1, num_slots)
+    if previous_queries.ndim != 3 or previous_queries.shape[0] < 1:
+        raise ValueError("causal transport queries must have shape [N,S,D]")
+    batch_size, num_slots, _ = previous_queries.shape
+    expected_mass_shape = (batch_size, num_slots)
     if previous_lifecycle_mass.shape != expected_mass_shape:
         raise ValueError("previous lifecycle mass does not align with queries")
     if current_lifecycle_mass.shape != expected_mass_shape:
@@ -134,20 +137,20 @@ def _causal_query_transport_loss(
 
     # The past is a fixed source for this one-way causal alignment. Gradients
     # optimize the current representation only.
-    previous = F.normalize(previous_queries[0].detach().float(), dim=-1)
-    current = F.normalize(current_queries[0].float(), dim=-1)
+    previous = F.normalize(previous_queries.detach().float(), dim=-1)
+    current = F.normalize(current_queries.float(), dim=-1)
     cosine_cost = (
-        1.0 - torch.matmul(previous, current.transpose(0, 1))
+        1.0 - torch.matmul(previous, current.transpose(-2, -1))
     ).clamp_min(0.0)
     with torch.no_grad():
-        source_mass = previous_lifecycle_mass[0].float().clamp_min(
+        source_mass = previous_lifecycle_mass.float().clamp_min(
             float(mass_floor)
         )
-        target_mass = current_lifecycle_mass[0].float().clamp_min(
+        target_mass = current_lifecycle_mass.float().clamp_min(
             float(mass_floor)
         )
-        source_mass = source_mass / source_mass.sum()
-        target_mass = target_mass / target_mass.sum()
+        source_mass = source_mass / source_mass.sum(dim=-1, keepdim=True)
+        target_mass = target_mass / target_mass.sum(dim=-1, keepdim=True)
         off_diagonal = 1.0 - torch.eye(
             num_slots,
             device=cosine_cost.device,
@@ -954,6 +957,10 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         valid_steps = 0
         previous_queries = None
         previous_lifecycle_mass = None
+        transport_previous_queries = []
+        transport_current_queries = []
+        transport_previous_lifecycle_mass = []
+        transport_current_lifecycle_mass = []
         feature_stride = meta.get("feature_stride", meta.get("snippet_stride", 1))
         for index, (source_frame, schedule_step) in enumerate(
             zip(source_frames, supervision_schedule)
@@ -994,20 +1001,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 and previous_queries is not None
                 and previous_lifecycle_mass is not None
             ):
-                raw["causal_transport_loss"] = (
-                    _causal_query_transport_loss(
-                        previous_queries,
-                        state.queries,
-                        previous_lifecycle_mass,
-                        current_lifecycle_mass,
-                        temperature=self.causal_transport["temperature"],
-                        identity_cost=self.causal_transport["identity_cost"],
-                        iterations=self.causal_transport["iterations"],
-                        mass_floor=self.causal_transport["mass_floor"],
-                    )
+                transport_previous_queries.append(previous_queries)
+                transport_current_queries.append(state.queries)
+                transport_previous_lifecycle_mass.append(
+                    previous_lifecycle_mass
                 )
-            else:
-                raw["causal_transport_loss"] = _zero(state.queries)
+                transport_current_lifecycle_mass.append(
+                    current_lifecycle_mass.detach()
+                )
+            raw["causal_transport_loss"] = _zero(state.queries)
             if sums is None:
                 sums = {name: value for name, value in raw.items()}
             else:
@@ -1018,8 +1020,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 current_frame=source_frame,
                 feature_stride=feature_stride,
             )
-            previous_queries = state.queries
-            previous_lifecycle_mass = current_lifecycle_mass
+            previous_queries = state.queries.detach()
+            previous_lifecycle_mass = current_lifecycle_mass.detach()
             logits.append(outputs)
             birth_trace.append(self._binding_rows(transition.birth_assignments))
             canonical_trace.append(self._binding_rows(transition.canonical_bindings))
@@ -1032,6 +1034,17 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             valid_steps += 1
         if not valid_steps or sums is None:
             raise ProtocolViolation("training episode contains no valid supervised token")
+        if transport_previous_queries:
+            sums["causal_transport_loss"] = _causal_query_transport_loss(
+                torch.cat(transport_previous_queries, dim=0),
+                torch.cat(transport_current_queries, dim=0),
+                torch.cat(transport_previous_lifecycle_mass, dim=0),
+                torch.cat(transport_current_lifecycle_mass, dim=0),
+                temperature=self.causal_transport["temperature"],
+                identity_cost=self.causal_transport["identity_cost"],
+                iterations=self.causal_transport["iterations"],
+                mass_floor=self.causal_transport["mass_floor"],
+            )
         losses = {name: value / valid_steps for name, value in sums.items()}
         losses["cost"] = sum(
             losses[name] * self.loss_weights[name] for name in self.loss_weights
