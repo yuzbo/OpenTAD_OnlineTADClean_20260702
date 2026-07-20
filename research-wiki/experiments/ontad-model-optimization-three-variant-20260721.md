@@ -173,7 +173,7 @@ raw-RGB 端到端扩展。
 - [x] M1：冻结 A/B/C 三个版本与不越界合同。
 - [x] M2：实现模型损失、配置、测试和实验清单。
 - [x] M3：本地 CPU-safe 验证与远端 N16R4 轻量验证。
-- [ ] M4：用数值修订后的精确提交重新部署三条 Slurm 作业。
+- [x] M4：用数值修订后的精确提交重新部署三条 Slurm 作业。
 - [ ] M5：记录 job id、run dir、队列/完成状态和下一门禁。
 
 ## M2/M3 实现与验证记录
@@ -308,10 +308,13 @@ worktree clean、无新版 `pb_opt_*`、无该 SHA 的 pilot contract。只使�
 
 | 版本 | 新 Slurm job | 新运行目录 | 当前状态 |
 | --- | ---: | --- | --- |
-| A / SW | `1177706` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_053819` | PENDING / AssocGrpGRES、零 GPU |
-| B / SW+BM | — | — | 等待下一 submit slot |
-| C / SW+CT | — | — | 等待下一 submit slot |
+| A / SW | `1177706` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_053819` | RUNNING / `g0003` |
+| B / SW+BM | `1177707` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_054136` | PENDING / AssocGrpGRES |
+| C / SW+CT | `1177708` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_054210` | PENDING / AssocGrpGRES |
 
-作业脚本内 `COMMIT_SHA` 已复核为 exact `d390779`。提交后账户回到
-16/16；没有取消、修改或抢占任何无关作业。下一槽按冻结顺序提交 B，
-再下一槽提交 C。
+三份作业脚本内 `COMMIT_SHA` 均已复核为 exact `d390779`。第二、第三个
+槽位出现后依次提交 B/C；05:42 A 已在 `g0003` 开始，B/C 正常等待 GPU。
+`pilot_contract.json` 要在各作业自身 exact 双臂 profile 完成后才生成，
+当前未出现不算缺失或失败。没有取消、修改或抢占任何无关作业。至此
+“三个版本完整实现并部署”的节点完成；下一门是各自画像、训练、激活
+审计、v2 分数诊断和冻结 screen。

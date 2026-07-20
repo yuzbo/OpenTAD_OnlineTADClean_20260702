@@ -153,7 +153,10 @@ query 模拟的同槽质量只有 `0.46641`；0.25/20 为 `0.60779`，身份保�
 05:37 出现一个 submit slot；精确 SHA、clean 状态与零重复项复核后，
 A/SW 已提交为 job `1177706`，run
 `model_opt_sw_seed705_20260721_053819`，当前 `PENDING/AssocGrpGRES`、
-零 GPU。账户回到 16/16；B/C 继续按顺序等待新槽，没有动无关作业。
+零 GPU。随后两个槽依次出现，B/SW+BM 为 `1177707` /
+`model_opt_margin_seed705_20260721_054136`，C/SW+CT 为 `1177708` /
+`model_opt_transport_seed705_20260721_054210`。05:42 A 已在 `g0003`
+运行，B/C 等待 GPU；三份脚本 SHA 均正确，没有动无关作业。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
