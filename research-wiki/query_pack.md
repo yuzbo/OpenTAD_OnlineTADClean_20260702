@@ -176,6 +176,12 @@ calibration 在冻结 0.5 阈值下提交 0 个区间。C 正常进入 REMATCH�
 end/commit”的风险。最终判断仍等待两臂三通道诊断。A/B 恢复作业已经
 通过各自 exact profile 并进入确定性 FIXED 训练。
 
+C/REMATCH 随后也完成 `2010/2010`，transport 均值 `0.0114319`，但有
+2 次容量碰撞；FIXED/REMATCH 的冻结 calibration 均为 0 committed
+prediction、0 Recall@0.3。C 已确定无 P1 资格，作业继续生成三通道诊断
+和完整拒绝产物；这些分数只决定是否保留“仅 confirmed-active 槽
+transport”的后续想法，不会挽回本版资格。
+
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin
 只激活 `birth_margin_loss`，transport 只激活

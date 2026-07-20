@@ -384,3 +384,13 @@ A/B/C 比较；最终比较只采用三条完整产物链。没有取消或修�
 链路。作业不是崩溃，已正常进入 REMATCH 训练；仍需用 REMATCH 和 v2
 target-conditioned birth/alive/end 诊断区分“出生仍不足”与
 “alive/end 生命周期失衡”。
+
+06:48–06:51 C/REMATCH 也完成 `2010/2010` 更新，transport 在全部更新中
+激活、均值 `0.0114319`，margin 为零；它仍出现 `2` 次容量碰撞。冻结
+calibration 结果中，FIXED/REMATCH 均为 `0` 个 committed prediction、
+`prediction/GT=0`、`Recall@0.3=0`、average mAP `0`。因此 C 在两个监督
+绑定下都同时违反“零运行时容量碰撞”和“非零最终区间”门槛，确定不具备
+P1 资格；其 Slurm 最终出现非零退出码将是预期科学 gate reject，而非
+运行崩溃。仍保留随后生成的 birth/alive/end AUC、gap、TPR/FPR，用于
+判断 future work 是否值得把 transport 严格限制到已确认 active 槽；若
+这些判别指标也无改善，则停止该路线。
