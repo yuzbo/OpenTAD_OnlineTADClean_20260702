@@ -133,6 +133,7 @@ python -m pytest \
     tests/test_persistent_binding_screen_tools.py \
     tests/test_persistent_binding_score_diagnosis.py \
     tests/test_core_single_process_contracts.py \
+    tests/test_persistent_binding_optimization_comparison.py \
     -q -p no:cacheprovider
 
 python tools/census_persistent_binding.py \
