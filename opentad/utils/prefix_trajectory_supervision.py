@@ -429,18 +429,31 @@ class PrefixTrajectorySupervisionState:
             if instance_id in self.instance_to_slot
         )
         loss_bindings = canonical_bindings
-        if self.mode is SupervisionMode.REMATCH and canonical_bindings:
+        newborn_ids = set(births)
+        newborn_bindings = tuple(
+            binding
+            for binding in canonical_bindings
+            if binding.instance_id in newborn_ids
+        )
+        rematchable_bindings = tuple(
+            binding
+            for binding in canonical_bindings
+            if binding.instance_id not in newborn_ids
+        )
+        if self.mode is SupervisionMode.REMATCH and rematchable_bindings:
             canonical_instance_ids = tuple(
-                binding.instance_id for binding in canonical_bindings
+                binding.instance_id for binding in rematchable_bindings
             )
-            occupied_slots = tuple(sorted(binding.slot_id for binding in canonical_bindings))
+            occupied_slots = tuple(
+                sorted(binding.slot_id for binding in rematchable_bindings)
+            )
             rematch_costs = phase_costs(
                 "rematch",
                 canonical_instance_ids,
                 occupied_slots,
             )
             assignment = _solve_global_assignment(rematch_costs)
-            loss_bindings = tuple(
+            rematched_bindings = tuple(
                 sorted(
                     InstanceSlotBinding(
                         canonical_instance_ids[row],
@@ -449,6 +462,7 @@ class PrefixTrajectorySupervisionState:
                     for row, column in assignment
                 )
             )
+            loss_bindings = tuple(sorted(newborn_bindings + rematched_bindings))
 
         loss_by_instance = {
             binding.instance_id: binding.slot_id for binding in loss_bindings

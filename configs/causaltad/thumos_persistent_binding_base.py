@@ -48,6 +48,19 @@ profile_contract = dict(
     submit_via_slurm_only=True,
 )
 
+census_contract = dict(
+    expected_split_counts=dict(
+        fit_core=160,
+        calibration=40,
+        reporting_locked=211,
+    ),
+    max_gt_entry_free_deficits=0,
+    max_oracle_capacity_overflow_steps=0,
+    max_uncovered_birth_instances=0,
+    max_uncovered_endpoint_instances=0,
+    max_clipped_start_supervision_targets=0,
+)
+
 _dataset_common = dict(
     type="StreamingFeatureDataset",
     ann_file=annotation_path,
@@ -90,6 +103,7 @@ model = dict(
     class_loss_weight=1.0,
     start_loss_weight=1.0,
     end_loss_weight=1.0,
+    fail_on_supervision_exhaustion=True,
     head=dict(
         type="PersistentEventSetHead",
         in_channels=feature_dim,
@@ -109,14 +123,17 @@ model = dict(
         lifecycle_mode="candidate_recycle",
         candidate_confirmation_steps=1,
         max_births_per_step=2,
-        max_endpoint_offset=feature_stride,
     ),
 )
 
 optimizer = dict(type="AdamW", lr=2e-4, weight_decay=0.05)
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=1, max_epoch=12)
 
-inference = dict(load_from_raw_predictions=False, save_raw_prediction=False)
+inference = dict(
+    load_from_raw_predictions=False,
+    save_raw_prediction=False,
+    require_explicit_checkpoint=True,
+)
 post_processing = dict(
     streaming=True,
     streaming_safe_emission=True,
@@ -136,11 +153,13 @@ solver = dict(
     clip_grad_norm=1.0,
     ema=False,
     amp=False,
+    strict_determinism=True,
 )
 
-evaluation = dict(
+calibration_evaluation = dict(
     type="OnlineAPBudgeted",
-    subset="validation",
+    subset="training",
+    allowed_videos=calibration_manifest,
     tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
     latency_budgets_sec=[0.5, 1.0, 2.0, 4.0],
     fps=fps,
@@ -149,11 +168,40 @@ evaluation = dict(
     ground_truth_filename=annotation_path,
 )
 
+reporting_evaluation = dict(
+    type="OnlineAPBudgeted",
+    subset="validation",
+    allowed_videos=reporting_manifest,
+    tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
+    latency_budgets_sec=[0.5, 1.0, 2.0, 4.0],
+    fps=fps,
+    require_ledger=True,
+    require_no_future=True,
+    ground_truth_filename=annotation_path,
+)
+
+evaluation = reporting_evaluation
+
+calibration_contract = dict(
+    selection_metric="average_mOnlineAP",
+    selection_direction="maximize",
+    tie_breaking=("lower_epoch", "checkpoint_sha256"),
+    uses_reporting_split=False,
+)
+
+reporting_contract = dict(
+    one_shot_lock_required=True,
+    explicit_checkpoint_required=True,
+    calibration_receipt_required=True,
+    reporting_split_access_during_fit=False,
+)
+
 workflow = dict(
+    fit_only=True,
     logging_interval=50,
     checkpoint_interval=1,
     val_loss_interval=-1,
-    val_eval_interval=1,
+    val_eval_interval=-1,
     val_start_epoch=0,
     end_epoch=12,
     fail_on_nonfinite=True,

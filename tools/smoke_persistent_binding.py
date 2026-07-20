@@ -18,7 +18,7 @@ from mmengine.config import Config, DictAction  # noqa: E402
 from opentad.cores import build_optimizer  # noqa: E402
 from opentad.datasets import build_dataloader, build_dataset  # noqa: E402
 from opentad.models import build_detector  # noqa: E402
-from opentad.utils import set_seed  # noqa: E402
+from opentad.utils import configure_strict_determinism, set_seed  # noqa: E402
 from opentad.utils.device import move_data_to_device  # noqa: E402
 from opentad.utils.online_protocol import (  # noqa: E402
     summarize_emission_ledger,
@@ -72,6 +72,7 @@ def main():
     if args.max_chunks <= 0:
         raise ValueError("max_chunks must be positive")
     set_seed(args.seed)
+    determinism = configure_strict_determinism()
     cfg = Config.fromfile(args.config)
     if args.cfg_options:
         cfg.merge_from_dict(args.cfg_options)
@@ -107,6 +108,17 @@ def main():
     result_dict = {}
     dropped_gt_birth_targets = 0
     runtime_capacity_exhaustions = 0
+    audit_totals = {
+        field: 0
+        for field in (
+            "gt_supervision_exhaustions",
+            "gt_birth_runtime_entry_free_collisions",
+            "candidate_arbitration_suppressions",
+            "candidate_cancellations",
+            "active_abandonments",
+            "deferred_birth_due_to_release",
+        )
+    }
     update_audits = []
     for chunk_index, raw_batch in enumerate(dataloader):
         if chunk_index >= args.max_chunks:
@@ -135,6 +147,8 @@ def main():
                 )
             dropped_gt_birth_targets += dropped
             runtime_capacity_exhaustions += int(audit["runtime_capacity_exhaustions"])
+            for field in audit_totals:
+                audit_totals[field] += int(audit[field])
             compact_update = _compact_update(update)
             update_audits.append(compact_update)
             steps.append(
@@ -186,7 +200,9 @@ def main():
         "load_from_raw_predictions": bool(cfg.inference.load_from_raw_predictions),
         "dropped_gt_birth_targets": dropped_gt_birth_targets,
         "runtime_capacity_exhaustions": runtime_capacity_exhaustions,
+        **audit_totals,
         "all_update_audits_passed": all(item["passed"] for item in update_audits),
+        "determinism": determinism,
         "emission_summary": emission_summary,
         "steps": steps,
     }

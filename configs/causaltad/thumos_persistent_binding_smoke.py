@@ -12,6 +12,7 @@ scheduler = dict(
 )
 
 workflow = dict(
+    fit_only=False,
     logging_interval=1,
     checkpoint_interval=1,
     val_loss_interval=-1,

@@ -45,6 +45,8 @@ class PersistentEventSetState:
     birth_admissions: int = 0
     arbitration_suppressions: int = 0
     candidate_cancellations: int = 0
+    active_abandonments: int = 0
+    deferred_birth_due_to_release: int = 0
 
 
 @HEADS.register_module()
@@ -136,7 +138,8 @@ class PersistentEventSetHead(nn.Module):
         self.alive_head = nn.Linear(self.hidden_dim, 1)
         self.class_head = nn.Linear(self.hidden_dim, self.num_classes)
         self.end_head = nn.Linear(self.hidden_dim, 1)
-        self.endpoint_offset_head = nn.Linear(self.hidden_dim, 1)
+        if self.endpoint_mode == "hazard":
+            self.endpoint_offset_head = nn.Linear(self.hidden_dim, 1)
         self.start_offset_head = nn.Linear(self.hidden_dim, 1)
         nn.init.normal_(self.before_memory, std=0.02)
 
@@ -192,12 +195,15 @@ class PersistentEventSetHead(nn.Module):
             "alive_logits": self.alive_head(queries).squeeze(-1),
             "class_logits": self.class_head(queries),
             "end_hazard_logits": self.end_head(queries).squeeze(-1),
-            "endpoint_offset": self.endpoint_offset_head(queries).sigmoid().squeeze(-1)
-            * self.max_endpoint_offset,
             "start_offset": self.start_offset_head(queries).sigmoid().squeeze(-1) * self.memory_size,
             "start_pointer_logits": torch.cat([sentinel, pointer_scores], dim=-1),
             "memory_frames": memory_frames,
         }
+        if self.endpoint_mode == "hazard":
+            outputs["endpoint_offset"] = (
+                self.endpoint_offset_head(queries).sigmoid().squeeze(-1)
+                * self.max_endpoint_offset
+            )
         next_queries = queries if self.query_mode == "persistent" else state.queries.to(queries)
         next_state = PersistentEventSetState(
             stream_key=state.stream_key,
@@ -217,6 +223,8 @@ class PersistentEventSetHead(nn.Module):
             birth_admissions=state.birth_admissions,
             arbitration_suppressions=state.arbitration_suppressions,
             candidate_cancellations=state.candidate_cancellations,
+            active_abandonments=state.active_abandonments,
+            deferred_birth_due_to_release=state.deferred_birth_due_to_release,
         )
         return outputs, next_state
 
@@ -251,6 +259,13 @@ class PersistentEventSetHead(nn.Module):
         offset = float(outputs["start_offset"][0, slot].detach().item())
         return max(0, int(round(float(current_frame) - offset * float(feature_stride))))
 
+    def _decode_end(self, outputs, slot, start_frame, current_frame):
+        if self.endpoint_mode == "binary":
+            return int(current_frame)
+        offset = float(outputs["endpoint_offset"][0, slot].detach().item())
+        decoded = int(round(float(current_frame) - offset))
+        return min(int(current_frame), max(int(start_frame), decoded))
+
     def _decode_legacy(self, outputs, state, current_frame, feature_stride=1):
         current_frame = int(current_frame)
         birth = outputs["birth_logits"].detach().sigmoid()[0]
@@ -258,7 +273,6 @@ class PersistentEventSetHead(nn.Module):
         end = outputs["end_hazard_logits"].detach().sigmoid()[0]
         class_probs = outputs["class_logits"].detach().softmax(dim=-1)[0]
         class_scores, labels = class_probs.max(dim=-1)
-        offsets = outputs["endpoint_offset"].detach()[0]
 
         status = state.slot_status.clone()
         refractory = state.refractory.clone()
@@ -302,8 +316,7 @@ class PersistentEventSetHead(nn.Module):
                 continue
 
             start_frame = int(round(float(start_frames[slot].item())))
-            end_frame = int(round(current_frame - float(offsets[slot].item())))
-            end_frame = min(current_frame, max(start_frame, end_frame))
+            end_frame = self._decode_end(outputs, slot, start_frame, current_frame)
             score = math.sqrt(max(float(peak_scores[slot].item()) * float(end[slot].item()), 0.0))
             record = EventSetEmissionRecord(
                 stream_key=state.stream_key,
@@ -340,6 +353,8 @@ class PersistentEventSetHead(nn.Module):
             birth_admissions=state.birth_admissions,
             arbitration_suppressions=state.arbitration_suppressions,
             candidate_cancellations=state.candidate_cancellations,
+            active_abandonments=state.active_abandonments,
+            deferred_birth_due_to_release=state.deferred_birth_due_to_release,
         )
         return emitted, next_state
 
@@ -350,7 +365,6 @@ class PersistentEventSetHead(nn.Module):
         end = outputs["end_hazard_logits"].detach().sigmoid()[0]
         class_probs = outputs["class_logits"].detach().softmax(dim=-1)[0]
         class_scores, labels = class_probs.max(dim=-1)
-        offsets = outputs["endpoint_offset"].detach()[0]
 
         status = state.slot_status.clone()
         free_at_entry = status.eq(SLOT_FREE)
@@ -370,6 +384,7 @@ class PersistentEventSetHead(nn.Module):
         emitted = []
         released_slots = []
         candidate_cancellations = int(state.candidate_cancellations)
+        active_abandonments = int(state.active_abandonments)
 
         def reset_slot(slot):
             status[slot] = SLOT_FREE
@@ -387,8 +402,7 @@ class PersistentEventSetHead(nn.Module):
         def commit(slot):
             update_peak(slot)
             start_frame = int(round(float(start_frames[slot].item())))
-            end_frame = int(round(current_frame - float(offsets[slot].item())))
-            end_frame = min(current_frame, max(start_frame, end_frame))
+            end_frame = self._decode_end(outputs, slot, start_frame, current_frame)
             score = math.sqrt(
                 max(
                     float(peak_scores[slot].item()) * float(end[slot].item()),
@@ -428,6 +442,7 @@ class PersistentEventSetHead(nn.Module):
             if end[slot] >= self.end_threshold:
                 commit(slot)
             elif alive[slot] < self.alive_threshold:
+                active_abandonments += 1
                 reset_slot(slot)
 
         eligible = tuple(
@@ -450,6 +465,17 @@ class PersistentEventSetHead(nn.Module):
             )
             peak_scores[slot] = class_scores[slot]
             peak_labels[slot] = labels[slot]
+            if end[slot] >= self.end_threshold:
+                commit(slot)
+
+        deferred_birth_due_to_release = int(state.deferred_birth_due_to_release)
+        deferred_birth_due_to_release += sum(
+            int(
+                not bool(free_at_entry[slot].item())
+                and birth[slot] >= self.birth_threshold
+            )
+            for slot in released_slots
+        )
 
         queries = state.queries
         if released_slots:
@@ -486,6 +512,8 @@ class PersistentEventSetHead(nn.Module):
                 int(state.arbitration_suppressions) + len(ranked) - len(admitted)
             ),
             candidate_cancellations=candidate_cancellations,
+            active_abandonments=active_abandonments,
+            deferred_birth_due_to_release=deferred_birth_due_to_release,
         )
         return emitted, next_state
 

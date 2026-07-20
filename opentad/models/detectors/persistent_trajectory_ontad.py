@@ -105,6 +105,8 @@ class PersistentTrajectoryRuntimeState:
     birth_admissions: int
     arbitration_suppressions: int
     candidate_cancellations: int
+    active_abandonments: int
+    deferred_birth_due_to_release: int
     last_decision_frame: int
 
 
@@ -143,6 +145,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         class_loss_weight=1.0,
         start_loss_weight=1.0,
         end_loss_weight=1.0,
+        fail_on_supervision_exhaustion=False,
     ):
         super().__init__()
         self.head = head if isinstance(head, nn.Module) else build_head(head)
@@ -171,6 +174,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         if self.head.refractory_steps != 0:
             raise ValueError("persistent trajectory detection forbids refractory occupancy")
         self.detach_stream_state = bool(detach_stream_state)
+        self.fail_on_supervision_exhaustion = bool(
+            fail_on_supervision_exhaustion
+        )
         self.loss_weights = {
             "birth_loss": float(birth_loss_weight),
             "alive_loss": float(alive_loss_weight),
@@ -248,6 +254,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             birth_admissions=0,
             arbitration_suppressions=0,
             candidate_cancellations=0,
+            active_abandonments=0,
+            deferred_birth_due_to_release=0,
             last_decision_frame=-1,
         )
 
@@ -271,6 +279,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             birth_admissions=state.birth_admissions,
             arbitration_suppressions=state.arbitration_suppressions,
             candidate_cancellations=state.candidate_cancellations,
+            active_abandonments=state.active_abandonments,
+            deferred_birth_due_to_release=state.deferred_birth_due_to_release,
         )
 
     def _from_head_state(self, state, committed, decision_frame):
@@ -289,6 +299,10 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             birth_admissions=int(state.birth_admissions),
             arbitration_suppressions=int(state.arbitration_suppressions),
             candidate_cancellations=int(state.candidate_cancellations),
+            active_abandonments=int(state.active_abandonments),
+            deferred_birth_due_to_release=int(
+                state.deferred_birth_due_to_release
+            ),
             last_decision_frame=int(decision_frame),
         )
         return self._detach_runtime(runtime) if self.detach_stream_state else runtime
@@ -492,7 +506,14 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def _binding_rows(bindings):
         return tuple((int(row.instance_id), int(row.slot_id)) for row in bindings)
 
-    def _append_emissions(self, existing_rows, records, class_names=None, fps=30.0):
+    def _append_emissions(
+        self,
+        existing_rows,
+        records,
+        video_id,
+        class_names=None,
+        fps=30.0,
+    ):
         fps = float(fps)
         if not math.isfinite(fps) or fps <= 0:
             raise ProtocolViolation("fps must be a positive finite number")
@@ -512,6 +533,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 "event_id": event_id,
                 "stream_id": record.stream_key,
                 "stream_key": record.stream_key,
+                "runtime_stream_key": record.stream_key,
+                "video_id": str(video_id),
+                "sequence_id": len(committed),
                 "final": True,
                 "immutable": True,
                 "slot_id": int(record.slot_id),
@@ -552,6 +576,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         source_frames,
         runtime_state,
         feature_stride,
+        video_id,
         class_names=None,
         fps=30.0,
     ):
@@ -574,6 +599,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             committed, rows = self._append_emissions(
                 committed,
                 records,
+                video_id=video_id,
                 class_names=class_names,
                 fps=fps,
             )
@@ -616,6 +642,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             source_frames,
             runtime_state,
             feature_stride=meta.get("feature_stride", meta.get("snippet_stride", 1)),
+            video_id=meta.get("video_id", meta.get("video_name")),
             class_names=class_names,
             fps=meta.get("fps", 30.0),
         )
@@ -638,10 +665,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         runtime = initial_runtime_state or self._initial_runtime_state(features, stream_key)
         if runtime.stream_key != stream_key:
             raise ProtocolViolation("runtime state stream key does not match the episode")
-        supervision = initial_supervision_state or PrefixTrajectorySupervisionState(
-            num_slots=self.head.num_slots,
-            mode=self.supervision_mode,
-        )
+        supervision = (
+            initial_supervision_state
+            or PrefixTrajectorySupervisionState(
+                num_slots=self.head.num_slots,
+                mode=self.supervision_mode,
+            )
+        ).clone()
         if supervision.mode is not self.supervision_mode:
             raise ProtocolViolation("supervision state binding mode does not match the detector")
         if source_frames and source_frames[0] <= runtime.last_decision_frame:
@@ -657,7 +687,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         alive_mask_trace = []
         endpoint_trace = []
         exhaustion = 0
-        runtime_capacity_exhaustion = 0
+        runtime_entry_free_collisions = 0
         rematch_swaps = 0
         valid_steps = 0
         feature_stride = meta.get("feature_stride", meta.get("snippet_stride", 1))
@@ -670,7 +700,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 continue
             outputs, state = self.head.step(features[:, :, index], state, source_frame)
             free_runtime_slots = int(state.slot_status.eq(SLOT_FREE).sum().item())
-            runtime_capacity_exhaustion += max(
+            runtime_entry_free_collisions += max(
                 0,
                 len(tuple(schedule_step.births)) - free_runtime_slots,
             )
@@ -682,6 +712,12 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     feature_stride,
                 ),
             )
+            if self.fail_on_supervision_exhaustion and transition.exhaustion:
+                raise ProtocolViolation(
+                    "formal training forbids supervision exhaustion at "
+                    f"frame {source_frame}: "
+                    f"{transition.exhausted_instance_ids}"
+                )
             raw = self._step_losses(
                 outputs,
                 schedule_step,
@@ -719,6 +755,38 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             runtime.committed,
             source_frames[-1],
         )
+        runtime_deltas = {
+            "birth_proposals": runtime.birth_proposals - initial_runtime_state.birth_proposals
+            if initial_runtime_state is not None
+            else runtime.birth_proposals,
+            "birth_admissions": runtime.birth_admissions - initial_runtime_state.birth_admissions
+            if initial_runtime_state is not None
+            else runtime.birth_admissions,
+            "candidate_arbitration_suppressions": (
+                runtime.arbitration_suppressions
+                - initial_runtime_state.arbitration_suppressions
+                if initial_runtime_state is not None
+                else runtime.arbitration_suppressions
+            ),
+            "candidate_cancellations": (
+                runtime.candidate_cancellations
+                - initial_runtime_state.candidate_cancellations
+                if initial_runtime_state is not None
+                else runtime.candidate_cancellations
+            ),
+            "active_abandonments": (
+                runtime.active_abandonments
+                - initial_runtime_state.active_abandonments
+                if initial_runtime_state is not None
+                else runtime.active_abandonments
+            ),
+            "deferred_birth_due_to_release": (
+                runtime.deferred_birth_due_to_release
+                - initial_runtime_state.deferred_birth_due_to_release
+                if initial_runtime_state is not None
+                else runtime.deferred_birth_due_to_release
+            ),
+        }
         audit = {
             "binding_mode": self.trajectory_binding_mode,
             "birth_assignments": tuple(birth_trace),
@@ -727,17 +795,30 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "birth_mask_trace": tuple(birth_mask_trace),
             "alive_mask_trace": tuple(alive_mask_trace),
             "endpoint_slot_trace": tuple(endpoint_trace),
+            "gt_supervision_exhaustions": exhaustion,
+            "gt_birth_runtime_entry_free_collisions": runtime_entry_free_collisions,
+            "candidate_arbitration_suppressions": runtime_deltas[
+                "candidate_arbitration_suppressions"
+            ],
+            "active_abandonments": runtime_deltas["active_abandonments"],
+            "deferred_birth_due_to_release": runtime_deltas[
+                "deferred_birth_due_to_release"
+            ],
             "slot_exhaustion": exhaustion,
             "dropped_gt_birth_targets": exhaustion,
-            "runtime_capacity_exhaustions": runtime_capacity_exhaustion,
+            "runtime_capacity_exhaustions": runtime_entry_free_collisions,
             "rematch_swap_count": rematch_swaps,
             "valid_supervised_steps": valid_steps,
             "max_source_frame": max(source_frames),
             "runtime_state_contains_gt": False,
-            "birth_proposals": runtime.birth_proposals,
-            "birth_admissions": runtime.birth_admissions,
-            "arbitration_suppressions": runtime.arbitration_suppressions,
-            "candidate_cancellations": runtime.candidate_cancellations,
+            "birth_proposals": runtime_deltas["birth_proposals"],
+            "birth_admissions": runtime_deltas["birth_admissions"],
+            "arbitration_suppressions": runtime_deltas[
+                "candidate_arbitration_suppressions"
+            ],
+            "candidate_cancellations": runtime_deltas[
+                "candidate_cancellations"
+            ],
         }
         self.last_episode_audit = audit
         return TrajectoryEpisodeLossOutput(

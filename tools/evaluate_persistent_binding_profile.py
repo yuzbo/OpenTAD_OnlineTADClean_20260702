@@ -151,12 +151,18 @@ def evaluate_profiles(
             "training profile did not update the head",
         )
         _require(
-            int(profile.get("dropped_gt_birth_targets", -1)) == 0,
-            "training profile dropped GT birth targets",
+            int(profile.get("gt_supervision_exhaustions", -1)) == 0,
+            "training profile exhausted GT supervision capacity",
         )
         _require(
-            int(profile.get("runtime_capacity_exhaustions", -1)) == 0,
-            "training profile exhausted predicted runtime capacity",
+            int(
+                profile.get(
+                    "gt_birth_runtime_entry_free_collisions",
+                    -1,
+                )
+            )
+            == 0,
+            "training profile has GT birth/runtime entry-free collisions",
         )
     _require(
         len({profile["dataset_chunks"] for profile in train_profiles}) == 1,

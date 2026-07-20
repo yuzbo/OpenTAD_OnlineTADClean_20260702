@@ -273,11 +273,10 @@ def test_cost_provider_is_phase_scoped_and_receives_ids_in_canonical_order():
 
     assert calls == [
         ("birth", (3, 8), (0, 1)),
-        ("rematch", (3, 8), (0, 1)),
     ]
     assert _bindings(result.birth_assignments) == {3: 0, 8: 1}
     assert _bindings(result.canonical_bindings) == {3: 0, 8: 1}
-    assert _bindings(result.loss_bindings) == {3: 1, 8: 0}
+    assert _bindings(result.loss_bindings) == {3: 0, 8: 1}
 
 
 def test_state_rejects_non_bijections_and_slots_outside_capacity():
@@ -323,16 +322,18 @@ def test_transition_rejects_unknown_active_ids_and_future_endpoint_leaks():
 def test_failed_cost_provider_transition_is_atomic():
     target = _Target(instance_id=1, start_frame=1.0)
     state = PrefixTrajectorySupervisionState(num_slots=1, mode="rematch")
+    state.transition(
+        _Step(current_frame=7, births=(target,), active=(target,)),
+        [[0.0]],
+    )
     pristine = state.snapshot()
 
     def provider(phase, instance_ids, slot_ids):
-        if phase == "birth":
-            return [[0.0]]
         raise RuntimeError("synthetic rematch failure")
 
     with pytest.raises(RuntimeError, match="synthetic rematch failure"):
         state.transition(
-            _Step(current_frame=7, births=(target,), active=(target,)),
+            _Step(current_frame=15, active=(target,)),
             provider,
         )
 
@@ -371,7 +372,7 @@ def test_delayed_birth_endpoint_and_lifecycle_continue_across_chunk_boundary():
     assert [item.instance_id for item in second_chunk[0].ends] == [0, 1]
     assert _bindings(delayed.birth_assignments) == {1: 1}
     assert _bindings(delayed.canonical_bindings) == {0: 0, 1: 1}
-    assert _bindings(delayed.loss_bindings) == {0: 1, 1: 0}
+    assert _bindings(delayed.loss_bindings) == {0: 0, 1: 1}
     assert delayed.endpoint_slots == (0, 1)
     assert delayed.endpoint_mask == (True, True)
     assert delayed.audit.occupied_slots_before == (0,)

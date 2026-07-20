@@ -14,7 +14,13 @@ from mmengine.config import Config, DictAction
 from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import eval_one_epoch
-from opentad.utils import update_workdir, set_seed, create_folder, setup_logger
+from opentad.utils import (
+    configure_strict_determinism,
+    update_workdir,
+    set_seed,
+    create_folder,
+    setup_logger,
+)
 
 
 def parse_args():
@@ -24,6 +30,12 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
+    parser.add_argument(
+        "--evaluation-role",
+        choices=("auto", "smoke", "calibration", "reporting"),
+        default="auto",
+        help="frozen persistent-binding split role",
+    )
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     args = parser.parse_args()
     return args
@@ -36,6 +48,28 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    role = args.evaluation_role
+    persistent_route = cfg.get("route_stage", "").startswith(
+        "persistent_binding"
+    )
+    if persistent_route:
+        if role == "auto":
+            if bool(cfg.get("smoke_only", False)):
+                role = "smoke"
+            else:
+                raise RuntimeError(
+                    "formal persistent-binding inference requires an explicit "
+                    "--evaluation-role calibration or reporting"
+                )
+        if role == "smoke" and not bool(cfg.get("smoke_only", False)):
+            raise RuntimeError("the smoke evaluation role requires smoke_only=True")
+        if role == "calibration":
+            cfg.dataset.test = cfg.dataset.val
+            cfg.dataset.test.test_mode = True
+            cfg.solver.test = cfg.solver.val
+            cfg.evaluation = cfg.calibration_evaluation
+        elif role == "reporting":
+            cfg.evaluation = cfg.reporting_evaluation
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -44,16 +78,29 @@ def main():
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
+    if persistent_route and args.world_size != 1:
+        raise RuntimeError(
+            "persistent-binding chronological inference requires world_size=1"
+        )
 
     # set random seed, create work_dir
     set_seed(args.seed)
+    determinism = (
+        configure_strict_determinism()
+        if persistent_route
+        else None
+    )
     cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
+    if role in {"calibration", "reporting"}:
+        cfg.work_dir = os.path.join(cfg.work_dir, role)
     if args.rank == 0:
         create_folder(cfg.work_dir)
 
     # setup logger
     logger = setup_logger("Test", save_dir=cfg.work_dir, distributed_rank=args.rank)
     logger.info(f"Using torch version: {torch.__version__}, CUDA version: {torch.version.cuda}")
+    if determinism is not None:
+        logger.info(f"Strict determinism: {determinism}")
     logger.info(f"Config: \n{cfg.pretty_text}")
 
     # build dataset
@@ -78,6 +125,14 @@ def main():
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
+        if (
+            args.checkpoint == "none"
+            and bool(cfg.inference.get("require_explicit_checkpoint", False))
+        ):
+            raise RuntimeError(
+                "this route requires --checkpoint; implicit best/test_epoch "
+                "selection is forbidden"
+            )
         if args.checkpoint != "none":
             checkpoint_path = args.checkpoint
         elif "test_epoch" in cfg.inference.keys():

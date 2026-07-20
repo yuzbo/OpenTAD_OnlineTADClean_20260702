@@ -118,8 +118,8 @@ def test_two_same_class_slots_emit_independently_once_then_rearm():
         birth_threshold=0.5,
         alive_threshold=0.5,
         end_threshold=0.5,
+        endpoint_mode="binary",
         refractory_steps=1,
-        max_endpoint_offset=8.0,
     )
     state = _state(head)
     start_outputs = {
@@ -127,7 +127,6 @@ def test_two_same_class_slots_emit_independently_once_then_rearm():
         "alive_logits": torch.tensor([[10.0, 10.0]]),
         "class_logits": torch.tensor([[[0.0, 10.0, 0.0], [0.0, 10.0, 0.0]]]),
         "end_hazard_logits": torch.tensor([[-10.0, -10.0]]),
-        "endpoint_offset": torch.zeros(1, 2),
         "start_pointer_logits": torch.tensor(
             [[[-10.0, 10.0, 0.0], [-10.0, 0.0, 10.0]]]
         ),
@@ -142,13 +141,12 @@ def test_two_same_class_slots_emit_independently_once_then_rearm():
     end_outputs.update(
         birth_logits=torch.tensor([[-10.0, -10.0]]),
         end_hazard_logits=torch.tensor([[10.0, 10.0]]),
-        endpoint_offset=torch.tensor([[1.0, 2.0]]),
     )
     emissions, state = head.decode_step(end_outputs, state, current_frame=23)
     assert len(emissions) == 2
     assert {record.slot_id for record in emissions} == {0, 1}
     assert {record.label for record in emissions} == {1}
-    assert all(record.end_frame <= record.emit_frame for record in emissions)
+    assert {record.end_frame for record in emissions} == {23}
     assert state.slot_status.tolist() == [SLOT_REFRACTORY, SLOT_REFRACTORY]
 
     repeated, state = head.decode_step(end_outputs, state, current_frame=31)
@@ -174,7 +172,6 @@ def _candidate_outputs(*, birth, alive, end):
             dtype=torch.float32,
         ),
         "end_hazard_logits": torch.tensor([end], dtype=torch.float32),
-        "endpoint_offset": torch.zeros(1, 2),
         "start_offset": torch.zeros(1, 2),
         "memory_frames": (7,),
     }
@@ -271,7 +268,6 @@ def test_candidate_birth_arbitration_admits_only_frozen_per_step_budget():
         "alive_logits": torch.full((1, 4), -10.0),
         "class_logits": torch.zeros(1, 4, 3),
         "end_hazard_logits": torch.full((1, 4), -10.0),
-        "endpoint_offset": torch.zeros(1, 4),
         "start_offset": torch.zeros(1, 4),
         "memory_frames": (7,),
     }
@@ -287,3 +283,146 @@ def test_candidate_birth_arbitration_admits_only_frozen_per_step_budget():
     assert state.birth_proposals == 4
     assert state.birth_admissions == 2
     assert state.arbitration_suppressions == 2
+
+
+def test_binary_endpoint_has_no_trainable_offset_and_emits_at_decision_frame():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    )
+    outputs, _ = head.step(
+        torch.tensor([[0.1, 0.2, 0.3, 0.4]]),
+        _state(head),
+        source_frame=7,
+    )
+
+    assert "endpoint_offset" not in outputs
+    assert not any("endpoint_offset" in name for name, _ in head.named_parameters())
+
+
+def test_binary_newborn_end_crossing_commits_once_in_the_same_step():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    )
+    state = _state(head)
+
+    emissions, state = head.decode_step(
+        _candidate_outputs(
+            birth=[10.0, -10.0],
+            alive=[-10.0, -10.0],
+            end=[10.0, -10.0],
+        ),
+        state,
+        current_frame=7,
+    )
+
+    assert len(emissions) == 1
+    assert emissions[0].start_frame == emissions[0].end_frame == 7
+    assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+    repeated, state = head.decode_step(
+        _candidate_outputs(
+            birth=[-10.0, -10.0],
+            alive=[-10.0, -10.0],
+            end=[10.0, -10.0],
+        ),
+        state,
+        current_frame=15,
+    )
+    assert repeated == []
+    assert len(state.ledger) == 1
+
+
+def test_release_step_birth_is_deferred_and_audited_until_next_step():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    )
+    state = _state(head)
+    _, state = head.decode_step(
+        _candidate_outputs(
+            birth=[10.0, -10.0],
+            alive=[-10.0, -10.0],
+            end=[-10.0, -10.0],
+        ),
+        state,
+        current_frame=7,
+    )
+    _, state = head.decode_step(
+        _candidate_outputs(
+            birth=[-10.0, -10.0],
+            alive=[10.0, -10.0],
+            end=[-10.0, -10.0],
+        ),
+        state,
+        current_frame=15,
+    )
+
+    _, state = head.decode_step(
+        _candidate_outputs(
+            birth=[10.0, -10.0],
+            alive=[-10.0, -10.0],
+            end=[-10.0, -10.0],
+        ),
+        state,
+        current_frame=23,
+    )
+    assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
+    assert state.active_abandonments == 1
+    assert state.deferred_birth_due_to_release == 1
+
+    _, state = head.decode_step(
+        _candidate_outputs(
+            birth=[10.0, -10.0],
+            alive=[-10.0, -10.0],
+            end=[-10.0, -10.0],
+        ),
+        state,
+        current_frame=31,
+    )
+    assert state.slot_status.tolist() == [SLOT_CANDIDATE, SLOT_FREE]
+    assert state.birth_admissions == 2
+
+
+def test_all_binary_route_parameters_receive_gradient():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        refractory_steps=0,
+    ).train()
+    outputs, _ = head.step(
+        torch.tensor([[0.1, 0.2, 0.3, 0.4]]),
+        _state(head),
+        source_frame=7,
+    )
+    loss = (
+        outputs["birth_logits"].sum()
+        + outputs["alive_logits"].sum()
+        + outputs["class_logits"].sum()
+        + outputs["end_hazard_logits"].sum()
+        + outputs["start_offset"].sum()
+        + outputs["start_pointer_logits"].sum()
+    )
+    loss.backward()
+
+    missing = [name for name, parameter in head.named_parameters() if parameter.grad is None]
+    assert missing == []

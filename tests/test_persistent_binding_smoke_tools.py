@@ -30,6 +30,7 @@ def test_smoke_config_is_one_epoch_feature_only_and_not_formally_unlocked():
     assert cfg.workflow.end_epoch == 1
     assert cfg.workflow.checkpoint_interval == 1
     assert cfg.workflow.val_eval_interval == 1
+    assert cfg.workflow.fit_only is False
     assert cfg.workflow.fail_on_nonfinite is True
     assert cfg.solver.amp is False
     assert cfg.scheduler.warmup_start_lr == cfg.optimizer.lr
@@ -140,7 +141,10 @@ def test_n16r4_submitter_is_clean_checkout_slurm_only_and_runs_standard_entrypoi
     assert "tools/test.py" in submit
     assert "tools/smoke_persistent_binding.py" in submit
     assert "tools/verify_persistent_binding_smoke.py" in submit
+    assert "tools/census_persistent_binding.py" in submit
+    assert "--allow-unready-smoke" in submit
     assert "persistent_binding_emissions.json" in submit
+    assert "training_audit.json" in submit
     assert "load_from_raw_predictions=True" not in submit
     assert 'cat >> "$SCRIPT_PATH" <<\'SBATCH\'' in submit
 

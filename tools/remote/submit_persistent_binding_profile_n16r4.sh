@@ -35,6 +35,10 @@ if [[ ! -f "$SMOKE_RUN_DIR/gate_summary.json" ]]; then
     echo "Missing smoke gate: $SMOKE_RUN_DIR/gate_summary.json" >&2
     exit 2
 fi
+if [[ ! -f "$SMOKE_RUN_DIR/split_census.json" ]]; then
+    echo "Missing split census from the smoke run" >&2
+    exit 2
+fi
 
 cd "$BASE_DIR"
 source tools/env/activate_n16r4_causaltad.sh
@@ -45,6 +49,14 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 if payload.get("passed") is not True:
     raise SystemExit("persistent-binding smoke gate did not pass")
+PY
+python - "$SMOKE_RUN_DIR/split_census.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload.get("passed") is not True:
+    raise SystemExit("persistent-binding split census did not pass")
 PY
 
 for path in \

@@ -115,6 +115,10 @@ test "$(git rev-parse HEAD)" = "$COMMIT_SHA"
 test -z "$(git status --porcelain)"
 nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader
 
+python tools/census_persistent_binding.py \
+    configs/causaltad/thumos_persistent_binding_fixed.py \
+    --output "$RUN_DIR/split_census.json"
+
 python -m pytest \
     tests/test_prefix_trajectory_supervision.py \
     tests/test_persistent_event_set_head.py \
@@ -151,6 +155,7 @@ export MASTER_PORT=${MASTER_PORT:-$((20000 + ${SLURM_JOB_ID:-0} % 40000))}
 torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
     --rdzv_endpoint "127.0.0.1:${MASTER_PORT}" \
     tools/train.py "$CONFIG" \
+    --allow-unready-smoke \
     --seed "$SEED" \
     --id "$RUN_ID" \
     --cfg-options \
@@ -163,8 +168,10 @@ torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
 TRAIN_WORK="$RUN_DIR/train_work/gpu1_id${RUN_ID}"
 CHECKPOINT="$TRAIN_WORK/checkpoint/epoch_0.pth"
 TRAIN_LEDGER="$TRAIN_WORK/persistent_binding_emissions.json"
+TRAIN_AUDIT="$TRAIN_WORK/training_audit.json"
 test -f "$CHECKPOINT"
 test -f "$TRAIN_LEDGER"
+test -f "$TRAIN_AUDIT"
 
 MASTER_PORT=$((MASTER_PORT + 1))
 export MASTER_PORT

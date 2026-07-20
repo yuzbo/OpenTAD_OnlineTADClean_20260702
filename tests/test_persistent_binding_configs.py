@@ -41,6 +41,10 @@ def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     assert cfg.visual_training_allowed is False
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
+    assert cfg.inference.require_explicit_checkpoint is True
+    assert cfg.workflow.fit_only is True
+    assert cfg.workflow.val_eval_interval == -1
+    assert cfg.model.fail_on_supervision_exhaustion is True
     assert cfg.dataset.train.strict_causal_control is True
     assert cfg.dataset.val.strict_causal_control is True
     assert cfg.dataset.test.strict_causal_control is True
@@ -55,6 +59,8 @@ def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     assert head.max_births_per_step == 2
     assert head.refractory_steps == 0
     assert head.num_slots == 4
+    assert "max_endpoint_offset" not in head
+    assert cfg.census_contract.max_gt_entry_free_deficits == 0
 
 
 def test_route_sources_do_not_reference_historical_route_labels():

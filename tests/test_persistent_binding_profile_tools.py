@@ -42,6 +42,12 @@ def _train_profile(binding_mode, step_seconds=0.05, runtime_exhaustions=0):
         "dataset_video_ids_sha256": "c" * 64,
         "dropped_gt_birth_targets": 0,
         "runtime_capacity_exhaustions": runtime_exhaustions,
+        "gt_supervision_exhaustions": 0,
+        "gt_birth_runtime_entry_free_collisions": runtime_exhaustions,
+        "candidate_arbitration_suppressions": 0,
+        "candidate_cancellations": 0,
+        "active_abandonments": 0,
+        "deferred_birth_due_to_release": 0,
         "update_audit": {"passed": True},
     }
 
@@ -115,7 +121,7 @@ def test_profile_gate_rejects_runtime_exhaustion_before_full_seed():
             reporting_chunks=2719,
         )
     except ValueError as error:
-        assert "runtime capacity" in str(error)
+        assert "entry-free collisions" in str(error)
     else:
         raise AssertionError("runtime exhaustion must reject the profile")
 
@@ -183,6 +189,8 @@ def test_profiler_and_n16r4_launcher_freeze_scope_and_measurement_contracts():
     assert "audit_training_update" in profiler
     assert "dropped_gt_birth_targets" in profiler
     assert "runtime_capacity_exhaustions" in profiler
+    assert "gt_supervision_exhaustions" in profiler
+    assert "gt_birth_runtime_entry_free_collisions" in profiler
     assert "validate_emission_ledger_summary" in profiler
     assert "emission_ledger_sha256" in profiler
     assert "_configure_strict_determinism" in profiler

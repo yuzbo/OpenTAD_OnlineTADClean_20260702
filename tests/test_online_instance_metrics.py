@@ -66,7 +66,8 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
         "duplicate_emissions": 2,
         "unmatched_emissions": 1,
     }
-    assert metrics["matching"]["policy"] == "chronological_greedy_class_aware_tiou"
+    assert metrics["schema_version"] == "online_instance_metrics.v2"
+    assert metrics["matching"]["policy"] == "global_max_cardinality_max_total_tiou"
     assert metrics["matching"]["pairs"][0]["ground_truth_id"] == "gt-action"
     assert metrics["matching"]["pairs"][0]["emission_id"] == "emit-primary"
 
@@ -84,19 +85,19 @@ def test_metrics_keep_duplicate_fragmented_and_unmatched_emissions_auditable():
     ]
 
     fragmentation = metrics["fragmentation"]
-    assert fragmentation["fragmented_ground_truth_count"] == 1
-    assert fragmentation["distinct_fragment_count"] == 2
-    assert fragmentation["excess_fragment_count"] == 1
-    assert fragmentation["rate"] == pytest.approx(0.5)
+    assert fragmentation["fragmented_ground_truth_count"] == 0
+    assert fragmentation["covered_component_count"] == 0
+    assert fragmentation["excess_fragment_count"] == 0
+    assert fragmentation["rate"] == pytest.approx(0.0)
     assert fragmentation["denominator"] == {"name": "all_ground_truth", "value": 2}
-    assert "beyond the first" in fragmentation["definition"]
+    assert "disjoint connected components" in fragmentation["definition"]
 
     false_emissions = metrics["false_emissions"]
     assert false_emissions["unmatched_emission_count"] == 1
     assert false_emissions["rate"] == pytest.approx(0.25)
     assert false_emissions["emission_ids"] == ["emit-wrong-class"]
     assert metrics["duplicate_rate"] == pytest.approx(1.0)
-    assert metrics["fragmentation_rate"] == pytest.approx(0.5)
+    assert metrics["fragmentation_rate"] == pytest.approx(0.0)
     assert metrics["false_emission_rate"] == pytest.approx(0.25)
 
     latency = metrics["endpoint_detection_latency_frames"]
@@ -131,6 +132,83 @@ def test_temporal_matching_has_deterministic_ground_truth_tie_breaking():
     assert metrics["counts"]["duplicate_emissions"] == 0
 
 
+def test_global_matching_maximizes_cardinality_before_total_tiou():
+    ground_truth = [
+        {"gt_id": "gt-a", "stream_key": "s", "label": "a", "segment": [0, 10]},
+        {"gt_id": "gt-b", "stream_key": "s", "label": "a", "segment": [10, 20]},
+    ]
+    emissions = [
+        _emission(
+            "ambiguous-first",
+            [0, 20],
+            label="a",
+            stream_key="s",
+            emit_frame=20,
+            sequence_id=0,
+        ),
+        _emission(
+            "specific-second",
+            [0, 10],
+            label="a",
+            stream_key="s",
+            emit_frame=21,
+            sequence_id=1,
+        ),
+    ]
+
+    metrics = compute_online_instance_metrics(
+        ground_truth,
+        emissions,
+        tiou_threshold=0.5,
+    )
+
+    assert metrics["counts"]["primary_matches"] == 2
+    assert {
+        pair["ground_truth_id"]: pair["emission_id"]
+        for pair in metrics["matching"]["pairs"]
+    } == {
+        "gt-a": "specific-second",
+        "gt-b": "ambiguous-first",
+    }
+
+
+def test_fragmentation_counts_disjoint_coverage_not_nested_bounds():
+    ground_truth = [
+        {"gt_id": "gt", "video_id": "v", "label": "a", "segment": [0, 10]}
+    ]
+    emissions = [
+        _emission(
+            "left",
+            [0, 4.9],
+            label="a",
+            stream_key="runtime",
+            emit_frame=12,
+            sequence_id=0,
+        )
+        | {"video_id": "v"},
+        _emission(
+            "right",
+            [5.1, 10],
+            label="a",
+            stream_key="runtime",
+            emit_frame=13,
+            sequence_id=1,
+        )
+        | {"video_id": "v"},
+    ]
+
+    metrics = compute_online_instance_metrics(
+        ground_truth,
+        emissions,
+        tiou_threshold=0.4,
+    )
+
+    assert metrics["fragmentation"]["fragmented_ground_truth_count"] == 1
+    assert metrics["fragmentation"]["covered_component_count"] == 2
+    assert metrics["fragmentation"]["excess_fragment_count"] == 1
+    assert metrics["fragmentation_rate"] == pytest.approx(1.0)
+
+
 def test_explicit_frame_bounds_take_precedence_over_display_segment_units():
     ground_truth = [
         {
@@ -162,6 +240,38 @@ def test_explicit_frame_bounds_take_precedence_over_display_segment_units():
     assert metrics["counts"]["primary_matches"] == 1
     assert metrics["endpoint_detection_latency_frames"]["mean"] == 2.0
     assert metrics["matching"]["coordinate_system"] == "frames"
+
+
+def test_database_ground_truth_seconds_are_converted_to_frame_coordinates():
+    ground_truth = {
+        "database": {
+            "video-a": {
+                "annotations": [
+                    {"id": "gt", "label": "action", "segment": [1.0, 2.0]}
+                ]
+            }
+        }
+    }
+    emission = _emission(
+        "event",
+        [30, 60],
+        emit_frame=66,
+        sequence_id=0,
+        stream_key="runtime-a",
+    ) | {
+        "video_id": "video-a",
+        "start_frame": 30,
+        "end_frame": 60,
+    }
+
+    metrics = compute_online_instance_metrics(
+        ground_truth,
+        [emission],
+        fps=30.0,
+    )
+
+    assert metrics["counts"]["primary_matches"] == 1
+    assert metrics["endpoint_detection_latency_frames"]["mean"] == 6.0
 
 
 @pytest.mark.parametrize(

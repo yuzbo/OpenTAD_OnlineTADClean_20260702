@@ -7,6 +7,7 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import json
 import torch
 import torch.distributed as dist
 from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
@@ -17,6 +18,7 @@ from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import train_one_epoch, val_one_epoch, eval_one_epoch, build_optimizer, build_scheduler
 from opentad.utils import (
+    configure_strict_determinism,
     set_seed,
     update_workdir,
     create_folder,
@@ -36,6 +38,11 @@ def parse_args():
     parser.add_argument("--resume", type=str, default=None, help="resume from a checkpoint")
     parser.add_argument("--not_eval", action="store_true", help="whether not to eval, only do inference")
     parser.add_argument("--disable_deterministic", action="store_true", help="disable deterministic for faster speed")
+    parser.add_argument(
+        "--allow-unready-smoke",
+        action="store_true",
+        help="allow only an explicitly smoke_only config while formal training is locked",
+    )
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     args = parser.parse_args()
     return args
@@ -59,6 +66,27 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    formal_training_ready = bool(cfg.get("formal_training_ready", True))
+    smoke_only = bool(cfg.get("smoke_only", False))
+    if not formal_training_ready and not (
+        args.allow_unready_smoke and smoke_only
+    ):
+        raise RuntimeError(
+            "formal_training_ready is false; only an explicit smoke_only "
+            "config may run with --allow-unready-smoke"
+        )
+    fit_only = bool(cfg.workflow.get("fit_only", False))
+    persistent_route = cfg.get("route_stage", "").startswith(
+        "persistent_binding"
+    )
+    if persistent_route and args.disable_deterministic:
+        raise RuntimeError(
+            "persistent-binding execution forbids --disable_deterministic"
+        )
+    if fit_only and cfg.workflow.get("val_eval_interval", -1) > 0:
+        raise RuntimeError(
+            "fit-only training forbids reporting-set evaluation"
+        )
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -67,9 +95,18 @@ def main():
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
+    if persistent_route and args.world_size != 1:
+        raise RuntimeError(
+            "persistent-binding chronological training requires world_size=1"
+        )
 
     # set random seed, create work_dir, and save config
     set_seed(args.seed, args.disable_deterministic)
+    determinism = (
+        configure_strict_determinism()
+        if persistent_route
+        else None
+    )
     cfg = update_workdir(cfg, args.id, args.world_size)
     if args.rank == 0:
         create_folder(cfg.work_dir)
@@ -78,6 +115,8 @@ def main():
     # setup logger
     logger = setup_logger("Train", save_dir=cfg.work_dir, distributed_rank=args.rank)
     logger.info(f"Using torch version: {torch.__version__}, CUDA version: {torch.version.cuda}")
+    if determinism is not None:
+        logger.info(f"Strict determinism: {determinism}")
     logger.info(f"Config: \n{cfg.pretty_text}")
 
     # build dataset
@@ -91,25 +130,35 @@ def main():
         **cfg.solver.train,
     )
 
-    val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
-    val_loader = build_dataloader(
-        val_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.val,
-    )
+    val_loader = None
+    if cfg.workflow.get("val_loss_interval", -1) > 0:
+        val_dataset = build_dataset(
+            cfg.dataset.val,
+            default_args=dict(logger=logger),
+        )
+        val_loader = build_dataloader(
+            val_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.val,
+        )
 
-    test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
-    test_loader = build_dataloader(
-        test_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.test,
-    )
+    test_loader = None
+    if not fit_only and cfg.workflow.get("val_eval_interval", -1) > 0:
+        test_dataset = build_dataset(
+            cfg.dataset.test,
+            default_args=dict(logger=logger),
+        )
+        test_loader = build_dataloader(
+            test_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.test,
+        )
 
     # build model
     model = build_detector(cfg.model)
@@ -177,11 +226,12 @@ def main():
     logger.info("Training Starts...\n")
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
+    training_audit_rows = []
     for epoch in range(resume_epoch + 1, max_epoch):
         _set_dataloader_epoch(train_loader, epoch)
 
         # train for one epoch
-        train_one_epoch(
+        epoch_audit = train_one_epoch(
             train_loader,
             model,
             optimizer,
@@ -195,6 +245,8 @@ def main():
             scaler=scaler,
             fail_on_nonfinite=cfg.workflow.get("fail_on_nonfinite", False),
         )
+        epoch_audit["epoch"] = int(epoch)
+        training_audit_rows.append(epoch_audit)
 
         # save checkpoint
         save_checkpoint_enabled = not cfg.workflow.get("disable_checkpoint", False)
@@ -236,6 +288,37 @@ def main():
                     world_size=args.world_size,
                     not_eval=args.not_eval,
                 )
+    if args.rank == 0:
+        audit_fields = (
+            "expected_updates",
+            "successful_updates",
+            "scheduler_steps",
+            "skipped_updates",
+            "gt_supervision_exhaustions",
+            "gt_birth_runtime_entry_free_collisions",
+            "candidate_arbitration_suppressions",
+            "candidate_cancellations",
+            "active_abandonments",
+            "deferred_birth_due_to_release",
+        )
+        totals = {
+            field: sum(int(row[field]) for row in training_audit_rows)
+            for field in audit_fields
+        }
+        audit_path = os.path.join(cfg.work_dir, "training_audit.json")
+        with open(audit_path, "w", encoding="utf-8") as file:
+            json.dump(
+                {
+                    "schema_version": "persistent_binding_training_audit.v1",
+                    "seed": int(args.seed),
+                    "fit_only": fit_only,
+                    "epochs": training_audit_rows,
+                    "totals": totals,
+                },
+                file,
+                indent=2,
+                sort_keys=True,
+            )
     logger.info("Training Over...\n")
 
 

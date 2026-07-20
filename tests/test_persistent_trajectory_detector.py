@@ -13,6 +13,9 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
 )
 from opentad.utils.online_protocol import ProtocolViolation
 from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedule
+from opentad.utils.prefix_trajectory_supervision import (
+    PrefixTrajectorySupervisionState,
+)
 
 
 def _head():
@@ -38,11 +41,12 @@ def _head():
     )
 
 
-def _detector(binding_mode="fixed_birth_slot"):
+def _detector(binding_mode="fixed_birth_slot", **kwargs):
     return PersistentTrajectoryOnlineDetector(
         head=_head(),
         trajectory_binding_mode=binding_mode,
         detach_stream_state=True,
+        **kwargs,
     )
 
 
@@ -121,6 +125,7 @@ def test_final_emission_contains_frame_and_standard_second_coordinates():
     committed, rows = detector._append_emissions(
         (),
         (record,),
+        video_id="video",
         class_names=("a", "b", "c"),
         fps=30.0,
     )
@@ -128,6 +133,9 @@ def test_final_emission_contains_frame_and_standard_second_coordinates():
     assert committed == rows
     assert rows[0]["segment"] == [1.0, 2.0]
     assert rows[0]["label"] == "b"
+    assert rows[0]["video_id"] == "video"
+    assert rows[0]["runtime_stream_key"] == "stream"
+    assert rows[0]["sequence_id"] == 0
     assert rows[0]["latency_sec"] == pytest.approx(0.2)
     assert rows[0]["start_frame"] <= rows[0]["end_frame"] <= rows[0]["emit_frame"]
 
@@ -190,6 +198,39 @@ def test_predicted_runtime_occupancy_cannot_delete_ground_truth_birth_supervisio
     assert output.audit["slot_exhaustion"] == 0
     assert output.audit["dropped_gt_birth_targets"] == 0
     assert output.audit["runtime_capacity_exhaustions"] == 1
+    assert output.audit["gt_supervision_exhaustions"] == 0
+    assert output.audit["gt_birth_runtime_entry_free_collisions"] == 1
+
+
+def test_formal_supervision_exhaustion_fails_without_mutating_input_state():
+    detector = _detector(
+        "fixed_birth_slot",
+        fail_on_supervision_exhaustion=True,
+    ).train()
+    frames = (7,)
+    schedule = build_prefix_instance_schedule(
+        segments=[[1.0, 17.0], [2.0, 18.0], [3.0, 19.0]],
+        labels=[0, 1, 2],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+    supervision = PrefixTrajectorySupervisionState(
+        num_slots=2,
+        mode="fixed",
+    )
+    pristine = supervision.snapshot()
+
+    with pytest.raises(ProtocolViolation, match="supervision exhaustion"):
+        detector.train_episode(
+            torch.randn(1, 4, 1),
+            torch.ones(1, 1, dtype=torch.bool),
+            _meta(frames),
+            schedule,
+            initial_supervision_state=supervision,
+        )
+
+    assert supervision.snapshot() == pristine
+    assert detector.last_episode_audit == {}
 
 
 def test_episode_scan_matches_incremental_cached_execution():

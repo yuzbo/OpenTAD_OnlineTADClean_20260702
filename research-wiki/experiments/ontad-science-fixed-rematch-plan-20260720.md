@@ -2,6 +2,11 @@
 
 Date: 2026-07-20
 
+Active recovery and execution evidence is append-only in
+[`ontad-science-fixed-rematch-execution-20260720.md`](ontad-science-fixed-rematch-execution-20260720.md).
+That record must be updated at each core-repair, local-validation, Slurm-smoke,
+paired-profile, and final-decision checkpoint.
+
 ## Phase 1: Branch and Scope
 
 - [x] Create `codex/ontad-science-fixed-rematch` from `b974f3d`.

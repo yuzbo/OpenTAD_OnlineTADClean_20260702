@@ -126,8 +126,8 @@ def _verify_direct_reports(paths):
         _require(report.get("passed") is True, f"direct smoke did not pass: {path}")
         _require(report.get("mode") == "train_step", f"unexpected direct smoke mode: {path}")
         _require(
-            int(report.get("dropped_gt_birth_targets", -1)) == 0,
-            f"direct smoke dropped GT birth targets: {path}",
+            int(report.get("gt_supervision_exhaustions", -1)) == 0,
+            f"direct smoke exhausted GT supervision capacity: {path}",
         )
         _require(
             report.get("all_update_audits_passed") is True,
@@ -142,6 +142,12 @@ def _verify_direct_reports(paths):
                 "dropped_gt_birth_targets": int(report["dropped_gt_birth_targets"]),
                 "runtime_capacity_exhaustions": int(
                     report.get("runtime_capacity_exhaustions", 0)
+                ),
+                "gt_supervision_exhaustions": int(
+                    report["gt_supervision_exhaustions"]
+                ),
+                "gt_birth_runtime_entry_free_collisions": int(
+                    report["gt_birth_runtime_entry_free_collisions"]
                 ),
             }
         )

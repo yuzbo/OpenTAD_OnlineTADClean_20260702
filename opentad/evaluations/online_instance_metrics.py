@@ -1,14 +1,17 @@
-"""Auditable instance metrics for immutable Full PETAL emissions.
+"""Auditable instance metrics for immutable strictly causal On-TAD emissions.
 
 The evaluator intentionally performs no NMS, segment merging, score filtering,
-or event reordering. Input order is the online chronology used for matching.
+or event reordering. Protocol auditing retains the online chronology, while
+instance scoring uses a frozen deterministic global one-to-one assignment.
 """
 
 from collections import Counter, defaultdict
 import math
 
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 
-SCHEMA_VERSION = "online_instance_metrics.v1"
+SCHEMA_VERSION = "online_instance_metrics.v2"
 _EPSILON = 1e-9
 
 
@@ -73,8 +76,7 @@ def _inject_stream(row, stream_key):
     if not isinstance(row, dict):
         raise OnlineInstanceInputError("metric rows must be JSON objects")
     copied = dict(row)
-    if not any(key in copied for key in ("stream_key", "stream_id", "video_id")):
-        copied["stream_key"] = stream_key
+    copied.setdefault("video_id", stream_key)
     return copied
 
 
@@ -103,10 +105,15 @@ def _flatten_rows(value, kind):
             for stream_key, video in database.items():
                 if not isinstance(video, dict):
                     raise OnlineInstanceInputError("ground-truth video records must be objects")
-                rows.extend(
-                    _inject_stream(row, stream_key)
-                    for row in video.get("annotations", ())
-                )
+                for raw_row in video.get("annotations", ()):
+                    row = _inject_stream(raw_row, stream_key)
+                    row.setdefault(
+                        "coordinate_system",
+                        video.get("coordinate_system", "seconds"),
+                    )
+                    if "fps" in video:
+                        row.setdefault("fps", video["fps"])
+                    rows.append(row)
         else:
             container_keys = (
                 ("ground_truth", "annotations")
@@ -136,7 +143,7 @@ def _flatten_rows(value, kind):
     return [dict(row) for row in rows]
 
 
-def _segment(row, label):
+def _segment(row, label, default_fps):
     start_keys = ("start_frame", "predicted_start_frame")
     end_keys = ("end_frame", "predicted_end_frame")
     has_start_frame = any(key in row for key in start_keys)
@@ -160,6 +167,17 @@ def _segment(row, label):
             raise OnlineInstanceInputError(f"{label}.segment must contain [start, end]")
         start = _finite_number(segment[0], f"{label}.segment[0]")
         end = _finite_number(segment[1], f"{label}.segment[1]")
+        coordinate_system = str(row.get("coordinate_system", "frames")).lower()
+        if coordinate_system == "seconds":
+            fps = _finite_number(row.get("fps", default_fps), f"{label}.fps")
+            if fps <= 0:
+                raise OnlineInstanceInputError(f"{label}.fps must be positive")
+            start *= fps
+            end *= fps
+        elif coordinate_system != "frames":
+            raise OnlineInstanceInputError(
+                f"{label}.coordinate_system must be 'frames' or 'seconds'"
+            )
     else:
         raise OnlineInstanceInputError(f"{label} requires frame bounds or a segment")
     if end <= start:
@@ -167,16 +185,34 @@ def _segment(row, label):
     return (start, end)
 
 
+def _video_id(row, label):
+    value = row.get("video_id")
+    if value is None:
+        value = _first_present(
+            row,
+            ("stream_key", "stream_id"),
+            f"{label}.video_id",
+        )
+    return str(_scalar_id(value, f"{label}.video_id"))
+
+
 def _stream_key(row, label):
     value = _first_present(
         row,
-        ("stream_key", "stream_id", "video_id"),
-        f"{label}.stream_key",
+        ("runtime_stream_key", "stream_key", "stream_id"),
+        f"{label}.runtime_stream_key",
+        required=False,
     )
-    return str(_scalar_id(value, f"{label}.stream_key"))
+    if value is None:
+        value = _first_present(
+            row,
+            ("video_id",),
+            f"{label}.runtime_stream_key",
+        )
+    return str(_scalar_id(value, f"{label}.runtime_stream_key"))
 
 
-def _normalize_ground_truth(value):
+def _normalize_ground_truth(value, default_fps):
     normalized = []
     seen_ids = set()
     for index, row in enumerate(_flatten_rows(value, "ground truth")):
@@ -185,11 +221,11 @@ def _normalize_ground_truth(value):
         if gt_id is None:
             gt_id = f"gt:{index}"
         gt_id = _scalar_id(gt_id, f"{label}.gt_id")
-        stream_key = _stream_key(row, label)
-        identity = (stream_key, type(gt_id).__name__, repr(gt_id))
+        video_id = _video_id(row, label)
+        identity = (video_id, type(gt_id).__name__, repr(gt_id))
         if identity in seen_ids:
             raise OnlineInstanceInputError(
-                f"duplicate ground-truth ID {gt_id!r} in stream {stream_key!r}"
+                f"duplicate ground-truth ID {gt_id!r} in video {video_id!r}"
             )
         seen_ids.add(identity)
         target_label = _first_present(row, ("label", "class", "class_id"), f"{label}.label")
@@ -197,15 +233,15 @@ def _normalize_ground_truth(value):
             {
                 "index": index,
                 "id": gt_id,
-                "stream_key": stream_key,
+                "video_id": video_id,
                 "label": target_label,
-                "segment": _segment(row, label),
+                "segment": _segment(row, label, default_fps),
             }
         )
     return normalized
 
 
-def _normalize_emissions(value):
+def _normalize_emissions(value, default_fps):
     normalized = []
     seen_ids = set()
     for index, row in enumerate(_flatten_rows(value, "emissions")):
@@ -233,11 +269,12 @@ def _normalize_emissions(value):
             {
                 "index": index,
                 "id": emission_id,
+                "video_id": _video_id(row, label),
                 "stream_key": _stream_key(row, label),
                 "label": _first_present(
                     row, ("label", "class", "class_id"), f"{label}.label"
                 ),
-                "segment": _segment(row, label),
+                "segment": _segment(row, label, default_fps),
                 "emit_frame": _finite_number(
                     _first_present(row, ("emit_frame",), f"{label}.emit_frame"),
                     f"{label}.emit_frame",
@@ -323,18 +360,18 @@ def _protocol_audit(rows):
     return summary, violations
 
 
-def audit_causal_emissions(emissions):
+def audit_causal_emissions(emissions, fps=30.0):
     """Return a causal protocol audit without filtering or reordering rows."""
 
-    rows = _normalize_emissions(emissions)
+    rows = _normalize_emissions(emissions, fps)
     summary, _ = _protocol_audit(rows)
     return summary
 
 
-def validate_causal_emissions(emissions):
+def validate_causal_emissions(emissions, fps=30.0):
     """Validate immutable causal emissions and return the passing audit summary."""
 
-    rows = _normalize_emissions(emissions)
+    rows = _normalize_emissions(emissions, fps)
     summary, violations = _protocol_audit(rows)
     if violations:
         raise OnlineInstanceProtocolError(violations)
@@ -510,94 +547,209 @@ def compute_lifecycle_trace_metrics(lifecycle_traces):
     }
 
 
+def _global_primary_assignment(targets, predictions, threshold):
+    matches = {}
+    target_groups = defaultdict(list)
+    prediction_groups = defaultdict(list)
+
+    def group_key(row):
+        return (
+            row["video_id"],
+            type(row["label"]).__name__,
+            repr(row["label"]),
+        )
+
+    for target in targets:
+        target_groups[group_key(target)].append(target)
+    for prediction in predictions:
+        prediction_groups[group_key(prediction)].append(prediction)
+
+    for key in sorted(set(target_groups).union(prediction_groups)):
+        group_targets = sorted(target_groups[key], key=lambda row: row["index"])
+        group_predictions = sorted(
+            prediction_groups[key],
+            key=lambda row: row["index"],
+        )
+        if not group_targets or not group_predictions:
+            continue
+        num_predictions = len(group_predictions)
+        num_targets = len(group_targets)
+        cardinality_bonus = float(max(num_predictions, num_targets) + 1)
+        rewards = np.zeros(
+            (num_predictions, num_targets + num_predictions),
+            dtype=np.float64,
+        )
+        rewards[:, :num_targets] = -cardinality_bonus
+        tiou_matrix = np.zeros(
+            (num_predictions, num_targets),
+            dtype=np.float64,
+        )
+        eligible = np.zeros(
+            (num_predictions, num_targets),
+            dtype=bool,
+        )
+        for prediction_index, prediction in enumerate(group_predictions):
+            for target_index, target in enumerate(group_targets):
+                tiou = _temporal_iou(
+                    prediction["segment"],
+                    target["segment"],
+                )
+                tiou_matrix[prediction_index, target_index] = tiou
+                if tiou + _EPSILON >= threshold:
+                    eligible[prediction_index, target_index] = True
+                    rewards[prediction_index, target_index] = (
+                        cardinality_bonus + tiou
+                    )
+        row_indexes, column_indexes = linear_sum_assignment(-rewards)
+        for prediction_index, target_index in zip(
+            row_indexes.tolist(),
+            column_indexes.tolist(),
+        ):
+            if target_index >= num_targets:
+                continue
+            if not eligible[prediction_index, target_index]:
+                continue
+            prediction = group_predictions[prediction_index]
+            target = group_targets[target_index]
+            matches[prediction["index"]] = (
+                target,
+                float(tiou_matrix[prediction_index, target_index]),
+            )
+    return matches
+
+
+def _covered_components(target_segment, assignments):
+    clipped = []
+    for item in assignments:
+        start = max(
+            float(target_segment[0]),
+            float(item["prediction"]["segment"][0]),
+        )
+        end = min(
+            float(target_segment[1]),
+            float(item["prediction"]["segment"][1]),
+        )
+        if end > start + _EPSILON:
+            clipped.append((start, end))
+    components = []
+    for start, end in sorted(set(clipped)):
+        if not components or start > components[-1][1] + _EPSILON:
+            components.append([start, end])
+        else:
+            components[-1][1] = max(components[-1][1], end)
+    return components
+
+
 def compute_online_instance_metrics(
     ground_truth,
     emissions,
     tiou_threshold=0.5,
     lifecycle_traces=None,
+    fps=30.0,
 ):
-    """Compute causal instance metrics over every final online emission."""
+    """Compute frozen v2 causal instance metrics over every final emission."""
 
     threshold = _finite_number(tiou_threshold, "tiou_threshold")
     if threshold <= 0 or threshold > 1:
         raise OnlineInstanceInputError("tiou_threshold must be in (0, 1]")
+    default_fps = _finite_number(fps, "fps")
+    if default_fps <= 0:
+        raise OnlineInstanceInputError("fps must be positive")
 
-    targets = _normalize_ground_truth(ground_truth)
-    predictions = _normalize_emissions(emissions)
+    targets = _normalize_ground_truth(ground_truth, default_fps)
+    predictions = _normalize_emissions(emissions, default_fps)
     causal_validation, violations = _protocol_audit(predictions)
     if violations:
         raise OnlineInstanceProtocolError(violations)
 
-    matched_target_indexes = set()
+    primary_by_prediction = _global_primary_assignment(
+        targets,
+        predictions,
+        threshold,
+    )
     assignments_by_target = defaultdict(list)
     primary_pairs = []
     emission_assignments = []
     unmatched_emission_ids = []
+    pair_by_target = {}
 
     for prediction in predictions:
-        candidates = []
-        for target in targets:
-            if prediction["stream_key"] != target["stream_key"]:
-                continue
-            if prediction["label"] != target["label"]:
-                continue
-            tiou = _temporal_iou(prediction["segment"], target["segment"])
-            if tiou + _EPSILON >= threshold:
-                candidates.append((tiou, target))
-
-        available = [
-            candidate
-            for candidate in candidates
-            if candidate[1]["index"] not in matched_target_indexes
-        ]
-        if available:
-            tiou, target = min(available, key=lambda item: (-item[0], item[1]["index"]))
-            matched_target_indexes.add(target["index"])
+        primary = primary_by_prediction.get(prediction["index"])
+        if primary is not None:
+            target, tiou = primary
             role = "primary_match"
-            latency = prediction["emit_frame"] - target["segment"][1]
             pair = {
                 "ground_truth_id": target["id"],
                 "emission_id": prediction["id"],
-                "stream_key": target["stream_key"],
+                "video_id": target["video_id"],
+                "runtime_stream_key": prediction["stream_key"],
                 "label": target["label"],
                 "tiou": tiou,
-                "endpoint_latency_frames": latency,
+                "endpoint_latency_frames": (
+                    prediction["emit_frame"] - target["segment"][1]
+                ),
             }
             primary_pairs.append(pair)
-        elif candidates:
-            tiou, target = min(candidates, key=lambda item: (-item[0], item[1]["index"]))
-            role = "duplicate"
+            pair_by_target[target["index"]] = pair
         else:
-            target = None
-            tiou = None
-            role = "unmatched"
+            candidates = []
+            for target in targets:
+                if prediction["video_id"] != target["video_id"]:
+                    continue
+                if prediction["label"] != target["label"]:
+                    continue
+                tiou = _temporal_iou(
+                    prediction["segment"],
+                    target["segment"],
+                )
+                if tiou + _EPSILON >= threshold:
+                    candidates.append((tiou, target))
+            if candidates:
+                tiou, target = min(
+                    candidates,
+                    key=lambda item: (-item[0], item[1]["index"]),
+                )
+                role = "duplicate"
+            else:
+                target = None
+                tiou = None
+                role = "unmatched"
 
-        assignment = {
-            "emission_id": prediction["id"],
-            "status": role,
-            "ground_truth_id": None if target is None else target["id"],
-            "tiou": tiou,
-        }
-        emission_assignments.append(assignment)
+        emission_assignments.append(
+            {
+                "emission_id": prediction["id"],
+                "status": role,
+                "ground_truth_id": None if target is None else target["id"],
+                "tiou": tiou,
+            }
+        )
         if target is None:
             unmatched_emission_ids.append(prediction["id"])
         else:
             assignments_by_target[target["index"]].append(
-                {"prediction": prediction, "role": role, "tiou": tiou}
+                {
+                    "prediction": prediction,
+                    "role": role,
+                    "tiou": tiou,
+                }
             )
 
+    primary_pairs.sort(
+        key=lambda row: (
+            row["video_id"],
+            type(row["ground_truth_id"]).__name__,
+            repr(row["ground_truth_id"]),
+        )
+    )
     duplicate_count = 0
     duplicate_per_target = []
     fragmented_targets = []
-    distinct_fragment_count = 0
+    covered_component_count = 0
     excess_fragment_count = 0
-    for pair in primary_pairs:
-        target = next(
-            item
-            for item in targets
-            if item["stream_key"] == pair["stream_key"]
-            and item["id"] == pair["ground_truth_id"]
-        )
+    for target in targets:
+        pair = pair_by_target.get(target["index"])
+        if pair is None:
+            continue
         assignments = assignments_by_target[target["index"]]
         duplicate_ids = [
             item["prediction"]["id"]
@@ -613,30 +765,25 @@ def compute_online_instance_metrics(
                 "duplicate_emission_ids": duplicate_ids,
             }
         )
-
-        distinct_segments = []
-        seen_segments = set()
-        for item in assignments:
-            segment = item["prediction"]["segment"]
-            if segment not in seen_segments:
-                seen_segments.add(segment)
-                distinct_segments.append(list(segment))
-        if len(distinct_segments) >= 2:
+        components = _covered_components(target["segment"], assignments)
+        if len(components) >= 2:
             fragmented_targets.append(
                 {
                     "ground_truth_id": target["id"],
-                    "distinct_fragment_count": len(distinct_segments),
-                    "segments": distinct_segments,
+                    "covered_component_count": len(components),
+                    "components": components,
                 }
             )
-            distinct_fragment_count += len(distinct_segments)
-            excess_fragment_count += len(distinct_segments) - 1
+            covered_component_count += len(components)
+            excess_fragment_count += len(components) - 1
 
     matched_count = len(primary_pairs)
     emission_count = len(predictions)
     unmatched_count = len(unmatched_emission_ids)
     identity_denominator = {"name": "all_ground_truth", "value": len(targets)}
-    endpoint_latencies = [pair["endpoint_latency_frames"] for pair in primary_pairs]
+    endpoint_latencies = [
+        pair["endpoint_latency_frames"] for pair in primary_pairs
+    ]
     duplicate_rate = _rate(duplicate_count, len(targets))
     fragmentation_rate = _rate(excess_fragment_count, len(targets))
     fragmented_target_rate = _rate(len(fragmented_targets), len(targets))
@@ -655,12 +802,14 @@ def compute_online_instance_metrics(
             "unmatched_emissions": unmatched_count,
         },
         "matching": {
-            "policy": "chronological_greedy_class_aware_tiou",
+            "policy": "global_max_cardinality_max_total_tiou",
+            "identity_key": "video_id",
+            "protocol_stream_key": "runtime_stream_key",
             "coordinate_system": "frames",
             "tiou_threshold": threshold,
             "tie_breaking": (
-                "Input emission order, then highest tIoU among unmatched GT, then GT input order; "
-                "later matches to locked GT are duplicates."
+                "Stable prediction and ground-truth input order before "
+                "deterministic SciPy linear assignment."
             ),
             "pairs": primary_pairs,
             "emission_assignments": emission_assignments,
@@ -674,15 +823,16 @@ def compute_online_instance_metrics(
         },
         "fragmentation": {
             "fragmented_ground_truth_count": len(fragmented_targets),
-            "distinct_fragment_count": distinct_fragment_count,
+            "covered_component_count": covered_component_count,
             "excess_fragment_count": excess_fragment_count,
             "rate": fragmentation_rate,
             "fragmented_target_rate": fragmented_target_rate,
             "denominator": identity_denominator,
             "definition": (
-                "Fragmentation error counts distinct assigned segment bounds beyond the first "
-                "for each GT; exact repeated bounds remain duplicates but are not an "
-                "additional fragment."
+                "Fragmentation is the number of disjoint connected components "
+                "in assigned prediction coverage clipped to each ground-truth "
+                "interval, minus one; nested or overlapping bounds stay one "
+                "component."
             ),
             "per_ground_truth": fragmented_targets,
         },

@@ -91,6 +91,21 @@ def train_one_epoch(
     losses_tracker = {}
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
+    audit_fields = (
+        "gt_supervision_exhaustions",
+        "gt_birth_runtime_entry_free_collisions",
+        "candidate_arbitration_suppressions",
+        "candidate_cancellations",
+        "active_abandonments",
+        "deferred_birth_due_to_release",
+    )
+    epoch_audit = {
+        "expected_updates": int(num_iters),
+        "successful_updates": 0,
+        "scheduler_steps": 0,
+        "skipped_updates": 0,
+        **{field: 0 for field in audit_fields},
+    }
 
     target = _unwrap_model(model)
     if hasattr(target, "reset_online_states"):
@@ -114,6 +129,9 @@ def train_one_epoch(
         # forward pass
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             losses = model(**data_dict, return_loss=True)
+        detector_audit = getattr(target, "last_episode_audit", {})
+        for field in audit_fields:
+            epoch_audit[field] += int(detector_audit.get(field, 0))
 
         if not torch.isfinite(losses["cost"]):
             logger.error(
@@ -126,6 +144,7 @@ def train_one_epoch(
                     f"non-finite training cost at epoch={curr_epoch} iter={iter_idx}"
                 )
             optimizer.zero_grad(set_to_none=True)
+            epoch_audit["skipped_updates"] += 1
             continue
 
         # compute the gradients
@@ -171,6 +190,7 @@ def train_one_epoch(
                     )
                 optimizer.zero_grad(set_to_none=True)
                 scaler.update()
+                epoch_audit["skipped_updates"] += 1
                 continue
             scaler.step(optimizer)
             scaler.update()
@@ -198,11 +218,14 @@ def train_one_epoch(
                         f"epoch={curr_epoch} iter={iter_idx} param={bad_param_name}"
                     )
                 optimizer.zero_grad(set_to_none=True)
+                epoch_audit["skipped_updates"] += 1
                 continue
             optimizer.step()
+        epoch_audit["successful_updates"] += 1
 
         # update scheduler
         scheduler.step()
+        epoch_audit["scheduler_steps"] += 1
 
         # update ema
         if model_ema is not None:
@@ -245,6 +268,7 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+    return epoch_audit
 
 
 def val_one_epoch(

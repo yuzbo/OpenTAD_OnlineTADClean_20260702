@@ -22,6 +22,49 @@ def set_seed(seed, disable_deterministic=False):
         torch.use_deterministic_algorithms(True, warn_only=True)
 
 
+def configure_strict_determinism():
+    """Freeze deterministic CUDA kernels for matched scientific routes."""
+
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    cuda_backend = torch.backends.cuda
+    for setter_name, enabled in (
+        ("enable_flash_sdp", False),
+        ("enable_mem_efficient_sdp", False),
+        ("enable_cudnn_sdp", False),
+        ("enable_math_sdp", True),
+    ):
+        setter = getattr(cuda_backend, setter_name, None)
+        if setter is not None:
+            setter(enabled)
+
+    def backend_flag(name):
+        getter = getattr(cuda_backend, name, None)
+        return None if getter is None else bool(getter())
+
+    warn_only_getter = getattr(
+        torch,
+        "is_deterministic_algorithms_warn_only_enabled",
+        None,
+    )
+    return {
+        "deterministic_algorithms": bool(
+            torch.are_deterministic_algorithms_enabled()
+        ),
+        "deterministic_warn_only": (
+            None if warn_only_getter is None else bool(warn_only_getter())
+        ),
+        "flash_sdp_enabled": backend_flag("flash_sdp_enabled"),
+        "memory_efficient_sdp_enabled": backend_flag(
+            "mem_efficient_sdp_enabled"
+        ),
+        "cudnn_sdp_enabled": backend_flag("cudnn_sdp_enabled"),
+        "math_sdp_enabled": backend_flag("math_sdp_enabled"),
+    }
+
+
 def update_workdir(cfg, exp_id, gpu_num):
     cfg.work_dir = os.path.join(cfg.work_dir, f"gpu{gpu_num}_id{exp_id}/")
     return cfg

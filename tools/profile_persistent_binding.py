@@ -192,6 +192,17 @@ def main():
     loss_sums = {}
     dropped_gt_birth_targets = 0
     runtime_capacity_exhaustions = 0
+    audit_totals = {
+        field: 0
+        for field in (
+            "gt_supervision_exhaustions",
+            "gt_birth_runtime_entry_free_collisions",
+            "candidate_arbitration_suppressions",
+            "candidate_cancellations",
+            "active_abandonments",
+            "deferred_birth_due_to_release",
+        )
+    }
     result_dict = {}
     torch.cuda.reset_peak_memory_stats(device)
     for step in range(required_steps):
@@ -222,6 +233,8 @@ def main():
             audit = model.last_episode_audit
             dropped_gt_birth_targets += int(audit["dropped_gt_birth_targets"])
             runtime_capacity_exhaustions += int(audit["runtime_capacity_exhaustions"])
+            for field in audit_totals:
+                audit_totals[field] += int(audit[field])
             if step >= args.warmup_steps:
                 for name, value in losses.items():
                     loss_sums[name] = loss_sums.get(name, 0.0) + float(
@@ -292,6 +305,7 @@ def main():
         "max_gpu_memory_mib": torch.cuda.max_memory_allocated(device) / (1024.0**2),
         "dropped_gt_birth_targets": dropped_gt_birth_targets,
         "runtime_capacity_exhaustions": runtime_capacity_exhaustions,
+        **audit_totals,
         "mean_measured_losses": {
             name: value / args.measured_steps for name, value in loss_sums.items()
         },
