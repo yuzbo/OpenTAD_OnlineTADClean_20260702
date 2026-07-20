@@ -36,6 +36,8 @@ def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     assert cfg.experiment_contract.offline_nms is False
     assert cfg.experiment_contract.raw_video_joint_training is False
     assert cfg.raw_video_finetuning is False
+    assert cfg.solver.amp is False
+    assert cfg.workflow.fail_on_nonfinite is True
     assert cfg.visual_training_allowed is False
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False

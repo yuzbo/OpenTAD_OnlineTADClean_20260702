@@ -30,6 +30,8 @@ def test_smoke_config_is_one_epoch_feature_only_and_not_formally_unlocked():
     assert cfg.workflow.end_epoch == 1
     assert cfg.workflow.checkpoint_interval == 1
     assert cfg.workflow.val_eval_interval == 1
+    assert cfg.workflow.fail_on_nonfinite is True
+    assert cfg.solver.amp is False
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
     assert cfg.post_processing.emission_ledger_filename.endswith(".json")
@@ -110,6 +112,8 @@ def test_smoke_runner_and_verifier_enforce_real_updates_causality_and_reload():
     assert "summarize_emission_ledger" in smoke
 
     assert "checkpoint reload changed deterministic streaming emissions" in verify
+    assert "checkpoint contains no optimizer update state" in verify
+    assert "checkpoint is identical to seeded initialization" in verify
     assert "validate_emission_ledger_summary" in verify
     assert "build_evaluator" in verify
     assert "smoke model produced no final intervals" in verify

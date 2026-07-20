@@ -83,6 +83,7 @@ def train_one_epoch(
     logging_interval=200,
     runtime_debug_interval=-1,
     scaler=None,
+    fail_on_nonfinite=False,
 ):
     """Training the model for one epoch"""
 
@@ -120,6 +121,10 @@ def train_one_epoch(
                 curr_epoch,
                 iter_idx,
             )
+            if fail_on_nonfinite:
+                raise FloatingPointError(
+                    f"non-finite training cost at epoch={curr_epoch} iter={iter_idx}"
+                )
             optimizer.zero_grad(set_to_none=True)
             continue
 
@@ -159,6 +164,11 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+                if fail_on_nonfinite:
+                    raise FloatingPointError(
+                        "non-finite training gradient at "
+                        f"epoch={curr_epoch} iter={iter_idx} param={bad_param_name}"
+                    )
                 optimizer.zero_grad(set_to_none=True)
                 scaler.update()
                 continue
@@ -181,6 +191,11 @@ def train_one_epoch(
                         curr_epoch,
                         iter_idx,
                         _format_debug_report(debug_report),
+                    )
+                if fail_on_nonfinite:
+                    raise FloatingPointError(
+                        "non-finite training gradient at "
+                        f"epoch={curr_epoch} iter={iter_idx} param={bad_param_name}"
                     )
                 optimizer.zero_grad(set_to_none=True)
                 continue

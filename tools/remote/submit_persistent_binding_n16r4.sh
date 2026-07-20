@@ -190,6 +190,7 @@ python tools/verify_persistent_binding_smoke.py "$CONFIG" \
     --allowed-videos "$TEST_LIST" \
     --direct-report "$RUN_DIR/direct_fixed_train.json" \
     --direct-report "$RUN_DIR/direct_rematch_train.json" \
+    --seed "$SEED" \
     --output "$RUN_DIR/gate_summary.json"
 SBATCH
 

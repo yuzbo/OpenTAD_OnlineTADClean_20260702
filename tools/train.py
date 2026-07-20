@@ -193,6 +193,7 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             runtime_debug_interval=cfg.workflow.get("runtime_debug_interval", -1),
             scaler=scaler,
+            fail_on_nonfinite=cfg.workflow.get("fail_on_nonfinite", False),
         )
 
         # save checkpoint

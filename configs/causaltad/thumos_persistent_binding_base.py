@@ -134,7 +134,7 @@ solver = dict(
     static_graph=False,
     clip_grad_norm=1.0,
     ema=False,
-    amp=True,
+    amp=False,
 )
 
 evaluation = dict(
@@ -155,6 +155,7 @@ workflow = dict(
     val_eval_interval=1,
     val_start_epoch=0,
     end_epoch=12,
+    fail_on_nonfinite=True,
 )
 
 work_dir = "exps/thumos/persistent_binding_base"

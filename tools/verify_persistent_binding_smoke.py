@@ -16,6 +16,8 @@ import torch  # noqa: E402
 from mmengine.config import Config  # noqa: E402
 
 from opentad.evaluations import build_evaluator  # noqa: E402
+from opentad.models import build_detector  # noqa: E402
+from opentad.utils import set_seed  # noqa: E402
 from opentad.utils.online_protocol import (  # noqa: E402
     summarize_emission_ledger,
     validate_emission_ledger_summary,
@@ -36,6 +38,7 @@ def parse_args():
     parser.add_argument("--reload-ledger", required=True)
     parser.add_argument("--allowed-videos", required=True)
     parser.add_argument("--direct-report", action="append", default=[])
+    parser.add_argument("--seed", type=int, default=705)
     parser.add_argument("--output", required=True)
     parser.add_argument("--allow-empty-emissions", action="store_true")
     return parser.parse_args()
@@ -67,22 +70,50 @@ def _allowed_videos(path):
     return values
 
 
-def _verify_checkpoint(path):
+def _verify_checkpoint(path, cfg, seed):
     payload = torch.load(path, map_location="cpu")
     required = {"epoch", "state_dict", "optimizer", "scheduler"}
     _require(required.issubset(payload), f"checkpoint is missing {sorted(required - set(payload))}")
     _require(int(payload["epoch"]) == 0, "smoke checkpoint must be epoch 0")
     state_dict = payload["state_dict"]
     _require(state_dict, "checkpoint state_dict is empty")
+    optimizer_state = payload["optimizer"].get("state", {})
+    _require(optimizer_state, "standard runner checkpoint contains no optimizer update state")
     tensor_count = 0
     for name, value in state_dict.items():
         if torch.is_tensor(value):
             tensor_count += 1
             _require(bool(torch.isfinite(value).all().item()), f"non-finite checkpoint tensor: {name}")
     _require(tensor_count > 0, "checkpoint has no tensor state")
+
+    set_seed(seed)
+    initial_state = build_detector(cfg.model).state_dict()
+    normalized_state = {
+        name[len("module.") :] if name.startswith("module.") else name: value
+        for name, value in state_dict.items()
+    }
+    _require(
+        set(normalized_state) == set(initial_state),
+        "checkpoint state keys differ from a fresh model of the same config",
+    )
+    changed_tensors = []
+    total_delta_l2 = 0.0
+    for name, initial in initial_state.items():
+        saved = normalized_state[name]
+        if not torch.is_tensor(initial) or not torch.is_tensor(saved):
+            continue
+        delta = saved.detach().cpu().float() - initial.detach().cpu().float()
+        delta_l2 = float(delta.norm().item())
+        if delta_l2 > 0:
+            changed_tensors.append(name)
+            total_delta_l2 += delta_l2
+    _require(changed_tensors, "standard runner checkpoint is identical to seeded initialization")
     return {
         "epoch": int(payload["epoch"]),
         "state_tensor_count": tensor_count,
+        "optimizer_state_entries": len(optimizer_state),
+        "changed_state_tensors": len(changed_tensors),
+        "total_state_delta_l2": total_delta_l2,
         "sha256": _sha256(path),
     }
 
@@ -153,8 +184,10 @@ def _verify(args):
     cfg = Config.fromfile(args.config)
     _require(cfg.inference.load_from_raw_predictions is False, "raw prediction loading is forbidden")
     _require(cfg.raw_video_finetuning is False, "raw-RGB training must remain disabled")
+    _require(cfg.solver.amp is False, "persistent-binding feature smoke must use stable FP32")
+    _require(cfg.workflow.fail_on_nonfinite is True, "non-finite training must be a hard failure")
     allowed = _allowed_videos(args.allowed_videos)
-    checkpoint = _verify_checkpoint(args.checkpoint)
+    checkpoint = _verify_checkpoint(args.checkpoint, cfg, args.seed)
     direct_reports = _verify_direct_reports(args.direct_report)
     ledger, emission_summary = _verify_ledgers(
         args.train_ledger,
