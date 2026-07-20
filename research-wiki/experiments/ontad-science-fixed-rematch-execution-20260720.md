@@ -63,7 +63,7 @@ experiment task. Update it at every critical node before continuing.
       contracts implemented; all local CPU-safe checks pass.
 - [x] C3 — repaired code committed and pushed; N16R4 Slurm end-to-end smoke
       passes from the exact commit.
-- [ ] C4 — strict paired profile rerun; budget-compatible protocol either
+- [x] C4 — strict paired profile rerun; budget-compatible protocol either
       passes the frozen cap or remains explicitly blocked.
 - [ ] C5 — final decision and next paper-experiment route recorded; seed-705
       is submitted only if every preceding gate passes.
@@ -223,3 +223,90 @@ scientific contracts, gradients, checkpointing, strict-causal final emission,
 reload determinism, and evaluator wiring work end to end. The next authorized
 node is C4: rerun the paired resource profile at this exact repaired commit
 before deciding whether any single-seed screening run is affordable.
+
+## Repaired Strict Profile and Screen Registration — Slurm 1177511
+
+C4 is complete. The repaired implementation remains technically stable, the
+registered 12-epoch pair remains over budget, and a separate one-epoch
+seed-705 *technical screen* fits the unchanged two-GPU-hour cap.
+
+- Exact code commit:
+  `caa42b682e53dbbc51b33c940e6c9a6222f91585`.
+- Run directory:
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/profile_20260720_222625`.
+- Allocation: one RTX 4090 on `g0048`.
+- Frozen measurement: seed 705; 50 warm-up and 200 measured chronological
+  chunks per arm and mode; FP32; strict deterministic math SDP.
+- Pre-profile tests: `19 passed`.
+- Slurm state: `FAILED 1:0` in `00:10:12` only because the final frozen
+  12-epoch budget evaluator deliberately exits nonzero when the cap fails.
+  All four profile measurements completed and passed their stability,
+  update, capacity, causality, and equivalence checks before that exit.
+
+Measured training profile:
+
+| Arm | Mean step (s) | Full fit pass (GPU h) | Peak MiB |
+| --- | ---: | ---: | ---: |
+| FIXED | 0.707804 | 0.395191 | 140.520 |
+| REMATCH | 0.701788 | 0.391832 | 140.520 |
+
+Both arms had zero GT supervision exhaustion and zero GT-birth/runtime
+entry-free collision. Their measured lifecycle counts also agreed exactly.
+
+Measured untrained calibration profile:
+
+- FIXED and REMATCH had byte-identical canonical ledgers with SHA-256
+  `dd75937a4096f03966bb49ab7e432cd4820f8b74d052906d9719d934bacf4e1a`;
+- each measured prefix produced 17,014 emissions across 15 reached videos;
+- all future-end, future-source, negative-latency, and non-monotonic-emission
+  counts were zero;
+- the large untrained emission count is a diagnostic baseline, not an
+  effectiveness result.
+
+Frozen 12-epoch budget result:
+
+- training: `9.444269 GPU h`;
+- calibration inference: `0.083274 GPU h`;
+- reserved locked-report inference: `0.482775 GPU h`;
+- raw total: `10.010318 GPU h`;
+- total with the frozen 1.25 safety factor: `12.512897 GPU h`;
+- gate: **FAIL**, versus the unchanged `2 GPU h` cap.
+
+Registered seed-705 technical-screen budget:
+
+- exactly one full epoch over all 160 fit-core videos for each arm;
+- retain the exact first epoch of the 12-epoch optimizer/scheduler contract;
+- evaluate only on the 40-video calibration split during this screen;
+- do not access the 211-video locked reporting split;
+- keep a conservative budget reserve for the eventual locked report anyway;
+- estimated total with that reserve and the 1.25 factor:
+  `1.691339 GPU h`;
+- budget gate: **PASS**, versus `2 GPU h`.
+
+The one-epoch run is authorized only as a convergence/non-degeneracy screen.
+It may prove that both arms train, emit causally, avoid silent/explosive output
+under the frozen technical thresholds, and produce complete calibration
+artifacts. It cannot establish the 20% identity-error claim, three-seed
+consistency, paper effectiveness, or permission for raw-RGB training.
+
+Profile artifact SHA-256:
+
+- FIXED train:
+  `19fde8876177de4776ceb37e5c7feec49fe1aab3038a34aea76ae5b9a46132ef`;
+- REMATCH train:
+  `9cd2d3f22cfe58f35afe1c95583244279ea8fade1c32440ca59a1b47d0c70ed8`;
+- FIXED calibration inference:
+  `bcec50329929493ca75f5d6d0ea36e43d63ad07ea88315fc635490d553442812`;
+- REMATCH calibration inference:
+  `cbe71d216e43f05c0f8e1691155a3bbf11888e2c46712c5d7f7febeeb65b1278`;
+- 12-epoch rejection gate:
+  `680b3e8e347f7b65aac58e27ab306081adfcb7a182675b602cfea064d8cf303d`;
+- one-epoch screen budget gate:
+  `4f212c5ef823ea973283b962e7293c636093eaff9584373f96893c24dbfbc2f3`.
+
+No new Pro discussion is needed before this screen: DR-028 already authorizes
+registration of a budget-compatible one-seed screen after repaired smoke and
+profiling. Before submission, the repository must add a screen-only config,
+launcher, calibration-only result builder/gate, and the still-missing
+adjacent-action end-to-end regression. C5 remains open until those checks and
+the seed-705 screen finish.

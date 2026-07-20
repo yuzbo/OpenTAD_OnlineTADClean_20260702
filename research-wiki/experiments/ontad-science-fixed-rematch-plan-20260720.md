@@ -48,30 +48,30 @@ paired-profile, and final-decision checkpoint.
 - [x] Archive and independently absorb the readiness review pinned to
       `27a59de`; recheck every P0/P1/P2 item against `95fa963`, smoke job
       `1176737`, and profile job `1176983`.
-- [ ] Make binary endpoint emission equal the current decision frame and
+- [x] Make binary endpoint emission equal the current decision frame and
       remove the unsupervised endpoint offset from the primary output.
-- [ ] Hold newborn loss binding on the canonical birth slot for the birth
+- [x] Hold newborn loss binding on the canonical birth slot for the birth
       decision; permit REMATCH only from the next causal decision.
-- [ ] Commit a newborn whose birth and end cross in the same step, including a
+- [x] Commit a newborn whose birth and end cross in the same step, including a
       final-token short action, exactly once.
 - [ ] Add the exact adjacent-action synthetic stream that is still missing,
       including same-step old-end/new-birth and released-slot deferral.
-- [ ] Split video identity from runtime stream identity and normalize all
+- [x] Split video identity from runtime stream identity and normalize all
       instance metrics to one explicit coordinate system.
-- [ ] Replace chronological greedy primary matching with the frozen global
+- [x] Replace chronological greedy primary matching with the frozen global
       one-to-one policy and define fragmentation by disjoint covered
       components, not merely distinct bounds.
-- [ ] Freeze a standard-mAP percentage-point schema and make the result gate
+- [x] Freeze a standard-mAP percentage-point schema and make the result gate
       reject unit, metric, tIoU, or provenance mismatches.
-- [ ] Implement fit-only training, symmetric calibration/checkpoint freezing,
+- [x] Implement fit-only training, symmetric calibration/checkpoint freezing,
       and a one-shot locked reporting command.
-- [ ] Generate one repository-owned result artifact that joins audit counters,
+- [x] Generate one repository-owned result artifact that joins audit counters,
       standard and instance metrics, latency, resource use, and SHA-256
       provenance.
-- [ ] Separate supervision exhaustion, runtime birth collision, arbitration
+- [x] Separate supervision exhaustion, runtime birth collision, arbitration
       suppression, cancellation, and abandonment; make formal failures
       atomic.
-- [ ] Generate and consume a hashed split census for births per step,
+- [x] Generate and consume a hashed split census for births per step,
       same-bin end+birth, last-token coverage, delayed-reuse headroom, and
       clipped starts.
 
@@ -85,11 +85,15 @@ paired-profile, and final-decision checkpoint.
       (`1176983`, commit `95fa963`).
 - [x] Apply the frozen cost gate: stability and causal-equivalence passed, but
       the 12-epoch pair was estimated at 12.572 GPU-hours versus the 2-hour cap.
-- [ ] BLOCKED: complete Phase 4.5 and rerun the Slurm smoke plus strict paired
-      profiler against the repaired code.
-- [ ] BLOCKED: revise and register a budget-compatible training protocol from
-      the new profile before running one matched seed as a
-      convergence/non-degeneracy screen.
+- [x] Complete the implemented Phase 4.5 contracts and rerun the repaired
+      Slurm smoke (`1177438`) plus strict paired profiler (`1177511`).
+- [x] Register a one-epoch seed-705 convergence/non-degeneracy screen at
+      `1.691339 GPU·hours`, including the frozen safety factor and a
+      conservative locked-report reserve, under the unchanged 2-hour cap.
+- [ ] Implement and validate the screen-only launcher, result artifact, gate,
+      and missing adjacent-action end-to-end regression.
+- [ ] Run the registered seed-705 technical screen without accessing the
+      reporting split.
 - [ ] BLOCKED: freeze validation-selected thresholds.
 - [ ] BLOCKED: run seeds 705, 706, and 707 through Slurm.
 - [ ] Report paired standard and instance metrics.
