@@ -118,6 +118,9 @@ lifecycle, capacity, inference, output thresholds, or evaluation.
 
 - Feature experiment input: fixed cached causal features, stride 8, dimension
   768.
+- The feature-level binding experiment trains in FP32. Actual N16R4 smoke
+  execution found non-finite first-step gradients under the inherited FP16 AMP
+  route; this small feature-only head does not need AMP to meet its budget.
 - Training order: chronological within each video.
 - Training annotations may construct prefix-observable targets.
 - Validation and test inference receive no annotations, future endpoint,
@@ -195,7 +198,9 @@ Focused tests must cover:
 - matched configs differing only in binding mode;
 - non-degenerate result-gate calculations.
 
-The feature experiment proceeds through CPU tests, synthetic streams, one-seed
-screening, then the matched three-seed run. A failed scientific gate stops this
-route. A pass unlocks a separate raw-RGB causal encoder and PEFT/joint-training
-stage without changing the instance lifecycle.
+The feature experiment proceeds through CPU tests, synthetic streams, a Slurm
+end-to-end smoke, one-seed screening, then the matched three-seed run. The
+end-to-end smoke passed on N16R4 for commit `097bc72` in job `1176737`; this
+proves execution and protocol compatibility only. A failed scientific gate
+stops this route. A pass unlocks a separate raw-RGB causal encoder and
+PEFT/joint-training stage without changing the instance lifecycle.

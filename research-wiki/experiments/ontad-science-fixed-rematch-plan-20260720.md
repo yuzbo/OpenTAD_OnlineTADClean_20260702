@@ -42,7 +42,8 @@ Date: 2026-07-20
 
 - [x] Verify the annotation, class map, cached-feature manifest, and frozen
       160/40/211 split files on N16R4.
-- [ ] Run a Slurm end-to-end train/inference smoke job.
+- [x] Run a Slurm end-to-end train/inference smoke job
+      (`1176737`, commit `097bc72`, gate passed).
 - [ ] Run one matched seed as a convergence and non-degeneracy screen.
 - [ ] Freeze validation-selected thresholds.
 - [ ] Run seeds 705, 706, and 707 through Slurm.

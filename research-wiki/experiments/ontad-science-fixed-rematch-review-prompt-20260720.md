@@ -73,11 +73,16 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
    FIXED 保持绑定，REMATCH 在同一个规范占用池内逐前缀重匹配。运行生命周期、
    birth 机会、阈值、推理与评测必须完全相同。
 5. 输入为 stride 8、768 维固定缓存特征；raw-RGB 路线仍被明确关闭。
-6. 本地完成源码编译与无 Torch 测试；N16R4 的 PyTorch 2.0.1 环境已运行全部
-   55 个聚焦测试并通过。标注、类别表、特征 manifest 和冻结的 160/40/211
-   数据划分已核验。
-7. 尚未完成 Slurm 整链路 smoke、单种子筛选、三种子正式实验和论文主结果。
-   因此目前只能说“实现已进入实验验证阶段”，不能说科学假设已经成立。
+6. 本地完成源码编译与无 Torch 测试；N16R4 的 PyTorch 2.0.1 环境已运行 64 个
+   聚焦测试并通过。标注、类别表、特征 manifest 和冻结的 160/40/211 数据划分
+   已核验。
+7. Slurm 整链路 smoke 已在提交 `097bc72`、作业 `1176737` 上通过：两种绑定都
+   完成真实反向传播且未丢 GT birth；标准 runner 的 checkpoint 相对同种子初始化
+   有真实权重变化；重新加载后的流式账本逐项一致；最终区间非空且无未来违规。
+   详细记录见：
+   https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702/blob/codex/ontad-science-fixed-rematch/research-wiki/experiments/ontad-science-fixed-rematch-smoke-20260720.md
+8. 尚未完成单种子配对筛选、三种子正式实验和论文主结果。因此目前只能说
+   “整链路可以进入效果筛选”，不能说科学假设已经成立。
 
 ## 请逐项审查的全部问题
 
@@ -143,10 +148,11 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
 
 ### F. 尚未完成的整链路风险
 
-1. `formal_training_ready=False` 目前是否应继续保持；列出改成 `True` 之前必须通过
-   的最小检查。
-2. 设计一个只验证整条调用链的 Slurm smoke：真实 manifest、少量视频、一次前向、
-   一次反向、一次 checkpoint、一次流式推理、一次 emission 序列化和一次评测。
+1. `formal_training_ready=False` 目前是否应继续保持；列出单种子配对筛选通过后
+   改成 `True` 之前仍缺少的最小检查。
+2. 审计已经通过的 Slurm smoke 是否确实覆盖：真实 manifest、少量视频、一次前向、
+   一次反向、一次 checkpoint、一次重载、一次流式推理、一次 emission 序列化和
+   一次评测。
 3. 检查 AMP、batch size 1、流状态、梯度截断、detached state 与 12 epoch 配置是否
    在 OpenTAD runner 中实际兼容。
 4. 检查最终 emission 的帧坐标、秒坐标、fps、source/emit 时刻与 evaluator schema
@@ -158,7 +164,7 @@ N16R4 聚焦测试的提交 `27a59dec445f6b4ed9651abab1168c358a8db7e3`。
 
 请给出完整、按依赖排序的实验表，至少包括：
 
-1. Slurm 整链路 smoke；
+1. 已完成 Slurm 整链路 smoke 的证据复核；
 2. 单种子 FIXED/REMATCH 非退化筛选；
 3. 仅用 calibration split 冻结共享阈值；
 4. seeds `705/706/707` 的配对正式实验；
