@@ -917,3 +917,8 @@ Slurm 探针在提交阶段被站点 Lua 策略拒绝（每个作业强制申请
 按预设边界停止本机旁路：未安装或拼接依赖，未同步 40-video calibration
 特征或 checkpoint，也未产生本机诊断结果。权威路线保持为等待 Slurm
 `1177682`；不得用异构本机环境结果代替门禁。
+
+当前任务已建立 15 分钟 heartbeat `on-tad-1177682`：仅查询该 job；
+PENDING 时不重复提交或改实验，COMPLETED 后才解析并写回 Wiki，再决定
+short-warmup 是否进入同提交 smoke。完成或转入下一长期节点后须停用，
+防止重复运行。
