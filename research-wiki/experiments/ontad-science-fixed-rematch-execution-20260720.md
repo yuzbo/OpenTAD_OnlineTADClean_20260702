@@ -880,3 +880,19 @@ v2 是后续候选诊断能力，当前没有 GPU 结果，也不构成 short-wa
 scheduler 共 10 项 CPU/Torch 单元测试通过，测试后 `git status`
 为零。该结果验证统计、mask 分组和调度器单元语义，不替代完整
 calibration GPU 前向。
+
+### Detached Exact-commit Launch Guard
+
+候选远端 worktree 为避免干扰旧诊断采用 detached HEAD。smoke、profile、
+screen 和 score-diagnosis 四条 submitter 现支持显式
+`EXPECTED_COMMIT=<40位小写SHA>`：
+
+- 未给 `EXPECTED_COMMIT` 时，仍只接受注册分支；
+- detached 或其他分支必须给完整 SHA，且必须与当前 HEAD 完全相等；
+- 无效/短 SHA、HEAD 不匹配、dirty checkout 均在创建 run 目录和
+  `sbatch` 之前拒绝；
+- 作业脚本内部继续使用固化的 `COMMIT_SHA` 二次检查 HEAD 与 clean
+  状态。
+
+四个 shell 通过语法检查，smoke/profile/screen 工具共 17 项本地测试
+通过。该改动只消除候选部署入口阻断，不改变模型、数据或实验门禁。

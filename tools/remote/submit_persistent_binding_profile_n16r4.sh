@@ -13,6 +13,7 @@ REPORTING_LIST=${REPORTING_LIST:-$THUMOS_ROOT/manifests/persistent_binding/thumo
 PROFILE_TIME=${PROFILE_TIME:-00:30:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 SEED=705
+EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 WARMUP_STEPS=50
 MEASURED_STEPS=200
 PAIRED_GPU_HOUR_CAP=2
@@ -27,8 +28,19 @@ if [[ -n "$(git -C "$BASE_DIR" status --porcelain)" ]]; then
     echo "Persistent-binding profile requires a clean checkout" >&2
     exit 2
 fi
-if [[ "$(git -C "$BASE_DIR" branch --show-current)" != "codex/ontad-science-fixed-rematch" ]]; then
-    echo "Deployment checkout is on the wrong branch" >&2
+CURRENT_BRANCH=$(git -C "$BASE_DIR" branch --show-current)
+CURRENT_COMMIT=$(git -C "$BASE_DIR" rev-parse HEAD)
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+    if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "EXPECTED_COMMIT must be a full lowercase Git SHA" >&2
+        exit 2
+    fi
+    if [[ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+        echo "Deployment checkout does not match EXPECTED_COMMIT" >&2
+        exit 2
+    fi
+elif [[ "$CURRENT_BRANCH" != "codex/ontad-science-fixed-rematch" ]]; then
+    echo "Detached deployment requires EXPECTED_COMMIT" >&2
     exit 2
 fi
 if [[ ! -f "$SMOKE_RUN_DIR/gate_summary.json" ]]; then
@@ -85,7 +97,7 @@ PY
 STAMP=$(date +"%Y%m%d_%H%M%S")
 RUN_DIR="$RUNS_ROOT/profile_${STAMP}"
 mkdir -p "$RUN_DIR"
-COMMIT_SHA=$(git rev-parse HEAD)
+COMMIT_SHA=$CURRENT_COMMIT
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
 
 printf -v Q_BASE_DIR '%q' "$BASE_DIR"

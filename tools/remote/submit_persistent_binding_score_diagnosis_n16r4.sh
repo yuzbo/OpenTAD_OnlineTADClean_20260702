@@ -8,6 +8,7 @@ RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 DIAGNOSIS_TIME=${DIAGNOSIS_TIME:-00:30:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 SEED=705
+EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 
 if ! git -C "$BASE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Missing clean deployment checkout: $BASE_DIR" >&2
@@ -17,8 +18,19 @@ if [[ -n "$(git -C "$BASE_DIR" status --porcelain)" ]]; then
     echo "Persistent-binding score diagnosis requires a clean checkout" >&2
     exit 2
 fi
-if [[ "$(git -C "$BASE_DIR" branch --show-current)" != "codex/ontad-science-fixed-rematch" ]]; then
-    echo "Deployment checkout is on the wrong branch" >&2
+CURRENT_BRANCH=$(git -C "$BASE_DIR" branch --show-current)
+CURRENT_COMMIT=$(git -C "$BASE_DIR" rev-parse HEAD)
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+    if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "EXPECTED_COMMIT must be a full lowercase Git SHA" >&2
+        exit 2
+    fi
+    if [[ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+        echo "Deployment checkout does not match EXPECTED_COMMIT" >&2
+        exit 2
+    fi
+elif [[ "$CURRENT_BRANCH" != "codex/ontad-science-fixed-rematch" ]]; then
+    echo "Detached deployment requires EXPECTED_COMMIT" >&2
     exit 2
 fi
 for arm in fixed rematch; do
@@ -34,7 +46,7 @@ source tools/env/activate_n16r4_causaltad.sh
 STAMP=$(date +"%Y%m%d_%H%M%S")
 RUN_DIR="$RUNS_ROOT/score_diagnosis_${STAMP}"
 mkdir -p "$RUN_DIR"
-COMMIT_SHA=$(git rev-parse HEAD)
+COMMIT_SHA=$CURRENT_COMMIT
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
 
 printf -v Q_BASE_DIR '%q' "$BASE_DIR"

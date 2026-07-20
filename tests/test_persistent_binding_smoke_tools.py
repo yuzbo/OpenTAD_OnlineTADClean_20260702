@@ -133,6 +133,9 @@ def test_n16r4_submitter_is_clean_checkout_slurm_only_and_runs_standard_entrypoi
     assert "status --porcelain" in submit
     assert "branch --show-current" in submit
     assert "codex/ontad-science-fixed-rematch" in submit
+    assert "EXPECTED_COMMIT must be a full lowercase Git SHA" in submit
+    assert "Detached deployment requires EXPECTED_COMMIT" in submit
+    assert "CURRENT_COMMIT" in submit
     assert "#SBATCH -p gpu" in submit
     assert "#SBATCH --gres=gpu:1" in submit
     assert "sbatch" in submit
@@ -152,3 +155,23 @@ def test_n16r4_submitter_is_clean_checkout_slurm_only_and_runs_standard_entrypoi
     assert "sacct" in check
     assert "gate_summary.json" in check
     assert "tail -n 120" in check
+
+
+def test_all_persistent_binding_submitters_guard_detached_exact_commits():
+    names = (
+        "submit_persistent_binding_n16r4.sh",
+        "submit_persistent_binding_profile_n16r4.sh",
+        "submit_persistent_binding_screen_n16r4.sh",
+        "submit_persistent_binding_score_diagnosis_n16r4.sh",
+    )
+
+    for name in names:
+        source = (ROOT / "tools" / "remote" / name).read_text(
+            encoding="utf-8"
+        )
+        assert "status --porcelain" in source
+        assert "EXPECTED_COMMIT=${EXPECTED_COMMIT:-}" in source
+        assert "EXPECTED_COMMIT must be a full lowercase Git SHA" in source
+        assert "Deployment checkout does not match EXPECTED_COMMIT" in source
+        assert "Detached deployment requires EXPECTED_COMMIT" in source
+        assert "COMMIT_SHA=$CURRENT_COMMIT" in source

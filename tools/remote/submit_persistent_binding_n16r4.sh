@@ -17,6 +17,7 @@ SMOKE_TIME=${SMOKE_TIME:-00:30:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 SEED=${SEED:-705}
 RUN_ID=${RUN_ID:-0}
+EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 
 if [[ "$CONFIG" != "configs/causaltad/thumos_persistent_binding_smoke.py" ]]; then
     echo "Only the registered persistent-binding smoke config may be submitted" >&2
@@ -30,8 +31,19 @@ if [[ -n "$(git -C "$BASE_DIR" status --porcelain)" ]]; then
     echo "Persistent-binding smoke requires a clean checkout: $BASE_DIR" >&2
     exit 2
 fi
-if [[ "$(git -C "$BASE_DIR" branch --show-current)" != "codex/ontad-science-fixed-rematch" ]]; then
-    echo "Deployment checkout is not on codex/ontad-science-fixed-rematch" >&2
+CURRENT_BRANCH=$(git -C "$BASE_DIR" branch --show-current)
+CURRENT_COMMIT=$(git -C "$BASE_DIR" rev-parse HEAD)
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+    if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "EXPECTED_COMMIT must be a full lowercase Git SHA" >&2
+        exit 2
+    fi
+    if [[ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+        echo "Deployment checkout does not match EXPECTED_COMMIT" >&2
+        exit 2
+    fi
+elif [[ "$CURRENT_BRANCH" != "codex/ontad-science-fixed-rematch" ]]; then
+    echo "Detached deployment requires EXPECTED_COMMIT" >&2
     exit 2
 fi
 
@@ -66,7 +78,7 @@ python tools/prepare_persistent_binding_smoke_manifests.py \
 TRAIN_LIST="$MANIFEST_DIR/train.txt"
 VAL_LIST="$MANIFEST_DIR/val.txt"
 TEST_LIST="$MANIFEST_DIR/test.txt"
-COMMIT_SHA=$(git rev-parse HEAD)
+COMMIT_SHA=$CURRENT_COMMIT
 SCRIPT_PATH="$RUN_DIR/job.sbatch"
 
 printf -v Q_CONFIG '%q' "$CONFIG"

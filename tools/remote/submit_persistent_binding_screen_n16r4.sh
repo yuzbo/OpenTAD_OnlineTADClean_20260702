@@ -9,6 +9,7 @@ RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SCREEN_TIME=${SCREEN_TIME:-02:00:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 SEED=705
+EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 PAIRED_GPU_HOUR_CAP=2
 FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_fixed_screen.py
 REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_rematch_screen.py
@@ -24,8 +25,19 @@ if [[ -n "$(git -C "$BASE_DIR" status --porcelain)" ]]; then
     echo "Persistent-binding screen requires a clean checkout" >&2
     exit 2
 fi
-if [[ "$(git -C "$BASE_DIR" branch --show-current)" != "codex/ontad-science-fixed-rematch" ]]; then
-    echo "Deployment checkout is on the wrong branch" >&2
+CURRENT_BRANCH=$(git -C "$BASE_DIR" branch --show-current)
+CURRENT_COMMIT=$(git -C "$BASE_DIR" rev-parse HEAD)
+if [[ -n "$EXPECTED_COMMIT" ]]; then
+    if [[ ! "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "EXPECTED_COMMIT must be a full lowercase Git SHA" >&2
+        exit 2
+    fi
+    if [[ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]]; then
+        echo "Deployment checkout does not match EXPECTED_COMMIT" >&2
+        exit 2
+    fi
+elif [[ "$CURRENT_BRANCH" != "codex/ontad-science-fixed-rematch" ]]; then
+    echo "Detached deployment requires EXPECTED_COMMIT" >&2
     exit 2
 fi
 for path in \
@@ -39,7 +51,7 @@ done
 
 cd "$BASE_DIR"
 source tools/env/activate_n16r4_causaltad.sh
-COMMIT_SHA=$(git rev-parse HEAD)
+COMMIT_SHA=$CURRENT_COMMIT
 PROFILE_COMMIT=$(sed -n 's/^COMMIT_SHA=//p' "$PROFILE_RUN_DIR/job.sbatch" | head -n 1)
 SMOKE_COMMIT=$(sed -n 's/^COMMIT_SHA=//p' "$SMOKE_RUN_DIR/job.sbatch" | head -n 1)
 if [[ "$PROFILE_COMMIT" != "$COMMIT_SHA" || "$SMOKE_COMMIT" != "$COMMIT_SHA" ]]; then
