@@ -263,15 +263,25 @@ soft temperature 改为 `0.5` 并保持 20 次后，同一 1,000 样本：
 “55 失败、56 通过”的确定性回归。这样同时约束边际正确性、身份保留和
 小算子成本，而不是只追求一个更软、更容易收敛的传输计划。
 
+路径复核还确认，`head.step()` 先吸收当前 token 并更新 query，transport
+随后比较“上一 token 解码后的 query”与“当前 token 更新后的 query”；
+因此不是自对齐。原实现对一段内每个相邻 token 对各自启动 56 轮 4×4
+Sinkhorn。提交 `5c02ccca6142a9e9c8919fe4b0830d1dad3480a3` 将这些
+相邻对堆成 batch，一段只执行 56 轮向量化更新；上一 query、边际和计划
+继续 stop-gradient，梯度仍只到当前 query。确定性测试证明 batched plan
+等于逐对 plan、batched loss 等于逐对 loss 之和且反向梯度有限，因此
+科学目标和损失标度均未改变，只消除小 kernel 启动放大。
+
 因此旧 `1177693/1177694/1177695` 在零 GPU 消耗时受控取消，旧目录保留
 审计且均无 `pilot_contract.json`。没有取消或修改旧诊断及任何无关作业。
 中间提交 `adbd0bbd6a3b3ffe3de36f3c0f8ef506eef7ed48` 与
 `22aa93bd1b2b2441ba0810e1923a0fb35e0d5776` 分别完成初步数值修复和
 比较器预检；最终部署代码提交为
-`f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`。本地 16 项 CPU-safe
-配置/提交器/比较器测试通过；N16R4 在该精确提交分两组完成
-`88 + 40 = 128` 项相关测试，候选 worktree 仍为 clean detached。
+`f6bd9e12b60749c1244815fca30f9fca7bbdf4bf`；最终批量部署代码为
+`5c02ccca6142a9e9c8919fe4b0830d1dad3480a3`。本地 16 项 CPU-safe
+配置/提交器/比较器测试通过；N16R4 在 `f6bd9e1` 完成 128 项后，又在
+exact `5c02ccc` 完成 `130 passed in 80.42s`，候选始终 clean detached。
 
-04:54 账户仍为 16/16；提交器在创建新目录前正确停止。现在只认 exact
-`f6bd9e1` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
+05:03 账户仍为 16/16；提交器在创建新目录前正确停止。现在只认 exact
+`5c02ccc` 的活跃 job 或 pilot contract，每出现一个 submit slot 就按
 A→B→C 重新提交；旧取消目录不算重复。
