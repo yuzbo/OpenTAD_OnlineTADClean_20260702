@@ -52,9 +52,10 @@ frozen/PEFT/joint 三阶梯。
 - shared `weighted_bce_stationary` prior 修复后 smoke/profile
   `1177637/1177639` 通过；screen `1177653` 用 `0.955278 GPU·h`，
   两臂再次 2010/2010 稳定更新但零 emission。
-- `1177682` 是 repaired checkpoint 的 calibration-only score diagnosis，
-  仍因 `AssocGrpGRES` 排队；不取消、不重复提交。它是补充诊断，不再阻塞
-  用户明确要求的三个模型优化 pilot。
+- 旧 repaired checkpoint 诊断 `1177682` 已完成：FIXED 的 birth/alive/end
+  最大分数 `0.1698/0.3202/0.4192`，REMATCH 为
+  `0.3262/0.3800/0.3881`，三通道均零次越过 0.5；v1 无 target-conditioned
+  AUC，只作为旧模型静默证据。
 
 这些证据只定位共同 birth/lifecycle 瓶颈，不证明 FIXED 的论文效果。
 
@@ -155,8 +156,9 @@ A/SW 已提交为 job `1177706`，run
 `model_opt_sw_seed705_20260721_053819`，当前 `PENDING/AssocGrpGRES`、
 零 GPU。随后两个槽依次出现，B/SW+BM 为 `1177707` /
 `model_opt_margin_seed705_20260721_054136`，C/SW+CT 为 `1177708` /
-`model_opt_transport_seed705_20260721_054210`。05:42 A 已在 `g0003`
-运行，B/C 等待 GPU；三份脚本 SHA 均正确，没有动无关作业。
+`model_opt_transport_seed705_20260721_054210`。05:50 三条均在 `g0003`
+运行；三份脚本 SHA 均正确。三条自身 profile 全过，A/B/C 安全系数后
+预计 `1.3966/1.4108/1.4080 GPU·h`，均低于 2；现已进入训练。
 
 每臂训练审计必须写出 `mean_losses` 与 `loss_nonzero_updates`，随后生成
 `optimization_activation.json`：SW 两项新增损失都必须休眠，margin

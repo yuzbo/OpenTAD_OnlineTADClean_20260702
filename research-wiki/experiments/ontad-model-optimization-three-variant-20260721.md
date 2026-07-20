@@ -22,8 +22,8 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 - 精确基础提交：`b1017d09723bdf99e77de99bdf855b87bb263aec`。
 - 修复 weighted-BCE stationary prior 后，seed-705 双臂筛选
   `1177653` 完成 2010/2010 次稳定更新，但仍是零最终区间。
-- calibration-only 分数诊断 `1177682` 仍因账户 16-GPU
-  `AssocGrpGRES` 满载排队；不取消、不重复提交。
+- 旧 repaired-checkpoint 的 calibration-only 分数诊断 `1177682` 已完成；
+  三个生命周期通道均没有越过 0.5，继续证明旧模型整体静默。
 - 旧的一轮筛选把全部 2,010 次更新都放在线性 warmup 内；已实现但尚未
   训练的 short-warmup 候选把 `warmup_epoch` 从 `1.0` 改为 `0.1`，
   峰值 LR、更新数、模型、阈值和数据不变。
@@ -309,8 +309,8 @@ worktree clean、无新版 `pb_opt_*`、无该 SHA 的 pilot contract。只使�
 | 版本 | 新 Slurm job | 新运行目录 | 当前状态 |
 | --- | ---: | --- | --- |
 | A / SW | `1177706` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_sw_seed705_20260721_053819` | RUNNING / `g0003` |
-| B / SW+BM | `1177707` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_054136` | PENDING / AssocGrpGRES |
-| C / SW+CT | `1177708` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_054210` | PENDING / AssocGrpGRES |
+| B / SW+BM | `1177707` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_margin_seed705_20260721_054136` | RUNNING / `g0003` |
+| C / SW+CT | `1177708` | `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_transport_seed705_20260721_054210` | RUNNING / `g0003` |
 
 三份作业脚本内 `COMMIT_SHA` 均已复核为 exact `d390779`。第二、第三个
 槽位出现后依次提交 B/C；05:42 A 已在 `g0003` 开始，B/C 正常等待 GPU。
@@ -318,3 +318,25 @@ worktree clean、无新版 `pb_opt_*`、无该 SHA 的 pilot contract。只使�
 当前未出现不算缺失或失败。没有取消、修改或抢占任何无关作业。至此
 “三个版本完整实现并部署”的节点完成；下一门是各自画像、训练、激活
 审计、v2 分数诊断和冻结 screen。
+
+### M4.3 三版本自身画像门
+
+05:59 三个 exact-commit profile 均完成并生成 pilot contract：
+
+| 版本 | FIXED / REMATCH 训练均值（秒/step） | 安全系数后预计双臂 GPU·小时 | 门禁 |
+| --- | --- | ---: | --- |
+| A / SW | `0.67119 / 0.69310` | `1.396616` | PASS |
+| B / SW+BM | `0.68916 / 0.69521` | `1.410778` | PASS |
+| C / SW+CT | `0.68530 / 0.69477` | `1.407951` | PASS |
+
+三条的稳定性、FIXED/REMATCH 未训练推理等价性和 2 GPU·小时预算全部通过，
+且继续零未来信息违规。C 的画像与 A/B 基本等速，说明批量 Sinkhorn
+消除了逐 token 小 kernel 放大；这是真实 GPU profile，不是 CPU 代理推断。
+三条现均进入完整一轮训练。
+
+旧诊断 `1177682` 同时以 `COMPLETED 0:0 / 00:04:07` 结束。旧 checkpoint
+在 28,730 calibration token 上，FIXED birth/alive/end 最大分数为
+`0.169824/0.320227/0.419161`，REMATCH 为
+`0.326206/0.380038/0.388141`，三通道阈值 crossing 都是零。该 v1
+诊断没有 target-conditioned gap/AUC；它只补强旧模型静默结论，不参与
+A/B/C 冻结比较。
