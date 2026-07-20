@@ -11,10 +11,9 @@ scope: Compressed memory to prepend before any new ideation or implementation pl
 
 The task is fixed to standard, fully supervised, strictly causal Online
 Temporal Action Detection/Localization. At decision time `t`, inference sees
-only current and past video evidence, maintains action-instance
-start/ongoing/end state, and emits one immutable final
-`{start, end, class, score}` interval with low delay. Do not change the task,
-add new labels/sensors, expose mutable outputs, or introduce offline cleanup.
+only current and past evidence, maintains instance lifecycle, and emits an
+immutable `{start, end, class, score}` interval with low delay. Do not add
+labels/sensors, mutable outputs, or offline cleanup.
 
 The active experiment is feature-level, not raw RGB: compare first-crossing
 **FIXED** supervision binding against per-prefix **REMATCH** while runtime
@@ -37,7 +36,8 @@ Repaired screen `1177653` at `8dff64c` used `0.955278 GPU-hours`; both arms
 again made zero emissions after 2010/2010 stable updates, so the frozen gate
 failed. Calibration-only diagnosis `1177682` is now selecting the next single
 shared change without threshold/reporting access. A short-warmup candidate is
-locally implemented but remains untrained until that diagnosis.
+local but untrained. Parameter deltas show birth weights did update (~19%);
+small stationary-bias motion alone is not evidence of undertraining.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:
@@ -87,7 +87,7 @@ Read:
 
 ## Immediate Implementation Order
 
-1. Complete score diagnosis `1177682` on both repaired checkpoints.
+1. Complete score diagnosis `1177682` on both checkpoints.
 2. Confirm or reject the prepared shared short-warmup candidate.
 3. Rerun same-commit smoke, strict profile, and seed-705 technical screen.
 4. Only after a technical pass, design the affordable multi-epoch/three-seed

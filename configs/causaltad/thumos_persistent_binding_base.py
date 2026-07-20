@@ -57,7 +57,7 @@ optimization_contract = dict(
     peak_learning_rate=2e-4,
     update_count_unchanged=True,
     fixed_rematch_shared=True,
-    motivation="repaired_heads_moved_less_than_0p02_logit_during_full_epoch_warmup",
+    motivation="one_epoch_screen_reached_peak_lr_only_at_final_update",
 )
 
 supervision_balance_contract = dict(

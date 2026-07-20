@@ -818,3 +818,22 @@ GPU score diagnosis `1177682` 因账户 `GrpTRES=gres/gpu=16` 已被其他作业
 通过。执行顺序仍为：GPU score diagnosis → 候选同提交 smoke →
 strict profile → seed-705 screen。诊断若显示静默并非训练剂量问题，
 则不得提交该候选训练。
+
+### Checkpoint Parameter-delta Correction
+
+随后在登录节点只重建 seed-705 初始参数并读取 checkpoint，不执行视频
+前向或训练。相对同一确定性初始化：
+
+- FIXED/REMATCH 的 birth-head **weight** 变化分别为初始 weight norm 的
+  `19.17%/18.80%`，并非没有更新；
+- alive-head weight 变化为 `20.51%/21.29%`，end-head weight 为
+  `20.13%/16.14%`；
+- 共享主干整体参数变化为其初始 norm 的 `12.61%/12.21%`，class head
+  整体为 `47.50%/48.70%`；
+- birth bias 仍仅移动 `0.012/0.019 logit`。
+
+因此，bias 位移很小不能单独证明欠训练：该 bias 本来就位于加权 BCE
+的近似平衡点。short-warmup 候选的准确动机应是：旧的一轮筛选直到最后
+一次更新才到达峰值 LR，且最终模型仍无 birth crossing；它是否能改善
+正负分离仍须由 `1177682` 的真实 calibration 分数决定。该纠偏不改变
+候选代码轴，也不放行训练。
