@@ -84,6 +84,13 @@ CausalTAD 的因果方向、MATR/HAT 的历史上下文、ActionSwitch 的在线
 保守性，以及 temporally consistent OT 的时序传输原则；HAT/MATR 的
 anticipation/future-supervised 部分不采用。
 
+ICCV 2025 OpenHOUSE 进一步支持当前 strict OAD-based On-TAL 口径：
+结束即输出、已输出区间不可回改。其 actionness-start + progress-drop-end
+专门处理无背景间隔的相邻动作，但与本项目任务/数据不同；只在本轮显示
+“birth 已恢复、end/相邻动作仍失败”时，才作为 progress-hazard 后续候选，
+不采用 VLM、层级标签或伪标签。精确检索仍未找到可信的同名
+“ChronoTransport” On-TAD 论文。
+
 验证：
 
 - Windows Python 编译、Bash syntax 与 29 项 CPU-safe 测试通过；本机

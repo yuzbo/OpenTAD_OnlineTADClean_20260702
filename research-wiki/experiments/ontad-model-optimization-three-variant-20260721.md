@@ -79,6 +79,17 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 - [HAT](https://arxiv.org/abs/2408.06437) 与 MATR 都支持“历史信息有用”，
   但它们包含 anticipation/future-supervised 设计；本项目不采用这些部分，
   只保留推理时从过去到当前的严格因果信息流。
+- [OpenHOUSE（ICCV 2025）](https://openaccess.thecvf.com/content/ICCV2025/html/Kang_Open-ended_Hierarchical_Streaming_Video_Understanding_with_Vision_Language_Models_ICCV_2025_paper.html)
+  明确选择 OAD-based strict On-TAL：动作结束时立即产生并累积区间，不能
+  回溯修改。它还用 actionness 检测开始、用 progress 突降检测结束，
+  显著改善没有背景间隔的相邻动作边界。该论文与本项目的数据、开放词汇和
+  层级任务不同，因此当前 A/B/C 不照搬其 VLM、层级标签或伪标签；只把
+  progress-hazard 记录为“birth 已恢复但 end/相邻动作仍失败”时的有条件
+  后续模型候选。
+
+截至 2026-07-21 的精确检索仍未找到可唯一对应的 “ChronoTransport”
+On-TAD 论文；检索命中主要是无关词义。因此 C 的命名与引用边界保持不变：
+它是本项目定义的 past-to-current causal transport，不冒认外部方法。
 
 ## 共同 pilot 门禁
 
@@ -124,6 +135,12 @@ provenance 和 calibration-only 分数诊断，才有资格进入 P1。资格版
 SHA-256。若三个版本都被门禁拒绝，则 `selected_variant=null`，回到共享
 head/lifecycle 设计；不得下调阈值。即使存在胜出版本，也只授权 P1
 特征级多轮收敛，不授权论文效果结论或 raw-RGB。
+
+结果解释也预先固定：若 birth TPR 已非零但 committed emission/Recall
+仍失败，先查看 alive/end AUC、TPR/FPR 与 lifecycle counts；只有证据把
+瓶颈定位到结束或相邻动作分割，才设计 OpenHOUSE 启发的 progress-hazard
+版本。若 birth 本身仍无 crossing，则继续修 birth 表示/优化，不让 progress
+分支掩盖问题；任何情形都不通过下调阈值“修复”。
 
 ## 从当前 pilot 到论文主实验
 
