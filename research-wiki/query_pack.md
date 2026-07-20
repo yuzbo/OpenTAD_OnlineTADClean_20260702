@@ -38,7 +38,7 @@ failed. Calibration-only diagnosis `1177682` is now selecting the next single
 shared change without threshold/reporting access. A short-warmup candidate is
 local but untrained. Parameter deltas show birth weights did update (~19%);
 small bias motion alone is not evidence of undertraining. Target-conditioned
-diagnosis v2 is prepared for later; pending `1177682` remains v1.
+diagnosis v2 passed 10 remote unit tests; pending `1177682` remains v1.
 
 The 2026-07-20 readiness review is absorbed as `REVISE BEFORE SCIENTIFIC RUN`.
 Read:

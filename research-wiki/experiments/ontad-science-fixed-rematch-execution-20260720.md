@@ -874,4 +874,9 @@ scheduler 语义；候选配置、真实前反向、checkpoint 和因果重载�
 
 当前已排队的 `1177682` 仍保持提交 `8dff64c` 上的 v1，不取消、不替换。
 v2 是后续候选诊断能力，当前没有 GPU 结果，也不构成 short-warmup
-放行证据。
+放行证据。集群已另建干净 detached worktree
+`OpenTAD_OnlineTAD_ShortWarmup_b61f56a`，精确提交
+`b61f56a3530ce6693e0863cea2ab9896f1d0c95f`；diagnosis v2 与
+scheduler 共 10 项 CPU/Torch 单元测试通过，测试后 `git status`
+为零。该结果验证统计、mask 分组和调度器单元语义，不替代完整
+calibration GPU 前向。
