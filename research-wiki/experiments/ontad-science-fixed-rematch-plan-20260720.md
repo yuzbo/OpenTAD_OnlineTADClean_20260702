@@ -113,14 +113,23 @@ paired-profile, and final-decision checkpoint.
 - [x] Rerun seed-705 screen at the repaired smoke/profile commit
       (Slurm `1177653`; budget and execution passed, but both arms remained
       silent and the frozen technical gate correctly failed).
-- [ ] Run calibration-only score diagnosis `1177682` on the repaired
-      checkpoints, then choose at most one shared model/optimization change
-      from the measured threshold margins.
+- [ ] Complete calibration-only score diagnosis `1177682` on the repaired
+      checkpoints. It remains useful observational evidence but is no longer
+      allowed to stall implementation after the user explicitly requested
+      three model-optimization versions by 09:00 on 2026-07-21.
       CPU-only Slurm is unavailable because the site forces 1–8 GPUs per job;
       incompatible local environments are not accepted as a gate substitute.
-- [x] Prepare, without remote training, the single-variable shared
-      short-warmup candidate (`1.0 -> 0.1` epoch; peak LR and update count
-      unchanged); keep its Slurm execution gated on diagnosis `1177682`.
+- [x] Implement three mutually isolated, shared optimization pilots:
+      A = short warmup (`1.0 -> 0.1`), B = A plus birth-frame balanced
+      logit-margin, and C = A plus prediction-only past-to-current causal
+      query transport. B and C are not combined, so each mechanism remains
+      separately falsifiable.
+- [x] Validate all three implementations on N16R4 at exact implementation
+      commit `7ba049f` (`41 passed in 47.37s`) and add exact-commit Slurm
+      submit/check helpers.
+- [ ] Deploy A/B/C as three independent seed-705, one-epoch, fit-only jobs
+      when the account's 16-job `MaxSubmitJobs` limit has at least three free
+      slots. Do not cancel or mutate unrelated jobs to manufacture capacity.
 - [ ] BLOCKED: freeze validation-selected thresholds.
 - [ ] BLOCKED: run seeds 705, 706, and 707 through Slurm.
 - [ ] Report paired standard and instance metrics.

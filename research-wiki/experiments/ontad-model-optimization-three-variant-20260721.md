@@ -72,13 +72,16 @@ scope: Three strictly causal feature-level model-optimization pilots before any 
 每个版本均部署一条 Slurm 作业，作业内顺序运行 FIXED 与 REMATCH：
 
 1. 精确 40 位提交号、干净 detached checkout 与配置配对检查；
-2. 真实冻结特征、seed 705、一个 epoch、每臂 2,010 次预期更新；
-3. 零 non-finite、零 skipped update、零 GT supervision exhaustion、
+2. 每个版本先在自己的精确提交和配置上完成双臂
+   50-warmup/200-measured 画像；自身稳定性、未训练因果等价与一轮
+   2 GPU·小时预算门通过后，才进入训练；
+3. 真实冻结特征、seed 705、一个 epoch、每臂 2,010 次预期更新；
+4. 零 non-finite、零 skipped update、零 GT supervision exhaustion、
    零 GT-birth/runtime collision、零未来信息违规；
-4. 训练后只在 calibration split 做 target-conditioned 分数诊断；
-5. 首要排序指标是 birth positive/negative gap、pairwise AUC、冻结 0.5
+5. 训练后只在 calibration split 做 target-conditioned 分数诊断；
+6. 首要排序指标是 birth positive/negative gap、pairwise AUC、冻结 0.5
    下的 TPR/FPR 与 committed emissions；不搜索或下调阈值；
-6. reporting split、三种子主结果和 raw-RGB 均继续封锁。
+7. reporting split、三种子主结果和 raw-RGB 均继续封锁。
 
 三个版本是并行的机制 pilot，不以其中任一结果冒充 FIXED/REMATCH
 论文主实验。若 B 或 C 单独通过技术门禁，再做一次受控组合实验；若均失败，

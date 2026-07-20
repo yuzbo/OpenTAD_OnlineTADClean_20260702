@@ -194,6 +194,10 @@ def test_model_optimization_submitter_deploys_three_feature_only_variants():
     assert "thumos_persistent_binding_opt_margin_fixed.py" in submit
     assert "thumos_persistent_binding_opt_transport_fixed.py" in submit
     assert "--allow-unready-screen" in submit
+    assert "profile_persistent_binding.py" in submit
+    assert "evaluate_persistent_binding_profile.py" in submit
+    assert "--epochs 1" in submit
+    assert "same_commit_profile_required" in submit
     assert "--evaluation-role calibration" in submit
     assert "diagnose_persistent_binding_scores.py" in submit
     assert "reporting_accessed" in submit

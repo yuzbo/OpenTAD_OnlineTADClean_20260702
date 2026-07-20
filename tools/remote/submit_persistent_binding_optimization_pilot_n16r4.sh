@@ -6,13 +6,11 @@ VARIANT=${VARIANT:?set VARIANT to sw, margin, or transport}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
-PROFILE_RUN_DIR=${PROFILE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/profile_20260721_011216}
 PILOT_TIME=${PILOT_TIME:-02:00:00}
 CPUS_PER_TASK=${CPUS_PER_TASK:-4}
 SEED=705
 EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 PAIRED_GPU_HOUR_CAP=2
-PROFILE_GATE="$PROFILE_RUN_DIR/seed705_screen_profile_gate.json"
 SMOKE_GATE="$SMOKE_RUN_DIR/gate_summary.json"
 
 case "$VARIANT" in
@@ -57,7 +55,7 @@ elif [[ "$CURRENT_BRANCH" != "codex/ontad-science-fixed-rematch" ]]; then
     echo "Detached deployment requires EXPECTED_COMMIT" >&2
     exit 2
 fi
-for path in "$FIXED_CONFIG" "$REMATCH_CONFIG" "$PROFILE_GATE" "$SMOKE_GATE"; do
+for path in "$FIXED_CONFIG" "$REMATCH_CONFIG" "$SMOKE_GATE"; do
     if [[ "$path" = configs/* ]]; then
         path="$BASE_DIR/$path"
     fi
@@ -74,7 +72,6 @@ SCRIPT_PATH="$RUN_DIR/job.sbatch"
 
 printf -v Q_BASE_DIR '%q' "$BASE_DIR"
 printf -v Q_RUN_DIR '%q' "$RUN_DIR"
-printf -v Q_PROFILE_GATE '%q' "$PROFILE_GATE"
 printf -v Q_SMOKE_GATE '%q' "$SMOKE_GATE"
 printf -v Q_CPUS_PER_TASK '%q' "$CPUS_PER_TASK"
 printf -v Q_COMMIT_SHA '%q' "$COMMIT_SHA"
@@ -96,7 +93,6 @@ cat > "$SCRIPT_PATH" <<SBATCH
 
 BASE_DIR=$Q_BASE_DIR
 RUN_DIR=$Q_RUN_DIR
-PROFILE_GATE=$Q_PROFILE_GATE
 SMOKE_GATE=$Q_SMOKE_GATE
 CPUS_PER_TASK=$Q_CPUS_PER_TASK
 COMMIT_SHA=$Q_COMMIT_SHA
@@ -120,6 +116,9 @@ GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
 test "$GPU_NAME" = "NVIDIA GeForce RTX 4090"
 nvidia-smi --query-gpu=index,name,memory.used,memory.total --format=csv,noheader
 PAIR_STARTED=$(date +%s)
+PROFILE_DIR="$RUN_DIR/profile"
+PROFILE_GATE="$PROFILE_DIR/seed705_screen_profile_gate.json"
+mkdir -p "$PROFILE_DIR"
 
 python -m pytest \
     tests/test_prefix_trajectory_supervision.py \
@@ -139,6 +138,82 @@ python -m pytest \
 python tools/census_persistent_binding.py \
     "$FIXED_CONFIG" \
     --output "$RUN_DIR/split_census.json"
+
+REPORTING_CHUNKS=$(python - \
+    /data/run01/sczc063/yuzibo/thumos14/features/pes_siglip2_stride8/manifest.json \
+    /data/run01/sczc063/yuzibo/thumos14/manifests/persistent_binding/thumos_reporting_locked_211.txt <<'PY'
+import json
+import math
+import sys
+
+videos = json.load(open(sys.argv[1], encoding="utf-8"))["videos"]
+names = [
+    line.strip()
+    for line in open(sys.argv[2], encoding="utf-8")
+    if line.strip()
+]
+print(
+    sum(
+        math.ceil(int(videos[name]["num_tokens"]) / 64)
+        for name in names
+    )
+)
+PY
+)
+[[ "$REPORTING_CHUNKS" =~ ^[0-9]+$ && "$REPORTING_CHUNKS" -gt 0 ]]
+
+python tools/profile_persistent_binding.py \
+    "$FIXED_CONFIG" \
+    --mode train \
+    --split train \
+    --warmup-steps 50 \
+    --measured-steps 200 \
+    --device cuda:0 \
+    --seed "$SEED" \
+    --output "$PROFILE_DIR/fixed_train_profile.json"
+
+python tools/profile_persistent_binding.py \
+    "$REMATCH_CONFIG" \
+    --mode train \
+    --split train \
+    --warmup-steps 50 \
+    --measured-steps 200 \
+    --device cuda:0 \
+    --seed "$SEED" \
+    --output "$PROFILE_DIR/rematch_train_profile.json"
+
+python tools/profile_persistent_binding.py \
+    "$FIXED_CONFIG" \
+    --mode inference \
+    --split val \
+    --warmup-steps 50 \
+    --measured-steps 200 \
+    --device cuda:0 \
+    --seed "$SEED" \
+    --output "$PROFILE_DIR/fixed_calibration_inference_profile.json" \
+    --cfg-options dataset.val.test_mode=True
+
+python tools/profile_persistent_binding.py \
+    "$REMATCH_CONFIG" \
+    --mode inference \
+    --split val \
+    --warmup-steps 50 \
+    --measured-steps 200 \
+    --device cuda:0 \
+    --seed "$SEED" \
+    --output "$PROFILE_DIR/rematch_calibration_inference_profile.json" \
+    --cfg-options dataset.val.test_mode=True
+
+python tools/evaluate_persistent_binding_profile.py \
+    --fixed-train "$PROFILE_DIR/fixed_train_profile.json" \
+    --rematch-train "$PROFILE_DIR/rematch_train_profile.json" \
+    --fixed-calibration-inference "$PROFILE_DIR/fixed_calibration_inference_profile.json" \
+    --rematch-calibration-inference "$PROFILE_DIR/rematch_calibration_inference_profile.json" \
+    --reporting-chunks "$REPORTING_CHUNKS" \
+    --epochs 1 \
+    --safety-factor 1.25 \
+    --paired-gpu-hour-cap "$PAIRED_GPU_HOUR_CAP" \
+    --output "$PROFILE_GATE"
 
 python - \
     "$RUN_DIR/pilot_contract.json" \
@@ -165,6 +240,7 @@ payload = {
     "reporting_accessed": False,
     "threshold_search": False,
     "raw_rgb_authorized": False,
+    "same_commit_profile_required": True,
 }
 Path(output).write_text(
     json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -295,6 +371,7 @@ set -e
 sha256sum \
     "$RUN_DIR/pilot_contract.json" \
     "$RUN_DIR/split_census.json" \
+    "$PROFILE_GATE" \
     "$RUN_DIR/fixed/screen_result.json" \
     "$RUN_DIR/rematch/screen_result.json" \
     "$RUN_DIR/fixed_score_diagnosis.json" \
@@ -310,4 +387,3 @@ echo "PERSISTENT_BINDING_OPTIMIZATION_VARIANT=$VARIANT"
 echo "PERSISTENT_BINDING_OPTIMIZATION_COMMIT=$COMMIT_SHA"
 SUBMIT_OUTPUT=$(sbatch "$SCRIPT_PATH")
 printf '%s\n' "$SUBMIT_OUTPUT"
-
