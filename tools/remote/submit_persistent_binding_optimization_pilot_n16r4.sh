@@ -332,6 +332,15 @@ run_arm() {
 run_arm fixed "$FIXED_CONFIG"
 run_arm rematch "$REMATCH_CONFIG"
 
+set +e
+python tools/evaluate_persistent_binding_optimization_activation.py \
+    --variant "$VARIANT" \
+    --fixed-audit "$RUN_DIR/fixed/gpu1_id0/training_audit.json" \
+    --rematch-audit "$RUN_DIR/rematch/gpu1_id0/training_audit.json" \
+    --output "$RUN_DIR/optimization_activation.json"
+ACTIVATION_STATUS=$?
+set -e
+
 python tools/diagnose_persistent_binding_scores.py \
     "$FIXED_CONFIG" \
     --checkpoint "$RUN_DIR/fixed/gpu1_id0/checkpoint/epoch_0.pth" \
@@ -376,10 +385,14 @@ sha256sum \
     "$RUN_DIR/rematch/screen_result.json" \
     "$RUN_DIR/fixed_score_diagnosis.json" \
     "$RUN_DIR/rematch_score_diagnosis.json" \
+    "$RUN_DIR/optimization_activation.json" \
     "$RUN_DIR/pair_resource_report.json" \
     "$RUN_DIR/screen_gate.json" \
     > "$RUN_DIR/artifact_sha256.txt"
-exit "$GATE_STATUS"
+if (( ACTIVATION_STATUS != 0 || GATE_STATUS != 0 )); then
+    exit 1
+fi
+exit 0
 SBATCH
 
 echo "PERSISTENT_BINDING_OPTIMIZATION_RUN_DIR=$RUN_DIR"

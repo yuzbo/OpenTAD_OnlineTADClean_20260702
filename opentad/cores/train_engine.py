@@ -89,6 +89,7 @@ def train_one_epoch(
 
     logger.info("[Train]: Epoch {:d} started".format(curr_epoch))
     losses_tracker = {}
+    loss_nonzero_updates = {}
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
     audit_fields = (
@@ -236,7 +237,10 @@ def train_one_epoch(
         for key, value in losses.items():
             if key not in losses_tracker:
                 losses_tracker[key] = AverageMeter()
-            losses_tracker[key].update(value.item())
+                loss_nonzero_updates[key] = 0
+            scalar = value.item()
+            losses_tracker[key].update(scalar)
+            loss_nonzero_updates[key] += int(scalar != 0.0)
 
         # printing each logging_interval
         if ((iter_idx != 0) and (iter_idx % logging_interval) == 0) or ((iter_idx + 1) == num_iters):
@@ -268,6 +272,12 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+    epoch_audit["mean_losses"] = {
+        key: float(value.avg) for key, value in losses_tracker.items()
+    }
+    epoch_audit["loss_nonzero_updates"] = {
+        key: int(loss_nonzero_updates[key]) for key in losses_tracker
+    }
     return epoch_audit
 
 

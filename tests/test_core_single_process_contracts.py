@@ -81,7 +81,7 @@ def test_train_one_epoch_supports_unwrapped_single_process_model():
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _step: 1.0)
     train_loader = [{"inputs": torch.tensor([1.0])}]
 
-    train_one_epoch(
+    audit = train_one_epoch(
         train_loader,
         model,
         optimizer,
@@ -93,6 +93,9 @@ def test_train_one_epoch_supports_unwrapped_single_process_model():
 
     assert model.seen_epochs == [3]
     assert model.weight.detach().item() != 0.0
+    assert audit["mean_losses"]["cost"] > 0
+    assert audit["mean_losses"]["aux"] > 0
+    assert audit["loss_nonzero_updates"] == {"cost": 1, "aux": 1}
 
 
 def test_build_optimizer_supports_unwrapped_single_process_model():

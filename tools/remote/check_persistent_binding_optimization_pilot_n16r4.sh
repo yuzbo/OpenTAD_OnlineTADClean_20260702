@@ -23,6 +23,7 @@ paths = (
     "split_census.json",
     "fixed/screen_result.json",
     "rematch/screen_result.json",
+    "optimization_activation.json",
     "fixed_score_diagnosis.json",
     "rematch_score_diagnosis.json",
     "pair_resource_report.json",
@@ -55,4 +56,3 @@ for log in "$RUN_DIR"/slurm.*.out "$RUN_DIR"/slurm.*.err; do
     echo "===== $log ====="
     tail -n 120 "$log"
 done
-

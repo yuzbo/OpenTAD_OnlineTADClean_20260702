@@ -200,6 +200,8 @@ def test_model_optimization_submitter_deploys_three_feature_only_variants():
     assert "same_commit_profile_required" in submit
     assert "--evaluation-role calibration" in submit
     assert "diagnose_persistent_binding_scores.py" in submit
+    assert "evaluate_persistent_binding_optimization_activation.py" in submit
+    assert "optimization_activation.json" in submit
     assert "reporting_accessed" in submit
     assert '"raw_rgb_authorized": False' in submit
     assert "#SBATCH --gres=gpu:1" in submit
