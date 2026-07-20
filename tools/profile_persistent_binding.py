@@ -94,11 +94,51 @@ def _canonical_sha256(value):
     return hashlib.sha256(payload).hexdigest()
 
 
+def _configure_strict_determinism():
+    torch.use_deterministic_algorithms(True, warn_only=False)
+    cuda_backend = torch.backends.cuda
+    for setter_name, enabled in (
+        ("enable_flash_sdp", False),
+        ("enable_mem_efficient_sdp", False),
+        ("enable_cudnn_sdp", False),
+        ("enable_math_sdp", True),
+    ):
+        setter = getattr(cuda_backend, setter_name, None)
+        if setter is not None:
+            setter(enabled)
+
+    def backend_flag(name):
+        getter = getattr(cuda_backend, name, None)
+        return None if getter is None else bool(getter())
+
+    warn_only_getter = getattr(
+        torch,
+        "is_deterministic_algorithms_warn_only_enabled",
+        None,
+    )
+    return {
+        "deterministic_algorithms": bool(
+            torch.are_deterministic_algorithms_enabled()
+        ),
+        "deterministic_warn_only": (
+            None if warn_only_getter is None else bool(warn_only_getter())
+        ),
+        "flash_sdp_enabled": backend_flag("flash_sdp_enabled"),
+        "memory_efficient_sdp_enabled": backend_flag(
+            "mem_efficient_sdp_enabled"
+        ),
+        "cudnn_sdp_enabled": backend_flag("cudnn_sdp_enabled"),
+        "math_sdp_enabled": backend_flag("math_sdp_enabled"),
+    }
+
+
 def main():
     args = parse_args()
     if args.warmup_steps < 0 or args.measured_steps <= 0:
         raise ValueError("warmup steps must be non-negative and measured steps positive")
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     set_seed(args.seed)
+    determinism = _configure_strict_determinism()
     cfg = Config.fromfile(args.config)
     if args.cfg_options:
         cfg.merge_from_dict(args.cfg_options)
@@ -266,6 +306,7 @@ def main():
         "sliding_window": bool(cfg.post_processing.sliding_window),
         "raw_video_finetuning": bool(cfg.raw_video_finetuning),
         "amp": bool(cfg.solver.amp),
+        "determinism": determinism,
     }
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

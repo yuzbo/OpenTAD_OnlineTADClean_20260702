@@ -89,6 +89,18 @@ def _validate_common_profile(profile, mode, binding_mode):
         profile.get("sliding_window") is False,
         "profile enabled offline sliding-window merging",
     )
+    determinism = profile.get("determinism", {})
+    _require(
+        determinism.get("deterministic_algorithms") is True
+        and determinism.get("deterministic_warn_only") is False,
+        "profile did not enforce strict deterministic algorithms",
+    )
+    _require(
+        determinism.get("flash_sdp_enabled") is False
+        and determinism.get("memory_efficient_sdp_enabled") is False
+        and determinism.get("math_sdp_enabled") is True,
+        "profile did not isolate deterministic math SDP",
+    )
     _require(
         int(profile.get("dataset_chunks", 0))
         >= EXPECTED_WARMUP_STEPS + EXPECTED_MEASURED_STEPS,

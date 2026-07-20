@@ -25,6 +25,14 @@ def _train_profile(binding_mode, step_seconds=0.05, runtime_exhaustions=0):
         "strict_causal_control": True,
         "streaming_safe_emission": True,
         "sliding_window": False,
+        "determinism": {
+            "deterministic_algorithms": True,
+            "deterministic_warn_only": False,
+            "flash_sdp_enabled": False,
+            "memory_efficient_sdp_enabled": False,
+            "cudnn_sdp_enabled": None,
+            "math_sdp_enabled": True,
+        },
         "estimated_full_pass_gpu_hours": step_seconds * 2010 / 3600,
         "timing_seconds": {"mean": step_seconds},
         "max_gpu_memory_mib": 256,
@@ -54,6 +62,14 @@ def _inference_profile(binding_mode, step_seconds=0.02):
         "strict_causal_control": True,
         "streaming_safe_emission": True,
         "sliding_window": False,
+        "determinism": {
+            "deterministic_algorithms": True,
+            "deterministic_warn_only": False,
+            "flash_sdp_enabled": False,
+            "memory_efficient_sdp_enabled": False,
+            "cudnn_sdp_enabled": None,
+            "math_sdp_enabled": True,
+        },
         "estimated_full_pass_gpu_hours": step_seconds * 469 / 3600,
         "timing_seconds": {"mean": step_seconds},
         "max_gpu_memory_mib": 128,
@@ -135,6 +151,24 @@ def test_profile_gate_rejects_inference_behavior_changed_by_binding_control():
         raise AssertionError("binding control must not alter untrained inference")
 
 
+def test_profile_gate_rejects_warn_only_determinism():
+    fixed = _train_profile("fixed_birth_slot")
+    fixed["determinism"]["deterministic_warn_only"] = True
+
+    try:
+        evaluate_profiles(
+            fixed,
+            _train_profile("prefix_rematch_active_pool"),
+            _inference_profile("fixed_birth_slot"),
+            _inference_profile("prefix_rematch_active_pool"),
+            reporting_chunks=2719,
+        )
+    except ValueError as error:
+        assert "strict deterministic" in str(error)
+    else:
+        raise AssertionError("warn-only deterministic mode must reject the profile")
+
+
 def test_profiler_and_n16r4_launcher_freeze_scope_and_measurement_contracts():
     profiler = (ROOT / "tools/profile_persistent_binding.py").read_text(
         encoding="utf-8"
@@ -151,6 +185,8 @@ def test_profiler_and_n16r4_launcher_freeze_scope_and_measurement_contracts():
     assert "runtime_capacity_exhaustions" in profiler
     assert "validate_emission_ledger_summary" in profiler
     assert "emission_ledger_sha256" in profiler
+    assert "_configure_strict_determinism" in profiler
+    assert "enable_mem_efficient_sdp" in profiler
     assert "profiling cannot load raw predictions" in profiler
 
     assert "WARMUP_STEPS=50" in submitter
