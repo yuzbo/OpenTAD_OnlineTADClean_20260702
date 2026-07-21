@@ -184,3 +184,28 @@ frame 因果检查；boundary 作业强制两臂都有 endpoint decision、memor
 
 至此 E/F/G 三个当日版本均已完成实现并部署；结果仍按各自 profile、训练、
 诊断和 scientific gate 到齐后判定。
+
+### M17 注册 H：2×2 因子交互实验
+
+重新读取 D 的完整 calibration 分布后，组合实验具有预先可解释的必要性：
+
+- FIXED birth/alive AUC 为 `0.8422/0.8628`，但正例最大概率仅约
+  `0.1984/0.3085`，因此 G 即使改善 end，仍会被 birth/alive 的固定 0.5 门
+  截断；
+- FIXED/REMATCH end AUC 仅 `0.4885/0.5574`，因此 F 的严格单调映射虽然能
+  移动决策刻度，却不可能改变 end 排序。
+
+由此把 reserve6 作为公共底座，注册如下 2×2：
+
+| 版本 | 单调校准 | 因果 boundary | 作用 |
+|---|---:|---:|---|
+| E | 0 | 0 | 公共容量对照 |
+| F | 1 | 0 | 校准主效应 |
+| G | 0 | 1 | 边界结构主效应 |
+| H | 1 | 1 | 两种机制的交互/完整生命周期 |
+
+H 不增加新阈值、数据或未来信息：raw head 仍负责匹配与原损失，calibrator
+负责固定 0.5 的可学习刻度，transition end/past-start 负责边界结构。H 同时
+必须通过 F 的正 scale/logit AUC 不变门与 G 的 endpoint decisions/past-only/
+runtime-no-GT 门。先实现并验证；部署仍受同提交 profile 和 2 GPU·小时门
+约束。

@@ -336,3 +336,7 @@ identity-linked duplicate/fragmentation error。
   `model_opt_boundary_seed705_20260721_100229`。恢复时检查 profile gate、四项
   预期辅助损失激活、两臂 endpoint pointer decisions > 0、past-only=true、
   runtime_state_contains_gt=false，再看 end AUC/0.5 TPR/最终发射。
+- D 的完整 score 分布给出下一条预注册路线：E/F/G/H 做 calibration×boundary
+  2×2。H=F+G，因为 G 单独仍受 birth/alive 最大概率低于 0.5 阻断，F 单独
+  又不能改变近随机 end 排序。H 必须同时过单调 AUC 不变门和 endpoint
+  past-only/no-GT 门；禁止借组合实验搜索阈值。
