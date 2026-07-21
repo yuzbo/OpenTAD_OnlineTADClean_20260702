@@ -801,3 +801,26 @@ Torch/因果/配置/调度/评测工具套件，结果为 `177 passed in 79.11s`
 静默作最终收敛判断。只有所有技术/机制门通过，才用本次 exact pilot 作为新 12 轮
 前置证据；否则保全并分类失败，不提交长训练。自动监控已切换到
 `C:\tmp\ontad_hard_reserve_pilot_progress_5edc46c.ps1`。
+
+### M44 硬 reserve 一轮画像门通过并进入 FIXED 训练
+
+Slurm `1179361` 在 `g0003` 完成 same-commit 测试与四段画像，画像门
+`passed=true`、`budget_passed=true`、`stability_passed=true`、
+`binding_inference_equivalence_passed=true`。原始测量为：
+
+- FIXED/REMATCH 训练均值：`0.820642/0.834076 秒/step`；
+- FIXED/REMATCH calibration 推理均值：`0.259574/0.257333 秒/step`；
+- 两臂训练预算：`0.923884 GPU·h`；
+- calibration 推理预算：`0.067342 GPU·h`；
+- 仅用于资源上界计算的 reporting 推理预算：`0.390409 GPU·h`；
+- 原始总计：`1.381635 GPU·h`，乘 `1.25` 安全系数后
+  `1.727043 GPU·h < 2.0 GPU·h`；
+- 两臂画像 `runtime_capacity_exhaustions=0`，最大模型 GPU 显存约
+  `153.44 MiB`；作业当前 MaxRSS 约 `1.94 GB`。
+
+画像通过后作业按冻结顺序进入 FIXED 一轮训练；17:54 的直接状态为
+`00400/02009`、loss=`3.2569`，fatal=0。训练尚未结束，故 FIXED/REMATCH
+`training_audit.json`、calibration-only 结果和成对 gate 仍为 pending，不能提前
+宣称硬 reserve 的完整 H2 容量门已经通过，也没有可报告 mAP/Recall。资源预算中的
+reporting 项只是按锁定 chunk 数推算成本，未访问 reporting 数据。阈值仍固定
+birth/alive/end=`0.5`，当前仍为 cached-feature 实验。

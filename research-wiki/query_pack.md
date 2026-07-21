@@ -479,3 +479,7 @@ identity-linked duplicate/fragmentation error。
   `g0003` 运行。只检查 same-commit profile、各 2010 更新、零容量碰撞、机制与
   因果/learning-readiness；全门通过才提交新 12 轮。一轮固定 0.5 静默不作
   收敛淘汰，reporting 与 raw-RGB 仍锁定。
+- M44 画像门：`1179361` 的 FIXED/REMATCH 训练均值为 `0.820642/0.834076`
+  秒/step，安全系数后整对 `1.727043 GPU·h < 2.0`；稳定性、双臂等价和画像
+  容量耗尽零均通过。当前 FIXED 到 `400/2009`、fatal=0；两臂训练审计和最终
+  gate 尚未生成，故仍无定位性能结论。reporting 只做成本估算、未访问数据。
