@@ -103,9 +103,16 @@ allowed_prefixes = (
     "tools/evaluate_persistent_binding_formal12.py",
     "tools/remote/submit_persistent_binding_formal12_n16r4.sh",
 )
+allowed_common_axis_repairs = {
+    "opentad/models/dense_heads/persistent_event_set_head.py",
+    "opentad/models/detectors/persistent_trajectory_ontad.py",
+    "opentad/utils/causal_audit.py",
+    "tools/stage_persistent_binding_training_recovery.py",
+}
 unexpected = [
     path for path in changed
-    if not any(path.startswith(prefix) for prefix in allowed_prefixes)
+    if path not in allowed_common_axis_repairs
+    and not any(path.startswith(prefix) for prefix in allowed_prefixes)
 ]
 if unexpected:
     raise SystemExit(f"formal12 changed model/runtime code after pilot: {unexpected}")
@@ -174,6 +181,9 @@ payload = {
     "threshold_search": False,
     "fixed_thresholds": {"birth": 0.5, "alive": 0.5, "end": 0.5},
     "formal_fixed_threshold_gate_epoch": 12,
+    "protocol_revision": "positive_duration_emission_and_precalibration_recovery.v1",
+    "same_decision_interval_quantization": "one_observed_feature_cell_left_clipped_at_zero",
+    "training_objective_changed_after_pilot": False,
     "raw_rgb_authorized": False,
     "paired_gpu_hour_cap": 16.0,
     "finalizer_reserved_gpu_hours": 0.5,
@@ -250,11 +260,20 @@ torchrun --nnodes=1 --nproc_per_node=1 --rdzv_backend=c10d \
 WORK="\$LOCAL_ROOT/train/gpu1_id0"
 AUDIT="\$WORK/training_audit.json"
 test -f "\$AUDIT"
+RECOVERY="\$RUN_DIR/\$ARM/recovery"
+python tools/stage_persistent_binding_training_recovery.py \
+    --train-root "\$WORK" \
+    --config "\$CONFIG" \
+    --output "\$RECOVERY" \
+    --arm "\$ARM" \
+    --commit "\$EXPECTED_COMMIT" \
+    --seed "\$SEED"
+test -f "\$RECOVERY/recovery_manifest.json"
 candidate_args=()
 for spec in 3:2 6:5 9:8 12:11; do
     human=\${spec%%:*}
     zero=\${spec##*:}
-    checkpoint="\$WORK/checkpoint/epoch_\${zero}.pth"
+    checkpoint="\$RECOVERY/checkpoint/epoch_\${zero}.pth"
     test -f "\$checkpoint"
     eval_root="\$LOCAL_ROOT/eval_epoch_\${human}"
     MASTER_PORT=\$((MASTER_PORT + 1))
@@ -307,6 +326,7 @@ output = Path(sys.argv[2]).resolve()
 config = Path(sys.argv[3]).resolve()
 arm = sys.argv[4]
 commit = sys.argv[5]
+recovery = output / "recovery"
 
 def load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -318,7 +338,7 @@ def sha(path):
             digest.update(chunk)
     return digest.hexdigest()
 
-audit = load(local / "train/gpu1_id0/training_audit.json")
+audit = load(recovery / "training_audit.json")
 if audit.get("schema_version") != "persistent_binding_training_audit.v1":
     raise SystemExit("unexpected training audit schema")
 if audit.get("fit_only") is not True or audit.get("screening_only") is not False:
@@ -356,8 +376,12 @@ artifacts = output / "artifacts"
 artifacts.mkdir(parents=True, exist_ok=False)
 shutil.copy2(config, artifacts / "config.py")
 shutil.copy2(
-    local / "train/gpu1_id0/training_audit.json",
+    recovery / "training_audit.json",
     artifacts / "training_audit.json",
+)
+shutil.copy2(
+    recovery / "recovery_manifest.json",
+    artifacts / "training_recovery_manifest.json",
 )
 shutil.copy2(local / "resource_report.json", artifacts / "resource_report.json")
 shutil.copy2(
@@ -390,7 +414,7 @@ for human, zero in ((3, 2), (6, 5), (9, 8), (12, 11)):
 
 checkpoint_dir = artifacts / "checkpoint"
 checkpoint_dir.mkdir()
-final_source = local / "train/gpu1_id0/checkpoint/epoch_11.pth"
+final_source = recovery / "checkpoint/epoch_11.pth"
 final_target = checkpoint_dir / "epoch_12_resume.pth"
 shutil.copy2(final_source, final_target)
 selected_source = Path(receipt["selected_checkpoint_path"]).resolve()

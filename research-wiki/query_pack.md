@@ -414,3 +414,12 @@ identity-linked duplicate/fragmentation error。
   `1.2894`，共同 LR=`3.0e-5`，主作业无 fatal。FIXED 相对第 8 轮的单 minibatch
   `+0.0090` 波动不作过拟合或调参依据；下一节点是训练结束后的 3/6/9/12
   calibration-only 重放、完整训练审计和固定 0.5 成对终检。
+- 最新恢复点 M34：`1178653/54` 已完整训练 12 轮，失败只在 calibration 输出
+  零长度区间；FIXED epoch-3 发射 371 条、REMATCH epoch-6 发射 7041 条，均为
+  零未来违规，因此不能写成模型静默或科学拒绝。same-step birth+end 现在向左量化
+  为一个已观察 feature cell，并由写出与审计双层强制正长度。旧 `/tmp` checkpoint
+  在失败后被回收，必须同协议重训；新脚本会在校准前验证 24,120 次完整更新并
+  原子保存 3/6/9/12 checkpoint、audit、配置和 SHA recovery 清单，再从共享副本
+  校准。旧终检 `1178655` 已取消。恢复顺序是：本地静态/CPU-safe 门 → N16R4
+  clean exact Torch 全套与 Bash/test-only → 同 seed 双臂 12 轮重试。0.5、划分、
+  reporting 锁和 raw-RGB 禁止状态都不变。

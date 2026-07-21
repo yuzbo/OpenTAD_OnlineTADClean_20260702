@@ -350,8 +350,11 @@ def audit_emission_ledger(result_dict):
             emit = int(row["emit_frame"])
             max_raw = int(row["max_raw_frame_read"])
             max_cache = int(row["max_cache_source_frame"])
-            if start > end:
-                raise ProtocolViolation(f"invalid emitted frame range for {video_id}: {start}>{end}")
+            if start < 0 or start >= end:
+                raise ProtocolViolation(
+                    f"invalid emitted frame range for {video_id}: "
+                    f"require 0 <= start < end, got {start}, {end}"
+                )
             if end > emit:
                 raise ProtocolViolation(f"future emitted endpoint for {video_id}: end={end} emit={emit}")
             if max_raw > emit:

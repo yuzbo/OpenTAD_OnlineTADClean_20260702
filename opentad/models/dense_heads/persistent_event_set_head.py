@@ -506,6 +506,25 @@ class PersistentEventSetHead(nn.Module):
         decoded = int(round(float(current_frame) - offset))
         return min(int(current_frame), max(int(start_frame), decoded))
 
+    @staticmethod
+    def _positive_causal_interval(start_frame, end_frame, feature_stride=1):
+        """Quantize a same-decision short action to one observed feature cell."""
+
+        start_frame = int(start_frame)
+        end_frame = int(end_frame)
+        feature_stride = int(feature_stride)
+        if feature_stride <= 0:
+            raise ValueError("feature_stride must be positive")
+        if start_frame > end_frame:
+            raise ValueError("decoded action start must not exceed its endpoint")
+        if start_frame == end_frame:
+            start_frame = max(0, end_frame - feature_stride)
+        if not 0 <= start_frame < end_frame:
+            raise ValueError(
+                "a final action must have positive duration within observed frames"
+            )
+        return start_frame, end_frame
+
     def _decode_endpoint_start(
         self,
         outputs,
@@ -581,6 +600,11 @@ class PersistentEventSetHead(nn.Module):
 
             start_frame = int(round(float(start_frames[slot].item())))
             end_frame = self._decode_end(outputs, slot, start_frame, current_frame)
+            start_frame, end_frame = self._positive_causal_interval(
+                start_frame,
+                end_frame,
+                feature_stride,
+            )
             score = math.sqrt(max(float(peak_scores[slot].item()) * float(end[slot].item()), 0.0))
             record = EventSetEmissionRecord(
                 stream_key=state.stream_key,
@@ -675,6 +699,11 @@ class PersistentEventSetHead(nn.Module):
                 current_frame,
             )
             end_frame = self._decode_end(outputs, slot, start_frame, current_frame)
+            start_frame, end_frame = self._positive_causal_interval(
+                start_frame,
+                end_frame,
+                feature_stride,
+            )
             score = math.sqrt(
                 max(
                     float(peak_scores[slot].item()) * float(end[slot].item()),

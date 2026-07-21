@@ -157,6 +157,29 @@ def test_final_emission_contains_frame_and_standard_second_coordinates():
     assert rows[0]["start_frame"] <= rows[0]["end_frame"] <= rows[0]["emit_frame"]
 
 
+def test_final_emission_rejects_zero_duration_before_evaluation():
+    detector = _detector().eval()
+    record = EventSetEmissionRecord(
+        stream_key="stream",
+        slot_id=0,
+        label=1,
+        score=0.8,
+        start_frame=15,
+        end_frame=15,
+        emit_frame=15,
+        max_source_frame=15,
+    )
+
+    with pytest.raises(ProtocolViolation, match="positive and causal"):
+        detector._append_emissions(
+            (),
+            (record,),
+            video_id="video",
+            class_names=("a", "b", "c"),
+            fps=30.0,
+        )
+
+
 def test_single_active_instance_has_identical_fixed_and_rematch_losses():
     fixed = _detector("fixed_birth_slot").train()
     rematch = _detector("prefix_rematch_active_pool").train()

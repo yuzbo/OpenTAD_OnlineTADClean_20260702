@@ -557,3 +557,35 @@ FIXED 与 REMATCH 已分别于 18:34:14、18:38:20 完成第 9 轮并进入第 1
 至此第 3/6/9 轮 checkpoint 的存在性与对称性均已确认，但均未提前回传、选模
 或访问 reporting。下一关键节点是第 12 轮训练审计、四 checkpoint 校准重放、
 受控产物提升以及成对固定 `0.5` 终检。
+
+### M34 十二轮训练完成、校准区间合同故障与恢复修订
+
+FIXED `1178653` 与 REMATCH `1178654` 都已完整完成 12 轮、每轮
+`2010/2010` 次更新；最后一个 minibatch loss 分别为 `1.8342` 与 `2.0328`。
+故障发生在训练完成后的 calibration-only 推理/评测，不是训练崩溃，也不是
+固定 `0.5` 科学门的拒绝。两臂均先产生了真实最终发射，且未来端点、未来特征、
+负延时和非单调发射违规都为零：FIXED 第 3 轮 checkpoint 共 `371` 条，REMATCH
+第 6 轮 checkpoint 共 `7041` 条。随后预算 mAP 评测器分别拒绝以下零长度区间：
+
+- FIXED：`video_validation_0000179`，`49.056397486535005 == 49.056397486535005`；
+- REMATCH：`video_validation_0000055`，`0.5003204996928118 == 0.5003204996928118`。
+
+根因是 same-step birth+end 已按设计提交一次，但 scalar/pointer start 与 binary end
+都可能落在当前 source frame；模型层旧测试甚至明确接受 `start == end`，而正式
+评测合同要求 `end > start`。修订不改训练图、损失、阈值、数据、seed 或匹配轴：
+仅当解码得到同一点时，把短动作向左量化到一个已经观察到的 feature cell，裁到
+零帧边界；最终写出层和因果审计层同时强制
+`0 <= start < end <= source <= emit`。这不会读取未来，也没有搜索或降低 `0.5`。
+
+原脚本还暴露出恢复时序缺陷：四个 checkpoint 与 `training_audit.json` 只保存在
+作业私有 `/tmp`，校准失败后被节点回收，因此本次训练不能继续校准、必须按同一
+冻结训练协议重跑。修订版在任何 calibration 开始前先验证 12 轮、`24,120` 次
+成功更新、零跳步/监督耗尽/容量碰撞，再把第 3/6/9/12 轮 checkpoint、配置和
+训练审计原子提升到共享 run 的 `arm/recovery/`，写 SHA-256 清单；后续校准直接
+读取这些恢复副本。旧依赖终检 `1178655` 因 `DependencyNeverSatisfied` 已取消。
+
+当前修复的 CPU-safe 合同测试为 `7 passed`，Python 编译与 `git diff --check`
+通过；本机 Torch 回归仍由既知的 Windows `c10.dll` 环境故障阻断，不作代码失败
+解读。下一步是在 N16R4 clean exact checkout 跑完整相关套件与 Bash/test-only，
+通过后才提交同 seed、同双臂、同 12 轮重试。reporting、阈值搜索和 raw-RGB
+继续锁定。

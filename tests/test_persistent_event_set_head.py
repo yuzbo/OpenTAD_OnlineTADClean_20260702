@@ -498,10 +498,12 @@ def test_binary_newborn_end_crossing_commits_once_in_the_same_step():
         ),
         state,
         current_frame=7,
+        feature_stride=8,
     )
 
     assert len(emissions) == 1
-    assert emissions[0].start_frame == emissions[0].end_frame == 7
+    assert (emissions[0].start_frame, emissions[0].end_frame) == (0, 7)
+    assert emissions[0].end_frame <= emissions[0].emit_frame
     assert state.slot_status.tolist() == [SLOT_FREE, SLOT_FREE]
     repeated, state = head.decode_step(
         _candidate_outputs(
@@ -514,6 +516,12 @@ def test_binary_newborn_end_crossing_commits_once_in_the_same_step():
     )
     assert repeated == []
     assert len(state.ledger) == 1
+
+
+def test_same_decision_interval_uses_only_the_observed_feature_cell():
+    assert PersistentEventSetHead._positive_causal_interval(15, 15, 8) == (7, 15)
+    with pytest.raises(ValueError, match="positive duration"):
+        PersistentEventSetHead._positive_causal_interval(0, 0, 8)
 
 
 def test_release_step_birth_is_deferred_and_audited_until_next_step():

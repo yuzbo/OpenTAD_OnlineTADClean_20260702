@@ -1039,13 +1039,15 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 "latency_definition": "emit_time_minus_predicted_end_time",
             }
             if not (
-                row["start_frame"]
-                <= row["end_frame"]
+                0
+                <= row["start_frame"]
+                < row["end_frame"]
                 <= row["source_frame"]
                 <= row["emit_frame"]
             ):
                 raise ProtocolViolation(
-                    "final interval must be causal: start <= end <= source <= emit"
+                    "final interval must be positive and causal: "
+                    "0 <= start < end <= source <= emit"
                 )
             if any(existing["event_id"] == event_id for existing in committed):
                 raise ProtocolViolation(f"duplicate final event id: {event_id}")
