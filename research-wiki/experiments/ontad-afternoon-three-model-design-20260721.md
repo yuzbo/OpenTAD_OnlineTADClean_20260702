@@ -885,3 +885,29 @@ pointer 均作出 480 次严格 past-only 决策。两份 calibration ledger 均
 `5edc46c34c0db56e79409fac69276450ad87e949`、同 seed-705 和冻结特征协议重新
 提交成对 12 轮及依赖终检。正式门仍只在 epoch 12 使用 birth/alive/end=`0.5`；
 不授权阈值搜索、reporting、multi-seed 或 raw-RGB。
+
+### M47 同 exact 硬 reserve 正式十二轮链路启动
+
+在 M46 成对一轮门持久化并推送后，从同一独立 clean checkout
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_HardReserve_5edc46c`
+提交正式 12 轮闭环。启动器再次核验 checkout 精确 SHA/clean、pilot v2
+learning-readiness、七项 activation、两臂单调 calibration、causal-delta end、
+past-only pointer 与 runtime-no-GT，且拒绝同名活动作业。共享盘提交前仍有约
+`337 GiB` 可用。
+
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260722_040902`；
+- FIXED：Slurm `1179373`，启动后为 `RUNNING/g0043`；
+- REMATCH：Slurm `1179374`，启动后为 `RUNNING/g0030`；
+- 依赖终检：Slurm `1179375`，正常 `PENDING/Dependency`；
+- exact commit：`5edc46c34c0db56e79409fac69276450ad87e949`；
+- seed/轮次：`705 / 12`，每臂预期 `24,120` 次成功更新；
+- 协议修订：`positive_duration_hard_transition_reserve_precalibration_quarantine.v2`。
+
+`formal12_launch.json` 已复核三 job id、成对提交和 exact commit 一致；
+`formal12_contract.json` 固定只在 calibration split 比较第 3/6/9/12 轮，从 seed
+初始化而非续训 pilot，并在 epoch 12 执行 birth/alive/end=`0.5` 正式门。
+训练结束前 checkpoint 保留在各自 Slurm allocation 的本地 `/tmp`；完整审计通过
+才原子提升 recovery，审计失败则先写 quarantine，不再丢失证据。新的只读进度入口
+为 `C:\tmp\ontad_formal12_progress_5edc46c.ps1`。下一持久节点是两臂第 3 轮
+checkpoint；若 job/fatal/recovery/quarantine 状态先变化则立即提前记录。当前仍为
+cached causal feature 实验，未访问 reporting、未搜索阈值、未启动 raw-RGB。

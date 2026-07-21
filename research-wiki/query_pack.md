@@ -495,3 +495,10 @@ identity-linked duplicate/fragmentation error。
   为 true；一轮固定 0.5 零发射只记 operational 未收敛，不作性能结论。下一步仅
   从 clean exact `5edc46c` 提交 feature-level seed-705 成对 12 轮与依赖终检；
   阈值搜索、reporting、multi-seed、raw-RGB 仍禁止。
+- M47 正式 12 轮已启动：同 clean exact `5edc46c`、seed-705 的 run 为
+  `formal12_boundary_calibration_batched_seed705_20260722_040902`；FIXED
+  `1179373` 在 `g0043`、REMATCH `1179374` 在 `g0030` 运行，终检 `1179375`
+  等待依赖。每臂目标 24,120 更新，只在 calibration 看 3/6/9/12，epoch 12
+  执行固定 0.5 门；真实 4+2 reserve、正长度写出、recovery/quarantine 均冻结。
+  新监控脚本为 `C:\tmp\ontad_formal12_progress_5edc46c.ps1`；下一节点是成对
+  epoch 3 checkpoint，reporting/阈值搜索/raw-RGB 仍锁定。
