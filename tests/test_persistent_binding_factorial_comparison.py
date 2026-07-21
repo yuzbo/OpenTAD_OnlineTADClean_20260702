@@ -134,6 +134,8 @@ def test_factorial_comparison_computes_main_and_interaction_effects(tmp_path):
     assert effect["boundary_main_effect"] == pytest.approx(5.0)
     assert effect["interaction"] == pytest.approx(4.0)
     assert result["selected_variant"] == "boundary_calibration"
+    assert result["multi_epoch_candidate"] == "boundary_calibration"
+    assert result["multi_epoch_feature_training_authorized_next"] is True
     assert result["multi_seed_authorized_next"] is True
     assert result["raw_rgb_authorized_next"] is False
 
@@ -156,6 +158,37 @@ def test_factorial_comparison_rejects_interaction_when_mechanism_fails(tmp_path)
     assert result["multi_seed_authorized_next"] is False
     assert result["raw_rgb_authorized_next"] is False
     assert result["variants"]["boundary_calibration"]["eligible"] is False
+
+
+def test_epoch1_silence_allows_multi_epoch_but_not_multi_seed(tmp_path):
+    module = _module()
+    paths = {}
+    for variant in module.VARIANTS:
+        path = tmp_path / variant
+        _write_run(path, variant, 0.0)
+        paths[variant] = path
+    interaction = paths["boundary_calibration"] / "screen_gate.json"
+    screen = json.loads(interaction.read_text(encoding="utf-8"))
+    screen.update(
+        {
+            "technical_pass": True,
+            "learning_readiness_pass": True,
+            "operational_pass": False,
+            "operational_failures": [
+                "fixed: no committed predictions at epoch 1",
+                "rematch: no committed predictions at epoch 1",
+            ],
+        }
+    )
+    interaction.write_text(json.dumps(screen), encoding="utf-8")
+
+    result = module.compare_factorial(paths)
+
+    assert result["selected_variant"] is None
+    assert result["multi_seed_authorized_next"] is False
+    assert result["multi_epoch_candidate"] == "boundary_calibration"
+    assert result["multi_epoch_feature_training_authorized_next"] is True
+    assert result["next_gate"] == "paired_12_epoch_feature_training"
 
 
 def test_factorial_comparison_accepts_matched_batched_v2_cells(tmp_path):

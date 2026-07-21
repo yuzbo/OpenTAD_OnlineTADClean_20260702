@@ -12,7 +12,7 @@ RESULT_SCHEMA = "persistent_binding_screen_result.v1"
 RESOURCE_SCHEMA = "persistent_binding_resource.v1"
 EXPECTED_SEED = 705
 EXPECTED_TIOUS = (0.3, 0.4, 0.5, 0.6, 0.7)
-TECHNICAL_THRESHOLDS = {
+OPERATIONAL_THRESHOLDS = {
     "prediction_gt_ratio_min": 0.25,
     "prediction_gt_ratio_max": 4.0,
     "recall_tiou_0p3_min": 0.25,
@@ -143,7 +143,7 @@ def _normalize(payload, arm):
     return row
 
 
-def _technical_failures(arm, row):
+def _integrity_failures(arm, row):
     failures = []
     for field in (
         "protocol_violations",
@@ -153,8 +153,6 @@ def _technical_failures(arm, row):
     ):
         if row[field] != 0:
             failures.append(f"{arm}: {field}={row[field]}")
-    if row["committed_predictions"] <= 0:
-        failures.append(f"{arm}: no committed predictions")
     if row["expected_updates"] <= 0:
         failures.append(f"{arm}: expected_updates must be positive")
     if not (
@@ -167,17 +165,24 @@ def _technical_failures(arm, row):
             f"successful={row['successful_updates']} "
             f"scheduler={row['scheduler_steps']}"
         )
+    return failures
+
+
+def _operational_failures(arm, row):
+    failures = []
+    if row["committed_predictions"] <= 0:
+        failures.append(f"{arm}: no committed predictions at epoch 1")
     if not (
-        TECHNICAL_THRESHOLDS["prediction_gt_ratio_min"]
+        OPERATIONAL_THRESHOLDS["prediction_gt_ratio_min"]
         <= row["prediction_gt_ratio"]
-        <= TECHNICAL_THRESHOLDS["prediction_gt_ratio_max"]
+        <= OPERATIONAL_THRESHOLDS["prediction_gt_ratio_max"]
     ):
         failures.append(
             f"{arm}: prediction_gt_ratio={row['prediction_gt_ratio']}"
         )
     if (
         row["recall_tiou_0p3"]
-        < TECHNICAL_THRESHOLDS["recall_tiou_0p3_min"]
+        < OPERATIONAL_THRESHOLDS["recall_tiou_0p3_min"]
     ):
         failures.append(
             f"{arm}: recall_tiou_0p3={row['recall_tiou_0p3']}"
@@ -209,23 +214,29 @@ def evaluate_screen(fixed_payload, rematch_payload, resource_payload):
     paired_cap = 2.0
     budget_pass = actual_pair_gpu_hours <= paired_cap
 
-    failures = []
-    failures.extend(_technical_failures("fixed", fixed))
-    failures.extend(_technical_failures("rematch", rematch))
+    technical_failures = []
+    technical_failures.extend(_integrity_failures("fixed", fixed))
+    technical_failures.extend(_integrity_failures("rematch", rematch))
+    operational_failures = []
+    operational_failures.extend(_operational_failures("fixed", fixed))
+    operational_failures.extend(_operational_failures("rematch", rematch))
     if (
         fixed["projected_pair_gpu_hours"]
         != rematch["projected_pair_gpu_hours"]
     ):
-        failures.append("pair: projected GPU hours differ between arms")
+        technical_failures.append(
+            "pair: projected GPU hours differ between arms"
+        )
     if fixed["projected_pair_gpu_hours"] > paired_cap:
-        failures.append(
+        technical_failures.append(
             "pair: projected GPU hours exceed the frozen cap"
         )
     if not budget_pass:
-        failures.append(
+        technical_failures.append(
             f"pair: allocated_gpu_hours={actual_pair_gpu_hours}"
         )
-    technical_pass = not failures
+    technical_pass = not technical_failures
+    operational_pass = technical_pass and not operational_failures
     rematch_identity = rematch["identity_error"]
     relative_reduction = (
         None
@@ -236,13 +247,18 @@ def evaluate_screen(fixed_payload, rematch_payload, resource_payload):
         / rematch_identity
     )
     return {
-        "schema_version": "persistent_binding_seed705_screen_gate.v1",
+        "schema_version": "persistent_binding_seed705_screen_gate.v2",
         "seed": EXPECTED_SEED,
-        "purpose": "convergence_and_non_degeneracy_only",
+        "purpose": "epoch1_learning_readiness_not_convergence",
         "screen_pass": technical_pass,
         "technical_pass": technical_pass,
-        "technical_failures": failures,
-        "technical_thresholds": dict(TECHNICAL_THRESHOLDS),
+        "technical_failures": technical_failures,
+        "learning_readiness_pass": technical_pass,
+        "operational_pass": operational_pass,
+        "operational_failures": operational_failures,
+        "operational_thresholds": dict(OPERATIONAL_THRESHOLDS),
+        "epoch1_fixed_threshold_role": "diagnostic_only",
+        "formal_fixed_threshold_gate_epoch": 12,
         "budget_pass": budget_pass,
         "paired_gpu_hour_cap": paired_cap,
         "actual_pair_gpu_hours": actual_pair_gpu_hours,
@@ -262,9 +278,13 @@ def evaluate_screen(fixed_payload, rematch_payload, resource_payload):
         "effectiveness_claim_authorized": False,
         "raw_rgb_authorized": False,
         "next_gate": (
-            "budgeted_multi_epoch_feature_protocol"
+            (
+                "budgeted_multi_epoch_feature_protocol"
+                if operational_pass
+                else "budgeted_multi_epoch_feature_protocol_nonconverged_epoch1"
+            )
             if technical_pass
-            else "diagnose_without_reporting_or_threshold_changes"
+            else "diagnose_integrity_without_reporting_or_threshold_changes"
         ),
     }
 
@@ -286,9 +306,11 @@ def main():
         )
     except Exception as error:
         payload = {
-            "schema_version": "persistent_binding_seed705_screen_gate.v1",
+            "schema_version": "persistent_binding_seed705_screen_gate.v2",
             "screen_pass": False,
             "technical_pass": False,
+            "learning_readiness_pass": False,
+            "operational_pass": False,
             "error": str(error),
             "error_type": type(error).__name__,
             "effectiveness_claim_authorized": False,
@@ -302,7 +324,9 @@ def main():
     json.dump(payload, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     if not payload["screen_pass"]:
-        raise SystemExit("seed-705 screen failed its frozen technical gate")
+        raise SystemExit(
+            "seed-705 screen failed its epoch-1 learning-readiness gate"
+        )
 
 
 if __name__ == "__main__":

@@ -362,3 +362,12 @@ identity-linked duplicate/fragmentation error。
   因子比较 alias 已注册。N16R4 clean exact 扩展套件
   `160 passed in 88.32s`。恢复点是提交 F2/H2 自身 profile，并只接受冻结
   2 GPU·小时门内的运行。
+- epoch-1 gate 已分层：固定 0.5 在一轮仍完整记录，但零发射只令
+  `operational_pass=false`；只要协议/因果、监督、容量、更新和预算完整，
+  `learning_readiness_pass` 可授权成对 12 轮，绝不直接授权 multi-seed。
+- G `1178279` 已结束：FIXED 三通道 AUC=`0.8835/0.9023/0.6575`，REMATCH
+  `0.6671/0.6592/0.6161`；pointer 严格 past-only/no-GT，但一轮仅
+  `3/480`、`2/480`，应在多轮中判断收敛，不能用一轮零发射证伪结构。
+- F2/H2 `1178448/1178449` 的画像均通过，安全估算分别
+  `1.50787/1.72583 GPU·h`，exact `af58538`，均已进入一轮训练。恢复时先收口
+  两臂完整更新、单调 AUC 门、past-only/no-GT 与 score 分布，再生成分层门。

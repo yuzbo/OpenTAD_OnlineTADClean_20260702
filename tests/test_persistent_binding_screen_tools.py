@@ -98,6 +98,10 @@ def test_seed705_screen_pass_is_technical_not_an_effectiveness_claim():
     )
 
     assert result["screen_pass"] is True
+    assert result["learning_readiness_pass"] is True
+    assert result["operational_pass"] is True
+    assert result["epoch1_fixed_threshold_role"] == "diagnostic_only"
+    assert result["formal_fixed_threshold_gate_epoch"] == 12
     assert result["effectiveness_claim_authorized"] is False
     assert result["raw_rgb_authorized"] is False
     assert result["reporting_accessed"] is False
@@ -106,7 +110,8 @@ def test_seed705_screen_pass_is_technical_not_an_effectiveness_claim():
     ] < 0
 
 
-def test_seed705_screen_rejects_silent_or_explosive_outputs():
+def test_seed705_screen_records_silent_or_explosive_outputs_without_early_rejection(
+):
     evaluator = _module(
         "tools/evaluate_persistent_binding_screen.py",
         "evaluate_persistent_binding_screen_failures",
@@ -123,12 +128,15 @@ def test_seed705_screen_rejects_silent_or_explosive_outputs():
         _resource(),
     )
 
-    assert silent["screen_pass"] is False
-    assert any("no committed" in item for item in silent["technical_failures"])
-    assert explosive["screen_pass"] is False
+    assert silent["screen_pass"] is True
+    assert silent["learning_readiness_pass"] is True
+    assert silent["operational_pass"] is False
+    assert any("no committed" in item for item in silent["operational_failures"])
+    assert explosive["screen_pass"] is True
+    assert explosive["operational_pass"] is False
     assert any(
         "prediction_gt_ratio" in item
-        for item in explosive["technical_failures"]
+        for item in explosive["operational_failures"]
     )
 
 

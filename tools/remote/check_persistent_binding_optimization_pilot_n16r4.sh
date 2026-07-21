@@ -43,6 +43,10 @@ for relative in paths:
                 "passed",
                 "screen_pass",
                 "technical_pass",
+                "learning_readiness_pass",
+                "operational_pass",
+                "epoch1_fixed_threshold_role",
+                "formal_fixed_threshold_gate_epoch",
                 "reporting_accessed",
                 "raw_rgb_authorized",
             )

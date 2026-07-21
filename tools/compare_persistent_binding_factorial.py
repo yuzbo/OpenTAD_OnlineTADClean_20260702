@@ -167,8 +167,23 @@ def _normalize_run(root, variant):
         raise ValueError(f"{variant}: screen authorized raw RGB")
     mechanism = _mechanism_gate(variant, diagnoses)
     technical_pass = screen.get("technical_pass") is True
+    learning_readiness_pass = screen.get(
+        "learning_readiness_pass",
+        technical_pass,
+    ) is True
+    # v1 called the epoch-1 operational gate "technical_pass". v2 keeps
+    # fixed-threshold operation diagnostic until the formal multi-epoch gate.
+    operational_pass = screen.get(
+        "operational_pass",
+        technical_pass,
+    ) is True
     activation_pass = activation.get("passed") is True
-    eligible = technical_pass and activation_pass and mechanism["passed"]
+    learning_ready = (
+        learning_readiness_pass
+        and activation_pass
+        and mechanism["passed"]
+    )
+    eligible = operational_pass and activation_pass and mechanism["passed"]
     return {
         "root": str(root),
         "factor_levels": {
@@ -178,10 +193,16 @@ def _normalize_run(root, variant):
         "deployment_variant": deployment_variant,
         "code_commit": contract.get("code_commit"),
         "technical_pass": technical_pass,
+        "learning_readiness_pass": learning_readiness_pass,
+        "operational_pass": operational_pass,
         "activation_pass": activation_pass,
         "mechanism_gate": mechanism,
+        "multi_epoch_learning_ready": learning_ready,
         "eligible": eligible,
         "technical_failures": list(screen.get("technical_failures", [])),
+        "operational_failures": list(
+            screen.get("operational_failures", [])
+        ),
         "actual_pair_gpu_hours": _finite(
             screen["actual_pair_gpu_hours"],
             f"{variant}.actual_pair_gpu_hours",
@@ -262,9 +283,12 @@ def compare_factorial(run_paths):
                 )
 
     interaction_eligible = runs["boundary_calibration"]["eligible"]
+    interaction_learning_ready = runs["boundary_calibration"][
+        "multi_epoch_learning_ready"
+    ]
     selected_variant = runs["boundary_calibration"]["deployment_variant"]
     return {
-        "schema_version": "persistent_binding_factorial_comparison.v1",
+        "schema_version": "persistent_binding_factorial_comparison.v2",
         "design": (
             "reserve6_calibration_batched_x_boundary_2x2_v2"
             if calibration_batched
@@ -275,6 +299,12 @@ def compare_factorial(run_paths):
         "selected_variant": (
             selected_variant if interaction_eligible else None
         ),
+        "multi_epoch_candidate": (
+            selected_variant if interaction_learning_ready else None
+        ),
+        "multi_epoch_feature_training_authorized_next": (
+            interaction_learning_ready
+        ),
         "multi_seed_authorized_next": interaction_eligible,
         "raw_rgb_authorized_next": False,
         "reporting_accessed": False,
@@ -282,7 +312,11 @@ def compare_factorial(run_paths):
         "next_gate": (
             "multi_seed_feature_validation"
             if interaction_eligible
-            else "diagnose_feature_factorial_without_threshold_search"
+            else (
+                "paired_12_epoch_feature_training"
+                if interaction_learning_ready
+                else "diagnose_feature_factorial_without_threshold_search"
+            )
         ),
     }
 

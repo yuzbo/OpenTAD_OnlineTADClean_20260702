@@ -176,6 +176,15 @@ def test_model_optimization_pilots_are_matched_and_isolated():
         assert fixed.optimization_pilot_contract.reporting_accessed is False
         assert fixed.optimization_pilot_contract.threshold_search is False
         assert fixed.optimization_pilot_contract.frozen_birth_threshold == 0.5
+        assert (
+            fixed.optimization_pilot_contract.epoch1_fixed_threshold_role
+            == "diagnostic_only"
+        )
+        assert (
+            fixed.optimization_pilot_contract.formal_fixed_threshold_gate_epoch
+            == 12
+        )
+        assert fixed.screening_contract.convergence_claim_authorized is False
         assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
         assert fixed.raw_video_finetuning is False
 
