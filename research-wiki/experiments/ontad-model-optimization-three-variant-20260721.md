@@ -665,3 +665,15 @@ current-label calibration head，并保持推理阈值固定 0.5。FIXED end AUC
 该实现尚未获得 Slurm 训练授权。下一门依次是：N16R4 exact-SHA 完整
 Torch 套件、reserve6 自身 FIXED/REMATCH profile、2 GPU·小时预算门；
 三者通过后才提交 seed-705 一轮双臂容量证伪。
+
+独立远端 checkout
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Reserve_369e263`
+已用增量 Git bundle 检出 exact
+`369e263001064adf919f4868e75952c6eb6ab55c`，状态 clean。目标配置、
+activation、提交器套件为 `18 passed in 6.21s`。扩大的 13 文件相关套件
+得到 `101 passed, 1 failed in 58.76s`；唯一失败位于旧
+`test_persistent_event_set_detector.py`，其 legacy helper 用
+`num_slots=1` 构造 head，却保留默认 `max_births_per_step=2`，被既有
+`max_births_per_step <= num_slots` 参数校验拒绝。reserve6 未修改该 head
+或测试，但完整门仍按失败处理；先澄清/修复这个旧测试合同，再做 Slurm
+profile。

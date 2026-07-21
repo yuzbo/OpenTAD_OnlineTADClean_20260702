@@ -311,3 +311,7 @@ identity-linked duplicate/fragmentation error。
 - reserve6 已实现成对配置、activation 和 Slurm 提交入口；本地
   `18 passed`、Python 编译/Bash 语法通过。尚未提交 GPU；下一恢复点先做
   N16R4 exact-SHA 全套测试与自身 profile，均通过后才跑一轮双臂。
+- 远端 independent clean exact `369e263` 的目标套件也为 `18 passed`；
+  扩大旧相关套件为 `101 passed, 1 failed`。唯一失败是 legacy 测试把
+  `num_slots=1` 与默认 `max_births_per_step=2` 组合，和既有参数校验冲突；
+  reserve6 未改该逻辑，但在测试合同修清前不提交 profile。

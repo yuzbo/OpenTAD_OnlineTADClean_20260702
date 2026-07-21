@@ -138,7 +138,11 @@ query 接受 birth，刚释放的 query 下一步才能复用，以免一个 que
 配置、冻结容量合同、activation 映射和 Slurm 提交入口；本地相关测试
 `18 passed`，Python 编译与 Bash 语法通过。它尚未提交 GPU，因为必须先在
 N16R4 对新 exact SHA 完成全套 Torch 测试与自身 profile；这两门通过后
-才允许一轮双臂筛选。
+才允许一轮双臂筛选。08:56 的独立 clean detached checkout 已确认 exact
+`369e263`，目标套件 `18 passed`；扩大到旧 persistent-event 测试后为
+`101 passed, 1 failed`，唯一失败是 legacy 测试以 `num_slots=1` 配合默认
+`max_births_per_step=2`，在既有参数合同处被拒绝。该失败不来自 reserve6，
+但在测试合同澄清前仍不放行 profile。
 
 前沿方法只作结构启发：MATR 支持把 current-end 与 past-start decoder
 分开，但其 anticipation/NMS 不移入本严格协议；OpenHOUSE 说明相邻动作
