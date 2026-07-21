@@ -141,8 +141,10 @@ N16R4 对新 exact SHA 完成全套 Torch 测试与自身 profile；这两门通
 才允许一轮双臂筛选。08:56 的独立 clean detached checkout 已确认 exact
 `369e263`，目标套件 `18 passed`；扩大到旧 persistent-event 测试后为
 `101 passed, 1 failed`，唯一失败是 legacy 测试以 `num_slots=1` 配合默认
-`max_births_per_step=2`，在既有参数合同处被拒绝。该失败不来自 reserve6，
-但在测试合同澄清前仍不放行 profile。
+`max_births_per_step=2`，在既有参数合同处被拒绝。测试 helper 已在
+`380bc16` 将 birth 上限与其测试槽数对齐，不改生产模型；09:00 远端 clean
+exact 套件最终为 `102 passed in 48.75s`。因此代码级 preflight 已通过，
+下一门是 Slurm 自身 FIXED/REMATCH profile，尚未直接训练。
 
 前沿方法只作结构启发：MATR 支持把 current-end 与 past-start decoder
 分开，但其 anticipation/NMS 不移入本严格协议；OpenHOUSE 说明相邻动作

@@ -315,3 +315,6 @@ identity-linked duplicate/fragmentation error。
   扩大旧相关套件为 `101 passed, 1 failed`。唯一失败是 legacy 测试把
   `num_slots=1` 与默认 `max_births_per_step=2` 组合，和既有参数校验冲突；
   reserve6 未改该逻辑，但在测试合同修清前不提交 profile。
+- 旧测试 helper 已在 `380bc16` 仅按测试槽数收紧 birth 上限；远端 clean
+  exact 扩展套件最终 `102 passed in 48.75s`。reserve6 代码 preflight
+  通过，下一恢复点为 Slurm 双臂自身 profile，profile 前不训练。

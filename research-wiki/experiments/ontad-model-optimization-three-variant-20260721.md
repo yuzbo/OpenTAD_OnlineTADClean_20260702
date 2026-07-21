@@ -677,3 +677,10 @@ activation、提交器套件为 `18 passed in 6.21s`。扩大的 13 文件相关
 `max_births_per_step <= num_slots` 参数校验拒绝。reserve6 未修改该 head
 或测试，但完整门仍按失败处理；先澄清/修复这个旧测试合同，再做 Slurm
 profile。
+
+该旧 helper 已在 `380bc16947a75d9ca19cfb79e06fdfbab0ae43c0` 修正为
+`max_births_per_step=min(2, num_slots)`，只使测试构造满足生产 head 已有
+参数合同，不改变模型代码。独立远端 checkout 检出 exact `380bc16` 后，
+相同 13 文件扩展套件最终 `102 passed in 48.75s`，随后复核 HEAD 精确且
+worktree clean。reserve6 代码级 preflight 由此通过；Slurm profile 是
+下一门，正式训练仍未授权。
