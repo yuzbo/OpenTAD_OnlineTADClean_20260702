@@ -345,3 +345,7 @@ identity-linked duplicate/fragmentation error。
   `model_opt_boundary_calibration_seed705_20260721_101605`。恢复时先查 profile；
   activation 必须是 3 margin + 3 calibration + pointer，随后同时核验 F/G 两套
   诊断门，再与 E/F/G 做 2×2 主效应和交互解释。
+- 四条 run 到齐后使用 `tools/compare_persistent_binding_factorial.py`，输入
+  reserve/calibration/boundary/interaction 四个目录。比较器会自动输出两臂
+  主效应/交互及 `multi_seed_authorized_next`；其
+  `raw_rgb_authorized_next` 冻结为 false。

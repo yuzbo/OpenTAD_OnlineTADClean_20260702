@@ -226,3 +226,16 @@ invariance gate 与 boundary past-only/no-GT gate。
 
 H 仍先跑同提交 profile；预算或稳定性不通过时不会训练。E/F/G/H 至此构成
 完整、同协议的 2×2 部署。
+
+### M19 2×2 结果比较器
+
+提交 `c0a4b01` 新增纯 JSON 比较器
+`tools/compare_persistent_binding_factorial.py`。它固定读取 E/F/G/H 四个 run，
+逐臂计算 calibration 主效应、boundary 主效应和交互项，覆盖 committed
+predictions、prediction/GT 比、Recall@0.3、mAP、identity error 及三通道
+AUC/固定阈值 TPR/FPR。它还统一检查 frozen data hashes、activation、F/G
+机制门和 reporting/raw-RGB/threshold-search 状态。
+
+只有 H 同时技术通过、激活通过、单调门通过、past-only/no-GT 门通过时，
+比较器才设置 `multi_seed_authorized_next=true`；无论本轮结果如何，
+`raw_rgb_authorized_next` 恒为 false。本地纯 JSON 回归 `2 passed`。
