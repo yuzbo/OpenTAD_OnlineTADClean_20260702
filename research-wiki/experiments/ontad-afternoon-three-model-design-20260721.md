@@ -824,3 +824,26 @@ Slurm `1179361` 在 `g0003` 完成 same-commit 测试与四段画像，画像门
 宣称硬 reserve 的完整 H2 容量门已经通过，也没有可报告 mAP/Recall。资源预算中的
 reporting 项只是按锁定 chunk 数推算成本，未访问 reporting 数据。阈值仍固定
 birth/alive/end=`0.5`，当前仍为 cached-feature 实验。
+
+### M45 FIXED 一轮硬容量门通过并切换 REMATCH
+
+`1179361` 的 FIXED 已完成一轮，训练审计为 `successful_updates=2010`、
+`scheduler_steps=2010`、`skipped_updates=0`、
+`gt_supervision_exhaustions=0`、
+`gt_birth_runtime_entry_free_collisions=0`。运行时另记录
+`deferred_birth_due_to_release=132`、`active_abandonments=4`；前者证明原冻结的
+“同一步释放槽只在下一决策复用”仍实际生效，而 2 个硬 reserve 使这些延迟没有
+转化为 GT birth 入口碰撞。
+
+机制损失的非零更新次数为：birth/alive/end margin
+`1195/1321/1135`，birth/alive/end calibration
+`1195/1349/1196`，endpoint start pointer `1196`；causal transport 为 `0`，
+符合 H2 禁用 transport 的合同。epoch-0 checkpoint 为 `17,512,977` bytes，
+SHA-256=`71c21778041f3e73e80864a8ae855a188122c925d35067c551116aa4d9196b95`。
+
+FIXED calibration-only ledger 覆盖 40 个视频但一轮固定 `0.5` 下仍为 0 发射；
+future-end、future-source、negative-latency 与 non-monotonic-emit 违规均为 0，
+screen 明确 `effectiveness_claim_authorized=false`。这与冻结的分层门一致：零发射
+只说明一轮尚未形成可执行定位，不否定容量/机制学习就绪，也不授权性能声明。
+作业已顺序进入 REMATCH；47:55 的状态为 `00300/02009`、loss=`3.1978`、
+fatal=0。成对 gate 仍等待 REMATCH 完成和后续双臂诊断。

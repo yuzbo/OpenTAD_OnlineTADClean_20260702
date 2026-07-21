@@ -483,3 +483,7 @@ identity-linked duplicate/fragmentation error。
   秒/step，安全系数后整对 `1.727043 GPU·h < 2.0`；稳定性、双臂等价和画像
   容量耗尽零均通过。当前 FIXED 到 `400/2009`、fatal=0；两臂训练审计和最终
   gate 尚未生成，故仍无定位性能结论。reporting 只做成本估算、未访问数据。
+- M45 FIXED 完成：`2010/2010` 更新与调度，skip/监督耗尽/entry-free collision
+  均为零；三项 margin、三项 calibration 与 pointer 均激活，transport 按合同为
+  零。calibration 一轮仍 0 发射，但四类因果/时序违规为零，只记 operational
+  未收敛。REMATCH 已到 `300/2009`、fatal=0；成对 gate 等待其完成。
