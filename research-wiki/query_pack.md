@@ -327,3 +327,7 @@ identity-linked duplicate/fragmentation error。
   和原损失不变；G 只看 `q_(t-1), q_t, q_t-q_(t-1), x_t` 与已见 memory。
   三版均保持 frozen 0.5、reporting 锁定、raw-RGB 禁止，关键 SHA/job/run/gate
   必须逐项回写 Wiki。
+- F 已完成代码/远端验证并部署：exact `49b06af`，N16R4 clean 套件
+  `133 passed in 90.20s`，Slurm `1178214`，run
+  `model_opt_calibration_seed705_20260721_095351`。恢复时先查它的 profile gate；
+  raw/calibrated logit AUC delta 必须三通道为零，scale 必须全为正。

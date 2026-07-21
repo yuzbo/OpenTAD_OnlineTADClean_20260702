@@ -140,3 +140,24 @@ endpoint start-pointer loss。技术 gate 与科学 gate 分开记录：程序�
 
 只有某个特征级版本同时满足容量、因果、固定阈值生命周期发射和校准诊断，
 才允许进入多 seed；多 seed 稳定后才讨论 raw-RGB 联合训练。
+
+## 执行记录
+
+### M15 F 实现、远端验证与部署
+
+F 已在 `49b06aff30e8c540550d5d7bd0bd464532a9ed26` 完整接入：head 保留
+raw birth/alive/end，并增加恒等初始化的正 scale/bias；匹配、原 BCE、margin
+和 transport 全部显式读取 raw；固定阈值/runtime 读取 calibrated。训练审计新增
+三项 calibration loss，诊断同时保存 raw/calibrated 分布，并在 logit 空间强制
+三通道 pairwise AUC 不变。
+
+- 本地无 Torch 的配置/审计/提交器套件：`19 passed`；Python compile 和
+  Bash 语法通过。
+- 本机 Torch 因 Windows `c10.dll` 初始化错误不可用；这被记录为本地环境
+  限制，不冒充模型失败。
+- N16R4 独立 checkout exact `49b06af`：扩展相关套件
+  `133 passed in 90.20s`，结束 SHA 不变且 clean。
+- Slurm：`1178214`。
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_calibration_seed705_20260721_095351`。
+
+作业继续先跑 exact 测试、四项画像和双臂 2 GPU·小时门；通过才自动训练。
