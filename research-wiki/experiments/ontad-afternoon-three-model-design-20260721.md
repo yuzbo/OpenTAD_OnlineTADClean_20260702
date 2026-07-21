@@ -161,3 +161,26 @@ raw birth/alive/end，并增加恒等初始化的正 scale/bias；匹配、原 B
 - run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_calibration_seed705_20260721_095351`。
 
 作业继续先跑 exact 测试、四项画像和双臂 2 GPU·小时门；通过才自动训练。
+
+### M16 G 实现、远端验证与部署
+
+G 已在 `8d8289391ccb74563a385d7fea33fad9c4d4d7de` 完整接入：end
+特征为 `[q_(t-1), q_t, q_t-q_(t-1), x_t]` 经轻量 MLP 后进入共享 end
+输出层；endpoint start query 只对当前已见 feature memory 做 pointer。训练仅在
+endpoint slot 上计算 pointer CE；运行时 pointer 选择 sentinel 时回退到 birth
+时已经保存在槽状态中的 start，不读取标注。
+
+诊断新增 endpoint pointer 的预测数、准确率、sentinel 数和 selected source
+frame 因果检查；boundary 作业强制两臂都有 endpoint decision、memory 全部不晚
+于当前帧、runtime state 不含 GT。激活审计要求三项 lifecycle margin 与
+`endpoint_start_pointer_loss` 激活，calibration/transport 保持休眠。
+
+- 本地 CPU-safe 配置/审计/提交器套件：`20 passed`；Python compile 与
+  Bash 语法通过。
+- N16R4 独立 checkout exact `8d82893`：含因果重放/合规在内的扩展套件
+  `154 passed in 93.86s`，结束 SHA 不变且 clean。
+- Slurm：`1178279`。
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_boundary_seed705_20260721_100229`。
+
+至此 E/F/G 三个当日版本均已完成实现并部署；结果仍按各自 profile、训练、
+诊断和 scientific gate 到齐后判定。

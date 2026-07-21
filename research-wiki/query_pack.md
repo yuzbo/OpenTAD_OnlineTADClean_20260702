@@ -331,3 +331,8 @@ identity-linked duplicate/fragmentation error。
   `133 passed in 90.20s`，Slurm `1178214`，run
   `model_opt_calibration_seed705_20260721_095351`。恢复时先查它的 profile gate；
   raw/calibrated logit AUC delta 必须三通道为零，scale 必须全为正。
+- G 已完成代码/远端验证并部署：exact `8d82893`，含因果重放/合规的 clean
+  套件 `154 passed in 93.86s`，Slurm `1178279`，run
+  `model_opt_boundary_seed705_20260721_100229`。恢复时检查 profile gate、四项
+  预期辅助损失激活、两臂 endpoint pointer decisions > 0、past-only=true、
+  runtime_state_contains_gt=false，再看 end AUC/0.5 TPR/最终发射。
