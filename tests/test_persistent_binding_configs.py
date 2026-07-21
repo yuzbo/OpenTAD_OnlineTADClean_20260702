@@ -386,6 +386,56 @@ def test_batched_calibration_v2_is_matched_and_changes_only_aggregation():
         assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
 
 
+def test_formal12_h2_is_matched_and_defers_fixed_threshold_gate():
+    fixed = _load(
+        "thumos_persistent_binding_formal12_boundary_calibration_batched_fixed.py"
+    )
+    rematch = _load(
+        "thumos_persistent_binding_formal12_boundary_calibration_batched_rematch.py"
+    )
+
+    assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+    assert rematch.model.trajectory_binding_mode == (
+        "prefix_rematch_active_pool"
+    )
+    assert _normalized(fixed) == _normalized(rematch)
+    assert fixed.formal_training_ready is True
+    assert fixed.screening_only is False
+    assert fixed.screening_training_ready is False
+    assert fixed.route_stage == (
+        "persistent_binding_feature_multi_epoch_calibration"
+    )
+    assert fixed.workflow.fit_only is True
+    assert fixed.workflow.end_epoch == 12
+    assert fixed.workflow.checkpoint_interval == 3
+    assert fixed.workflow.val_loss_interval == -1
+    assert fixed.workflow.val_eval_interval == -1
+    assert fixed.scheduler.max_epoch == 12
+    assert tuple(fixed.multi_epoch_training_contract.checkpoint_epochs) == (
+        3,
+        6,
+        9,
+        12,
+    )
+    assert fixed.multi_epoch_training_contract.initialization == (
+        "seed_initialization_not_pilot_resume"
+    )
+    assert (
+        fixed.multi_epoch_training_contract.epoch1_fixed_threshold_role
+        == "diagnostic_only"
+    )
+    assert (
+        fixed.multi_epoch_training_contract.formal_fixed_threshold_gate_epoch
+        == 12
+    )
+    assert fixed.multi_epoch_training_contract.threshold_search is False
+    assert fixed.multi_epoch_training_contract.reporting_accessed is False
+    assert fixed.multi_epoch_training_contract.raw_rgb_authorized is False
+    assert fixed.model.head.birth_threshold == 0.5
+    assert fixed.model.head.alive_threshold == 0.5
+    assert fixed.model.head.end_threshold == 0.5
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head

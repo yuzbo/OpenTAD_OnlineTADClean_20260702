@@ -358,3 +358,60 @@ G/boundary Slurm `1178279` 已完整结束。旧 v1 gate 仅因两臂 epoch-1 �
 F2/H2 新作业的自身画像均已通过并开始训练：F2 `1178448` 安全估算
 `1.50787 GPU·h`，H2 `1178449` 为 `1.72583 GPU·h`，均低于冻结的
 `2 GPU·h` 上限。两条 exact code 均为 `af58538`，当前损失激活符合各自设计。
+
+### M25 配额故障恢复与 exact-2a 重试
+
+F2/H2 `1178448/1178449` 的画像门均通过，但在真实训练阶段同时遇到
+`OSError: [Errno 122] Disk quota exceeded`，退出码为 `120`；这是共享存储
+写入故障，不是模型、梯度或固定阈值的科学结果，因此两条不进入因子比较。
+恢复过程只处理可由代码与 seed 重建的旧 checkpoint：先逐文件记录 SHA-256，
+再删除 13 个已废弃 smoke/screen checkpoint（计划释放 `171,080,075` 字节），
+并原位清空 12 个已完成旧实验 checkpoint（计划释放 `162,611,212` 字节）。
+所有 JSON、Slurm 日志、诊断、当前 G/F2/H2、原始特征及其他项目均保留。
+
+两份恢复清单位于：
+
+- `/data/run01/sczc063/yuzibo/runs/persistent_binding/storage_cleanup_reproducible_checkpoints_20260721.txt`；
+- `/data/run01/sczc063/yuzibo/runs/persistent_binding/storage_truncation_completed_checkpoints_20260721.txt`。
+
+随后 4 KiB 强制写探针通过，配额查询恢复约 `159 GiB` 可用。分层一轮门提交
+`2a5797c7a1df2b06c010d9acccd5060c49c6231c` 已在独立远端 checkout 通过
+`162 passed in 75.62s`，共享 exact checkout 为
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Epoch1Gate_2a5797c`。
+
+第一次 exact-2a 重试 `1178500/1178501` 在 `g0063` 上以 `0 秒、0 GPU、0 CPU、
+exit 0:53` 结束且没有作业输出，判为 Slurm/节点启动故障；未把它写成模型失败。
+第二次重试使用新目录：
+
+- F2 `1178504`：`model_opt_calibration_batched_seed705_20260721_125630`；
+- H2 `1178505`：`model_opt_boundary_calibration_batched_seed705_20260721_125631`。
+
+二者当前均稳定运行并再次通过自身画像，最新安全估算分别为
+`1.51281/1.73497 GPU·h < 2`。F2 位于 `g0003`，H2 位于 `g0063`；H2 已越过
+此前的零秒启动点，故不因节点名称主动取消，继续按真实日志和完整产物判定。
+
+### M26 十二轮正式 H2 闭环实现
+
+正式训练候选固定为 H2 的 `reserve6 + episode-balanced monotone calibration +
+causal transition-end + past-only start pointer`，仍是缓存因果 RGB 特征实验，
+不是 raw-RGB 联合训练。新增成对 FIXED/REMATCH 配置，从 seed 初始化重新训练
+`12 epoch = 24,120` 次更新，不从一轮 pilot 续训；只在 calibration split 对
+第 `3/6/9/12` 轮 checkpoint 评估，reporting 保持锁定，birth/alive/end 阈值
+始终固定 `0.5`。
+
+正式 Slurm 链路强制执行以下闭环：
+
+1. 只有 exact-2a H2 的 `learning_readiness_pass`、单调校准门、pointer
+   past-only 与 runtime-no-GT 门同时通过，才能提交；
+2. FIXED/REMATCH 两臂分别用一张 GPU 并发；任一臂提交失败时自动撤销另一臂，
+   避免不成对实验；
+3. checkpoint 与四次校准推理先写节点本地盘，只回传第 12 轮恢复点、校准选中的
+   checkpoint、四条 emission ledger、训练审计、资源报告和哈希清单；
+4. 两臂成功后由依赖作业自动生成成对结果，并在第 12 轮执行固定 `0.5` 正式门：
+   完整更新、零监督耗尽/容量碰撞/因果违规、非零最终区间、prediction/GT 比
+   `[0.25,4.0]`、Recall@0.3 至少 `0.25`、配对训练不超过 `16 GPU·h`；
+5. 正式门通过只授权 feature-level 多种子，仍不直接授权 reporting 或 raw-RGB。
+
+当前本地正式配置、纯 JSON 门、提交器与既有协议的相关回归为 `31 passed`，
+Python 编译、`git diff --check` 和 Bash 语法均通过。远端 exact-SHA 复核及正式
+提交仍等待本提交固化，以及正在运行的 H2 一轮学习就绪门完成。

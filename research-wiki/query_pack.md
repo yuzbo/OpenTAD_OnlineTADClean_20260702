@@ -371,3 +371,12 @@ identity-linked duplicate/fragmentation error。
 - F2/H2 `1178448/1178449` 的画像均通过，安全估算分别
   `1.50787/1.72583 GPU·h`，exact `af58538`，均已进入一轮训练。恢复时先收口
   两臂完整更新、单调 AUC 门、past-only/no-GT 与 score 分布，再生成分层门。
+- `1178448/1178449` 后续因共享盘 `Errno 122` 中断，不属于模型结果。可重建旧
+  checkpoint 已按 SHA 清单释放空间，写探针与约 159 GiB 余量均确认；exact-2a
+  checkout 已通过 `162 tests`。零秒启动失败 `1178500/01` 不复用，当前有效重试
+  是 F2 `1178504` 与 H2 `1178505`，run 时间戳分别 `125630/125631`。
+- H2 一轮若通过 `learning_readiness_pass`、单调门、past-only/no-GT 和激活门，
+  立即使用正式成对 Slurm 链路从 seed 初始化训练 12 轮；只在 calibration 看
+  3/6/9/12，epoch 12 才执行固定 0.5 正式门。该链路具备成对提交回滚、节点本地
+  checkpoint、受控回传和依赖式 pair gate；通过后下一步仍是 feature 多种子，
+  不是 reporting 或 raw-RGB。
