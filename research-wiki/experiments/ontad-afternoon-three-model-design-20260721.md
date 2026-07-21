@@ -499,3 +499,26 @@ checkout `/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Formal12_a6e16a8
 无阈值搜索、未访问 reporting、未授权 raw-RGB；训练从 seed 初始化而非 pilot
 续训，只在 calibration 检查第 `3/6/9/12` 轮，并由 `1178655` 自动执行第 12 轮
 固定 `0.5` 正式门。
+
+### M31 正式训练第 3 轮节点本地 checkpoint
+
+FIXED `1178653` 与 REMATCH `1178654` 分别在 15:44:08、15:45:31 完成第 3 轮，
+连续三轮日志均到达 `[02009/02009]`，随后正常进入第 4 轮。每轮最后一个
+minibatch 的总损失从第 1→2→3 轮分别为：FIXED `2.9177→2.2809→1.9829`，
+REMATCH `2.9213→2.3640→2.0649`；数值有限，生命周期、校准与 pointer 损失
+持续激活，transport 仍按设计为零。
+
+通过各自 Slurm allocation 的只读 `srun --overlap` 核验，节点本地 checkpoint
+真实存在：
+
+- FIXED `/tmp/sczc063_ontad_formal12_1178653_fixed/.../checkpoint/epoch_2.pth`，
+  `17,512,977` bytes；
+- REMATCH `/tmp/sczc063_ontad_formal12_1178654_rematch/.../checkpoint/epoch_2.pth`，
+  `17,512,977` bytes。
+
+两臂仍在 `g0066`，无 fatal、OOM、磁盘或启动异常；依赖终检 `1178655` 正常等待。
+按照冻结编排，第 3/6/9/12 轮 checkpoint 会先全部保留在节点本地，12 轮训练完成
+后才依次在 calibration split 推理、选模并受控回传，因此当前不提前生成或查看
+calibration 指标。逐轮容量、因果、跳步与完整更新计数也由训练结束时一次写出的
+`training_audit.json` 和终检统一裁决，当前只记录可直接验证的训练与 checkpoint
+事实，不把中途日志冒充最终完整性结论。

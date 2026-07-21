@@ -400,3 +400,8 @@ identity-linked duplicate/fragmentation error。
   `/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260721_141835`。
   下一步只监控 calibration 的 3/6/9/12 曲线、完整性和资源；epoch 12 自动执行
   固定 0.5 正式门，通过后才进入 feature 多种子。
+- 正式第 3 轮恢复点：FIXED `1178653` 与 REMATCH `1178654` 已完成三轮完整
+  `[02009/02009]` 日志并进入第 4 轮；节点本地 `epoch_2.pth` 均已只读确认存在、
+  大小 `17,512,977` bytes。三轮末 loss 均持续下降且无 fatal。冻结编排会在
+  12 轮训练全部完成后再统一对 3/6/9/12 checkpoint 做 calibration-only 推理，
+  所以当前没有提前选模或访问 reporting；下一关键记录为第 6 轮 checkpoint。
