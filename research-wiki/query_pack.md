@@ -458,3 +458,10 @@ identity-linked duplicate/fragmentation error。
   loss 与修订前十八个对应值逐项完全一致，到 75% 训练剂量未见训练轨迹漂移。
   recovery 继续等待第 12 轮完整审计；其后才运行 3/6/9/12 calibration-only
   重放和固定 0.5 成对终检，当前未访问 reporting 或启动 raw-RGB。
+- M41 容量门结论：两臂均完成 24,120 更新后因
+  `gt_birth_runtime_entry_free_collisions>0` 被 recovery 门拒绝；无
+  calibration、无正式定位指标，终检已取消。这是 reserve6 的模型容量语义失败，
+  不是环境或零长度区间故障。census 仍为 max-visible=4、max-birth/step=2、
+  GT deficit=0；根因是 6 个物理槽可被预测状态占满。下一修订固定 4 个最大占用
+  加 2 个硬 birth reserve，并在完整性裁决前写 evidence-only quarantine；
+  不继续扩容，不改 0.5、数据、匹配、reporting 锁或 raw-RGB 状态。

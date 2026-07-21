@@ -723,3 +723,31 @@ calibration 前 recovery 修订仍未改变训练轨迹。当前 `recovery=pendi
 calibration-only 候选、曲线或正长度最终区间可裁决，也未访问 reporting、搜索
 或降低 `0.5`、启动 raw-RGB。下一关键节点为第 12 轮完整更新审计、两份四
 checkpoint recovery/SHA 清单落盘，以及随后的 3/6/9/12 calibration-only 重放。
+
+### M41 十二轮容量科学门拒绝与真实 transition reserve 修订
+
+FIXED `1178956` 与 REMATCH `1178957` 均完整完成 `12 × 2010 = 24,120`
+次更新，最终一轮末 loss 分别为 `1.8342` 与 `2.0328`，与修订前正式运行
+一致。两臂都不是训练崩溃、资源故障或零长度区间评测失败；它们在训练结束后的
+pre-calibration recovery 完整性门被同一事实拒绝：
+`gt_birth_runtime_entry_free_collisions > 0`。因此没有生成
+`recovery_manifest.json`，没有运行 3/6/9/12 calibration-only 重放，也没有
+产生可报告的定位指标。依赖终检 `1178958` 转为
+`DependencyNeverSatisfied` 后已安全取消。
+
+为防止再次丢失诊断证据，分别在原节点提交只读隔离保全作业 FIXED `1179359`
+和 REMATCH `1179360`；两者均在 0 秒内失败，因为 Slurm 作业私有 `/tmp`
+已随原 allocation 回收。它们没有创建 recovery、没有绕过容量门，也没有重训。
+这暴露的是失败证据应在校验前先写入 quarantine 的可观测性缺口；不能把保全失败
+改写成模型训练失败，也不能据此猜测碰撞次数。
+
+冻结 census 重新核验为：全局/fit-core `max_visible_instances=4`、
+`max_births_per_step=2`、`gt_entry_free_deficits=0`。代码复核表明当前
+reserve6 只把物理槽数从 4 增到 6，却允许预测 candidate/active 状态占满全部
+6 槽；训练审计在每个 GT birth 的决策入口、当前步 release 之前检查空槽，因此
+“6 个物理槽”并不等于“始终保留 2 个过渡槽”。下一修订不继续盲目扩容，也不改
+同一步 release/birth 次序，而是在 candidate admission 中冻结
+`occupied <= 4`，使 6 槽始终至少保留 2 个 entry-free birth reserve。该上限
+完全由 4+2 census 推导，保持数据、seed、FIXED/REMATCH、损失、匹配、严格因果
+和 birth/alive/end=`0.5` 不变。另将失败审计与 checkpoint 先原子写入
+evidence-only quarantine，再决定是否生成可用于校准的 recovery。
