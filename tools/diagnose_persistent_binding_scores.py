@@ -40,6 +40,7 @@ RAW_CHANNELS = {
     "alive": "raw_alive_logits",
     "end": "raw_end_hazard_logits",
 }
+CALIBRATION_AUC_FLOAT32_ATOL = 1e-6
 
 
 def _sha256(path):
@@ -185,6 +186,23 @@ def pairwise_auc(positive_values, negative_values):
     return pairwise_wins / (
         len(positive_values) * len(negative_values)
     )
+
+
+def calibration_auc_invariance_row(raw_auc, calibrated_auc):
+    """Audit negligible float32 drift under a positive affine calibrator."""
+
+    raw_auc = float(raw_auc)
+    calibrated_auc = float(calibrated_auc)
+    if not math.isfinite(raw_auc) or not math.isfinite(calibrated_auc):
+        raise ValueError("calibration AUC values must be finite")
+    delta = calibrated_auc - raw_auc
+    return {
+        "raw_logit_pairwise_auc": raw_auc,
+        "calibrated_logit_pairwise_auc": calibrated_auc,
+        "auc_delta": delta,
+        "auc_abs_tolerance": CALIBRATION_AUC_FLOAT32_ATOL,
+        "passed": abs(delta) <= CALIBRATION_AUC_FLOAT32_ATOL,
+    }
 
 
 def append_target_conditioned_scores(store, probabilities, transition):
@@ -622,6 +640,8 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
     calibration_mode = str(model.head.lifecycle_calibration_mode)
     calibration_invariance = {
         "mode": calibration_mode,
+        "runtime_logit_precision": "float32",
+        "auc_abs_tolerance": CALIBRATION_AUC_FLOAT32_ATOL,
         "scale": None,
         "bias": None,
         "channels": {},
@@ -650,13 +670,9 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
             target_conditioned_logits["calibrated"][channel]["positive"],
             target_conditioned_logits["calibrated"][channel]["negative"],
         )
-        delta = calibrated_auc - raw_auc
-        calibration_invariance["channels"][channel] = {
-            "raw_logit_pairwise_auc": raw_auc,
-            "calibrated_logit_pairwise_auc": calibrated_auc,
-            "auc_delta": delta,
-        }
-        if abs(delta) > 1e-12:
+        row = calibration_auc_invariance_row(raw_auc, calibrated_auc)
+        calibration_invariance["channels"][channel] = row
+        if not row["passed"]:
             calibration_invariance["passed"] = False
     if calibration_invariance["scale"] is not None and not all(
         math.isfinite(value) and value > 0

@@ -11,8 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from diagnose_persistent_binding_scores import (  # noqa: E402
+    CALIBRATION_AUC_FLOAT32_ATOL,
     _normalized_state_dict,
     append_target_conditioned_scores,
+    calibration_auc_invariance_row,
     endpoint_pointer_decision,
     pairwise_auc,
     summarize_binary_discrimination,
@@ -75,6 +77,19 @@ def test_pairwise_auc_is_invariant_to_positive_affine_calibration():
     )
 
     assert calibrated_auc == raw_auc
+
+
+def test_calibration_auc_gate_accepts_only_negligible_float32_drift():
+    observed = calibration_auc_invariance_row(
+        0.7657086180390343,
+        0.7657087448002547,
+    )
+    material = calibration_auc_invariance_row(0.75, 0.75001)
+
+    assert observed["passed"] is True
+    assert observed["auc_abs_tolerance"] == CALIBRATION_AUC_FLOAT32_ATOL
+    assert abs(observed["auc_delta"]) < CALIBRATION_AUC_FLOAT32_ATOL
+    assert material["passed"] is False
 
 
 def test_endpoint_pointer_decision_rejects_future_memory_and_tracks_sentinel():
