@@ -632,3 +632,39 @@ REMATCH `1178957` 已从 `Priority` 等待转为 `RUNNING/g0045`，与运行在
 任何 calibration 开始前原子落盘，不能把当前 pending 解读为恢复失败。下一硬
 记录点仍是第 3 轮 checkpoint；期间只监控数值稳定、作业状态和资源，不读取
 calibration 或 reporting。
+
+### M37 北京时间 21:00 完整进度报告
+
+正式重试处于“特征级、单种子、成对 12 轮收敛与可执行性门”，不是 raw-RGB，
+也还不是论文 reporting 主表。它要回答：H2 的 reserve6 + 单调生命周期校准 +
+因果 transition-end + past-only start pointer 在不改固定 `0.5` 的条件下，经过
+完整训练后能否稳定输出合法区间；以及 FIXED/REMATCH 两种监督绑定是否都具备
+进入 feature 多种子主实验的资格。
+
+21:00 直接状态：
+
+- FIXED `1178956`：`RUNNING/g0003`，1 GPU、8 CPU、8 小时时限；已进入第 2 轮，
+  最新日志约 `2261/24120` 次更新（约 9.37%），第 1 轮末 loss=`2.9177`；
+- REMATCH `1178957`：`RUNNING/g0045`，1 GPU、8 CPU、8 小时时限；第 1 轮约
+  `1701/24120` 次更新（约 7.05%）；
+- 终检 `1178958`：`PENDING/Dependency`，1 GPU、8 CPU、30 分钟上限，状态正常。
+
+两臂所有已记录 loss 均有限：FIXED 范围 `2.3807–3.3941`，REMATCH 范围
+`2.6588–3.3480`；fatal、NaN/Inf、OOM、CUDA、traceback 风险词均为零。stderr
+只有 rendezvous 提示和 DDP `find_unused_parameters=True` 的性能警告，不影响
+正确性；冻结正式运行期间不据此改训练配置。FIXED 第 1 轮末 loss 与修订前正式
+运行的 `2.9177` 精确一致，支持“正长度修订只改变最终解码、不改变训练轨迹”的
+预期；REMATCH 需等本轮结束后再做同样核对。
+
+当前速度约为 FIXED `1.200`、REMATCH `1.188` updates/s，按已观测速度估算纯
+训练分别在 7 月 22 日 `02:04`、`02:17` 左右结束；这只是调度估计，不是科学
+结果。两臂距离各自 8 小时时限仍有约两小时以上的预计余量。MaxRSS 约为
+`1.94/1.81 GiB`；共享盘仍有 `344 GiB` 可用，当前 run 仅 `440 KiB`，没有配额
+或空间风险。
+
+`recovery_manifest.json` 当前尚未出现，符合“12 轮完整审计通过后、校准开始前
+才原子提升”的合同；因此目前没有 calibration 候选、曲线或最终区间指标，也没有
+访问 reporting。下一步按冻结顺序执行：第 3/6/9/12 轮记录 checkpoint → 两臂
+各验证 `24,120` 次完整更新和零容量/监督/因果异常 → recovery 四检查点及 SHA
+清单落盘 → calibration-only 比较 3/6/9/12 → epoch-12 固定 `0.5` 成对终检。
+只有终检通过，才进入 feature seeds 705/706/707；仍不直接进入 raw-RGB。

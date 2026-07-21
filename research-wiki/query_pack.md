@@ -437,3 +437,10 @@ identity-linked duplicate/fragmentation error。
   两臂 fatal=0，终检 `1178958` 正常等待。recovery 当前 pending 是因为尚未完成
   12 轮，不是故障；下一次写 Wiki 的常规节点为双臂第 3 轮 checkpoint，若此前
   作业状态或 fatal 改变则立即提前记录。
+- 21:00 恢复摘要：两臂均健康运行在 `g0003/g0045`，FIXED 约 9.37%、REMATCH
+  约 7.05%，速度 `1.200/1.188 updates/s`，预计纯训练在 02:04/02:17 左右结束；
+  所有已见 loss 有限，零 fatal/NaN/OOM/CUDA/traceback，内存和共享盘余量健康。
+  FIXED epoch-1 末 loss=`2.9177` 与修订前一致，正长度解码修订未显示训练轨迹
+  漂移。当前阶段仍是 feature-level seed-705 12轮可执行性门；没有 calibration
+  结果、没有 reporting、没有 raw-RGB。下一硬节点依次是 epoch 3/6/9/12、两份
+  recovery 清单、四 checkpoint calibration-only 曲线和固定 0.5 成对终检。
