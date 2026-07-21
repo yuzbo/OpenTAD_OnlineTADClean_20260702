@@ -449,3 +449,7 @@ identity-linked duplicate/fragmentation error。
   REMATCH=`2.9213/2.3640/2.0649`，与修订前逐项完全一致；前三轮范围内训练图、
   初始化和优化轨迹没有漂移。当前不做 calibration，recovery 要等 12 轮完整审计
   后才共享落盘；下一成对节点为 epoch 6。
+- 第 6 轮恢复点 M39：两份节点本地 `epoch_5.pth` 均为 `17,512,977` bytes，
+  双臂已进入第 7 轮且 fatal=0。前六轮末 loss 与修订前逐项完全一致，50% 训练
+  剂量内没有训练轨迹漂移。recovery 继续等待 12 轮完整审计，不提前 calibration
+  或 reporting；下一成对节点为 epoch 9。
