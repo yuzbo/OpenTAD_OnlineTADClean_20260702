@@ -911,3 +911,29 @@ past-only pointer 与 runtime-no-GT，且拒绝同名活动作业。共享盘提
 为 `C:\tmp\ontad_formal12_progress_5edc46c.ps1`。下一持久节点是两臂第 3 轮
 checkpoint；若 job/fatal/recovery/quarantine 状态先变化则立即提前记录。当前仍为
 cached causal feature 实验，未访问 reporting、未搜索阈值、未启动 raw-RGB。
+
+### M48 硬 reserve 正式十二轮第 3 轮成对 checkpoint
+
+FIXED `1179373` 与 REMATCH `1179374` 均已完成第 3 轮并进入第 4 轮；依赖终检
+`1179375` 继续正常等待。通过各自 allocation 内的只读 `srun --overlap` 核验，
+两份节点本地 `epoch_2.pth` 均存在且为 `17,512,977` bytes：FIXED 于北京时间
+05:34:32 落盘，REMATCH 于 05:34:23 落盘。05:46 左右的直接进度分别为第 4 轮
+`800/2009` 与 `850/2009`，约完成全训练的 `28.32%/28.53%`；MaxRSS 约为
+`2.046/2.012 GiB`，节点与资源状态正常。
+
+前三轮末 minibatch loss 为：
+
+- FIXED：`2.9177 → 2.2809 → 1.9829`；
+- REMATCH：`2.9213 → 2.4360 → 2.0485`。
+
+两臂 loss 均总体下降，日志中 Traceback、RuntimeError、OOM、non-finite 标记与
+非有限 loss 均为零。FIXED 前三轮与旧 soft-reserve 正式运行逐项一致；REMATCH
+从第 2 轮开始不再复现旧值 `2.3640/2.0649`。这不是 same-commit 违约，也不是
+训练故障：真实 4 占用+2 硬 reserve 本来就会改变 REMATCH 的 candidate admission、
+绑定与后续监督轨迹，因而属于预期的模型/运行时干预效应。当前只记录这种可复现的
+轨迹分化，既不把它写成优化失败，也不据前三轮 loss 推断定位性能优劣。
+
+`recovery/`、`quarantine/` 与 calibration 产物尚未生成，符合“12 轮完整训练审计
+后才原子提升或隔离”的冻结合同。当前未提前运行 calibration、未访问 reporting、
+未搜索或降低固定 `0.5` 阈值、未启动 raw-RGB。下一持久节点为成对第 6 轮
+checkpoint；若作业、fatal、recovery 或 quarantine 状态先变化则提前记录。

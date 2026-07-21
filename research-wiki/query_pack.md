@@ -502,3 +502,11 @@ identity-linked duplicate/fragmentation error。
   执行固定 0.5 门；真实 4+2 reserve、正长度写出、recovery/quarantine 均冻结。
   新监控脚本为 `C:\tmp\ontad_formal12_progress_5edc46c.ps1`；下一节点是成对
   epoch 3 checkpoint，reporting/阈值搜索/raw-RGB 仍锁定。
+- M48 第 3 轮恢复点：FIXED `1179373` 与 REMATCH `1179374` 均已进入第 4 轮，
+  两份节点本地 `epoch_2.pth` 均为 `17,512,977` bytes。前三轮末 loss 为 FIXED
+  `2.9177/2.2809/1.9829`、REMATCH `2.9213/2.4360/2.0485`，总体下降且无
+  fatal/OOM/non-finite loss，资源正常。FIXED 仍复现旧 soft-reserve 前三轮；
+  REMATCH 从第 2 轮起因真实 4+2 reserve 改变 admission/binding 而预期分化，
+  不能误记成故障或据此下性能结论。recovery/quarantine/calibration 仍按冻结合同
+  等待完整 12 轮审计；下一成对节点为 epoch 6，reporting、阈值搜索与 raw-RGB
+  继续锁定。
