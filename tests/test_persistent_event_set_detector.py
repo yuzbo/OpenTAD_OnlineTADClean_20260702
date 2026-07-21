@@ -12,6 +12,7 @@ from opentad.utils.prefix_instance_schedule import build_prefix_instance_schedul
 
 def _head(num_slots=2, **kwargs):
     torch.manual_seed(11)
+    kwargs.setdefault("max_births_per_step", min(2, num_slots))
     return PersistentEventSetHead(
         in_channels=4,
         hidden_dim=8,
