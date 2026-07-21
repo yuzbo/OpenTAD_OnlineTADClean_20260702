@@ -453,3 +453,8 @@ identity-linked duplicate/fragmentation error。
   双臂已进入第 7 轮且 fatal=0。前六轮末 loss 与修订前逐项完全一致，50% 训练
   剂量内没有训练轨迹漂移。recovery 继续等待 12 轮完整审计，不提前 calibration
   或 reporting；下一成对节点为 epoch 9。
+- 第 9 轮恢复点 M40：两份节点本地 `epoch_8.pth` 均为 `17,512,977` bytes，
+  双臂已进入第 10 轮且无 fatal/Traceback/OOM/NaN/non-finite loss。前九轮末
+  loss 与修订前十八个对应值逐项完全一致，到 75% 训练剂量未见训练轨迹漂移。
+  recovery 继续等待第 12 轮完整审计；其后才运行 3/6/9/12 calibration-only
+  重放和固定 0.5 成对终检，当前未访问 reporting 或启动 raw-RGB。

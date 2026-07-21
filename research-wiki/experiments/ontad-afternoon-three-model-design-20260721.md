@@ -703,3 +703,23 @@ FIXED 与 REMATCH 已分别在 23:18:06、23:27:49 完成第 6 轮 checkpoint，
 正式运行逐项一致；到 50% 训练剂量为止，没有发现正长度解码/recovery 修订引起
 的训练轨迹漂移。共享 recovery 仍按设计等待 12 轮训练审计，当前不提前校准或
 访问 reporting。下一成对持久节点为第 9 轮。
+
+### M40 正式重试第 9 轮成对 checkpoint
+
+FIXED 与 REMATCH 已分别在 00:42:53、00:53:48 完成第 9 轮 checkpoint，节点
+本地 `epoch_8.pth` 均经各自 allocation 内只读核验存在且为
+`17,512,977` bytes。两臂随后进入第 10 轮；01:01 的直接状态分别为 FIXED
+`01300/02009`、REMATCH `00600/02009`，主作业 fatal、Traceback、OOM、NaN
+和 non-finite loss 均为零，依赖终检 `1178958` 继续正常等待。
+
+前九轮末 minibatch loss 为：
+
+- FIXED：`2.9177/2.2809/1.9829/1.8628/1.7417/1.6392/1.4882/1.3629/1.3719`；
+- REMATCH：`2.9213/2.3640/2.0649/1.8779/1.7205/1.5142/1.4650/1.3392/1.2894`。
+
+十八个数值均与修订前正式运行逐项一致；到 75% 训练剂量，正长度区间解码和
+calibration 前 recovery 修订仍未改变训练轨迹。当前 `recovery=pending` 符合
+“12 轮完整训练审计通过后、校准开始前原子提升”的冻结合同，因此尚无
+calibration-only 候选、曲线或正长度最终区间可裁决，也未访问 reporting、搜索
+或降低 `0.5`、启动 raw-RGB。下一关键节点为第 12 轮完整更新审计、两份四
+checkpoint recovery/SHA 清单落盘，以及随后的 3/6/9/12 calibration-only 重放。
