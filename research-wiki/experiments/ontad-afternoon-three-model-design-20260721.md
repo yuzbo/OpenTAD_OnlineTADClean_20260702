@@ -1,0 +1,142 @@
+# On-TAD 当日三版模型优化设计（2026-07-21）
+
+status: approved-and-executing  
+scope: feature-level, fully supervised, strict causal Online-TAD  
+deadline: 2026-07-21 21:00 Asia/Shanghai
+
+## 一句话目标
+
+在完全相同的 SigLIP2 stride-8 因果 RGB 特征、fit/calibration 划分、seed
+705、一轮训练和固定 0.5 运行阈值下，依次排除三种失败原因：容量不够、
+生命周期分数刻度不对、结束边界缺少显式的时序变化建模。任何版本都只看
+当前与过去，不读取 reporting split，不做阈值搜索，不做离线 NMS，也不启动
+raw-RGB 联合训练。
+
+## 冻结的公共实验条件
+
+| 条件 | 固定值 |
+|---|---|
+| 输入 | 缓存的 causal SigLIP2 RGB 特征，768 维，stride 8 |
+| 训练/诊断 | fit_core 160 / calibration 40 |
+| reporting | 锁定，不访问 |
+| 比较轴 | 每个版本均成对跑 FIXED 与 REMATCH |
+| seed / epoch | 705 / 1 |
+| 阈值 | birth、alive、end 全部固定 0.5 |
+| 容量语义 | step-entry FREE 才能接 birth；本步释放的槽下一因果决策才能复用 |
+| 输出语义 | 动作结束时一次性发射不可回改的最终区间 |
+| 资源门 | 同提交 profile，双臂估算不超过 2 GPU·小时；正式 GPU 仅 Slurm |
+| 晋级门 | 测试、画像、训练激活、因果、容量、区间发射和 calibration gate 全通过 |
+
+## E：reserve6 容量对照
+
+### 改了什么
+
+在 D 的 birth/alive/end 三头 margin 基础上，只把共享 query 槽从 4 增到 6。
+这 6 个槽来自完整冻结划分 census：最多 4 个同时可见实例，加最多 2 个同
+一步新生实例。不会为了追结果继续扩槽，也不会把“本步先释放再出生”改成
+同一 query 同时描述旧 end 和新 birth。
+
+### 想证明什么
+
+若唯一的两次 entry-free collision 消失且 0.5 下出现完整生命周期发射，说明
+D 的主要阻断是过渡容量；若碰撞消失仍零发射，容量只是一项工程性前置条件，
+主瓶颈仍在分数刻度或 end 建模。
+
+### 已部署
+
+- exact code：`380bc16947a75d9ca19cfb79e06fdfbab0ae43c0`
+- Slurm：`1178040`
+- run：`model_opt_reserve_seed705_20260721_093412`
+
+## F：reserve6 + 单调生命周期校准器
+
+### 核心结构
+
+保留 raw birth/alive/end 三个 head，并为每个通道加一个严格单调仿射层：
+
+`calibrated_logit = exp(log_scale) * stop_gradient(raw_logit) + bias`
+
+`log_scale=0, bias=0` 初始化为恒等映射。固定阈值只读取 calibrated logit；
+匹配代价、原 BCE、三项 margin 和 query transport 均只读取 raw logit。校准
+损失采用“当前步正负类各占一半”的 BCE，只在该步存在正例时激活，三通道
+各自独立。`stop_gradient` 保证这项损失只改变 6 个校准参数，不偷偷改 raw
+排序。
+
+### 为什么这是科学问题而不是调阈值
+
+D 的 FIXED birth/alive AUC 已达 0.842/0.863，却在冻结 0.5 下完全没有 TPR。
+这可能是排序能力存在、概率刻度错误。F 不搜索也不降低阈值，而是让模型用
+fit supervision 学出一个保持排序的映射。因此 raw 与 calibrated 的 ROC-AUC
+理论上必须相同；若固定 0.5 的越线率改善，说明问题是可学习的刻度失配。
+
+### 证伪标准
+
+- 校准层必须恒等初始化、scale 始终为正；
+- calibration loss 对 raw head 无梯度，只对校准参数有梯度；
+- FIXED/REMATCH 仍只差 binding；
+- raw 与 calibrated 排序/AUC 不变，否则实现失败；
+- 若仍无 end 越线或发射，则不再把主要问题归因于阈值刻度。
+
+## G：reserve6 + 当前转移判终 / 历史起点检索
+
+### 核心结构
+
+G 保持 persistent query 和 reserve6，但把 end 从“只看当前 query 的线性头”
+改成显式因果转移头：
+
+`end_logit_t = MLP([q_(t-1), q_t, q_t-q_(t-1), x_t])`
+
+其中 `x_t` 是当前已到达的投影特征。它只使用上一状态与当前输入，没有未来
+帧。起点不再只依赖 birth 当步的 1-token scalar offset；在 endpoint slot
+出现时，使用当前 query 对已经观察到的 feature memory 做 pointer，监督其
+指向真实 start 的最近历史 token。若起点已早于有限 memory，则使用 sentinel，
+运行时回退到该槽在 birth 时已经冻结保存的 start frame。
+
+### 与前沿在线方法的关系
+
+- MATR 的可取思想是“当前片段负责结束、过去记忆负责起点”；本版只吸收
+  这种严格因果分工，不复制其完整网络。
+- OpenHOUSE 的启发是相邻动作需要显式边界变化信号；本版不引入其 VLM、
+  层级标签或开放词汇设定。
+- StreamFormer 说明因果时序表征可由 streaming attention 学习；当前阶段仍
+  固定特征，只在轻量 lifecycle head 内验证边界结构，避免与 raw-RGB 主干
+  联合变化。
+- 本项目先前所谓 ChronoTransport 只是 prediction-only past-to-current
+  Sinkhorn 辅助项，已经被 C 实验证伪；G 不继续调其权重。
+
+对应的一手资料：
+
+- MATR: <https://arxiv.org/abs/2408.02957>
+- OpenHOUSE: <https://openaccess.thecvf.com/content/ICCV2025/html/Kang_Open-ended_Hierarchical_Streaming_Video_Understanding_with_Vision_Language_Models_ICCV_2025_paper.html>
+- StreamFormer: <https://openaccess.thecvf.com/content/ICCV2025/html/Yan_Learning_Streaming_Video_Representation_via_Multitask_Training_ICCV_2025_paper.html>
+
+### 证伪标准
+
+- 因果重放和 chunk invariance 必须通过；截断未来输入不得改变既有输出；
+- end transition loss 和 endpoint-only start pointer loss 必须在训练审计中
+  真实激活，其余非本版损失不得串扰；
+- runtime state 不含 GT，pointer 只能访问 `memory_frames <= current_frame`；
+- sentinel 回退必须使用运行时已保存 birth start，不得查询标注；
+- 若 end AUC/0.5 TPR/最终发射无改善，则回到更长的因果历史编码或专门的
+  boundary-progress 表征，而不是搜索阈值。
+
+## 当日执行顺序
+
+1. 监控并完成 E 的同提交 profile、双臂训练、诊断和 gate。
+2. 实现 F 的 head、损失、审计、配置、提交路由与单元/因果测试；远端 exact
+   clean 测试和 profile 通过后部署。
+3. 实现 G 的 transition end、endpoint-only past-start pointer、运行时回退、
+   审计、配置、提交路由与单元/因果测试；远端 exact clean 测试和 profile
+   通过后部署。
+4. 三版都以独立 run 目录、exact SHA 和 Slurm job 记录到 Wiki。21:00 报告
+   代码完成度、部署状态、已完成结果、未完成作业的准确恢复点和下一门。
+
+## 激活与晋级规则
+
+E 预期只激活三项 lifecycle margin；F 预期再激活三项 calibration loss；G
+预期激活三项 lifecycle margin、transition-end（由正式 end loss承载）和
+endpoint start-pointer loss。技术 gate 与科学 gate 分开记录：程序完整跑完但
+零发射属于科学拒绝，不写成系统崩溃。
+
+只有某个特征级版本同时满足容量、因果、固定阈值生命周期发射和校准诊断，
+才允许进入多 seed；多 seed 稳定后才讨论 raw-RGB 联合训练。

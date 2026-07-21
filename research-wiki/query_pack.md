@@ -322,3 +322,8 @@ identity-linked duplicate/fragmentation error。
   `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_reserve_seed705_20260721_093412`，
   initial `RUNNING/g0030`，exact `380bc16`。先看 profile gate；只有画像与
   2 GPU·小时预算通过，作业才会进入一轮 FIXED/REMATCH。
+- 当日下午恢复点：按新设计页依次完成 E/reserve6、F/单调校准器、G/当前
+  转移判终+历史起点检索。F 的校准损失只训练正 scale/bias，raw 排序、匹配
+  和原损失不变；G 只看 `q_(t-1), q_t, q_t-q_(t-1), x_t` 与已见 memory。
+  三版均保持 frozen 0.5、reporting 锁定、raw-RGB 禁止，关键 SHA/job/run/gate
+  必须逐项回写 Wiki。
