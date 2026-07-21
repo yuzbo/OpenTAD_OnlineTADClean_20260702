@@ -510,3 +510,11 @@ identity-linked duplicate/fragmentation error。
   不能误记成故障或据此下性能结论。recovery/quarantine/calibration 仍按冻结合同
   等待完整 12 轮审计；下一成对节点为 epoch 6，reporting、阈值搜索与 raw-RGB
   继续锁定。
+- M49 第 6 轮恢复点：FIXED `1179373` 与 REMATCH `1179374` 均已进入第 7 轮，
+  每臂约完成 `50.42%`；两份节点本地 `epoch_5.pth` 均为 `17,512,977` bytes。
+  六轮末 loss 为 FIXED `2.9177/2.2809/1.9829/1.8696/1.7073/1.6277`、
+  REMATCH `2.9213/2.4360/2.0485/1.9065/1.7041/1.6309`，持续下降且无
+  fatal/OOM/non-finite loss，资源稳定。两臂现均因真实 4+2 reserve 改变 admission、
+  状态占用与绑定监督而与旧 soft-reserve 轨迹分化，不作故障或性能结论。
+  recovery/quarantine/audit/calibration 仍等待 12 轮结束；下一节点为 epoch 9，
+  reporting、阈值搜索与 raw-RGB 继续锁定。

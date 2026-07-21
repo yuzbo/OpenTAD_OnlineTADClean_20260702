@@ -937,3 +937,29 @@ FIXED `1179373` 与 REMATCH `1179374` 均已完成第 3 轮并进入第 4 轮；
 后才原子提升或隔离”的冻结合同。当前未提前运行 calibration、未访问 reporting、
 未搜索或降低固定 `0.5` 阈值、未启动 raw-RGB。下一持久节点为成对第 6 轮
 checkpoint；若作业、fatal、recovery 或 quarantine 状态先变化则提前记录。
+
+### M49 硬 reserve 正式十二轮第 6 轮成对 checkpoint
+
+FIXED `1179373` 与 REMATCH `1179374` 均已完成第 6 轮并同步进入第 7 轮；07:01
+的直接状态均为第 7 轮 `100/2009`，即每臂完成约 `50.42%` 的 24,120 次目标更新。
+依赖终检 `1179375` 继续正常等待。通过各自 allocation 内的只读
+`srun --overlap` 核验，两份节点本地 `epoch_5.pth` 均存在且为
+`17,512,977` bytes；FIXED/REMATCH 分别于北京时间 06:59:42、07:00:13 落盘。
+
+前六轮末 minibatch loss 为：
+
+- FIXED：`2.9177 / 2.2809 / 1.9829 / 1.8696 / 1.7073 / 1.6277`；
+- REMATCH：`2.9213 / 2.4360 / 2.0485 / 1.9065 / 1.7041 / 1.6309`。
+
+两条曲线到 50% 训练剂量都持续下降。日志中的 Traceback、RuntimeError、OOM、
+non-finite 标记与非有限 loss 均为零；MaxRSS 约为 FIXED `2,063,520 KiB`、
+REMATCH `2,012,424 KiB`，节点和资源状态稳定。与旧 soft-reserve 正式运行相比，
+FIXED 在前三轮后、REMATCH 在第一轮后均出现数值轨迹分化；真实 4 占用+2 硬 reserve
+会改变 candidate admission、状态占用与后续绑定监督，因此这是预期的模型干预效应，
+不能再宣称复现旧训练轨迹，也不能仅凭 loss 的相对高低判断定位性能。
+
+`recovery/`、`quarantine/`、训练完整性 audit 与 calibration 产物仍为 pending，
+符合只在 12 轮训练结束后统一裁决容量、监督、更新完整性并原子提升/隔离的冻结合同。
+当前没有提前运行 calibration，没有可报告的最终区间、mAP 或 Recall；未访问
+reporting、未搜索或降低固定 `0.5`、未启动 raw-RGB。下一持久节点为成对第 9 轮
+checkpoint；若作业、fatal、recovery 或 quarantine 状态先变化则提前记录。
