@@ -150,3 +150,4 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-21: 实现 H2 成对 12 轮正式闭环：从 seed 初始化训练 24,120 次，只在 calibration 评估 3/6/9/12，固定阈值 0.5；两臂提交具备失败回滚，节点本地 checkpoint 受控回传，依赖作业自动生成 epoch-12 正式固定阈值门。通过仅授权 feature 多种子，reporting/raw-RGB 仍锁定；本地相关回归 `31 passed`、Python/Bash/diff 检查通过，待 exact 提交与 H2 一轮门。
 - 2026-07-21: 正式 12 轮链路提交 `f3958b45fba4d9d2cd83ccd0cb604e87e043c6f4` 已推送；共享 clean checkout 写探针通过，远端模型/因果/配置/门禁/提交器扩展套件 `167 passed in 79.84s`，结束 SHA 不变。部署只等待 H2 `1178505` 一轮学习就绪与两套机制门，不越级启动。
 - 2026-07-21: 用 exact-2a 从旧产物非破坏式生成 E/G `screen_gate_v2.json` 并同时保留新旧 SHA：两者 `learning_readiness_pass=true`、`operational_pass=false`，后者仅由 epoch-1 固定 0.5 静默导致。因子比较器新增 companion-v2 优先读取回归，使 E/F2/G/H2 使用同一分层语义。
+- 2026-07-21: 正式 Slurm 链路的 `sbatch --test-only` 发现集群拒绝 GPU 分区零 GPU 作业及显式内存覆盖；真实提交前已修为训练臂/收尾作业都显式 1 GPU、默认内存，并让收尾最多 30 分钟的 `0.5 GPU·h` 全额计入 16 GPU·小时门。两类 test-only 均通过，未创建真实作业。

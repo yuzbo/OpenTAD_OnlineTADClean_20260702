@@ -87,7 +87,9 @@ def test_formal12_gate_passes_only_a_complete_operational_pair():
     assert result["technical_pass"] is True
     assert result["operational_pass"] is True
     assert result["formal_fixed_threshold_pass"] is True
-    assert result["actual_pair_gpu_hours"] == 12.0
+    assert result["arm_actual_gpu_hours"] == 12.0
+    assert result["finalizer_reserved_gpu_hours"] == 0.5
+    assert result["budgeted_pair_gpu_hours"] == 12.5
     assert result["next_gate"] == "paired_multi_seed_feature_protocol"
     assert result["reporting_accessed"] is False
     assert result["raw_rgb_authorized"] is False
@@ -117,12 +119,28 @@ def test_formal12_gate_rejects_mismatched_pair_provenance():
         module.evaluate_gate(_payload("fixed"), rematch)
 
 
+def test_formal12_gate_counts_reserved_finalizer_gpu_budget():
+    module = _module()
+
+    result = module.evaluate_gate(
+        _payload("fixed", gpu_hours=7.8),
+        _payload("rematch", gpu_hours=7.8),
+    )
+
+    assert result["arm_actual_gpu_hours"] == pytest.approx(15.6)
+    assert result["budgeted_pair_gpu_hours"] == pytest.approx(16.1)
+    assert result["budget_pass"] is False
+    assert result["technical_pass"] is False
+
+
 def test_formal12_submitter_encodes_pairing_and_locked_split_contract():
     source = (
         ROOT / "tools/remote/submit_persistent_binding_formal12_n16r4.sh"
     ).read_text(encoding="utf-8")
 
     assert "#SBATCH --exclude=$SBATCH_EXCLUDE" in source
+    assert "#SBATCH --gpus=1" in source
+    assert "#SBATCH --mem=" not in source
     assert "--evaluation-role calibration" in source
     assert "--evaluation-role reporting" not in source
     assert "3:2 6:5 9:8 12:11" in source
@@ -131,3 +149,4 @@ def test_formal12_submitter_encodes_pairing_and_locked_split_contract():
     assert "--dependency=afterok:" in source
     assert "sbatch --parsable" in source
     assert "scancel" in source
+    assert '"finalizer_reserved_gpu_hours": 0.5' in source

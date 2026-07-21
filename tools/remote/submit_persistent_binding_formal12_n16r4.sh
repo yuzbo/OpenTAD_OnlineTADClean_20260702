@@ -8,6 +8,7 @@ EXPECTED_COMMIT=${EXPECTED_COMMIT:-}
 PILOT_RUN=${PILOT_RUN:?set PILOT_RUN to the completed H2 epoch-1 run}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SBATCH_EXCLUDE=${SBATCH_EXCLUDE:-g0063}
+MAX_SUBMIT_JOBS=${MAX_SUBMIT_JOBS:-16}
 SEED=705
 VARIANT=boundary_calibration_batched
 FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_formal12_boundary_calibration_batched_fixed.py
@@ -116,6 +117,11 @@ for name in pb_h2f12_fixed pb_h2f12_rematch; do
         exit 3
     fi
 done
+active_jobs=$(squeue -u "$USER" -h | wc -l)
+if (( active_jobs + 3 > MAX_SUBMIT_JOBS )); then
+    echo "Formal12 needs three submit slots; active=$active_jobs cap=$MAX_SUBMIT_JOBS" >&2
+    exit 3
+fi
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 RUN_DIR="$RUNS_ROOT/formal12_boundary_calibration_batched_seed705_$timestamp"
@@ -170,6 +176,7 @@ payload = {
     "formal_fixed_threshold_gate_epoch": 12,
     "raw_rgb_authorized": False,
     "paired_gpu_hour_cap": 16.0,
+    "finalizer_reserved_gpu_hours": 0.5,
     "submit_via_slurm_only": True,
 }
 Path(output).write_text(
@@ -190,7 +197,6 @@ submit_arm() {
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
 #SBATCH --time=08:00:00
 #SBATCH --exclude=$SBATCH_EXCLUDE
 #SBATCH --output=$arm_root/slurm.%j.out
@@ -486,8 +492,8 @@ submit_finalize() {
 #!/usr/bin/env bash
 #SBATCH --job-name=pb_h2f12_gate
 #SBATCH --partition=gpu
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=24G
 #SBATCH --time=00:30:00
 #SBATCH --exclude=$SBATCH_EXCLUDE
 #SBATCH --dependency=afterok:$fixed_job:$rematch_job

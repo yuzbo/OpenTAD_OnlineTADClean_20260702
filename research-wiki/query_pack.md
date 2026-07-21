@@ -387,3 +387,6 @@ identity-linked duplicate/fragmentation error。
 - E/G 已从原始 screen result 非破坏式补出 `screen_gate_v2.json`，旧门与新旧
   SHA 都保留；两者均 learning-ready 但固定 0.5 一轮静默。最新因子比较器优先
   读取 v2 companion，待 F2/H2 完成后即可公平生成 batched 2×2 结果。
+- 正式 Slurm 已做无提交 `sbatch --test-only`：集群要求 finalizer 也申请 1 GPU
+  且禁止显式覆盖默认内存。脚本已修复并再次通过；finalizer 的最坏 0.5 GPU·h
+  被保守计入 16 GPU·小时总门，不会漏算资源。

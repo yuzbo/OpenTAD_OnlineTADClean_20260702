@@ -436,6 +436,49 @@ def test_formal12_h2_is_matched_and_defers_fixed_threshold_gate():
     assert fixed.model.head.end_threshold == 0.5
 
 
+def test_formal12_is_the_exact_h2_optimization_prefix_extended_to_12_epochs():
+    pairs = (
+        (
+            "thumos_persistent_binding_opt_boundary_calibration_batched_fixed.py",
+            "thumos_persistent_binding_formal12_boundary_calibration_batched_fixed.py",
+        ),
+        (
+            "thumos_persistent_binding_opt_boundary_calibration_batched_rematch.py",
+            "thumos_persistent_binding_formal12_boundary_calibration_batched_rematch.py",
+        ),
+    )
+    frozen_fields = (
+        "model",
+        "dataset",
+        "optimizer",
+        "scheduler",
+        "solver",
+        "calibration_evaluation",
+        "calibration_contract",
+        "annotation_path",
+        "feature_cache_manifest",
+        "fit_core_manifest",
+        "calibration_manifest",
+        "reporting_manifest",
+        "feature_stride",
+        "fps",
+        "raw_video_finetuning",
+    )
+    for pilot_name, formal_name in pairs:
+        pilot = _load(pilot_name)
+        formal = _load(formal_name)
+
+        for field in frozen_fields:
+            assert formal[field] == pilot[field]
+        assert pilot.workflow.end_epoch == 1
+        assert formal.workflow.end_epoch == 12
+        assert pilot.scheduler.max_epoch == formal.scheduler.max_epoch == 12
+        assert pilot.scheduler.warmup_epoch == formal.scheduler.warmup_epoch
+        assert formal.multi_epoch_training_contract.initialization == (
+            "seed_initialization_not_pilot_resume"
+        )
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head

@@ -28,6 +28,7 @@ EXPECTED_UPDATES = EXPECTED_EPOCHS * EXPECTED_UPDATES_PER_EPOCH
 EXPECTED_CHECKPOINT_EPOCHS = (3, 6, 9, 12)
 EXPECTED_TIOUS = (0.3, 0.4, 0.5, 0.6, 0.7)
 PAIR_GPU_HOUR_CAP = 16.0
+FINALIZER_RESERVED_GPU_HOURS = 0.5
 OPERATIONAL_THRESHOLDS = {
     "prediction_gt_ratio_min": 0.25,
     "prediction_gt_ratio_max": 4.0,
@@ -266,6 +267,7 @@ def build_arm_result(*, repo, config, arm_root, census, formal_contract, arm):
         "checkpoint_selection_split": "calibration_only",
         "formal_fixed_threshold_gate_epoch": 12,
         "paired_gpu_hour_cap": PAIR_GPU_HOUR_CAP,
+        "finalizer_reserved_gpu_hours": FINALIZER_RESERVED_GPU_HOURS,
         "submit_via_slurm_only": True,
     }
     for field, expected in expected_deployment.items():
@@ -655,13 +657,16 @@ def evaluate_gate(fixed_payload, rematch_payload):
                 f"{arm}: recall_tiou_0p3={row['recall_tiou_0p3']}"
             )
 
-    actual_pair_gpu_hours = (
+    arm_actual_gpu_hours = (
         fixed["allocated_gpu_hours"] + rematch["allocated_gpu_hours"]
     )
-    budget_pass = 0 < actual_pair_gpu_hours <= PAIR_GPU_HOUR_CAP
+    budgeted_pair_gpu_hours = (
+        arm_actual_gpu_hours + FINALIZER_RESERVED_GPU_HOURS
+    )
+    budget_pass = 0 < budgeted_pair_gpu_hours <= PAIR_GPU_HOUR_CAP
     if not budget_pass:
         integrity_failures.append(
-            f"pair: allocated_gpu_hours={actual_pair_gpu_hours}"
+            f"pair: budgeted_gpu_hours={budgeted_pair_gpu_hours}"
         )
     technical_pass = not integrity_failures
     operational_pass = technical_pass and not operational_failures
@@ -688,7 +693,9 @@ def evaluate_gate(fixed_payload, rematch_payload):
         "formal_fixed_threshold_pass": operational_pass,
         "budget_pass": budget_pass,
         "paired_gpu_hour_cap": PAIR_GPU_HOUR_CAP,
-        "actual_pair_gpu_hours": actual_pair_gpu_hours,
+        "arm_actual_gpu_hours": arm_actual_gpu_hours,
+        "finalizer_reserved_gpu_hours": FINALIZER_RESERVED_GPU_HOURS,
+        "budgeted_pair_gpu_hours": budgeted_pair_gpu_hours,
         "fixed": fixed,
         "rematch": rematch,
         "directional_diagnostics": {
