@@ -15,6 +15,7 @@ AUXILIARY_LOSSES = (
     "birth_calibration_loss",
     "alive_calibration_loss",
     "end_calibration_loss",
+    "endpoint_start_pointer_loss",
 )
 ACTIVE_LOSSES = {
     "sw": (),
@@ -37,6 +38,12 @@ ACTIVE_LOSSES = {
         "birth_calibration_loss",
         "alive_calibration_loss",
         "end_calibration_loss",
+    ),
+    "boundary": (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+        "endpoint_start_pointer_loss",
     ),
 }
 
@@ -67,7 +74,10 @@ def _normalize_arm(payload, arm):
     normalized = {}
     for key in AUXILIARY_LOSSES:
         if key not in means or key not in counts:
-            if key.endswith("_calibration_loss"):
+            if (
+                key.endswith("_calibration_loss")
+                or key == "endpoint_start_pointer_loss"
+            ):
                 mean = 0.0
                 count = 0
             else:
@@ -93,7 +103,7 @@ def _normalize_arm(payload, arm):
 def evaluate_activation(variant, fixed_payload, rematch_payload):
     if variant not in ACTIVE_LOSSES:
         raise ValueError(
-            "variant must be sw, margin, transport, lifecycle, reserve, or calibration"
+            "variant must be sw, margin, transport, lifecycle, reserve, calibration, or boundary"
         )
     arms = {
         "fixed": _normalize_arm(fixed_payload, "fixed"),

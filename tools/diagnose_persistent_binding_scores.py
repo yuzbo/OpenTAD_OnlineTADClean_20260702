@@ -229,6 +229,36 @@ def append_target_conditioned_scores(store, probabilities, transition):
             store[channel][target].append(float(probability))
 
 
+def endpoint_pointer_decision(
+    pointer_logits,
+    memory_frames,
+    target_index,
+    current_frame,
+):
+    memory_frames = tuple(int(frame) for frame in memory_frames)
+    target_index = int(target_index)
+    current_frame = int(current_frame)
+    if pointer_logits.numel() != len(memory_frames) + 1:
+        raise ValueError("endpoint pointer logits do not align with memory")
+    if not 0 <= target_index <= len(memory_frames):
+        raise ValueError("endpoint pointer target is outside memory")
+    if any(frame > current_frame for frame in memory_frames):
+        raise ValueError("endpoint pointer memory contains a future frame")
+    prediction = int(pointer_logits.detach().argmax().item())
+    selected_frame = (
+        None if prediction == 0 else memory_frames[prediction - 1]
+    )
+    return {
+        "prediction": prediction,
+        "target": target_index,
+        "correct": prediction == target_index,
+        "predicted_sentinel": prediction == 0,
+        "target_sentinel": target_index == 0,
+        "selected_source_frame": selected_frame,
+        "past_only": selected_frame is None or selected_frame <= current_frame,
+    }
+
+
 def _normalized_state_dict(checkpoint):
     state_dict = checkpoint.get("state_dict")
     if not isinstance(state_dict, dict) or not state_dict:
@@ -386,6 +416,13 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
     target_conditioned_tokens = 0
     chunks = 0
     direct_emissions = 0
+    endpoint_pointer_audit = {
+        "decisions": 0,
+        "correct": 0,
+        "predicted_sentinel": 0,
+        "target_sentinel": 0,
+        "past_only": True,
+    }
     with torch.no_grad():
         for raw_batch in dataloader:
             batch = move_data_to_device(raw_batch, device)
@@ -490,6 +527,47 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                     raw_token_logits,
                     transition,
                 )
+                if "endpoint_start_pointer_logits" in token_output:
+                    instance_by_slot = {
+                        int(binding.slot_id): int(binding.instance_id)
+                        for binding in transition.loss_bindings
+                    }
+                    targets = {
+                        int(item.instance_id): item
+                        for item in (
+                            tuple(schedule_step.births)
+                            + tuple(schedule_step.active)
+                            + tuple(schedule_step.ends)
+                        )
+                    }
+                    for slot in transition.endpoint_slots:
+                        instance_id = instance_by_slot[int(slot)]
+                        target_index = model.head.pointer_target(
+                            token_output["memory_frames"],
+                            targets[instance_id].start_frame,
+                        )
+                        decision = endpoint_pointer_decision(
+                            token_output[
+                                "endpoint_start_pointer_logits"
+                            ][0, int(slot)],
+                            token_output["memory_frames"],
+                            target_index,
+                            schedule_step.current_frame,
+                        )
+                        endpoint_pointer_audit["decisions"] += 1
+                        endpoint_pointer_audit["correct"] += int(
+                            decision["correct"]
+                        )
+                        endpoint_pointer_audit[
+                            "predicted_sentinel"
+                        ] += int(decision["predicted_sentinel"])
+                        endpoint_pointer_audit["target_sentinel"] += int(
+                            decision["target_sentinel"]
+                        )
+                        endpoint_pointer_audit["past_only"] = bool(
+                            endpoint_pointer_audit["past_only"]
+                            and decision["past_only"]
+                        )
                 target_conditioned_tokens += 1
     if runtime is not None:
         _add_counts(runtime_totals, _runtime_counts(runtime))
@@ -585,8 +663,22 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
         for value in calibration_invariance["scale"]
     ):
         calibration_invariance["passed"] = False
+    if endpoint_pointer_audit["decisions"]:
+        endpoint_pointer_audit["accuracy"] = (
+            endpoint_pointer_audit["correct"]
+            / endpoint_pointer_audit["decisions"]
+        )
+    else:
+        endpoint_pointer_audit["accuracy"] = None
+    boundary_factorization = {
+        "end_transition_mode": str(model.head.end_transition_mode),
+        "endpoint_start_mode": str(model.head.endpoint_start_mode),
+        "endpoint_pointer": endpoint_pointer_audit,
+        "runtime_state_contains_gt": False,
+        "future_memory_accessed": not endpoint_pointer_audit["past_only"],
+    }
     return {
-        "schema_version": "persistent_binding_score_diagnosis.v3",
+        "schema_version": "persistent_binding_score_diagnosis.v4",
         "passed": True,
         "purpose": "calibration_only_model_score_diagnosis",
         "effectiveness_claim_authorized": False,
@@ -621,6 +713,7 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
             raw_target_conditioned_reports
         ),
         "lifecycle_calibration_invariance": calibration_invariance,
+        "boundary_factorization": boundary_factorization,
         "target_conditioning": {
             "split": "calibration",
             "prefix_observable_only": True,

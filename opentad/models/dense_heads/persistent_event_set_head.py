@@ -78,6 +78,8 @@ class PersistentEventSetHead(nn.Module):
         alive_prior_probability=None,
         end_prior_probability=None,
         lifecycle_calibration_mode="none",
+        end_transition_mode="current_query",
+        endpoint_start_mode="none",
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -102,6 +104,8 @@ class PersistentEventSetHead(nn.Module):
         self.candidate_confirmation_steps = int(candidate_confirmation_steps)
         self.max_births_per_step = int(max_births_per_step)
         self.lifecycle_calibration_mode = str(lifecycle_calibration_mode)
+        self.end_transition_mode = str(end_transition_mode)
+        self.endpoint_start_mode = str(endpoint_start_mode)
         self.birth_prior_probability = self._validated_prior(
             birth_prior_probability,
             "birth_prior_probability",
@@ -143,6 +147,24 @@ class PersistentEventSetHead(nn.Module):
             raise ValueError(
                 "lifecycle_calibration_mode must be none or monotone_affine"
             )
+        if self.end_transition_mode not in {
+            "current_query",
+            "causal_delta_mlp",
+        }:
+            raise ValueError(
+                "end_transition_mode must be current_query or causal_delta_mlp"
+            )
+        if (
+            self.end_transition_mode == "causal_delta_mlp"
+            and self.query_mode != "persistent"
+        ):
+            raise ValueError(
+                "causal_delta_mlp requires persistent query recurrence"
+            )
+        if self.endpoint_start_mode not in {"none", "past_pointer"}:
+            raise ValueError(
+                "endpoint_start_mode must be none or past_pointer"
+            )
 
         self.input_proj = nn.Sequential(
             nn.Linear(self.in_channels, self.hidden_dim),
@@ -164,6 +186,14 @@ class PersistentEventSetHead(nn.Module):
         )
         self.update_cell = nn.GRUCell(self.hidden_dim, self.hidden_dim)
         self.query_norm = nn.LayerNorm(self.hidden_dim)
+        if self.end_transition_mode == "causal_delta_mlp":
+            self.end_transition_proj = nn.Sequential(
+                nn.Linear(self.hidden_dim * 4, self.hidden_dim),
+                nn.GELU(),
+                nn.LayerNorm(self.hidden_dim),
+            )
+        else:
+            self.end_transition_proj = None
         if self.start_mode == "pointer":
             self.before_memory = nn.Parameter(torch.empty(self.hidden_dim))
         else:
@@ -173,6 +203,18 @@ class PersistentEventSetHead(nn.Module):
         self.alive_head = nn.Linear(self.hidden_dim, 1)
         self.class_head = nn.Linear(self.hidden_dim, self.num_classes)
         self.end_head = nn.Linear(self.hidden_dim, 1)
+        if self.endpoint_start_mode == "past_pointer":
+            self.endpoint_start_query = nn.Linear(
+                self.hidden_dim,
+                self.hidden_dim,
+            )
+            self.endpoint_before_memory = nn.Parameter(
+                torch.empty(self.hidden_dim)
+            )
+            nn.init.normal_(self.endpoint_before_memory, std=0.02)
+        else:
+            self.endpoint_start_query = None
+            self.register_parameter("endpoint_before_memory", None)
         if self.lifecycle_calibration_mode == "monotone_affine":
             self.lifecycle_calibration_log_scale = nn.Parameter(
                 torch.zeros(3)
@@ -333,7 +375,21 @@ class PersistentEventSetHead(nn.Module):
 
         raw_birth_logits = self.birth_head(queries).squeeze(-1)
         raw_alive_logits = self.alive_head(queries).squeeze(-1)
-        raw_end_logits = self.end_head(queries).squeeze(-1)
+        if self.end_transition_mode == "causal_delta_mlp":
+            current_token = projected.expand(
+                -1,
+                self.num_slots,
+                -1,
+            )
+            end_features = self.end_transition_proj(
+                torch.cat(
+                    [base, queries, queries - base, current_token],
+                    dim=-1,
+                )
+            )
+        else:
+            end_features = queries
+        raw_end_logits = self.end_head(end_features).squeeze(-1)
         calibrated_lifecycle_logits = self.calibrate_lifecycle_logits(
             torch.stack(
                 [raw_birth_logits, raw_alive_logits, raw_end_logits],
@@ -366,6 +422,21 @@ class PersistentEventSetHead(nn.Module):
             ).unsqueeze(-1)
             outputs["start_pointer_logits"] = torch.cat(
                 [sentinel, pointer_scores],
+                dim=-1,
+            )
+        if self.endpoint_start_mode == "past_pointer":
+            endpoint_query = self.endpoint_start_query(queries)
+            endpoint_pointer_scores = (
+                torch.einsum("bkd,bmd->bkm", endpoint_query, memory)
+                / math.sqrt(self.hidden_dim)
+            )
+            endpoint_sentinel = torch.einsum(
+                "bkd,d->bk",
+                endpoint_query,
+                self.endpoint_before_memory.to(endpoint_query),
+            ).unsqueeze(-1)
+            outputs["endpoint_start_pointer_logits"] = torch.cat(
+                [endpoint_sentinel, endpoint_pointer_scores],
                 dim=-1,
             )
         if self.endpoint_mode == "hazard":
@@ -434,6 +505,30 @@ class PersistentEventSetHead(nn.Module):
         offset = float(outputs["endpoint_offset"][0, slot].detach().item())
         decoded = int(round(float(current_frame) - offset))
         return min(int(current_frame), max(int(start_frame), decoded))
+
+    def _decode_endpoint_start(
+        self,
+        outputs,
+        slot,
+        fallback_start_frame,
+        current_frame,
+    ):
+        fallback = int(fallback_start_frame)
+        if self.endpoint_start_mode != "past_pointer":
+            return fallback
+        pointer_index = int(
+            outputs["endpoint_start_pointer_logits"][0, slot]
+            .detach()
+            .argmax()
+            .item()
+        )
+        memory_frames = tuple(int(frame) for frame in outputs["memory_frames"])
+        if pointer_index == 0 or not memory_frames:
+            return fallback
+        selected = memory_frames[
+            min(pointer_index - 1, len(memory_frames) - 1)
+        ]
+        return min(int(current_frame), max(0, int(selected)))
 
     def _decode_legacy(self, outputs, state, current_frame, feature_stride=1):
         current_frame = int(current_frame)
@@ -570,7 +665,15 @@ class PersistentEventSetHead(nn.Module):
 
         def commit(slot):
             update_peak(slot)
-            start_frame = int(round(float(start_frames[slot].item())))
+            fallback_start_frame = int(
+                round(float(start_frames[slot].item()))
+            )
+            start_frame = self._decode_endpoint_start(
+                outputs,
+                slot,
+                fallback_start_frame,
+                current_frame,
+            )
             end_frame = self._decode_end(outputs, slot, start_frame, current_frame)
             score = math.sqrt(
                 max(

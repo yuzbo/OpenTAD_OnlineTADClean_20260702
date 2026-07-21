@@ -54,4 +54,5 @@ model = dict(
     birth_calibration_loss_weight=0.0,
     alive_calibration_loss_weight=0.0,
     end_calibration_loss_weight=0.0,
+    endpoint_start_pointer_loss_weight=0.0,
 )

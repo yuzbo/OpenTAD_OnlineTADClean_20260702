@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, reserve, or calibration}
+VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, reserve, calibration, or boundary}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
@@ -38,8 +38,12 @@ case "$VARIANT" in
         FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_calibration_fixed.py
         REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_calibration_rematch.py
         ;;
+    boundary)
+        FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_fixed.py
+        REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_rematch.py
+        ;;
     *)
-        echo "VARIANT must be sw, margin, transport, lifecycle, reserve, or calibration" >&2
+        echo "VARIANT must be sw, margin, transport, lifecycle, reserve, calibration, or boundary" >&2
         exit 2
         ;;
 esac
@@ -388,6 +392,30 @@ for path in sys.argv[1:]:
         raise SystemExit(f"{path}: calibration mode did not activate")
     if audit.get("passed") is not True:
         raise SystemExit(f"{path}: monotone AUC invariance failed")
+PY
+fi
+
+if [[ "$VARIANT" == "boundary" ]]; then
+    python - \
+        "$RUN_DIR/fixed_score_diagnosis.json" \
+        "$RUN_DIR/rematch_score_diagnosis.json" <<'PY'
+import json
+import sys
+
+for path in sys.argv[1:]:
+    payload = json.load(open(path, encoding="utf-8"))
+    audit = payload.get("boundary_factorization", {})
+    pointer = audit.get("endpoint_pointer", {})
+    if audit.get("end_transition_mode") != "causal_delta_mlp":
+        raise SystemExit(f"{path}: causal transition end did not activate")
+    if audit.get("endpoint_start_mode") != "past_pointer":
+        raise SystemExit(f"{path}: endpoint past-start pointer did not activate")
+    if int(pointer.get("decisions", 0)) <= 0:
+        raise SystemExit(f"{path}: endpoint pointer had no decisions")
+    if pointer.get("past_only") is not True:
+        raise SystemExit(f"{path}: endpoint pointer accessed future memory")
+    if audit.get("runtime_state_contains_gt") is not False:
+        raise SystemExit(f"{path}: runtime state contains supervision identity")
 PY
 fi
 

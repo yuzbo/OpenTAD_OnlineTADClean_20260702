@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from diagnose_persistent_binding_scores import (  # noqa: E402
     _normalized_state_dict,
     append_target_conditioned_scores,
+    endpoint_pointer_decision,
     pairwise_auc,
     summarize_binary_discrimination,
     summarize_probabilities,
@@ -74,6 +75,27 @@ def test_pairwise_auc_is_invariant_to_positive_affine_calibration():
     )
 
     assert calibrated_auc == raw_auc
+
+
+def test_endpoint_pointer_decision_rejects_future_memory_and_tracks_sentinel():
+    decision = endpoint_pointer_decision(
+        torch.tensor([4.0, 1.0, 2.0]),
+        memory_frames=(7, 15),
+        target_index=0,
+        current_frame=15,
+    )
+
+    assert decision["correct"] is True
+    assert decision["predicted_sentinel"] is True
+    assert decision["selected_source_frame"] is None
+    assert decision["past_only"] is True
+    with pytest.raises(ValueError, match="future frame"):
+        endpoint_pointer_decision(
+            torch.tensor([1.0, 2.0]),
+            memory_frames=(23,),
+            target_index=1,
+            current_frame=15,
+        )
 
 
 def test_target_conditioning_follows_training_masks_and_bindings():

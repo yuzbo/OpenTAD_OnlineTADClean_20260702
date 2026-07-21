@@ -648,6 +648,62 @@ def test_calibration_losses_update_only_monotone_calibrator():
     )
 
 
+def test_boundary_factorization_trains_transition_end_and_endpoint_start():
+    head = PersistentEventSetHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=2,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        birth_threshold=1.1,
+        alive_threshold=1.1,
+        end_threshold=1.1,
+        refractory_steps=0,
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        end_transition_mode="causal_delta_mlp",
+        endpoint_start_mode="past_pointer",
+    )
+    detector = PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode="fixed_birth_slot",
+        endpoint_start_pointer_loss_weight=1.0,
+    ).train()
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 17.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+
+    output = detector.train_episode(
+        torch.randn(1, 4, len(frames)),
+        torch.ones(1, len(frames), dtype=torch.bool),
+        _meta(frames),
+        schedule,
+    )
+    output.losses["cost"].backward()
+
+    assert output.losses["endpoint_start_pointer_loss"].item() > 0
+    assert head.end_transition_proj[0].weight.grad is not None
+    assert head.end_head.weight.grad is not None
+    assert head.endpoint_start_query.weight.grad is not None
+    assert head.endpoint_before_memory.grad is not None
+    assert detector.last_episode_audit["end_transition_mode"] == (
+        "causal_delta_mlp"
+    )
+    assert detector.last_episode_audit["endpoint_start_mode"] == (
+        "past_pointer"
+    )
+
+
 def test_detector_aligns_prior_biases_with_weighted_binary_losses():
     head = PersistentEventSetHead(
         in_channels=4,

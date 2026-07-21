@@ -121,6 +121,63 @@ def test_lifecycle_calibration_gradient_is_isolated_from_raw_logits():
     assert head.lifecycle_calibration_bias.grad is not None
 
 
+def test_causal_delta_end_and_endpoint_pointer_use_only_observed_prefix():
+    torch.manual_seed(9)
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        end_transition_mode="causal_delta_mlp",
+        endpoint_start_mode="past_pointer",
+    ).train()
+    state = _state(head)
+
+    first, state = head.step(
+        torch.tensor([[0.1, 0.2, 0.3, 0.4]]),
+        state,
+        source_frame=7,
+    )
+    second, _ = head.step(
+        torch.tensor([[0.4, 0.3, 0.2, 0.1]]),
+        state,
+        source_frame=15,
+    )
+
+    assert first["memory_frames"] == (7,)
+    assert second["memory_frames"] == (7, 15)
+    assert second["endpoint_start_pointer_logits"].shape == (1, 2, 3)
+    assert max(second["memory_frames"]) <= 15
+    loss = (
+        second["raw_end_hazard_logits"].sum()
+        + second["endpoint_start_pointer_logits"].sum()
+    )
+    loss.backward()
+    assert head.end_transition_proj[0].weight.grad is not None
+    assert head.endpoint_start_query.weight.grad is not None
+    assert head.endpoint_before_memory.grad is not None
+
+
+def test_endpoint_pointer_sentinel_falls_back_to_frozen_birth_start():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_start_mode="past_pointer",
+    )
+    outputs = {
+        "endpoint_start_pointer_logits": torch.tensor(
+            [[[10.0, -10.0, -10.0], [10.0, -10.0, -10.0]]]
+        ),
+        "memory_frames": (31, 39),
+    }
+
+    assert head._decode_endpoint_start(
+        outputs,
+        slot=0,
+        fallback_start_frame=7,
+        current_frame=39,
+    ) == 7
+
+
 def test_fit_prior_probabilities_are_encoded_exactly_in_output_biases():
     priors = dict(
         birth_prior_probability=0.01,

@@ -312,6 +312,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         birth_calibration_loss_weight=0.0,
         alive_calibration_loss_weight=0.0,
         end_calibration_loss_weight=0.0,
+        endpoint_start_pointer_loss_weight=0.0,
     ):
         super().__init__()
         self.head = head if isinstance(head, nn.Module) else build_head(head)
@@ -362,6 +363,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 alive_calibration_loss_weight
             ),
             "end_calibration_loss": float(end_calibration_loss_weight),
+            "endpoint_start_pointer_loss": float(
+                endpoint_start_pointer_loss_weight
+            ),
         }
         if any(
             not math.isfinite(value) or value < 0
@@ -379,6 +383,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         ):
             raise ValueError(
                 "calibration losses require monotone_affine lifecycle calibration"
+            )
+        if (
+            self.loss_weights["endpoint_start_pointer_loss"] > 0
+            and self.head.endpoint_start_mode != "past_pointer"
+        ):
+            raise ValueError(
+                "endpoint start pointer loss requires past_pointer mode"
             )
         self.logit_margins = {
             "birth": float(birth_logit_margin),
@@ -810,6 +821,35 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 outputs["start_offset"][0, birth_slots],
                 start_targets,
             )
+        endpoint_start_pointer_loss = _zero(outputs["start_offset"])
+        if (
+            self.loss_weights["endpoint_start_pointer_loss"] > 0
+            and transition.endpoint_slots
+        ):
+            instance_by_slot = {
+                int(binding.slot_id): int(binding.instance_id)
+                for binding in transition.loss_bindings
+            }
+            endpoint_slots = torch.as_tensor(
+                [int(slot) for slot in transition.endpoint_slots],
+                dtype=torch.long,
+                device=outputs["endpoint_start_pointer_logits"].device,
+            )
+            pointer_targets = torch.as_tensor(
+                [
+                    self.head.pointer_target(
+                        outputs["memory_frames"],
+                        targets[instance_by_slot[int(slot)]].start_frame,
+                    )
+                    for slot in transition.endpoint_slots
+                ],
+                dtype=torch.long,
+                device=outputs["endpoint_start_pointer_logits"].device,
+            )
+            endpoint_start_pointer_loss = F.cross_entropy(
+                outputs["endpoint_start_pointer_logits"][0, endpoint_slots],
+                pointer_targets,
+            )
 
         return {
             "birth_loss": _masked_bce(
@@ -889,6 +929,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 if self.loss_weights["end_calibration_loss"] > 0
                 else _zero(outputs["end_hazard_logits"])
             ),
+            "endpoint_start_pointer_loss": endpoint_start_pointer_loss,
         }
 
     @staticmethod
@@ -1259,6 +1300,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 if self.head.lifecycle_calibration_bias is not None
                 else None
             ),
+            "end_transition_mode": self.head.end_transition_mode,
+            "endpoint_start_mode": self.head.endpoint_start_mode,
+            "endpoint_start_pointer_loss_weight": self.loss_weights[
+                "endpoint_start_pointer_loss"
+            ],
             "birth_assignments": tuple(birth_trace),
             "canonical_lifecycle": tuple(canonical_trace),
             "loss_bindings": tuple(loss_binding_trace),
