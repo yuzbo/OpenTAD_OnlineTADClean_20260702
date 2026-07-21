@@ -12,6 +12,9 @@ AUXILIARY_LOSSES = (
     "alive_margin_loss",
     "end_margin_loss",
     "causal_transport_loss",
+    "birth_calibration_loss",
+    "alive_calibration_loss",
+    "end_calibration_loss",
 )
 ACTIVE_LOSSES = {
     "sw": (),
@@ -26,6 +29,14 @@ ACTIVE_LOSSES = {
         "birth_margin_loss",
         "alive_margin_loss",
         "end_margin_loss",
+    ),
+    "calibration": (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+        "birth_calibration_loss",
+        "alive_calibration_loss",
+        "end_calibration_loss",
     ),
 }
 
@@ -56,9 +67,14 @@ def _normalize_arm(payload, arm):
     normalized = {}
     for key in AUXILIARY_LOSSES:
         if key not in means or key not in counts:
-            raise ValueError(f"{arm} audit lacks {key}")
-        mean = float(means[key])
-        count = int(counts[key])
+            if key.endswith("_calibration_loss"):
+                mean = 0.0
+                count = 0
+            else:
+                raise ValueError(f"{arm} audit lacks {key}")
+        else:
+            mean = float(means[key])
+            count = int(counts[key])
         if not math.isfinite(mean) or mean < 0:
             raise ValueError(f"{arm} {key} mean must be finite and non-negative")
         if count < 0 or count > successful_updates:
@@ -77,7 +93,7 @@ def _normalize_arm(payload, arm):
 def evaluate_activation(variant, fixed_payload, rematch_payload):
     if variant not in ACTIVE_LOSSES:
         raise ValueError(
-            "variant must be sw, margin, transport, lifecycle, or reserve"
+            "variant must be sw, margin, transport, lifecycle, reserve, or calibration"
         )
     arms = {
         "fixed": _normalize_arm(fixed_payload, "fixed"),

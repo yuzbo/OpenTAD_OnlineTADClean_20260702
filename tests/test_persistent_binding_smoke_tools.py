@@ -188,13 +188,21 @@ def test_model_optimization_submitter_deploys_feature_only_variants():
         / "tools/remote/check_persistent_binding_optimization_pilot_n16r4.sh"
     ).read_text(encoding="utf-8")
 
-    for variant in ("sw", "margin", "transport", "lifecycle", "reserve"):
+    for variant in (
+        "sw",
+        "margin",
+        "transport",
+        "lifecycle",
+        "reserve",
+        "calibration",
+    ):
         assert f"{variant})" in submit
     assert "thumos_persistent_binding_opt_sw_fixed.py" in submit
     assert "thumos_persistent_binding_opt_margin_fixed.py" in submit
     assert "thumos_persistent_binding_opt_transport_fixed.py" in submit
     assert "thumos_persistent_binding_opt_lifecycle_fixed.py" in submit
     assert "thumos_persistent_binding_opt_reserve_fixed.py" in submit
+    assert "thumos_persistent_binding_opt_calibration_fixed.py" in submit
     assert "--allow-unready-screen" in submit
     assert "profile_persistent_binding.py" in submit
     assert "evaluate_persistent_binding_profile.py" in submit

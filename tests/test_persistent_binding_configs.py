@@ -247,6 +247,33 @@ def test_transition_reserve_pilot_is_matched_and_census_bounded():
     assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
 
 
+def test_monotone_calibration_pilot_is_matched_and_keeps_threshold_frozen():
+    fixed = _load("thumos_persistent_binding_opt_calibration_fixed.py")
+    rematch = _load("thumos_persistent_binding_opt_calibration_rematch.py")
+
+    assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+    assert rematch.model.trajectory_binding_mode == "prefix_rematch_active_pool"
+    assert _normalized(fixed) == _normalized(rematch)
+    assert fixed.model.head.num_slots == 6
+    assert fixed.model.head.lifecycle_calibration_mode == "monotone_affine"
+    assert fixed.model.birth_calibration_loss_weight == 1.0
+    assert fixed.model.alive_calibration_loss_weight == 1.0
+    assert fixed.model.end_calibration_loss_weight == 1.0
+    assert fixed.model.birth_logit_margin_loss_weight == 0.1
+    assert fixed.model.alive_logit_margin_loss_weight == 0.1
+    assert fixed.model.end_logit_margin_loss_weight == 0.1
+    assert fixed.model.causal_query_transport_loss_weight == 0.0
+    assert fixed.model.head.birth_threshold == 0.5
+    assert fixed.model.head.alive_threshold == 0.5
+    assert fixed.model.head.end_threshold == 0.5
+    assert fixed.optimization_pilot_contract.threshold_search is False
+    assert fixed.optimization_pilot_contract.reporting_accessed is False
+    assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
+    assert fixed.optimization_pilot_contract.lifecycle_calibration_revision == (
+        "detached_raw_positive_scale_bias_balanced_bce_v1"
+    )
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head

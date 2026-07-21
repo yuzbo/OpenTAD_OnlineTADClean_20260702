@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, or reserve}
+VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, reserve, or calibration}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
@@ -34,8 +34,12 @@ case "$VARIANT" in
         FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_reserve_fixed.py
         REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_reserve_rematch.py
         ;;
+    calibration)
+        FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_calibration_fixed.py
+        REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_calibration_rematch.py
+        ;;
     *)
-        echo "VARIANT must be sw, margin, transport, lifecycle, or reserve" >&2
+        echo "VARIANT must be sw, margin, transport, lifecycle, reserve, or calibration" >&2
         exit 2
         ;;
 esac
@@ -369,6 +373,23 @@ python tools/diagnose_persistent_binding_scores.py \
     --device cuda:0 \
     --seed "$SEED" \
     --output "$RUN_DIR/rematch_score_diagnosis.json"
+
+if [[ "$VARIANT" == "calibration" ]]; then
+    python - \
+        "$RUN_DIR/fixed_score_diagnosis.json" \
+        "$RUN_DIR/rematch_score_diagnosis.json" <<'PY'
+import json
+import sys
+
+for path in sys.argv[1:]:
+    payload = json.load(open(path, encoding="utf-8"))
+    audit = payload.get("lifecycle_calibration_invariance", {})
+    if audit.get("mode") != "monotone_affine":
+        raise SystemExit(f"{path}: calibration mode did not activate")
+    if audit.get("passed") is not True:
+        raise SystemExit(f"{path}: monotone AUC invariance failed")
+PY
+fi
 
 PAIR_ENDED=$(date +%s)
 python tools/build_persistent_binding_resource_report.py \

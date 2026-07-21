@@ -81,6 +81,46 @@ def test_scalar_route_uses_bounded_offset_and_skips_pointer_branch():
     assert head.before_memory is None
 
 
+def test_monotone_lifecycle_calibration_is_identity_and_ranking_preserving():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        lifecycle_calibration_mode="monotone_affine",
+    ).train()
+    raw = torch.tensor(
+        [[[-2.0, 0.0, 1.0], [1.0, 2.0, 3.0]]],
+        requires_grad=True,
+    )
+
+    calibrated = head.calibrate_lifecycle_logits(raw)
+
+    assert torch.equal(calibrated, raw)
+    assert torch.all(head.lifecycle_calibration_log_scale.exp() > 0)
+    for channel in range(3):
+        assert torch.equal(
+            calibrated[..., channel].argsort(dim=1),
+            raw[..., channel].argsort(dim=1),
+        )
+
+
+def test_lifecycle_calibration_gradient_is_isolated_from_raw_logits():
+    head = _head(
+        query_mode="persistent",
+        start_mode="scalar",
+        lifecycle_calibration_mode="monotone_affine",
+    ).train()
+    raw = torch.tensor(
+        [[[-1.0, 0.5, 2.0], [2.0, -0.5, -1.0]]],
+        requires_grad=True,
+    )
+
+    head.calibrate_lifecycle_logits(raw).sum().backward()
+
+    assert raw.grad is None
+    assert head.lifecycle_calibration_log_scale.grad is not None
+    assert head.lifecycle_calibration_bias.grad is not None
+
+
 def test_fit_prior_probabilities_are_encoded_exactly_in_output_biases():
     priors = dict(
         birth_prior_probability=0.01,

@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from diagnose_persistent_binding_scores import (  # noqa: E402
     _normalized_state_dict,
     append_target_conditioned_scores,
+    pairwise_auc,
     summarize_binary_discrimination,
     summarize_probabilities,
 )
@@ -58,6 +59,21 @@ def test_binary_discrimination_counts_ties_as_half_a_pairwise_win():
     )
 
     assert summary["pairwise_auc"] == pytest.approx(0.5)
+
+
+def test_pairwise_auc_is_invariant_to_positive_affine_calibration():
+    positive = [-0.2, 0.4, 1.7]
+    negative = [-2.0, -0.4, 0.1, 0.9]
+    scale = 2.5
+    bias = -0.7
+
+    raw_auc = pairwise_auc(positive, negative)
+    calibrated_auc = pairwise_auc(
+        [scale * value + bias for value in positive],
+        [scale * value + bias for value in negative],
+    )
+
+    assert calibrated_auc == raw_auc
 
 
 def test_target_conditioning_follows_training_masks_and_bindings():

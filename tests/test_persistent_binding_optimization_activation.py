@@ -19,12 +19,18 @@ def _audit(binding_mode, active_losses=()):
         "alive_margin_loss": 0.0,
         "end_margin_loss": 0.0,
         "causal_transport_loss": 0.0,
+        "birth_calibration_loss": 0.0,
+        "alive_calibration_loss": 0.0,
+        "end_calibration_loss": 0.0,
     }
     counts = {
         "birth_margin_loss": 0,
         "alive_margin_loss": 0,
         "end_margin_loss": 0,
         "causal_transport_loss": 0,
+        "birth_calibration_loss": 0,
+        "alive_calibration_loss": 0,
+        "end_calibration_loss": 0,
     }
     if active_losses is None:
         active_losses = ()
@@ -61,6 +67,17 @@ def test_activation_gate_accepts_each_isolated_variant():
                 "birth_margin_loss",
                 "alive_margin_loss",
                 "end_margin_loss",
+            ),
+        ),
+        (
+            "calibration",
+            (
+                "birth_margin_loss",
+                "alive_margin_loss",
+                "end_margin_loss",
+                "birth_calibration_loss",
+                "alive_calibration_loss",
+                "end_calibration_loss",
             ),
         ),
     ):

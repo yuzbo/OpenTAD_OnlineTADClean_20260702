@@ -35,6 +35,11 @@ CHANNELS = {
     "alive": ("alive_logits", "alive_threshold", "alive_prior_probability"),
     "end": ("end_hazard_logits", "end_threshold", "end_prior_probability"),
 }
+RAW_CHANNELS = {
+    "birth": "raw_birth_logits",
+    "alive": "raw_alive_logits",
+    "end": "raw_end_hazard_logits",
+}
 
 
 def _sha256(path):
@@ -164,6 +169,22 @@ def summarize_binary_discrimination(positive_values, negative_values, threshold)
             "threshold_crossing_rate"
         ],
     }
+
+
+def pairwise_auc(positive_values, negative_values):
+    positive_values = [float(value) for value in positive_values]
+    negative_values = [float(value) for value in negative_values]
+    if not positive_values or not negative_values:
+        raise ValueError("pairwise AUC requires positive and negative scores")
+    ordered_negative = sorted(negative_values)
+    pairwise_wins = 0.0
+    for positive in positive_values:
+        strictly_lower = bisect_left(ordered_negative, positive)
+        equal = bisect_right(ordered_negative, positive) - strictly_lower
+        pairwise_wins += strictly_lower + 0.5 * equal
+    return pairwise_wins / (
+        len(positive_values) * len(negative_values)
+    )
 
 
 def append_target_conditioned_scores(store, probabilities, transition):
@@ -333,13 +354,29 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
     model.reset_online_states()
 
     values = {channel: [] for channel in CHANNELS}
+    raw_values = {channel: [] for channel in CHANNELS}
     per_slot = {
+        channel: [[] for _ in range(model.head.num_slots)]
+        for channel in CHANNELS
+    }
+    raw_per_slot = {
         channel: [[] for _ in range(model.head.num_slots)]
         for channel in CHANNELS
     }
     target_conditioned_values = {
         channel: {"positive": [], "negative": []}
         for channel in CHANNELS
+    }
+    raw_target_conditioned_values = {
+        channel: {"positive": [], "negative": []}
+        for channel in CHANNELS
+    }
+    target_conditioned_logits = {
+        space: {
+            channel: {"positive": [], "negative": []}
+            for channel in CHANNELS
+        }
+        for space in ("raw", "calibrated")
     }
     runtime_totals = {}
     runtime = None
@@ -400,19 +437,27 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
             )
             for token_output, schedule_step in zip(output.logits, schedule):
                 token_probabilities = {}
+                raw_token_probabilities = {}
+                token_logits = {}
+                raw_token_logits = {}
                 for channel, (logit_name, _, _) in CHANNELS.items():
-                    probabilities = (
-                        token_output[logit_name]
-                        .detach()
-                        .float()
-                        .sigmoid()[0]
-                        .cpu()
-                        .tolist()
-                    )
+                    logits = token_output[logit_name].detach().float()[0]
+                    raw_logits = token_output.get(
+                        RAW_CHANNELS[channel],
+                        token_output[logit_name],
+                    ).detach().float()[0]
+                    probabilities = logits.sigmoid().cpu().tolist()
+                    raw_probabilities = raw_logits.sigmoid().cpu().tolist()
                     token_probabilities[channel] = probabilities
+                    raw_token_probabilities[channel] = raw_probabilities
+                    token_logits[channel] = logits.cpu().tolist()
+                    raw_token_logits[channel] = raw_logits.cpu().tolist()
                     values[channel].extend(probabilities)
+                    raw_values[channel].extend(raw_probabilities)
                     for slot, probability in enumerate(probabilities):
                         per_slot[channel][slot].append(probability)
+                    for slot, probability in enumerate(raw_probabilities):
+                        raw_per_slot[channel][slot].append(probability)
                 transition = supervision.transition(
                     schedule_step,
                     model._cost_provider(
@@ -428,6 +473,21 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                 append_target_conditioned_scores(
                     target_conditioned_values,
                     token_probabilities,
+                    transition,
+                )
+                append_target_conditioned_scores(
+                    raw_target_conditioned_values,
+                    raw_token_probabilities,
+                    transition,
+                )
+                append_target_conditioned_scores(
+                    target_conditioned_logits["calibrated"],
+                    token_logits,
+                    transition,
+                )
+                append_target_conditioned_scores(
+                    target_conditioned_logits["raw"],
+                    raw_token_logits,
                     transition,
                 )
                 target_conditioned_tokens += 1
@@ -453,6 +513,8 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
             ],
         }
     target_conditioned_reports = {}
+    raw_channel_reports = {}
+    raw_target_conditioned_reports = {}
     for channel, (_, threshold_name, _) in CHANNELS.items():
         threshold = float(getattr(model.head, threshold_name))
         target_conditioned_reports[channel] = (
@@ -462,8 +524,69 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
                 threshold,
             )
         )
+        raw_channel_reports[channel] = {
+            "all_slots": summarize_probabilities(
+                raw_values[channel],
+                threshold,
+            ),
+            "per_slot": [
+                summarize_probabilities(slot_values, threshold)
+                for slot_values in raw_per_slot[channel]
+            ],
+        }
+        raw_target_conditioned_reports[channel] = (
+            summarize_binary_discrimination(
+                raw_target_conditioned_values[channel]["positive"],
+                raw_target_conditioned_values[channel]["negative"],
+                threshold,
+            )
+        )
+    calibration_mode = str(model.head.lifecycle_calibration_mode)
+    calibration_invariance = {
+        "mode": calibration_mode,
+        "scale": None,
+        "bias": None,
+        "channels": {},
+        "passed": True,
+    }
+    if model.head.lifecycle_calibration_log_scale is not None:
+        calibration_invariance["scale"] = (
+            model.head.lifecycle_calibration_log_scale.detach()
+            .float()
+            .exp()
+            .cpu()
+            .tolist()
+        )
+        calibration_invariance["bias"] = (
+            model.head.lifecycle_calibration_bias.detach()
+            .float()
+            .cpu()
+            .tolist()
+        )
+    for channel in CHANNELS:
+        raw_auc = pairwise_auc(
+            target_conditioned_logits["raw"][channel]["positive"],
+            target_conditioned_logits["raw"][channel]["negative"],
+        )
+        calibrated_auc = pairwise_auc(
+            target_conditioned_logits["calibrated"][channel]["positive"],
+            target_conditioned_logits["calibrated"][channel]["negative"],
+        )
+        delta = calibrated_auc - raw_auc
+        calibration_invariance["channels"][channel] = {
+            "raw_logit_pairwise_auc": raw_auc,
+            "calibrated_logit_pairwise_auc": calibrated_auc,
+            "auc_delta": delta,
+        }
+        if abs(delta) > 1e-12:
+            calibration_invariance["passed"] = False
+    if calibration_invariance["scale"] is not None and not all(
+        math.isfinite(value) and value > 0
+        for value in calibration_invariance["scale"]
+    ):
+        calibration_invariance["passed"] = False
     return {
-        "schema_version": "persistent_binding_score_diagnosis.v2",
+        "schema_version": "persistent_binding_score_diagnosis.v3",
         "passed": True,
         "purpose": "calibration_only_model_score_diagnosis",
         "effectiveness_claim_authorized": False,
@@ -490,9 +613,14 @@ def diagnose(config, checkpoint_path, screen_result_path, device_name, seed):
         "dataset_video_ids_sha256": _canonical_sha256(sorted(dataset_ids)),
         "num_slots": int(model.head.num_slots),
         "channel_score_distributions": channel_reports,
+        "raw_channel_score_distributions": raw_channel_reports,
         "target_conditioned_score_distributions": (
             target_conditioned_reports
         ),
+        "raw_target_conditioned_score_distributions": (
+            raw_target_conditioned_reports
+        ),
+        "lifecycle_calibration_invariance": calibration_invariance,
         "target_conditioning": {
             "split": "calibration",
             "prefix_observable_only": True,

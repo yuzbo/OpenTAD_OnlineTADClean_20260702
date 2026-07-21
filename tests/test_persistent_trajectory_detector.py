@@ -19,6 +19,7 @@ from opentad.models.detectors.persistent_trajectory_ontad import (
     PersistentTrajectoryOnlineDetector,
     PersistentTrajectoryRuntimeState,
     _balanced_binary_logit_margin,
+    _balanced_binary_calibration_bce,
     _causal_query_transport_loss,
     _masked_bce,
     _sinkhorn_plan,
@@ -575,6 +576,76 @@ def test_lifecycle_logit_margins_cover_birth_alive_and_end_boundaries():
     assert detector.head.birth_head.weight.grad is not None
     assert detector.head.alive_head.weight.grad is not None
     assert detector.head.end_head.weight.grad is not None
+
+
+def test_balanced_calibration_bce_requires_a_current_positive():
+    logits = torch.tensor([[0.0, 1.0]], requires_grad=True)
+    mask = torch.ones_like(logits, dtype=torch.bool)
+
+    absent = _balanced_binary_calibration_bce(
+        logits,
+        torch.zeros_like(logits),
+        mask,
+    )
+    present = _balanced_binary_calibration_bce(
+        logits,
+        torch.tensor([[1.0, 0.0]]),
+        mask,
+    )
+
+    assert absent.item() == 0
+    assert present.item() > 0
+
+
+def test_calibration_losses_update_only_monotone_calibrator():
+    head = _head()
+    head.lifecycle_calibration_mode = "monotone_affine"
+    head.lifecycle_calibration_log_scale = torch.nn.Parameter(torch.zeros(3))
+    head.lifecycle_calibration_bias = torch.nn.Parameter(torch.zeros(3))
+    detector = PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode="fixed_birth_slot",
+        birth_loss_weight=0.0,
+        alive_loss_weight=0.0,
+        class_loss_weight=0.0,
+        start_loss_weight=0.0,
+        end_loss_weight=0.0,
+        birth_calibration_loss_weight=1.0,
+        alive_calibration_loss_weight=1.0,
+        end_calibration_loss_weight=1.0,
+    ).train()
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 17.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+
+    output = detector.train_episode(
+        torch.randn(1, 4, len(frames)),
+        torch.ones(1, len(frames), dtype=torch.bool),
+        _meta(frames),
+        schedule,
+    )
+    calibration_cost = sum(
+        output.losses[key]
+        for key in (
+            "birth_calibration_loss",
+            "alive_calibration_loss",
+            "end_calibration_loss",
+        )
+    )
+    calibration_cost.backward()
+
+    assert head.lifecycle_calibration_log_scale.grad is not None
+    assert head.lifecycle_calibration_bias.grad is not None
+    assert head.birth_head.weight.grad is None
+    assert head.alive_head.weight.grad is None
+    assert head.end_head.weight.grad is None
+    assert detector.last_episode_audit["lifecycle_calibration_mode"] == (
+        "monotone_affine"
+    )
 
 
 def test_detector_aligns_prior_biases_with_weighted_binary_losses():

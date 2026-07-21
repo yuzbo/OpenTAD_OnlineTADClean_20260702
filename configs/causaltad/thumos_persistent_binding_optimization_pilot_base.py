@@ -51,4 +51,7 @@ model = dict(
     causal_query_transport_identity_cost=0.25,
     causal_query_transport_iterations=56,
     causal_query_transport_mass_floor=0.05,
+    birth_calibration_loss_weight=0.0,
+    alive_calibration_loss_weight=0.0,
+    end_calibration_loss_weight=0.0,
 )

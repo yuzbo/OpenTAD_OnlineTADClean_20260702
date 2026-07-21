@@ -82,6 +82,27 @@ def _balanced_binary_logit_margin(logits, target, mask, margin):
     return 0.5 * (positive_loss + negative_loss)
 
 
+def _balanced_binary_calibration_bce(logits, target, mask):
+    """Equal positive/negative BCE on current decisions that contain a positive."""
+
+    mask = mask.to(device=logits.device, dtype=torch.bool)
+    positive = mask & target.gt(0.5)
+    if not positive.any():
+        return _zero(logits)
+    negative = mask & ~target.gt(0.5)
+    positive_loss = F.binary_cross_entropy_with_logits(
+        logits[positive],
+        torch.ones_like(logits[positive]),
+    )
+    if not negative.any():
+        return positive_loss
+    negative_loss = F.binary_cross_entropy_with_logits(
+        logits[negative],
+        torch.zeros_like(logits[negative]),
+    )
+    return 0.5 * (positive_loss + negative_loss)
+
+
 def _sinkhorn_plan(cost, source_mass, target_mass, temperature, iterations):
     """Return a balanced entropic transport plan in log space."""
 
@@ -166,13 +187,25 @@ def _causal_query_transport_loss(
     return (plan * cosine_cost).sum()
 
 
+def _raw_lifecycle_logits(outputs, key):
+    raw_key = {
+        "birth_logits": "raw_birth_logits",
+        "alive_logits": "raw_alive_logits",
+        "end_hazard_logits": "raw_end_hazard_logits",
+    }[key]
+    return outputs.get(raw_key, outputs[key])
+
+
 def _predicted_lifecycle_mass(outputs):
     """Prediction-only persistence mass; no supervision or future target enters."""
 
     return (
-        outputs["alive_logits"].sigmoid()
-        * (1.0 - outputs["birth_logits"].sigmoid())
-        * (1.0 - outputs["end_hazard_logits"].sigmoid())
+        _raw_lifecycle_logits(outputs, "alive_logits").sigmoid()
+        * (1.0 - _raw_lifecycle_logits(outputs, "birth_logits").sigmoid())
+        * (
+            1.0
+            - _raw_lifecycle_logits(outputs, "end_hazard_logits").sigmoid()
+        )
     )
 
 
@@ -276,6 +309,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         causal_query_transport_identity_cost=0.25,
         causal_query_transport_iterations=56,
         causal_query_transport_mass_floor=0.05,
+        birth_calibration_loss_weight=0.0,
+        alive_calibration_loss_weight=0.0,
+        end_calibration_loss_weight=0.0,
     ):
         super().__init__()
         self.head = head if isinstance(head, nn.Module) else build_head(head)
@@ -319,12 +355,31 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "causal_transport_loss": float(
                 causal_query_transport_loss_weight
             ),
+            "birth_calibration_loss": float(
+                birth_calibration_loss_weight
+            ),
+            "alive_calibration_loss": float(
+                alive_calibration_loss_weight
+            ),
+            "end_calibration_loss": float(end_calibration_loss_weight),
         }
         if any(
             not math.isfinite(value) or value < 0
             for value in self.loss_weights.values()
         ):
             raise ValueError("loss weights must be non-negative and finite")
+        calibration_weights = (
+            self.loss_weights["birth_calibration_loss"],
+            self.loss_weights["alive_calibration_loss"],
+            self.loss_weights["end_calibration_loss"],
+        )
+        if (
+            any(weight > 0 for weight in calibration_weights)
+            and self.head.lifecycle_calibration_mode != "monotone_affine"
+        ):
+            raise ValueError(
+                "calibration losses require monotone_affine lifecycle calibration"
+            )
         self.logit_margins = {
             "birth": float(birth_logit_margin),
             "alive": float(alive_logit_margin),
@@ -617,6 +672,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
     def _cost_provider(self, outputs, schedule_step, feature_stride):
         targets = self._targets_by_id(schedule_step)
         class_log_probs = outputs["class_logits"][0].log_softmax(dim=-1)
+        raw_birth_logits = _raw_lifecycle_logits(outputs, "birth_logits")
+        raw_end_logits = _raw_lifecycle_logits(
+            outputs,
+            "end_hazard_logits",
+        )
         ending_instance_ids = {
             int(item.instance_id) for item in schedule_step.ends
         }
@@ -635,13 +695,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 row = []
                 for slot in slot_ids:
                     class_cost = -class_log_probs[int(slot), int(target.label)]
-                    endpoint_target = outputs[
-                        "end_hazard_logits"
-                    ].new_tensor(
+                    endpoint_target = raw_end_logits.new_tensor(
                         float(int(instance_id) in ending_instance_ids)
                     )
                     endpoint_cost = F.binary_cross_entropy_with_logits(
-                        outputs["end_hazard_logits"][0, int(slot)],
+                        raw_end_logits[0, int(slot)],
                         endpoint_target,
                         reduction="sum",
                     )
@@ -658,7 +716,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                             + endpoint_cost
                             + start_cost
                             - F.logsigmoid(
-                                outputs["birth_logits"][0, int(slot)]
+                                raw_birth_logits[0, int(slot)]
                             )
                         )
                     elif phase == "rematch":
@@ -677,7 +735,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         return provider
 
     def _step_losses(self, outputs, schedule_step, transition, feature_stride):
-        birth_target = torch.zeros_like(outputs["birth_logits"])
+        raw_birth_logits = _raw_lifecycle_logits(outputs, "birth_logits")
+        raw_alive_logits = _raw_lifecycle_logits(outputs, "alive_logits")
+        raw_end_logits = _raw_lifecycle_logits(
+            outputs,
+            "end_hazard_logits",
+        )
+        birth_target = torch.zeros_like(raw_birth_logits)
         birth_mask = torch.as_tensor(
             transition.birth_mask,
             dtype=torch.bool,
@@ -686,12 +750,12 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         for binding in transition.birth_assignments:
             birth_target[:, int(binding.slot_id)] = 1.0
 
-        alive_target = torch.zeros_like(outputs["alive_logits"])
+        alive_target = torch.zeros_like(raw_alive_logits)
         for slot in transition.audit.occupied_slots_for_supervision:
             alive_target[:, int(slot)] = 1.0
         alive_mask = torch.ones_like(alive_target, dtype=torch.bool)
 
-        end_target = torch.zeros_like(outputs["end_hazard_logits"])
+        end_target = torch.zeros_like(raw_end_logits)
         end_mask = torch.as_tensor(
             transition.at_risk_mask,
             dtype=torch.bool,
@@ -749,13 +813,13 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
 
         return {
             "birth_loss": _masked_bce(
-                outputs["birth_logits"],
+                raw_birth_logits,
                 birth_target,
                 birth_mask,
                 self.positive_weights["birth_loss"],
             ),
             "alive_loss": _masked_bce(
-                outputs["alive_logits"],
+                raw_alive_logits,
                 alive_target,
                 alive_mask,
                 self.positive_weights["alive_loss"],
@@ -763,39 +827,66 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "class_loss": class_loss,
             "start_loss": start_loss,
             "end_loss": _masked_bce(
-                outputs["end_hazard_logits"],
+                raw_end_logits,
                 end_target,
                 end_mask,
                 self.positive_weights["end_loss"],
             ),
             "birth_margin_loss": (
                 _balanced_binary_logit_margin(
-                    outputs["birth_logits"],
+                    raw_birth_logits,
                     birth_target,
                     birth_mask,
                     self.birth_logit_margin,
                 )
                 if self.loss_weights["birth_margin_loss"] > 0
-                else _zero(outputs["birth_logits"])
+                else _zero(raw_birth_logits)
             ),
             "alive_margin_loss": (
                 _balanced_binary_logit_margin(
-                    outputs["alive_logits"],
+                    raw_alive_logits,
                     alive_target,
                     alive_mask,
                     self.alive_logit_margin,
                 )
                 if self.loss_weights["alive_margin_loss"] > 0
-                else _zero(outputs["alive_logits"])
+                else _zero(raw_alive_logits)
             ),
             "end_margin_loss": (
                 _balanced_binary_logit_margin(
-                    outputs["end_hazard_logits"],
+                    raw_end_logits,
                     end_target,
                     end_mask,
                     self.end_logit_margin,
                 )
                 if self.loss_weights["end_margin_loss"] > 0
+                else _zero(raw_end_logits)
+            ),
+            "birth_calibration_loss": (
+                _balanced_binary_calibration_bce(
+                    outputs["birth_logits"],
+                    birth_target,
+                    birth_mask,
+                )
+                if self.loss_weights["birth_calibration_loss"] > 0
+                else _zero(outputs["birth_logits"])
+            ),
+            "alive_calibration_loss": (
+                _balanced_binary_calibration_bce(
+                    outputs["alive_logits"],
+                    alive_target,
+                    alive_mask,
+                )
+                if self.loss_weights["alive_calibration_loss"] > 0
+                else _zero(outputs["alive_logits"])
+            ),
+            "end_calibration_loss": (
+                _balanced_binary_calibration_bce(
+                    outputs["end_hazard_logits"],
+                    end_target,
+                    end_mask,
+                )
+                if self.loss_weights["end_calibration_loss"] > 0
                 else _zero(outputs["end_hazard_logits"])
             ),
         }
@@ -1143,6 +1234,31 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 "causal_transport_loss"
             ],
             "causal_query_transport": dict(self.causal_transport),
+            "lifecycle_calibration_mode": (
+                self.head.lifecycle_calibration_mode
+            ),
+            "birth_calibration_loss_weight": self.loss_weights[
+                "birth_calibration_loss"
+            ],
+            "alive_calibration_loss_weight": self.loss_weights[
+                "alive_calibration_loss"
+            ],
+            "end_calibration_loss_weight": self.loss_weights[
+                "end_calibration_loss"
+            ],
+            "lifecycle_calibration_scale": (
+                self.head.lifecycle_calibration_log_scale.detach()
+                .exp()
+                .cpu()
+                .tolist()
+                if self.head.lifecycle_calibration_log_scale is not None
+                else None
+            ),
+            "lifecycle_calibration_bias": (
+                self.head.lifecycle_calibration_bias.detach().cpu().tolist()
+                if self.head.lifecycle_calibration_bias is not None
+                else None
+            ),
             "birth_assignments": tuple(birth_trace),
             "canonical_lifecycle": tuple(canonical_trace),
             "loss_bindings": tuple(loss_binding_trace),

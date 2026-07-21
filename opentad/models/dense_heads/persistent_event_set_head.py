@@ -77,6 +77,7 @@ class PersistentEventSetHead(nn.Module):
         birth_prior_probability=None,
         alive_prior_probability=None,
         end_prior_probability=None,
+        lifecycle_calibration_mode="none",
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -100,6 +101,7 @@ class PersistentEventSetHead(nn.Module):
         self.lifecycle_mode = str(lifecycle_mode)
         self.candidate_confirmation_steps = int(candidate_confirmation_steps)
         self.max_births_per_step = int(max_births_per_step)
+        self.lifecycle_calibration_mode = str(lifecycle_calibration_mode)
         self.birth_prior_probability = self._validated_prior(
             birth_prior_probability,
             "birth_prior_probability",
@@ -134,6 +136,13 @@ class PersistentEventSetHead(nn.Module):
             raise ValueError("the scientific route freezes one-step candidate confirmation")
         if not 1 <= self.max_births_per_step <= self.num_slots:
             raise ValueError("max_births_per_step must be in [1, num_slots]")
+        if self.lifecycle_calibration_mode not in {
+            "none",
+            "monotone_affine",
+        }:
+            raise ValueError(
+                "lifecycle_calibration_mode must be none or monotone_affine"
+            )
 
         self.input_proj = nn.Sequential(
             nn.Linear(self.in_channels, self.hidden_dim),
@@ -164,6 +173,17 @@ class PersistentEventSetHead(nn.Module):
         self.alive_head = nn.Linear(self.hidden_dim, 1)
         self.class_head = nn.Linear(self.hidden_dim, self.num_classes)
         self.end_head = nn.Linear(self.hidden_dim, 1)
+        if self.lifecycle_calibration_mode == "monotone_affine":
+            self.lifecycle_calibration_log_scale = nn.Parameter(
+                torch.zeros(3)
+            )
+            self.lifecycle_calibration_bias = nn.Parameter(torch.zeros(3))
+        else:
+            self.register_parameter(
+                "lifecycle_calibration_log_scale",
+                None,
+            )
+            self.register_parameter("lifecycle_calibration_bias", None)
         if self.endpoint_mode == "hazard":
             self.endpoint_offset_head = nn.Linear(self.hidden_dim, 1)
         self.start_offset_head = nn.Linear(self.hidden_dim, 1)
@@ -278,6 +298,19 @@ class PersistentEventSetHead(nn.Module):
             return self.query_embed.weight.to(device=device, dtype=dtype).unsqueeze(0).expand(batch_size, -1, -1)
         return state.queries.to(device=device, dtype=dtype)
 
+    def calibrate_lifecycle_logits(self, raw_logits):
+        """Apply a ranking-preserving calibration trained independently of raw heads."""
+
+        if raw_logits.shape[-1] != 3:
+            raise ValueError(
+                "lifecycle logits must end with birth/alive/end channels"
+            )
+        if self.lifecycle_calibration_mode == "none":
+            return raw_logits
+        scale = self.lifecycle_calibration_log_scale.exp().to(raw_logits)
+        bias = self.lifecycle_calibration_bias.to(raw_logits)
+        return raw_logits.detach() * scale + bias
+
     def step(self, feature, state, source_frame):
         if feature.ndim != 2 or feature.shape[1] != self.in_channels:
             raise ValueError(f"feature must have shape [B,{self.in_channels}]")
@@ -298,11 +331,23 @@ class PersistentEventSetHead(nn.Module):
         ).reshape_as(base)
         queries = self.query_norm(queries)
 
+        raw_birth_logits = self.birth_head(queries).squeeze(-1)
+        raw_alive_logits = self.alive_head(queries).squeeze(-1)
+        raw_end_logits = self.end_head(queries).squeeze(-1)
+        calibrated_lifecycle_logits = self.calibrate_lifecycle_logits(
+            torch.stack(
+                [raw_birth_logits, raw_alive_logits, raw_end_logits],
+                dim=-1,
+            )
+        )
         outputs = {
-            "birth_logits": self.birth_head(queries).squeeze(-1),
-            "alive_logits": self.alive_head(queries).squeeze(-1),
+            "raw_birth_logits": raw_birth_logits,
+            "raw_alive_logits": raw_alive_logits,
+            "raw_end_hazard_logits": raw_end_logits,
+            "birth_logits": calibrated_lifecycle_logits[..., 0],
+            "alive_logits": calibrated_lifecycle_logits[..., 1],
             "class_logits": self.class_head(queries),
-            "end_hazard_logits": self.end_head(queries).squeeze(-1),
+            "end_hazard_logits": calibrated_lifecycle_logits[..., 2],
             "start_offset": (
                 self.start_offset_head(queries).sigmoid().squeeze(-1)
                 * self.max_start_offset
