@@ -566,3 +566,17 @@ budget、provenance 才能进入 P1；任何诊断改善都不能替代 technica
 
 仅当双臂非零最终区间、prediction/GT、Recall 和所有完整性门均合格，
 才讨论多轮收敛；本表不授权 reporting、多种子或 raw-RGB。
+
+### M10 第四版 FIXED 结果
+
+`1177720` 的 FIXED 一轮完成 `2010/2010` 更新、`scheduler_steps=2010`、
+零 skip 和零监督耗尽。birth/alive/end margin 分别在
+`1195/1284/1193` 次更新中非零，均值
+`0.101839/0.593518/0.044138`，transport 始终为零；机制激活正确。
+
+但训练路径出现 `1` 次 GT-birth/runtime entry-free collision，
+active abandonment 为 `23`；冻结 calibration 仍为 `0` committed
+prediction、`prediction/GT=0`、`Recall@0.3=0`、average mAP `0`。
+因此第四版已确定不可能通过双臂 technical gate。作业继续 REMATCH 和
+双臂 v2 诊断，目的只剩下判断三头 margin 是否保住 REMATCH 排序，以及
+下一步应走 M9 的哪一条失败分流；不授权调权或后续结果阶段。

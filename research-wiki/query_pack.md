@@ -284,3 +284,6 @@ identity-linked duplicate/fragmentation error。
 - 训练结果前已冻结失败分流：排序保留但 birth TPR=0 → 独立校准头；
   birth crossing 后 end 仍弱 → causal transition-end；REMATCH
   birth/alive AUC 任一 `<0.60` → 拒绝三头 margin、不做调权 sweep。
+- lifecycle FIXED 已完成：三项 margin 正确激活、`2010/2010`、零
+  skip/监督耗尽，但 `1` 次 runtime 空槽碰撞且 calibration 仍为零区间；
+  technical gate 已无法通过，REMATCH 仅用于冻结失败分流。
