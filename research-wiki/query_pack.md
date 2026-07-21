@@ -409,3 +409,8 @@ identity-linked duplicate/fragmentation error。
   `1.6392`、REMATCH `1.5142`，学习率共同降至 `1.0e-4`；节点本地
   `epoch_5.pth` 均确认存在且为 `17,512,977` bytes。无主作业 fatal，整体已过
   50%；仍等待 12 轮结束后统一进行 calibration-only 评估，下一节点为第 9 轮。
+- 正式第 9 轮恢复点：双臂已进入第 10 轮，节点本地 `epoch_8.pth` 均确认存在、
+  大小 `17,512,977` bytes；第 9 轮末 loss 为 FIXED `1.3719`、REMATCH
+  `1.2894`，共同 LR=`3.0e-5`，主作业无 fatal。FIXED 相对第 8 轮的单 minibatch
+  `+0.0090` 波动不作过拟合或调参依据；下一节点是训练结束后的 3/6/9/12
+  calibration-only 重放、完整训练审计和固定 0.5 成对终检。
