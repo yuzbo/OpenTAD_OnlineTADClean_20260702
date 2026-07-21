@@ -349,3 +349,7 @@ identity-linked duplicate/fragmentation error。
   reserve/calibration/boundary/interaction 四个目录。比较器会自动输出两臂
   主效应/交互及 `multi_seed_authorized_next`；其
   `raw_rgb_authorized_next` 冻结为 false。
+- H v1 `1178354` 已在 profile fail-closed：`2.113608 GPU·h > 2.0`，无训练；
+  不是崩溃。G 同门仅 `1.706565 GPU·h`，因此修订 calibration loss 为
+  episode-batched balanced BCE，消除每-token 三次 BCE 启动；必须同时重跑
+  F-v2/H-v2 保持 2×2，安全系数和预算上限不变。

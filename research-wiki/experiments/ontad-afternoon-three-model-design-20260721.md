@@ -239,3 +239,22 @@ AUC/固定阈值 TPR/FPR。它还统一检查 frozen data hashes、activation、
 只有 H 同时技术通过、激活通过、单调门通过、past-only/no-GT 门通过时，
 比较器才设置 `multi_seed_authorized_next=true`；无论本轮结果如何，
 `raw_rgb_authorized_next` 恒为 false。本地纯 JSON 回归 `2 passed`。
+
+### M20 H v1 画像预算拒绝与修订方向
+
+Slurm `1178354` 在 13:41 完成四项稳定画像后按预算门停止，未开始训练：
+
+- fixed/rematch train mean：约 `0.9719/1.0505 s/step`；
+- calibration inference 合计估算：`0.08264 GPU·h`；
+- train + reporting inference raw total：`1.69089 GPU·h`；
+- 乘冻结 `1.25` 安全系数后：`2.11361 GPU·h > 2.0`；
+- capacity exhaustion 为零，binding inference equivalence 和 stability 均通过。
+
+因此这是预算 gate reject，不是代码、数值或科学运行崩溃。对比 G 的
+`1.70656 GPU·h` 安全估算，H v1 的主要新增开销来自每个 token 分别启动三次
+calibration BCE。下一修订冻结为 **episode-batched balanced calibration**：
+每个流式训练 chunk 先收集所有当前/过去可见的三通道监督，再各执行一次
+正负平衡 BCE；raw detach、固定 0.5、匹配、margin 和 runtime 语义不变。
+
+为保持 2×2 公平性，F 与 H 都建立 batched-v2 对应版本；先过 exact tests 和
+自身 profile，不能用取消安全系数或放宽 2 小时上限解决。
