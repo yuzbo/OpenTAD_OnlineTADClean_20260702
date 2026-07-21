@@ -98,6 +98,7 @@ allowed_prefixes = (
     "configs/causaltad/thumos_persistent_binding_formal12_",
     "research-wiki/",
     "tests/",
+    "tools/compare_persistent_binding_factorial.py",
     "tools/evaluate_persistent_binding_formal12.py",
     "tools/remote/submit_persistent_binding_formal12_n16r4.sh",
 )

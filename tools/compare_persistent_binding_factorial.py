@@ -145,7 +145,13 @@ def _normalize_run(root, variant):
     root = Path(root).resolve()
     contract = _load(root / "pilot_contract.json")
     activation = _load(root / "optimization_activation.json")
-    screen = _load(root / "screen_gate.json")
+    layered_screen_path = root / "screen_gate_v2.json"
+    screen_path = (
+        layered_screen_path
+        if layered_screen_path.is_file()
+        else root / "screen_gate.json"
+    )
+    screen = _load(screen_path)
     diagnoses = {
         arm: _load(root / f"{arm}_score_diagnosis.json")
         for arm in ARMS
@@ -186,6 +192,7 @@ def _normalize_run(root, variant):
     eligible = operational_pass and activation_pass and mechanism["passed"]
     return {
         "root": str(root),
+        "screen_gate_path": str(screen_path),
         "factor_levels": {
             "calibration": VARIANTS[variant][0],
             "boundary": VARIANTS[variant][1],

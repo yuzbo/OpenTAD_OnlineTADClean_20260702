@@ -214,6 +214,46 @@ def test_factorial_comparison_accepts_matched_batched_v2_cells(tmp_path):
     assert result["multi_seed_authorized_next"] is True
 
 
+def test_factorial_comparison_prefers_non_destructive_layered_gate(tmp_path):
+    module = _module()
+    paths = {}
+    for variant in module.VARIANTS:
+        path = tmp_path / variant
+        _write_run(path, variant, 0.0)
+        paths[variant] = path
+    interaction = paths["boundary_calibration"]
+    legacy = json.loads(
+        (interaction / "screen_gate.json").read_text(encoding="utf-8")
+    )
+    legacy["technical_pass"] = False
+    legacy["technical_failures"] = ["legacy epoch-1 silence rejection"]
+    (interaction / "screen_gate.json").write_text(
+        json.dumps(legacy),
+        encoding="utf-8",
+    )
+    layered = {
+        **legacy,
+        "schema_version": "persistent_binding_seed705_screen_gate.v2",
+        "technical_pass": True,
+        "technical_failures": [],
+        "learning_readiness_pass": True,
+        "operational_pass": False,
+        "operational_failures": ["fixed threshold is silent at epoch 1"],
+    }
+    (interaction / "screen_gate_v2.json").write_text(
+        json.dumps(layered),
+        encoding="utf-8",
+    )
+
+    result = module.compare_factorial(paths)
+
+    assert result["multi_epoch_feature_training_authorized_next"] is True
+    assert result["multi_seed_authorized_next"] is False
+    assert result["variants"]["boundary_calibration"][
+        "screen_gate_path"
+    ].endswith("screen_gate_v2.json")
+
+
 def test_factorial_comparison_rejects_mixed_calibration_aggregation(tmp_path):
     module = _module()
     deployments = {

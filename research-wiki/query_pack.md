@@ -380,3 +380,10 @@ identity-linked duplicate/fragmentation error。
   3/6/9/12，epoch 12 才执行固定 0.5 正式门。该链路具备成对提交回滚、节点本地
   checkpoint、受控回传和依赖式 pair gate；通过后下一步仍是 feature 多种子，
   不是 reporting 或 raw-RGB。
+- 正式链路代码 exact `f3958b45fba4d9d2cd83ccd0cb604e87e043c6f4` 已在共享
+  clean checkout 通过 `167 tests in 79.84s` 与写探针；当前没有代码门阻塞，
+  唯一启动条件是 H2 `1178505` 完成一轮并通过 learning-readiness、activation、
+  monotone-AUC、past-only/no-GT。
+- E/G 已从原始 screen result 非破坏式补出 `screen_gate_v2.json`，旧门与新旧
+  SHA 都保留；两者均 learning-ready 但固定 0.5 一轮静默。最新因子比较器优先
+  读取 v2 companion，待 F2/H2 完成后即可公平生成 batched 2×2 结果。

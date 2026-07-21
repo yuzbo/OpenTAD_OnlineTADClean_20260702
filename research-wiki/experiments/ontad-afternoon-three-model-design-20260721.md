@@ -415,3 +415,34 @@ causal transition-end + past-only start pointer`，仍是缓存因果 RGB 特征
 当前本地正式配置、纯 JSON 门、提交器与既有协议的相关回归为 `31 passed`，
 Python 编译、`git diff --check` 和 Bash 语法均通过。远端 exact-SHA 复核及正式
 提交仍等待本提交固化，以及正在运行的 H2 一轮学习就绪门完成。
+
+### M27 正式链路 exact-SHA 就绪
+
+正式 12 轮闭环已固化并推送至
+`f3958b45fba4d9d2cd83ccd0cb604e87e043c6f4`。独立共享 checkout：
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Formal12_f3958b4`；
+检出后强制 4 KiB 写探针通过。该精确 SHA 上的模型、因果重放、数据、配置、
+诊断、科学门、正式 pair gate 与提交器扩展套件共 `167 passed in 79.84s`，
+Python 编译和两条 Bash 提交器语法通过，结束 SHA 不变且 worktree clean。
+
+该版本只增加正式配置、校准结果构造/门禁、Slurm 编排、测试和 Wiki，未修改
+H2 pilot 所使用的 detector/head/runtime 模型代码。正式提交当前唯一前置条件
+是正在运行的 H2 `1178505` 产出完整双臂一轮证据并通过分层学习就绪、激活、
+单调 AUC 不变、endpoint past-only 与 runtime-no-GT 门；在此之前不抢跑 12 轮。
+
+### M28 E/G 非破坏式分层门复核
+
+为避免 2×2 比较混用旧 v1 与新 v2 语义，使用 exact-2a 的纯结果评估器从 E/G
+既有 `screen_result.json` 与资源报告重新生成 `screen_gate_v2.json`；旧
+`screen_gate.json` 保留不覆盖，并由 `screen_gate_v2.sha256.txt` 同时记录新旧
+哈希。比较器现在优先读取 companion v2，不存在时才回退原文件。
+
+- E：`learning_readiness_pass=true`，实际 `1.13361 GPU·h`，完整更新且零容量、
+  监督、跳步、因果问题；`operational_pass=false` 只因一轮固定 0.5 静默；
+- G：`learning_readiness_pass=true`，实际 `1.29361 GPU·h`，机制与完整性门通过；
+  `operational_pass=false` 同样只是一轮固定 0.5 静默；
+- 两次复核均未访问 reporting、未搜索阈值、未改变 checkpoint 或预测。
+
+本地新增回归证明 companion v2 会被优先读取，同时仍保留旧门作审计证据。
+因此 E/G 可公平参与“是否已具备 12 轮学习就绪”的 2×2 分析，但二者仍无
+multi-seed 资格。
