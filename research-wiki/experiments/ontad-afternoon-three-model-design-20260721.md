@@ -209,3 +209,20 @@ H 不增加新阈值、数据或未来信息：raw head 仍负责匹配与原损
 必须通过 F 的正 scale/logit AUC 不变门与 G 的 endpoint decisions/past-only/
 runtime-no-GT 门。先实现并验证；部署仍受同提交 profile 和 2 GPU·小时门
 约束。
+
+### M18 H 实现、远端验证与部署
+
+H 已在 `84da20f46f772a20bc90018117f9833e414ad97a` 以组合配置完成，
+不增加第三种机制：相对 G 只打开 F 已验证的 monotone calibrator 与三项
+calibration loss。激活预期为三项 lifecycle margin、三项 calibration 和一项
+endpoint pointer；transport 必须为零。提交器对 H 同时执行 calibration
+invariance gate 与 boundary past-only/no-GT gate。
+
+- 本地 CPU-safe 配置/审计/提交器套件：`21 passed`；compile/Bash 通过。
+- N16R4 独立 checkout exact `84da20f`：含因果套件
+  `155 passed in 97.39s`，结束 SHA 不变且 clean。
+- Slurm：`1178354`。
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_boundary_calibration_seed705_20260721_101605`。
+
+H 仍先跑同提交 profile；预算或稳定性不通过时不会训练。E/F/G/H 至此构成
+完整、同协议的 2×2 部署。

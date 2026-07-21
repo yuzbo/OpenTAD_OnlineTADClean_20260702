@@ -340,3 +340,8 @@ identity-linked duplicate/fragmentation error。
   2×2。H=F+G，因为 G 单独仍受 birth/alive 最大概率低于 0.5 阻断，F 单独
   又不能改变近随机 end 排序。H 必须同时过单调 AUC 不变门和 endpoint
   past-only/no-GT 门；禁止借组合实验搜索阈值。
+- H 已实现并部署：exact `84da20f`，N16R4 clean 因果扩展套件
+  `155 passed in 97.39s`，Slurm `1178354`，run
+  `model_opt_boundary_calibration_seed705_20260721_101605`。恢复时先查 profile；
+  activation 必须是 3 margin + 3 calibration + pointer，随后同时核验 F/G 两套
+  诊断门，再与 E/F/G 做 2×2 主效应和交互解释。
