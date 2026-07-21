@@ -668,3 +668,24 @@ calibration 或 reporting。
 各验证 `24,120` 次完整更新和零容量/监督/因果异常 → recovery 四检查点及 SHA
 清单落盘 → calibration-only 比较 3/6/9/12 → epoch-12 固定 `0.5` 成对终检。
 只有终检通过，才进入 feature seeds 705/706/707；仍不直接进入 raw-RGB。
+
+### M38 正式重试第 3 轮成对 checkpoint
+
+FIXED 与 REMATCH 已分别在 21:53:34、22:02:49 完成第 3 轮 checkpoint，节点
+本地只读核验结果均为 `17,512,977` bytes：
+
+- FIXED：`/tmp/sczc063_ontad_formal12_1178956_fixed/.../checkpoint/epoch_2.pth`；
+- REMATCH：`/tmp/sczc063_ontad_formal12_1178957_rematch/.../checkpoint/epoch_2.pth`。
+
+两臂已经继续进入第 4 轮，当前分别约到 `01500/02009` 与 `00950/02009`，fatal
+仍为零。前三轮末 minibatch loss 为：
+
+- FIXED：`2.9177 → 2.2809 → 1.9829`；
+- REMATCH：`2.9213 → 2.3640 → 2.0649`。
+
+这六个数值与修订前 `1178653/1178654` 的对应轨迹逐项完全一致。因而在前三轮
+可观测范围内，正长度区间修订和 calibration 前 recovery 提升没有改变训练图、
+随机初始化或优化轨迹；它们只作用于训练完成后的解码/产物时序。当前 checkpoint
+仍按合同保存在节点本地，正式共享 recovery 要等 12 轮完整审计通过后一次原子
+提升，所以 `recovery=pending` 正常。未提前运行 calibration、未访问 reporting，
+下一成对关键点为第 6 轮。

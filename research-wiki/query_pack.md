@@ -444,3 +444,8 @@ identity-linked duplicate/fragmentation error。
   漂移。当前阶段仍是 feature-level seed-705 12轮可执行性门；没有 calibration
   结果、没有 reporting、没有 raw-RGB。下一硬节点依次是 epoch 3/6/9/12、两份
   recovery 清单、四 checkpoint calibration-only 曲线和固定 0.5 成对终检。
+- 第 3 轮恢复点 M38：两份节点本地 `epoch_2.pth` 均为 `17,512,977` bytes，
+  两臂已继续第 4 轮且 fatal=0。FIXED 前三轮末 loss=`2.9177/2.2809/1.9829`，
+  REMATCH=`2.9213/2.3640/2.0649`，与修订前逐项完全一致；前三轮范围内训练图、
+  初始化和优化轨迹没有漂移。当前不做 calibration，recovery 要等 12 轮完整审计
+  后才共享落盘；下一成对节点为 epoch 6。
