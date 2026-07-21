@@ -45,6 +45,15 @@ ACTIVE_LOSSES = {
         "end_margin_loss",
         "endpoint_start_pointer_loss",
     ),
+    "boundary_calibration": (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+        "birth_calibration_loss",
+        "alive_calibration_loss",
+        "end_calibration_loss",
+        "endpoint_start_pointer_loss",
+    ),
 }
 
 
@@ -103,7 +112,7 @@ def _normalize_arm(payload, arm):
 def evaluate_activation(variant, fixed_payload, rematch_payload):
     if variant not in ACTIVE_LOSSES:
         raise ValueError(
-            "variant must be sw, margin, transport, lifecycle, reserve, calibration, or boundary"
+            "variant must be sw, margin, transport, lifecycle, reserve, calibration, boundary, or boundary_calibration"
         )
     arms = {
         "fixed": _normalize_arm(fixed_payload, "fixed"),

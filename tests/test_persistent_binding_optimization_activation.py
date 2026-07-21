@@ -91,6 +91,18 @@ def test_activation_gate_accepts_each_isolated_variant():
                 "endpoint_start_pointer_loss",
             ),
         ),
+        (
+            "boundary_calibration",
+            (
+                "birth_margin_loss",
+                "alive_margin_loss",
+                "end_margin_loss",
+                "birth_calibration_loss",
+                "alive_calibration_loss",
+                "end_calibration_loss",
+                "endpoint_start_pointer_loss",
+            ),
+        ),
     ):
         result = evaluator.evaluate_activation(
             variant,

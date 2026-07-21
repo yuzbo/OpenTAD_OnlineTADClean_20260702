@@ -303,6 +303,39 @@ def test_causal_boundary_pilot_is_matched_and_uses_only_past_start_memory():
     assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
 
 
+def test_boundary_calibration_completes_registered_two_by_two_factorial():
+    fixed = _load(
+        "thumos_persistent_binding_opt_boundary_calibration_fixed.py"
+    )
+    rematch = _load(
+        "thumos_persistent_binding_opt_boundary_calibration_rematch.py"
+    )
+
+    assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+    assert rematch.model.trajectory_binding_mode == (
+        "prefix_rematch_active_pool"
+    )
+    assert _normalized(fixed) == _normalized(rematch)
+    assert fixed.model.head.num_slots == 6
+    assert fixed.model.head.lifecycle_calibration_mode == "monotone_affine"
+    assert fixed.model.head.end_transition_mode == "causal_delta_mlp"
+    assert fixed.model.head.endpoint_start_mode == "past_pointer"
+    assert fixed.model.birth_calibration_loss_weight == 1.0
+    assert fixed.model.alive_calibration_loss_weight == 1.0
+    assert fixed.model.end_calibration_loss_weight == 1.0
+    assert fixed.model.endpoint_start_pointer_loss_weight == 1.0
+    assert fixed.model.birth_logit_margin_loss_weight == 0.1
+    assert fixed.model.alive_logit_margin_loss_weight == 0.1
+    assert fixed.model.end_logit_margin_loss_weight == 0.1
+    assert fixed.model.causal_query_transport_loss_weight == 0.0
+    assert fixed.optimization_pilot_contract.factorial_design == (
+        "reserve6_calibration_x_boundary_2x2_v1"
+    )
+    assert fixed.optimization_pilot_contract.threshold_search is False
+    assert fixed.optimization_pilot_contract.reporting_accessed is False
+    assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head

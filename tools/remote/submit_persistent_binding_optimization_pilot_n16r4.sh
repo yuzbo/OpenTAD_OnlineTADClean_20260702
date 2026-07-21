@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, reserve, calibration, or boundary}
+VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, reserve, calibration, boundary, or boundary_calibration}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
@@ -42,8 +42,12 @@ case "$VARIANT" in
         FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_fixed.py
         REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_rematch.py
         ;;
+    boundary_calibration)
+        FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_calibration_fixed.py
+        REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_boundary_calibration_rematch.py
+        ;;
     *)
-        echo "VARIANT must be sw, margin, transport, lifecycle, reserve, calibration, or boundary" >&2
+        echo "VARIANT must be sw, margin, transport, lifecycle, reserve, calibration, boundary, or boundary_calibration" >&2
         exit 2
         ;;
 esac
@@ -378,7 +382,7 @@ python tools/diagnose_persistent_binding_scores.py \
     --seed "$SEED" \
     --output "$RUN_DIR/rematch_score_diagnosis.json"
 
-if [[ "$VARIANT" == "calibration" ]]; then
+if [[ "$VARIANT" == "calibration" || "$VARIANT" == "boundary_calibration" ]]; then
     python - \
         "$RUN_DIR/fixed_score_diagnosis.json" \
         "$RUN_DIR/rematch_score_diagnosis.json" <<'PY'
@@ -395,7 +399,7 @@ for path in sys.argv[1:]:
 PY
 fi
 
-if [[ "$VARIANT" == "boundary" ]]; then
+if [[ "$VARIANT" == "boundary" || "$VARIANT" == "boundary_calibration" ]]; then
     python - \
         "$RUN_DIR/fixed_score_diagnosis.json" \
         "$RUN_DIR/rematch_score_diagnosis.json" <<'PY'
