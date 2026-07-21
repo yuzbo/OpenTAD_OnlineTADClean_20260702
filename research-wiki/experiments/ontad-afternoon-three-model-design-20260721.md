@@ -589,3 +589,31 @@ FIXED `1178653` 与 REMATCH `1178654` 都已完整完成 12 轮、每轮
 解读。下一步是在 N16R4 clean exact checkout 跑完整相关套件与 Bash/test-only，
 通过后才提交同 seed、同双臂、同 12 轮重试。reporting、阈值搜索和 raw-RGB
 继续锁定。
+
+### M35 正长度/恢复修订 exact 验证与正式重试启动
+
+修订提交已固化并推送为 `22c4028aa29db6cacdb4f057e830c43b68e673ab`。
+独立共享 checkout
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Formal12_22c4028`
+通过 4 KiB 强制写探针、Python 编译、两条 Bash 语法和完整相关 Torch/因果/
+配置/评测套件：`174 passed in 79.11s`。相对旧 exact 套件新增的 4 条回归覆盖
+same-step 正长度量化、零长度写出拒绝、原子 recovery 成功路径和不完整更新拒绝。
+精确 SHA 与 clean 状态在测试结束后保持不变。
+
+冻结前置合同也在不创建作业的 `MAX_SUBMIT_JOBS=0` 路径通过，正确停在提交槽
+上限检查；训练臂 `sbatch --test-only` 通过。旧 finalizer 已取消，直接复用其
+`afterok` 依赖做 test-only 会得到预期 dependency error；删除该失效依赖的临时
+只读资源副本后，finalizer 的 1 GPU/8 CPU/默认内存/30 分钟资源合同通过。
+
+新正式重试已提交：
+
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260721_202804`；
+- FIXED：`1178956`；REMATCH：`1178957`；依赖终检：`1178958`；
+- exact commit：`22c4028aa29db6cacdb4f057e830c43b68e673ab`；
+- protocol revision：`positive_duration_emission_and_precalibration_recovery.v1`；
+- same-step 量化：`one_observed_feature_cell_left_clipped_at_zero`。
+
+启动核验时 FIXED 已在 `g0003` 训练，第 1 轮到 `00050/02009`、loss=`2.6588`，
+无 fatal；REMATCH 因 `Priority` 等待，终检正常处于 `Dependency`。两臂脚本均
+显式包含精确提交、排除 `g0063`、校准前 recovery 提升以及从 recovery checkpoint
+重放。阈值仍为 birth/alive/end=`0.5`，reporting=false、raw-RGB=false。

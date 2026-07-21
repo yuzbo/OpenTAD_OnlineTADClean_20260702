@@ -423,3 +423,12 @@ identity-linked duplicate/fragmentation error。
   校准。旧终检 `1178655` 已取消。恢复顺序是：本地静态/CPU-safe 门 → N16R4
   clean exact Torch 全套与 Bash/test-only → 同 seed 双臂 12 轮重试。0.5、划分、
   reporting 锁和 raw-RGB 禁止状态都不变。
+- 最新执行点 M35：修订 exact `22c4028aa29db6cacdb4f057e830c43b68e673ab`
+  已在独立 N16R4 checkout 通过写探针、编译、Bash 和 `174 passed in 79.11s`；
+  前置合同及训练/finalizer 资源 test-only 也通过。新 run 为
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260721_202804`，
+  jobs 为 FIXED `1178956`、REMATCH `1178957`、终检 `1178958`。启动时 FIXED
+  在 `g0003` 训练，REMATCH 等 Priority；自动监控脚本切换到
+  `C:\tmp\ontad_formal12_progress_22c4028.ps1`。下一个关键点是双臂状态对齐和
+  第 3 轮 checkpoint；第 12 轮后必须先看到两份四 checkpoint recovery 清单，
+  才接受后续 calibration/终检。
