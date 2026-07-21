@@ -258,3 +258,26 @@ calibration BCE。下一修订冻结为 **episode-batched balanced calibration**
 
 为保持 2×2 公平性，F 与 H 都建立 batched-v2 对应版本；先过 exact tests 和
 自身 profile，不能用取消安全系数或放宽 2 小时上限解决。
+
+### M21 E 完整结果与 batched-v2 exact 验证
+
+E/reserve6 Slurm `1178040` 已封存完整双臂产物。两臂均完成 `2010/2010`
+更新，监督耗尽、GT-birth/runtime 空槽碰撞和协议违规均为零，实际双臂
+`1.13361 GPU·h`，证明 `4+2` 过渡容量修复有效且无需继续扩槽。但固定 0.5
+下两臂仍为 0 committed interval、0 Recall@0.3、0 mAP，因此 E 科学门拒绝。
+REMATCH 的 birth/alive/end AUC 为 `0.7604/0.7600/0.5637`，birth 正例最大值
+仍仅 `0.4466`；这把剩余问题进一步锁定为 birth/alive 刻度与 end 排序，而非容量。
+
+提交 `5a11881c00e2e20a9644b8592fc7b5b680d7799d` 实现 F2/H2 共用的
+`episode_balanced` 校准聚合：每个严格按时间排列的训练 chunk 只对
+birth/alive/end 各执行一次全段正负平衡 BCE，替代 v1 每 token 三次 BCE；
+校准输入继续 `stop_gradient(raw_logit)`，固定 0.5、raw 匹配/原损失/margin、
+runtime 和因果信息边界均不变。v1 继续作为可复核旧行为保留。
+
+- 新增 F2/H2 成对配置、激活门、提交路由和 v1/v2 一致性因子比较门；
+- 本地 CPU-safe/JSON/配置回归 `26 passed`，本机 Torch 仍被既知
+  Windows `c10.dll` 环境故障阻断；
+- N16R4 clean detached exact `5a11881` 的 Torch、因果、配置、诊断、比较与
+  提交器扩展套件 `160 passed in 88.32s`，结束 SHA 不变且 worktree clean；
+- 下一门为分别提交 F2 与 H2 自身 profile；两者仍受冻结 `1.25` 安全系数和
+  双臂 `2 GPU·h` 上限，不以放宽预算换取通过。

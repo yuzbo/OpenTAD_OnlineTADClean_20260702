@@ -353,3 +353,12 @@ identity-linked duplicate/fragmentation error。
   不是崩溃。G 同门仅 `1.706565 GPU·h`，因此修订 calibration loss 为
   episode-batched balanced BCE，消除每-token 三次 BCE 启动；必须同时重跑
   F-v2/H-v2 保持 2×2，安全系数和预算上限不变。
+- E/reserve6 `1178040` 已完整结束：两臂 `2010/2010`、实际 `1.13361 GPU·h`、
+  零容量冲突/监督耗尽/协议违规，但仍为零最终区间。REMATCH birth/alive/end
+  AUC=`0.7604/0.7600/0.5637`，birth 正例最大值 `0.4466`，因此容量轴关闭，
+  继续 F2/H2 的刻度×边界路线。
+- batched-v2 已在 exact `5a11881` 实现：训练 chunk 内三通道各一次 balanced
+  BCE，raw detach、固定 0.5、匹配与因果 runtime 不变；F2/H2 成对配置和
+  因子比较 alias 已注册。N16R4 clean exact 扩展套件
+  `160 passed in 88.32s`。恢复点是提交 F2/H2 自身 profile，并只接受冻结
+  2 GPU·小时门内的运行。
