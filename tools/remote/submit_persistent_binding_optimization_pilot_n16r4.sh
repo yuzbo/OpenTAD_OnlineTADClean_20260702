@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, or lifecycle}
+VARIANT=${VARIANT:?set VARIANT to sw, margin, transport, lifecycle, or reserve}
 BASE_DIR=${BASE_DIR:-/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Science_27a59de_20260720}
 RUNS_ROOT=${RUNS_ROOT:-/data/run01/sczc063/yuzibo/runs/persistent_binding}
 SMOKE_RUN_DIR=${SMOKE_RUN_DIR:-/data/run01/sczc063/yuzibo/runs/persistent_binding/smoke_20260721_010459}
@@ -30,8 +30,12 @@ case "$VARIANT" in
         FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_lifecycle_fixed.py
         REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_lifecycle_rematch.py
         ;;
+    reserve)
+        FIXED_CONFIG=configs/causaltad/thumos_persistent_binding_opt_reserve_fixed.py
+        REMATCH_CONFIG=configs/causaltad/thumos_persistent_binding_opt_reserve_rematch.py
+        ;;
     *)
-        echo "VARIANT must be sw, margin, transport, or lifecycle" >&2
+        echo "VARIANT must be sw, margin, transport, lifecycle, or reserve" >&2
         exit 2
         ;;
 esac

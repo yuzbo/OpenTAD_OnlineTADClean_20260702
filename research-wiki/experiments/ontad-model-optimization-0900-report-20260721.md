@@ -93,7 +93,8 @@ job 的四阶段 `torchrun` 曾发生 rendezvous 端口重叠；A/B 用同提交
 3. end 是持续瓶颈；只加 birth margin 或 query transport 都不能形成完整
    “出生—持续—结束—提交”链。
 4. D 说明更强 lifecycle 梯度会延长占槽；即使静态 census 的最大可见
-   实例数不超过四槽，运行时仍会因旧槽释放过慢造成出生碰撞。
+   实例数不超过四槽，入口冻结和一拍复用延迟仍可能让相邻 birth 暂时没有
+   合法入口槽。
 5. 一轮 pilot 是非退化筛选，不是论文主结果；没有合格候选就不能越级。
 
 ## 从当前实验到论文主实验
@@ -112,8 +113,10 @@ job 的四阶段 `torchrun` 曾发生 rendezvous 端口重叠；A/B 用同提交
 按结果前冻结的优先级，下一版不是调 margin 权重，而是：
 
 1. 先修 lifecycle/capacity：让同一步的旧实例结束/释放先于新实例出生
-   admission，并把“结束证据不足”和“槽位已可释放”拆开审计；目标是双臂
-   collision、监督耗尽和 skip 全为零。
+   的做法会让一个旧 query 同时描述另一个新实例，因此不采用。保留原设计
+   的 entry-free birth pool 和一拍复用延迟，按冻结 census 的“最大可见
+   4 + 同一步最多 birth 2”建立 6 槽 transition reserve 候选，并把常驻
+   占用与过渡预留分开审计；目标是双臂 collision、监督耗尽和 skip 全为零。
 2. 容量门干净后，保留 D 的小权重三头排序约束，新增独立
    current-label calibration head，把已经存在的 birth/alive 排序映射到
    冻结 0.5；不做阈值搜索。
@@ -124,6 +127,18 @@ D 的 REMATCH birth/alive AUC `0.733/0.758` 高于预注册的 `0.70/0.70`，
 所以它属于“排序保留、决策校准不足”；但双臂碰撞触发更高优先级的容量
 阻断，必须先完成第 1 步。FIXED end AUC `0.489` 也表明结束建模仍是后续
 瓶颈，但当前不能越过容量问题直接做结构扩张。
+
+这里的 6 槽不是随意扩容：现有控制器有意只允许“本步入口已经 FREE”的
+query 接受 birth，刚释放的 query 下一步才能复用，以免一个 query 同时
+解释旧实例 end 和新实例 birth；全量 census 又给出最大可见实例 4、同一步
+最多 2 个 birth。因此 `4+2` 是可审计的单步过渡上界，先作为独立容量变量
+验证，不改 FIXED/REMATCH 监督比较轴。
+
+截至 08:52，这个 reserve6 候选已直接实现：新增成对 FIXED/REMATCH
+配置、冻结容量合同、activation 映射和 Slurm 提交入口；本地相关测试
+`18 passed`，Python 编译与 Bash 语法通过。它尚未提交 GPU，因为必须先在
+N16R4 对新 exact SHA 完成全套 Torch 测试与自身 profile；这两门通过后
+才允许一轮双臂筛选。
 
 前沿方法只作结构启发：MATR 支持把 current-end 与 past-start decoder
 分开，但其 anticipation/NMS 不移入本严格协议；OpenHOUSE 说明相邻动作

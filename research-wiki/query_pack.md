@@ -299,9 +299,15 @@ identity-linked duplicate/fragmentation error。
 - 双臂均 0 最终区间、ratio/Recall 为零，且各有 1 次 runtime
   entry-free collision；`technical_pass=false`，不放行 P1、reporting、
   多种子或 raw-RGB。
-- 下一实现顺序已经冻结：先修同一步 release-before-birth admission 和
-  容量审计；容量门干净后做独立 current-label calibration head，阈值仍
-  固定 0.5；只有 birth crossing 后 end 仍弱，才做 causal
-  transition-end / past-start factorization。
+- 代码复核确认 released slot 的下一步复用是原设计的一部分，不能改成
+  同步 release-before-birth。下一容量候选保留 entry-free birth pool，
+  按 census 的最大可见 4 + 同一步最多 birth 2 注册 6 槽 transition
+  reserve，并审计常驻/预留占用；6 槽仍碰撞就回到 lifecycle，不继续扩容。
+- 容量门干净后做独立 current-label calibration head，阈值仍固定 0.5；
+  只有 birth crossing 后 end 仍弱，才做 causal transition-end /
+  past-start factorization。
 - 09:00 汇总页：
   `research-wiki/experiments/ontad-model-optimization-0900-report-20260721.md`。
+- reserve6 已实现成对配置、activation 和 Slurm 提交入口；本地
+  `18 passed`、Python 编译/Bash 语法通过。尚未提交 GPU；下一恢复点先做
+  N16R4 exact-SHA 全套测试与自身 profile，均通过后才跑一轮双臂。

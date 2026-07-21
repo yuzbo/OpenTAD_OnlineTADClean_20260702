@@ -218,6 +218,35 @@ def test_feature_route_is_strictly_causal_and_raw_rgb_remains_blocked():
     assert cfg.dataset.test.strict_causal_control is True
 
 
+def test_transition_reserve_pilot_is_matched_and_census_bounded():
+    fixed = _load("thumos_persistent_binding_opt_reserve_fixed.py")
+    rematch = _load("thumos_persistent_binding_opt_reserve_rematch.py")
+
+    assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+    assert rematch.model.trajectory_binding_mode == "prefix_rematch_active_pool"
+    assert _normalized(fixed) == _normalized(rematch)
+    assert fixed.model.head.num_slots == 6
+    assert fixed.transition_capacity_contract.resident_visible_slots == 4
+    assert fixed.transition_capacity_contract.transition_birth_reserve_slots == 2
+    assert fixed.transition_capacity_contract.total_slots == 6
+    assert fixed.transition_capacity_contract.released_slot_reuse == (
+        "next_causal_decision"
+    )
+    assert fixed.transition_capacity_contract.same_step_release_before_birth is False
+    assert fixed.transition_capacity_contract.expand_further_on_failure is False
+    assert fixed.screening_contract.changed_axis == (
+        "shared_transition_reserve_slots_4_to_6"
+    )
+    assert fixed.model.birth_logit_margin_loss_weight == 0.1
+    assert fixed.model.alive_logit_margin_loss_weight == 0.1
+    assert fixed.model.end_logit_margin_loss_weight == 0.1
+    assert fixed.model.causal_query_transport_loss_weight == 0.0
+    assert fixed.optimization_pilot_contract.threshold_search is False
+    assert fixed.optimization_pilot_contract.frozen_birth_threshold == 0.5
+    assert fixed.optimization_pilot_contract.reporting_accessed is False
+    assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head

@@ -603,14 +603,20 @@ prediction、`prediction/GT=0`、`Recall@0.3=0`、average mAP `0`。
 - `technical_pass=false`、`screen_pass=false`、预算通过、无 reporting
   访问，未授权多轮、多种子或 raw-RGB。
 
-按 M9 的预注册优先级，容量错误先于分数诊断：下一实现先保证同一步旧实例
-结束/释放在新 birth admission 前完成，并把 release eligibility 与 end
-分类置信度分开记录，直至双臂 collision、监督耗尽和 skip 全为零。容量门
-干净后，D 的 REMATCH birth/alive AUC `0.733/0.758` 满足“排序保留、
-校准不足”分支，下一模型才新增独立 current-label calibration head，并
-保持推理阈值固定 0.5。FIXED end AUC `0.489` 记录为后续
-transition-end / past-start factorization 的证据；在 birth 真正 crossing
-前不越级实现该结构。
+按 M9 的预注册优先级，容量错误先于分数诊断。代码复核确认控制器有意冻结
+step-entry FREE 槽作为 birth pool，刚结束/取消的 query 到下一决策才可
+复用；这是为了避免同一个 query 在同一步既解释旧实例 end、又解释另一个
+新实例 birth。因此不采用“先释放再出生”的重排。
+
+下一独立容量候选保留该语义，并按冻结全量 census 的
+`max_visible_instances=4` 与 `max_births_per_step=2` 注册 6 槽
+transition reserve；常驻并发上界仍是 4，额外 2 槽只覆盖一拍复用延迟，
+FIXED/REMATCH 使用完全相同容量。先验证双臂 collision、监督耗尽和 skip
+全为零，再解释分数。容量门干净后，D 的 REMATCH birth/alive AUC
+`0.733/0.758` 满足“排序保留、校准不足”分支，下一模型才新增独立
+current-label calibration head，并保持推理阈值固定 0.5。FIXED end AUC
+`0.489` 记录为后续 transition-end / past-start factorization 的证据；
+在 birth 真正 crossing 前不越级实现该结构。
 
 关键产物哈希：
 
@@ -624,3 +630,38 @@ transition-end / past-start factorization 的证据；在 birth 真正 crossing
   `f0f79d418b540e3e849110681cbaee129bbba66af0610ff07ddfaf44b2d50845`
 - `screen_gate.json`：
   `8592bdbfdda8e9624dc264d82c7896bfae81b5d25048321bee5206728e699a97`
+
+### M12 容量根因复核
+
+结果后只读代码复核定位到
+`PersistentTrajectoryOnTAD.train_episode()`：当前
+`gt_birth_runtime_entry_free_collisions` 在 `decode_step()` 释放/取消
+槽位之前，按 step-entry FREE 数量统计；`PersistentEventSetHead` 随后也
+明确只在 entry-free pool 上接纳 birth，并把当步释放槽推迟到下一步。
+因此 D 的计数不是 supervision 丢失，也不能简单解释成数组容量越界；它
+暴露的是“4 个常驻槽没有覆盖一拍过渡占用”的真实设计压力。
+
+修复合同冻结为：不读取 GT runtime identity、不把 released slot 当步
+复用、不改变阈值或评测；只新增 census 推导的 2 个 transition reserve
+槽，并补充常驻槽/预留槽占用审计。若 6 槽仍有碰撞，则说明是模型长期
+占槽或 release 失败，回到 lifecycle 状态建模，不能继续加槽。
+
+### M13 reserve6 候选实现
+
+已新增：
+
+- `thumos_persistent_binding_opt_reserve_fixed.py`
+- `thumos_persistent_binding_opt_reserve_rematch.py`
+- 提交器 `VARIANT=reserve` 路由
+- reserve activation gate
+
+两臂除 `trajectory_binding_mode` 外完全一致；均为 6 槽、三项
+`0.1 × margin 0.25`、transport 零、固定 0.5、calibration-only，
+并显式记录 resident 4、transition reserve 2、released slot 下一决策
+复用以及失败后禁止继续扩容。相关本地 config/submitter/activation 测试
+`18 passed`，两个配置与 activation 工具 Python 编译通过，提交脚本
+`bash -n` 通过。
+
+该实现尚未获得 Slurm 训练授权。下一门依次是：N16R4 exact-SHA 完整
+Torch 套件、reserve6 自身 FIXED/REMATCH profile、2 GPU·小时预算门；
+三者通过后才提交 seed-705 一轮双臂容量证伪。

@@ -22,6 +22,11 @@ ACTIVE_LOSSES = {
         "alive_margin_loss",
         "end_margin_loss",
     ),
+    "reserve": (
+        "birth_margin_loss",
+        "alive_margin_loss",
+        "end_margin_loss",
+    ),
 }
 
 
@@ -72,7 +77,7 @@ def _normalize_arm(payload, arm):
 def evaluate_activation(variant, fixed_payload, rematch_payload):
     if variant not in ACTIVE_LOSSES:
         raise ValueError(
-            "variant must be sw, margin, transport, or lifecycle"
+            "variant must be sw, margin, transport, lifecycle, or reserve"
         )
     arms = {
         "fixed": _normalize_arm(fixed_payload, "fixed"),
