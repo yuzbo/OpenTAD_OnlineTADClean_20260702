@@ -312,6 +312,7 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         birth_calibration_loss_weight=0.0,
         alive_calibration_loss_weight=0.0,
         end_calibration_loss_weight=0.0,
+        lifecycle_calibration_aggregation="step_positive_mean",
         endpoint_start_pointer_loss_weight=0.0,
     ):
         super().__init__()
@@ -383,6 +384,17 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         ):
             raise ValueError(
                 "calibration losses require monotone_affine lifecycle calibration"
+            )
+        self.lifecycle_calibration_aggregation = str(
+            lifecycle_calibration_aggregation
+        )
+        if self.lifecycle_calibration_aggregation not in {
+            "step_positive_mean",
+            "episode_balanced",
+        }:
+            raise ValueError(
+                "lifecycle_calibration_aggregation must be "
+                "step_positive_mean or episode_balanced"
             )
         if (
             self.loss_weights["endpoint_start_pointer_loss"] > 0
@@ -745,7 +757,8 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
 
         return provider
 
-    def _step_losses(self, outputs, schedule_step, transition, feature_stride):
+    @staticmethod
+    def _lifecycle_binary_targets(outputs, transition):
         raw_birth_logits = _raw_lifecycle_logits(outputs, "birth_logits")
         raw_alive_logits = _raw_lifecycle_logits(outputs, "alive_logits")
         raw_end_logits = _raw_lifecycle_logits(
@@ -774,6 +787,35 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         ).unsqueeze(0)
         for slot in transition.endpoint_slots:
             end_target[:, int(slot)] = 1.0
+
+        return {
+            "birth": (birth_target, birth_mask),
+            "alive": (alive_target, alive_mask),
+            "end": (end_target, end_mask),
+        }
+
+    def _step_losses(
+        self,
+        outputs,
+        schedule_step,
+        transition,
+        feature_stride,
+        lifecycle_targets=None,
+    ):
+        raw_birth_logits = _raw_lifecycle_logits(outputs, "birth_logits")
+        raw_alive_logits = _raw_lifecycle_logits(outputs, "alive_logits")
+        raw_end_logits = _raw_lifecycle_logits(
+            outputs,
+            "end_hazard_logits",
+        )
+        if lifecycle_targets is None:
+            lifecycle_targets = self._lifecycle_binary_targets(
+                outputs,
+                transition,
+            )
+        birth_target, birth_mask = lifecycle_targets["birth"]
+        alive_target, alive_mask = lifecycle_targets["alive"]
+        end_target, end_mask = lifecycle_targets["end"]
 
         targets = self._targets_by_id(schedule_step)
         class_loss = _zero(outputs["class_logits"])
@@ -908,7 +950,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     birth_target,
                     birth_mask,
                 )
-                if self.loss_weights["birth_calibration_loss"] > 0
+                if (
+                    self.loss_weights["birth_calibration_loss"] > 0
+                    and self.lifecycle_calibration_aggregation
+                    == "step_positive_mean"
+                )
                 else _zero(outputs["birth_logits"])
             ),
             "alive_calibration_loss": (
@@ -917,7 +963,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     alive_target,
                     alive_mask,
                 )
-                if self.loss_weights["alive_calibration_loss"] > 0
+                if (
+                    self.loss_weights["alive_calibration_loss"] > 0
+                    and self.lifecycle_calibration_aggregation
+                    == "step_positive_mean"
+                )
                 else _zero(outputs["alive_logits"])
             ),
             "end_calibration_loss": (
@@ -926,7 +976,11 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     end_target,
                     end_mask,
                 )
-                if self.loss_weights["end_calibration_loss"] > 0
+                if (
+                    self.loss_weights["end_calibration_loss"] > 0
+                    and self.lifecycle_calibration_aggregation
+                    == "step_positive_mean"
+                )
                 else _zero(outputs["end_hazard_logits"])
             ),
             "endpoint_start_pointer_loss": endpoint_start_pointer_loss,
@@ -1126,6 +1180,31 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
         transport_current_queries = []
         transport_previous_lifecycle_mass = []
         transport_current_lifecycle_mass = []
+        episode_calibration = None
+        if self.lifecycle_calibration_aggregation == "episode_balanced":
+            episode_calibration = {
+                "birth_calibration_loss": {
+                    "channel": "birth",
+                    "output": "birth_logits",
+                    "logits": [],
+                    "targets": [],
+                    "masks": [],
+                },
+                "alive_calibration_loss": {
+                    "channel": "alive",
+                    "output": "alive_logits",
+                    "logits": [],
+                    "targets": [],
+                    "masks": [],
+                },
+                "end_calibration_loss": {
+                    "channel": "end",
+                    "output": "end_hazard_logits",
+                    "logits": [],
+                    "targets": [],
+                    "masks": [],
+                },
+            }
         feature_stride = meta.get("feature_stride", meta.get("snippet_stride", 1))
         for index, (source_frame, schedule_step) in enumerate(
             zip(source_frames, supervision_schedule)
@@ -1154,12 +1233,25 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                     f"frame {source_frame}: "
                     f"{transition.exhausted_instance_ids}"
                 )
+            lifecycle_targets = self._lifecycle_binary_targets(
+                outputs,
+                transition,
+            )
             raw = self._step_losses(
                 outputs,
                 schedule_step,
                 transition,
                 feature_stride,
+                lifecycle_targets=lifecycle_targets,
             )
+            if episode_calibration is not None:
+                for loss_name, batch in episode_calibration.items():
+                    if self.loss_weights[loss_name] <= 0:
+                        continue
+                    target, mask = lifecycle_targets[batch["channel"]]
+                    batch["logits"].append(outputs[batch["output"]])
+                    batch["targets"].append(target)
+                    batch["masks"].append(mask)
             current_lifecycle_mass = None
             if self.loss_weights["causal_transport_loss"] > 0:
                 with torch.no_grad():
@@ -1215,6 +1307,19 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
                 iterations=self.causal_transport["iterations"],
                 mass_floor=self.causal_transport["mass_floor"],
             )
+        if episode_calibration is not None:
+            for loss_name, batch in episode_calibration.items():
+                if not batch["logits"]:
+                    continue
+                episode_loss = _balanced_binary_calibration_bce(
+                    torch.cat(batch["logits"], dim=0),
+                    torch.cat(batch["targets"], dim=0),
+                    torch.cat(batch["masks"], dim=0),
+                )
+                # ``losses`` below preserves the established per-step mean.
+                # Multiplying here makes the one chunk-level balanced loss the
+                # final value instead of diluting it by the number of tokens.
+                sums[loss_name] = episode_loss * valid_steps
         losses = {name: value / valid_steps for name, value in sums.items()}
         losses["cost"] = sum(
             losses[name] * self.loss_weights[name] for name in self.loss_weights
@@ -1277,6 +1382,9 @@ class PersistentTrajectoryOnlineDetector(nn.Module):
             "causal_query_transport": dict(self.causal_transport),
             "lifecycle_calibration_mode": (
                 self.head.lifecycle_calibration_mode
+            ),
+            "lifecycle_calibration_aggregation": (
+                self.lifecycle_calibration_aggregation
             ),
             "birth_calibration_loss_weight": self.loss_weights[
                 "birth_calibration_loss"

@@ -648,6 +648,84 @@ def test_calibration_losses_update_only_monotone_calibrator():
     )
 
 
+def test_episode_balanced_calibration_batches_each_channel_once(monkeypatch):
+    calls = []
+    original = trajectory_module._balanced_binary_calibration_bce
+
+    def tracked(logits, target, mask):
+        calls.append((tuple(logits.shape), int(target.gt(0.5).sum().item())))
+        return original(logits, target, mask)
+
+    monkeypatch.setattr(
+        trajectory_module,
+        "_balanced_binary_calibration_bce",
+        tracked,
+    )
+    head = _head()
+    head.lifecycle_calibration_mode = "monotone_affine"
+    head.lifecycle_calibration_log_scale = torch.nn.Parameter(torch.zeros(3))
+    head.lifecycle_calibration_bias = torch.nn.Parameter(torch.zeros(3))
+    detector = PersistentTrajectoryOnlineDetector(
+        head=head,
+        trajectory_binding_mode="fixed_birth_slot",
+        birth_loss_weight=0.0,
+        alive_loss_weight=0.0,
+        class_loss_weight=0.0,
+        start_loss_weight=0.0,
+        end_loss_weight=0.0,
+        birth_calibration_loss_weight=1.0,
+        alive_calibration_loss_weight=1.0,
+        end_calibration_loss_weight=1.0,
+        lifecycle_calibration_aggregation="episode_balanced",
+    ).train()
+    frames = (7, 15, 23)
+    schedule = build_prefix_instance_schedule(
+        segments=[[2.0, 17.0]],
+        labels=[1],
+        decision_frames=frames,
+        previous_frame=-1,
+    )
+
+    output = detector.train_episode(
+        torch.randn(1, 4, len(frames)),
+        torch.ones(1, len(frames), dtype=torch.bool),
+        _meta(frames),
+        schedule,
+    )
+    calibration_cost = sum(
+        output.losses[key]
+        for key in (
+            "birth_calibration_loss",
+            "alive_calibration_loss",
+            "end_calibration_loss",
+        )
+    )
+    calibration_cost.backward()
+
+    assert len(calls) == 3
+    assert all(shape == (len(frames), head.num_slots) for shape, _ in calls)
+    assert all(positives > 0 for _, positives in calls)
+    for key in (
+        "birth_calibration_loss",
+        "alive_calibration_loss",
+        "end_calibration_loss",
+    ):
+        assert output.losses[key].item() > 0
+    assert detector.last_episode_audit[
+        "lifecycle_calibration_aggregation"
+    ] == "episode_balanced"
+    assert head.lifecycle_calibration_log_scale.grad is not None
+    assert head.lifecycle_calibration_bias.grad is not None
+    assert head.birth_head.weight.grad is None
+    assert head.alive_head.weight.grad is None
+    assert head.end_head.weight.grad is None
+
+
+def test_unknown_lifecycle_calibration_aggregation_is_rejected():
+    with pytest.raises(ValueError, match="lifecycle_calibration_aggregation"):
+        _detector(lifecycle_calibration_aggregation="future_balanced")
+
+
 def test_boundary_factorization_trains_transition_end_and_endpoint_start():
     head = PersistentEventSetHead(
         in_channels=4,

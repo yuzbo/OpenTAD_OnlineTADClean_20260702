@@ -12,6 +12,15 @@ VARIANTS = {
     "boundary": (0, 1),
     "boundary_calibration": (1, 1),
 }
+DEPLOYMENT_VARIANTS = {
+    "reserve": ("reserve",),
+    "calibration": ("calibration", "calibration_batched"),
+    "boundary": ("boundary",),
+    "boundary_calibration": (
+        "boundary_calibration",
+        "boundary_calibration_batched",
+    ),
+}
 ARMS = {
     "fixed": "fixed_birth_slot",
     "rematch": "prefix_rematch_active_pool",
@@ -141,7 +150,8 @@ def _normalize_run(root, variant):
         arm: _load(root / f"{arm}_score_diagnosis.json")
         for arm in ARMS
     }
-    if contract.get("variant") != variant:
+    deployment_variant = contract.get("variant")
+    if deployment_variant not in DEPLOYMENT_VARIANTS[variant]:
         raise ValueError(f"{variant}: pilot contract variant mismatch")
     if contract.get("reporting_accessed") is not False:
         raise ValueError(f"{variant}: pilot contract accessed reporting")
@@ -149,7 +159,7 @@ def _normalize_run(root, variant):
         raise ValueError(f"{variant}: pilot contract searched thresholds")
     if contract.get("raw_rgb_authorized") is not False:
         raise ValueError(f"{variant}: pilot contract authorized raw RGB")
-    if activation.get("variant") != variant:
+    if activation.get("variant") != deployment_variant:
         raise ValueError(f"{variant}: activation variant mismatch")
     if screen.get("reporting_accessed") is not False:
         raise ValueError(f"{variant}: screen accessed reporting")
@@ -165,6 +175,7 @@ def _normalize_run(root, variant):
             "calibration": VARIANTS[variant][0],
             "boundary": VARIANTS[variant][1],
         },
+        "deployment_variant": deployment_variant,
         "code_commit": contract.get("code_commit"),
         "technical_pass": technical_pass,
         "activation_pass": activation_pass,
@@ -212,6 +223,17 @@ def compare_factorial(run_paths):
     for variant, row in runs.items():
         if row["common_hashes"] != reference_hashes:
             raise ValueError(f"{variant}: frozen data provenance differs")
+    calibration_batched = (
+        runs["calibration"]["deployment_variant"] == "calibration_batched"
+    )
+    interaction_batched = (
+        runs["boundary_calibration"]["deployment_variant"]
+        == "boundary_calibration_batched"
+    )
+    if calibration_batched != interaction_batched:
+        raise ValueError(
+            "calibration and interaction cells must use the same aggregation"
+        )
 
     factorial = {}
     for arm in ARMS:
@@ -240,13 +262,18 @@ def compare_factorial(run_paths):
                 )
 
     interaction_eligible = runs["boundary_calibration"]["eligible"]
+    selected_variant = runs["boundary_calibration"]["deployment_variant"]
     return {
         "schema_version": "persistent_binding_factorial_comparison.v1",
-        "design": "reserve6_calibration_x_boundary_2x2_v1",
+        "design": (
+            "reserve6_calibration_batched_x_boundary_2x2_v2"
+            if calibration_batched
+            else "reserve6_calibration_x_boundary_2x2_v1"
+        ),
         "variants": runs,
         "factorial_effects": factorial,
         "selected_variant": (
-            "boundary_calibration" if interaction_eligible else None
+            selected_variant if interaction_eligible else None
         ),
         "multi_seed_authorized_next": interaction_eligible,
         "raw_rgb_authorized_next": False,

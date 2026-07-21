@@ -195,8 +195,10 @@ def test_model_optimization_submitter_deploys_feature_only_variants():
         "lifecycle",
         "reserve",
         "calibration",
+        "calibration_batched",
         "boundary",
         "boundary_calibration",
+        "boundary_calibration_batched",
     ):
         assert f"{variant})" in submit
     assert "thumos_persistent_binding_opt_sw_fixed.py" in submit
@@ -205,8 +207,13 @@ def test_model_optimization_submitter_deploys_feature_only_variants():
     assert "thumos_persistent_binding_opt_lifecycle_fixed.py" in submit
     assert "thumos_persistent_binding_opt_reserve_fixed.py" in submit
     assert "thumos_persistent_binding_opt_calibration_fixed.py" in submit
+    assert "thumos_persistent_binding_opt_calibration_batched_fixed.py" in submit
     assert "thumos_persistent_binding_opt_boundary_fixed.py" in submit
     assert "thumos_persistent_binding_opt_boundary_calibration_fixed.py" in submit
+    assert (
+        "thumos_persistent_binding_opt_boundary_calibration_batched_fixed.py"
+        in submit
+    )
     assert "--allow-unready-screen" in submit
     assert "profile_persistent_binding.py" in submit
     assert "evaluate_persistent_binding_profile.py" in submit

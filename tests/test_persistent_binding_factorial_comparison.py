@@ -50,12 +50,16 @@ def _diagnosis(binding, calibration, boundary):
 
 def _write_run(root, variant, value, eligible=True):
     root.mkdir()
+    canonical_variant = {
+        "calibration_batched": "calibration",
+        "boundary_calibration_batched": "boundary_calibration",
+    }.get(variant, variant)
     levels = {
         "reserve": (False, False),
         "calibration": (True, False),
         "boundary": (False, True),
         "boundary_calibration": (True, True),
-    }[variant]
+    }[canonical_variant]
     hashes = {key: f"hash-{key}" for key in (
         "annotation_sha256",
         "calibration_manifest_sha256",
@@ -152,3 +156,44 @@ def test_factorial_comparison_rejects_interaction_when_mechanism_fails(tmp_path)
     assert result["multi_seed_authorized_next"] is False
     assert result["raw_rgb_authorized_next"] is False
     assert result["variants"]["boundary_calibration"]["eligible"] is False
+
+
+def test_factorial_comparison_accepts_matched_batched_v2_cells(tmp_path):
+    module = _module()
+    deployments = {
+        "reserve": "reserve",
+        "calibration": "calibration_batched",
+        "boundary": "boundary",
+        "boundary_calibration": "boundary_calibration_batched",
+    }
+    paths = {}
+    for canonical, deployment in deployments.items():
+        path = tmp_path / deployment
+        _write_run(path, deployment, 1.0)
+        paths[canonical] = path
+
+    result = module.compare_factorial(paths)
+
+    assert result["design"] == (
+        "reserve6_calibration_batched_x_boundary_2x2_v2"
+    )
+    assert result["selected_variant"] == "boundary_calibration_batched"
+    assert result["multi_seed_authorized_next"] is True
+
+
+def test_factorial_comparison_rejects_mixed_calibration_aggregation(tmp_path):
+    module = _module()
+    deployments = {
+        "reserve": "reserve",
+        "calibration": "calibration_batched",
+        "boundary": "boundary",
+        "boundary_calibration": "boundary_calibration",
+    }
+    paths = {}
+    for canonical, deployment in deployments.items():
+        path = tmp_path / f"{canonical}-{deployment}"
+        _write_run(path, deployment, 1.0)
+        paths[canonical] = path
+
+    with pytest.raises(ValueError, match="same aggregation"):
+        module.compare_factorial(paths)

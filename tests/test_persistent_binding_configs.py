@@ -336,6 +336,47 @@ def test_boundary_calibration_completes_registered_two_by_two_factorial():
     assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
 
 
+def test_batched_calibration_v2_is_matched_and_changes_only_aggregation():
+    pairs = (
+        (
+            "thumos_persistent_binding_opt_calibration_batched_fixed.py",
+            "thumos_persistent_binding_opt_calibration_batched_rematch.py",
+            False,
+        ),
+        (
+            "thumos_persistent_binding_opt_boundary_calibration_batched_fixed.py",
+            "thumos_persistent_binding_opt_boundary_calibration_batched_rematch.py",
+            True,
+        ),
+    )
+    for fixed_name, rematch_name, boundary in pairs:
+        fixed = _load(fixed_name)
+        rematch = _load(rematch_name)
+
+        assert fixed.model.trajectory_binding_mode == "fixed_birth_slot"
+        assert rematch.model.trajectory_binding_mode == (
+            "prefix_rematch_active_pool"
+        )
+        assert _normalized(fixed) == _normalized(rematch)
+        assert fixed.model.lifecycle_calibration_aggregation == (
+            "episode_balanced"
+        )
+        assert fixed.model.head.lifecycle_calibration_mode == "monotone_affine"
+        assert fixed.model.birth_calibration_loss_weight == 1.0
+        assert fixed.model.alive_calibration_loss_weight == 1.0
+        assert fixed.model.end_calibration_loss_weight == 1.0
+        assert fixed.model.endpoint_start_pointer_loss_weight == float(boundary)
+        assert fixed.optimization_pilot_contract.factorial_design == (
+            "reserve6_calibration_batched_x_boundary_2x2_v2"
+        )
+        assert fixed.optimization_pilot_contract.lifecycle_calibration_revision == (
+            "detached_raw_positive_scale_bias_episode_balanced_bce_v2"
+        )
+        assert fixed.optimization_pilot_contract.threshold_search is False
+        assert fixed.optimization_pilot_contract.reporting_accessed is False
+        assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
+
+
 def test_route_uses_candidate_recycle_without_capacity_holding_refractory():
     cfg = _load("thumos_persistent_binding_fixed.py")
     head = cfg.model.head
