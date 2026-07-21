@@ -472,3 +472,10 @@ identity-linked duplicate/fragmentation error。
   Torch 仅因 `c10.dll` 无法收集。下一步是提交精确 SHA、N16R4 完整相关套件和
   同提交一轮成对机制/容量验证，通过后才重开 12 轮。旧 12 轮没有过容量门，
   所以没有合法 mAP/Recall；`1.8342/2.0328` 只是末轮训练 loss。
+- M43 当前执行点：硬 reserve exact `5edc46c34c0db56e79409fac69276450ad87e949`
+  已在 N16R4 独立 clean checkout 通过写探针、编译、Bash 和 `177 passed in
+  79.11s`。一轮 H2 成对验证为 Slurm `1179361`，run
+  `model_opt_boundary_calibration_batched_seed705_20260722_024414`，初始在
+  `g0003` 运行。只检查 same-commit profile、各 2010 更新、零容量碰撞、机制与
+  因果/learning-readiness；全门通过才提交新 12 轮。一轮固定 0.5 静默不作
+  收敛淘汰，reporting 与 raw-RGB 仍锁定。

@@ -776,3 +776,28 @@ Torch 测试在收集阶段仍被已知 Windows `c10.dll` 初始化故障阻断�
 旧 `1178956/57` 只有完整更新与 loss 轨迹证据，没有通过容量门后的 calibration、
 mAP 或 Recall，故不能把 `1.8342/2.0328` 误写成定位性能。固定 `0.5`、数据、
 seed、损失、匹配、reporting 隔离与 raw-RGB 禁止状态均保持不变。
+
+### M43 exact-SHA 远端门通过并启动一轮成对验证
+
+硬 reserve 实现已提交并推送为
+`5edc46c34c0db56e79409fac69276450ad87e949`。独立 N16R4 checkout
+`/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_HardReserve_5edc46c`
+完成 4 KiB 写探针、Python 编译、正式/优化两条 Bash 语法和完整相关
+Torch/因果/配置/调度/评测工具套件，结果为 `177 passed in 79.11s`；结束时
+精确 SHA 不变且工作树干净。
+
+在该 exact checkout 上已提交 H2 一轮成对验证：
+
+- Slurm：`1179361`；
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_boundary_calibration_batched_seed705_20260722_024414`；
+- 初始状态：`RUNNING/g0003`，无 fatal；
+- 输入：冻结的 cached causal features，非 raw-RGB；
+- 比较：同 seed-705、同模型与阈值的 FIXED/REMATCH；
+- 硬门：same-commit profile/预算、各 `2010` 次完整更新、零 skip/监督耗尽/
+  entry-free collision、机制 activation、单调校准、因果 transition-end、past-only
+  start pointer 和分层 learning-readiness。
+
+这一轮只验证新容量语义在完整 H2 运行中的激活和可执行性，不用一轮固定 `0.5`
+静默作最终收敛判断。只有所有技术/机制门通过，才用本次 exact pilot 作为新 12 轮
+前置证据；否则保全并分类失败，不提交长训练。自动监控已切换到
+`C:\tmp\ontad_hard_reserve_pilot_progress_5edc46c.ps1`。
