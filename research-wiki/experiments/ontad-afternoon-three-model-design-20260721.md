@@ -751,3 +751,28 @@ reserve6 只把物理槽数从 4 增到 6，却允许预测 candidate/active 状
 完全由 4+2 census 推导，保持数据、seed、FIXED/REMATCH、损失、匹配、严格因果
 和 birth/alive/end=`0.5` 不变。另将失败审计与 checkpoint 先原子写入
 evidence-only quarantine，再决定是否生成可用于校准的 recovery。
+
+### M42 硬 transition reserve 已实现，等待 exact-SHA 远端门
+
+容量修订已按冻结 census 直接落到运行时，而不是继续增加物理槽。模型仍有 6 个
+query 槽，但 `candidate_recycle` 的每步 admission 现在先计算“决策入口的空槽数
+减去 2 个硬 reserve”，因此最多只有 4 个槽可被 candidate/active 状态占用；
+每次解码结束还会断言至少保留 2 个空槽。`transition_birth_reserve_slots=2`
+必须覆盖冻结的 `max_births_per_step=2`，否则配置在构造时直接拒绝。同一步刚释放
+的槽仍不参与当前出生排序，只能在下一个因果决策复用，所以没有改变原始
+entry-free 时序合同，也没有读未来。
+
+pre-calibration 保全路径同时改为 fail-closed：若 12 轮训练审计不合法，先把
+`training_audit.json`、精确配置和第 3/6/9/12 轮 checkpoint 原子复制到共享
+`arm/quarantine/`，逐项记录 SHA-256，并明确
+`calibration_authorized=false`；只有审计全部通过才生成 recovery。这样下一次
+即使科学门拒绝，也不会再因 Slurm 私有 `/tmp` 回收而丢失碰撞证据。
+
+本地不依赖 Torch 的正式工具/配置回归为 `8 passed + 14 passed`；7 个改动 Python
+文件通过 AST 解析，正式提交脚本通过 `bash -n`，`git diff --check` 通过。事件头
+Torch 测试在收集阶段仍被已知 Windows `c10.dll` 初始化故障阻断，尚不能算模型
+通过；下一门是在 N16R4 干净 exact-SHA checkout 跑完整相关套件。通过后先运行
+同提交的一轮成对机制/容量验证，再决定是否提交新的 12 轮 FIXED/REMATCH。
+旧 `1178956/57` 只有完整更新与 loss 轨迹证据，没有通过容量门后的 calibration、
+mAP 或 Recall，故不能把 `1.8342/2.0328` 误写成定位性能。固定 `0.5`、数据、
+seed、损失、匹配、reporting 隔离与 raw-RGB 禁止状态均保持不变。

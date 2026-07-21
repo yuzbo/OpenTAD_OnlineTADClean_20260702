@@ -181,7 +181,10 @@ payload = {
     "threshold_search": False,
     "fixed_thresholds": {"birth": 0.5, "alive": 0.5, "end": 0.5},
     "formal_fixed_threshold_gate_epoch": 12,
-    "protocol_revision": "positive_duration_emission_and_precalibration_recovery.v1",
+    "protocol_revision": (
+        "positive_duration_hard_transition_reserve_"
+        "precalibration_quarantine.v2"
+    ),
     "same_decision_interval_quantization": "one_observed_feature_cell_left_clipped_at_zero",
     "training_objective_changed_after_pilot": False,
     "raw_rgb_authorized": False,
@@ -248,6 +251,13 @@ assert tuple(cfg.multi_epoch_training_contract.checkpoint_epochs) == (3, 6, 9, 1
 assert cfg.model.head.birth_threshold == 0.5
 assert cfg.model.head.alive_threshold == 0.5
 assert cfg.model.head.end_threshold == 0.5
+assert cfg.model.head.num_slots == 6
+assert cfg.model.head.transition_birth_reserve_slots == 2
+assert cfg.transition_capacity_contract.resident_visible_slots == 4
+assert cfg.transition_capacity_contract.transition_birth_reserve_slots == 2
+assert cfg.transition_capacity_contract.admission_policy == (
+    "max_occupied_4_keep_entry_free_2"
+)
 PY
 PORT_SLOT=\$((SLURM_JOB_ID % 5000))
 MASTER_PORT=\$((20000 + PORT_SLOT * 8))
@@ -261,10 +271,12 @@ WORK="\$LOCAL_ROOT/train/gpu1_id0"
 AUDIT="\$WORK/training_audit.json"
 test -f "\$AUDIT"
 RECOVERY="\$RUN_DIR/\$ARM/recovery"
+QUARANTINE="\$RUN_DIR/\$ARM/quarantine"
 python tools/stage_persistent_binding_training_recovery.py \
     --train-root "\$WORK" \
     --config "\$CONFIG" \
     --output "\$RECOVERY" \
+    --quarantine-output "\$QUARANTINE" \
     --arm "\$ARM" \
     --commit "\$EXPECTED_COMMIT" \
     --seed "\$SEED"

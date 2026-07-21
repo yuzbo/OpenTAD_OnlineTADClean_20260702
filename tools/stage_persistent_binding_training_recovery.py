@@ -51,7 +51,100 @@ def validate_training_audit(audit):
     return totals
 
 
-def stage_recovery(*, train_root, config, output, arm, commit, seed):
+def _checkpoint_sources(train_root):
+    sources = []
+    for human, zero in CHECKPOINTS:
+        source = train_root / "checkpoint" / f"epoch_{zero}.pth"
+        if not source.is_file():
+            raise FileNotFoundError(
+                f"epoch {human} checkpoint is missing: {source}"
+            )
+        sources.append((human, zero, source))
+    return sources
+
+
+def _stage_quarantine(
+    *,
+    audit_source,
+    config,
+    output,
+    checkpoint_sources,
+    arm,
+    commit,
+    seed,
+    validation_error,
+):
+    output = Path(output).resolve()
+    if output.exists():
+        raise FileExistsError(
+            f"training quarantine output already exists: {output}"
+        )
+    if not output.parent.is_dir():
+        raise FileNotFoundError(
+            f"training quarantine parent does not exist: {output.parent}"
+        )
+    staging = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    if staging.exists():
+        raise FileExistsError(
+            f"training quarantine staging path already exists: {staging}"
+        )
+    try:
+        checkpoint_dir = staging / "checkpoint"
+        checkpoint_dir.mkdir(parents=True)
+        shutil.copy2(audit_source, staging / "training_audit.json")
+        shutil.copy2(config, staging / "config.py")
+        checkpoint_rows = []
+        for human, zero, source in checkpoint_sources:
+            target = checkpoint_dir / source.name
+            shutil.copy2(source, target)
+            checkpoint_rows.append(
+                {
+                    "epoch": human,
+                    "checkpoint_epoch": zero,
+                    "path": str(target.relative_to(staging)),
+                    "bytes": target.stat().st_size,
+                    "sha256": _sha256(target),
+                }
+            )
+        manifest = {
+            "schema_version": "persistent_binding_training_quarantine.v1",
+            "arm": arm,
+            "seed": int(seed),
+            "code_commit": str(commit),
+            "validation_error": str(validation_error),
+            "training_audit_sha256": _sha256(
+                staging / "training_audit.json"
+            ),
+            "config_sha256": _sha256(staging / "config.py"),
+            "checkpoints": checkpoint_rows,
+            "calibration_authorized": False,
+            "recovery_manifest": False,
+            "reporting_accessed": False,
+            "threshold_search": False,
+            "raw_rgb_authorized": False,
+        }
+        (staging / "quarantine_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(staging, output)
+    except BaseException:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+    return manifest
+
+
+def stage_recovery(
+    *,
+    train_root,
+    config,
+    output,
+    arm,
+    commit,
+    seed,
+    quarantine=None,
+):
     train_root = Path(train_root).resolve()
     config = Path(config).resolve()
     output = Path(output).resolve()
@@ -68,13 +161,22 @@ def stage_recovery(*, train_root, config, output, arm, commit, seed):
 
     audit_source = train_root / "training_audit.json"
     audit = _load(audit_source)
-    totals = validate_training_audit(audit)
-    checkpoint_sources = []
-    for human, zero in CHECKPOINTS:
-        source = train_root / "checkpoint" / f"epoch_{zero}.pth"
-        if not source.is_file():
-            raise FileNotFoundError(f"epoch {human} checkpoint is missing: {source}")
-        checkpoint_sources.append((human, zero, source))
+    checkpoint_sources = _checkpoint_sources(train_root)
+    try:
+        totals = validate_training_audit(audit)
+    except ValueError as error:
+        if quarantine is not None:
+            _stage_quarantine(
+                audit_source=audit_source,
+                config=config,
+                output=quarantine,
+                checkpoint_sources=checkpoint_sources,
+                arm=arm,
+                commit=commit,
+                seed=seed,
+                validation_error=error,
+            )
+        raise
 
     staging = output.with_name(f".{output.name}.{os.getpid()}.tmp")
     if staging.exists():
@@ -135,6 +237,7 @@ def parse_args():
     parser.add_argument("--arm", choices=("fixed", "rematch"), required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--quarantine-output")
     return parser.parse_args()
 
 
@@ -147,6 +250,7 @@ def main():
         arm=args.arm,
         commit=args.commit,
         seed=args.seed,
+        quarantine=args.quarantine_output,
     )
     print(json.dumps(manifest, sort_keys=True))
 

@@ -458,6 +458,71 @@ def test_candidate_birth_arbitration_admits_only_frozen_per_step_budget():
     assert state.arbitration_suppressions == 2
 
 
+def test_candidate_birth_arbitration_preserves_hard_transition_reserve():
+    head = PersistentEventSetHead(
+        in_channels=4,
+        hidden_dim=8,
+        num_classes=3,
+        num_slots=6,
+        memory_size=4,
+        num_heads=2,
+        dropout=0.0,
+        query_mode="persistent",
+        start_mode="scalar",
+        endpoint_mode="binary",
+        lifecycle_mode="candidate_recycle",
+        candidate_confirmation_steps=1,
+        max_births_per_step=2,
+        transition_birth_reserve_slots=2,
+        refractory_steps=0,
+    ).eval()
+    state = head.initial_state(
+        torch.device("cpu"),
+        torch.float32,
+        "stream",
+    )
+    outputs = {
+        "birth_logits": torch.full((1, 6), 10.0),
+        "alive_logits": torch.full((1, 6), 10.0),
+        "class_logits": torch.zeros(1, 6, 3),
+        "end_hazard_logits": torch.full((1, 6), -10.0),
+        "start_offset": torch.zeros(1, 6),
+        "memory_frames": (7,),
+    }
+
+    occupied = []
+    for frame in (7, 15, 23):
+        outputs["memory_frames"] = (frame,)
+        _, state = head.decode_step(
+            outputs,
+            state,
+            current_frame=frame,
+        )
+        occupied.append(
+            int(state.slot_status.ne(SLOT_FREE).sum().item())
+        )
+
+    assert occupied == [2, 4, 4]
+    assert state.birth_admissions == 4
+    assert int(state.slot_status.eq(SLOT_FREE).sum().item()) == 2
+
+
+def test_transition_birth_reserve_must_cover_the_frozen_birth_budget():
+    with pytest.raises(ValueError, match="cover max_births_per_step"):
+        PersistentEventSetHead(
+            in_channels=4,
+            hidden_dim=8,
+            num_classes=3,
+            num_slots=6,
+            memory_size=4,
+            num_heads=2,
+            lifecycle_mode="candidate_recycle",
+            refractory_steps=0,
+            max_births_per_step=2,
+            transition_birth_reserve_slots=1,
+        )
+
+
 def test_binary_endpoint_has_no_trainable_offset_and_emits_at_decision_frame():
     head = _head(
         query_mode="persistent",

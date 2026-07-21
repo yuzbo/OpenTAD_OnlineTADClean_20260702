@@ -235,9 +235,16 @@ def test_transition_reserve_pilot_is_matched_and_census_bounded():
     assert rematch.model.trajectory_binding_mode == "prefix_rematch_active_pool"
     assert _normalized(fixed) == _normalized(rematch)
     assert fixed.model.head.num_slots == 6
+    assert fixed.model.head.transition_birth_reserve_slots == 2
     assert fixed.transition_capacity_contract.resident_visible_slots == 4
     assert fixed.transition_capacity_contract.transition_birth_reserve_slots == 2
     assert fixed.transition_capacity_contract.total_slots == 6
+    assert fixed.transition_capacity_contract.admission_policy == (
+        "max_occupied_4_keep_entry_free_2"
+    )
+    assert fixed.transition_capacity_contract.implementation_revision == (
+        "hard_transition_birth_reserve_v2"
+    )
     assert fixed.transition_capacity_contract.released_slot_reuse == (
         "next_causal_decision"
     )
@@ -275,6 +282,7 @@ def test_monotone_calibration_pilot_is_matched_and_keeps_threshold_frozen():
     assert fixed.model.head.birth_threshold == 0.5
     assert fixed.model.head.alive_threshold == 0.5
     assert fixed.model.head.end_threshold == 0.5
+    assert fixed.model.head.transition_birth_reserve_slots == 2
     assert fixed.optimization_pilot_contract.threshold_search is False
     assert fixed.optimization_pilot_contract.reporting_accessed is False
     assert fixed.optimization_pilot_contract.raw_rgb_authorized is False
@@ -434,6 +442,10 @@ def test_formal12_h2_is_matched_and_defers_fixed_threshold_gate():
     assert fixed.model.head.birth_threshold == 0.5
     assert fixed.model.head.alive_threshold == 0.5
     assert fixed.model.head.end_threshold == 0.5
+    assert fixed.model.head.transition_birth_reserve_slots == 2
+    assert fixed.transition_capacity_contract.admission_policy == (
+        "max_occupied_4_keep_entry_free_2"
+    )
 
 
 def test_formal12_is_the_exact_h2_optimization_prefix_extended_to_12_epochs():

@@ -162,8 +162,10 @@ def test_formal12_submitter_encodes_pairing_and_locked_split_contract():
     assert "scancel" in source
     assert '"finalizer_reserved_gpu_hours": 0.5' in source
     assert "stage_persistent_binding_training_recovery.py" in source
+    assert '--quarantine-output "\\$QUARANTINE"' in source
     assert r'checkpoint="\$RECOVERY/checkpoint/epoch_\${zero}.pth"' in source
-    assert "positive_duration_emission_and_precalibration_recovery.v1" in source
+    assert "positive_duration_hard_transition_reserve_" in source
+    assert "precalibration_quarantine.v2" in source
 
 
 def test_formal12_training_recovery_is_validated_and_atomic(tmp_path):
@@ -238,3 +240,69 @@ def test_formal12_training_recovery_rejects_incomplete_updates():
 
     with pytest.raises(ValueError, match="successful_updates"):
         module.validate_training_audit(audit)
+
+
+def test_formal12_failed_audit_is_atomically_quarantined(tmp_path):
+    module = _recovery_module()
+    train_root = tmp_path / "train"
+    checkpoint_root = train_root / "checkpoint"
+    checkpoint_root.mkdir(parents=True)
+    audit = {
+        "schema_version": "persistent_binding_training_audit.v1",
+        "fit_only": True,
+        "screening_only": False,
+        "route_stage": "persistent_binding_feature_multi_epoch_calibration",
+        "epochs": [{"epoch": epoch} for epoch in range(12)],
+        "totals": {
+            "expected_updates": 24120,
+            "successful_updates": 24120,
+            "scheduler_steps": 24120,
+            "skipped_updates": 0,
+            "gt_supervision_exhaustions": 0,
+            "gt_birth_runtime_entry_free_collisions": 1,
+        },
+    }
+    (train_root / "training_audit.json").write_text(
+        __import__("json").dumps(audit),
+        encoding="utf-8",
+    )
+    for _, zero in module.CHECKPOINTS:
+        (checkpoint_root / f"epoch_{zero}.pth").write_bytes(
+            f"checkpoint-{zero}".encode()
+        )
+    config = tmp_path / "config.py"
+    config.write_text("formal_training_ready = True\n", encoding="utf-8")
+    recovery = tmp_path / "recovery"
+    quarantine = tmp_path / "quarantine"
+
+    with pytest.raises(
+        ValueError,
+        match="gt_birth_runtime_entry_free_collisions",
+    ):
+        module.stage_recovery(
+            train_root=train_root,
+            config=config,
+            output=recovery,
+            arm="fixed",
+            commit="a" * 40,
+            seed=705,
+            quarantine=quarantine,
+        )
+
+    assert not recovery.exists()
+    assert quarantine.is_dir()
+    assert not list(tmp_path.glob(".quarantine.*.tmp"))
+    manifest = __import__("json").loads(
+        (quarantine / "quarantine_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["schema_version"] == (
+        "persistent_binding_training_quarantine.v1"
+    )
+    assert manifest["calibration_authorized"] is False
+    assert manifest["recovery_manifest"] is False
+    assert len(manifest["checkpoints"]) == 4
+    assert all(len(row["sha256"]) == 64 for row in manifest["checkpoints"])
+    assert (quarantine / "training_audit.json").is_file()
+    assert (quarantine / "checkpoint/epoch_11.pth").is_file()

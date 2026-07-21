@@ -465,3 +465,10 @@ identity-linked duplicate/fragmentation error。
   GT deficit=0；根因是 6 个物理槽可被预测状态占满。下一修订固定 4 个最大占用
   加 2 个硬 birth reserve，并在完整性裁决前写 evidence-only quarantine；
   不继续扩容，不改 0.5、数据、匹配、reporting 锁或 raw-RGB 状态。
+- M42 实现恢复点：硬 reserve 已进入事件头，candidate/active 最多占 4/6 槽，
+  每步必须留下 2 个 entry-free birth 槽；同一步 release 不提前复用。审计拒绝时
+  会先原子保全 audit、配置、四个 checkpoint 和 SHA-256 到 quarantine，明确不
+  授权 calibration。当前 CPU-safe `8+14 passed`，AST/Bash/diff 均通过；Windows
+  Torch 仅因 `c10.dll` 无法收集。下一步是提交精确 SHA、N16R4 完整相关套件和
+  同提交一轮成对机制/容量验证，通过后才重开 12 轮。旧 12 轮没有过容量门，
+  所以没有合法 mAP/Recall；`1.8342/2.0328` 只是末轮训练 loss。

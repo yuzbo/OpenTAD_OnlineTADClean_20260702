@@ -74,6 +74,7 @@ class PersistentEventSetHead(nn.Module):
         lifecycle_mode="legacy",
         candidate_confirmation_steps=1,
         max_births_per_step=2,
+        transition_birth_reserve_slots=0,
         birth_prior_probability=None,
         alive_prior_probability=None,
         end_prior_probability=None,
@@ -103,6 +104,9 @@ class PersistentEventSetHead(nn.Module):
         self.lifecycle_mode = str(lifecycle_mode)
         self.candidate_confirmation_steps = int(candidate_confirmation_steps)
         self.max_births_per_step = int(max_births_per_step)
+        self.transition_birth_reserve_slots = int(
+            transition_birth_reserve_slots
+        )
         self.lifecycle_calibration_mode = str(lifecycle_calibration_mode)
         self.end_transition_mode = str(end_transition_mode)
         self.endpoint_start_mode = str(endpoint_start_mode)
@@ -140,6 +144,25 @@ class PersistentEventSetHead(nn.Module):
             raise ValueError("the scientific route freezes one-step candidate confirmation")
         if not 1 <= self.max_births_per_step <= self.num_slots:
             raise ValueError("max_births_per_step must be in [1, num_slots]")
+        if not 0 <= self.transition_birth_reserve_slots < self.num_slots:
+            raise ValueError(
+                "transition_birth_reserve_slots must be in [0, num_slots)"
+            )
+        if (
+            self.transition_birth_reserve_slots
+            and self.lifecycle_mode != "candidate_recycle"
+        ):
+            raise ValueError(
+                "transition birth reserve requires candidate_recycle"
+            )
+        if (
+            self.transition_birth_reserve_slots
+            and self.transition_birth_reserve_slots
+            < self.max_births_per_step
+        ):
+            raise ValueError(
+                "transition birth reserve must cover max_births_per_step"
+            )
         if self.lifecycle_calibration_mode not in {
             "none",
             "monotone_affine",
@@ -757,7 +780,14 @@ class PersistentEventSetHead(nn.Module):
                 key=lambda slot: (-float(birth[slot].item()), int(slot)),
             )
         )
-        admitted = ranked[: self.max_births_per_step]
+        admission_capacity = max(
+            0,
+            int(free_at_entry.sum().item())
+            - self.transition_birth_reserve_slots,
+        )
+        admitted = ranked[
+            : min(self.max_births_per_step, admission_capacity)
+        ]
         for slot in admitted:
             status[slot] = SLOT_CANDIDATE
             candidate_age[slot] = self.candidate_confirmation_steps
@@ -768,6 +798,13 @@ class PersistentEventSetHead(nn.Module):
             peak_labels[slot] = labels[slot]
             if end[slot] >= self.end_threshold:
                 commit(slot)
+
+        if self.transition_birth_reserve_slots:
+            free_at_exit = int(status.eq(SLOT_FREE).sum().item())
+            if free_at_exit < self.transition_birth_reserve_slots:
+                raise RuntimeError(
+                    "candidate admission violated transition birth reserve"
+                )
 
         deferred_birth_due_to_release = int(state.deferred_birth_due_to_release)
         deferred_birth_due_to_release += sum(
