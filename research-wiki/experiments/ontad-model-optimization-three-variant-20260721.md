@@ -684,3 +684,20 @@ profile。
 相同 13 文件扩展套件最终 `102 passed in 48.75s`，随后复核 HEAD 精确且
 worktree clean。reserve6 代码级 preflight 由此通过；Slurm profile 是
 下一门，正式训练仍未授权。
+
+### M14 reserve6 Slurm 部署
+
+北京时间 09:34 在远端确认 56 张公共 GPU 可用、无同名活动作业、旧 smoke
+gate `passed=true`，并保持独立 checkout exact `380bc16947a75d9ca19cfb79e06fdfbab0ae43c0`
+且 clean 后，通过正式提交器部署 reserve6：
+
+- job：`1178040`，名称 `pb_opt_reserve`；
+- 初始状态：`RUNNING / g0030`；
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_reserve_seed705_20260721_093412`；
+- FIXED/REMATCH 配置：`thumos_persistent_binding_opt_reserve_{fixed,rematch}.py`；
+- Slurm：单张 RTX 4090、2 小时 walltime；
+- exact code：`380bc16947a75d9ca19cfb79e06fdfbab0ae43c0`。
+
+作业仍执行同一 fail-closed 链：同提交测试与双臂 profile → 2 GPU·小时门 →
+一轮 FIXED/REMATCH → calibration-only → activation/三通道诊断/资源/gate。
+profile 失败时不会训练；任何非零科学退出与程序崩溃继续分开解释。

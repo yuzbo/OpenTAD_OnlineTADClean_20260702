@@ -318,3 +318,7 @@ identity-linked duplicate/fragmentation error。
 - 旧测试 helper 已在 `380bc16` 仅按测试槽数收紧 birth 上限；远端 clean
   exact 扩展套件最终 `102 passed in 48.75s`。reserve6 代码 preflight
   通过，下一恢复点为 Slurm 双臂自身 profile，profile 前不训练。
+- reserve6 已部署为 Slurm `1178040`，run
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/model_opt_reserve_seed705_20260721_093412`，
+  initial `RUNNING/g0030`，exact `380bc16`。先看 profile gate；只有画像与
+  2 GPU·小时预算通过，作业才会进入一轮 FIXED/REMATCH。
