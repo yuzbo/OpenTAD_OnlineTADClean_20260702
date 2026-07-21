@@ -432,3 +432,8 @@ identity-linked duplicate/fragmentation error。
   `C:\tmp\ontad_formal12_progress_22c4028.ps1`。下一个关键点是双臂状态对齐和
   第 3 轮 checkpoint；第 12 轮后必须先看到两份四 checkpoint recovery 清单，
   才接受后续 calibration/终检。
+- M36 状态变化：FIXED `1178956` 已在 `g0003` 跑到 epoch-1 `01100/02009`，
+  REMATCH `1178957` 已从 Priority 转为 `RUNNING/g0045` 并到 `00550/02009`；
+  两臂 fatal=0，终检 `1178958` 正常等待。recovery 当前 pending 是因为尚未完成
+  12 轮，不是故障；下一次写 Wiki 的常规节点为双臂第 3 轮 checkpoint，若此前
+  作业状态或 fatal 改变则立即提前记录。

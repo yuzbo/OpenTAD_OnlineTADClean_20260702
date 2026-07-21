@@ -617,3 +617,18 @@ same-step 正长度量化、零长度写出拒绝、原子 recovery 成功路径
 无 fatal；REMATCH 因 `Priority` 等待，终检正常处于 `Dependency`。两臂脚本均
 显式包含精确提交、排除 `g0063`、校准前 recovery 提升以及从 recovery checkpoint
 重放。阈值仍为 birth/alive/end=`0.5`，reporting=false、raw-RGB=false。
+
+### M36 正式重试双臂均进入训练
+
+REMATCH `1178957` 已从 `Priority` 等待转为 `RUNNING/g0045`，与运行在
+`g0003` 的 FIXED `1178956` 形成独立节点并行训练；依赖终检 `1178958` 仍正常
+等待。20:45–20:46 的直接日志状态为：
+
+- FIXED：第 1 轮 `01100/02009`，loss=`3.1355`，作业已运行 16:45；
+- REMATCH：第 1 轮 `00550/02009`，loss=`3.2979`，作业已运行 9:45。
+
+两臂 stderr 目前均为 620 bytes，fatal 计数为零；尚未到第 3 轮 checkpoint，
+所以 `arm/recovery/` 未出现是预期状态。recovery 只在完整 12 轮训练审计通过后、
+任何 calibration 开始前原子落盘，不能把当前 pending 解读为恢复失败。下一硬
+记录点仍是第 3 轮 checkpoint；期间只监控数值稳定、作业状态和资源，不读取
+calibration 或 reporting。
