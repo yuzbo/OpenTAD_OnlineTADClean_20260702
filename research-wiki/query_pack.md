@@ -405,3 +405,7 @@ identity-linked duplicate/fragmentation error。
   大小 `17,512,977` bytes。三轮末 loss 均持续下降且无 fatal。冻结编排会在
   12 轮训练全部完成后再统一对 3/6/9/12 checkpoint 做 calibration-only 推理，
   所以当前没有提前选模或访问 reporting；下一关键记录为第 6 轮 checkpoint。
+- 正式第 6 轮恢复点：双臂已经进入第 7 轮，六轮末 loss 持续降至 FIXED
+  `1.6392`、REMATCH `1.5142`，学习率共同降至 `1.0e-4`；节点本地
+  `epoch_5.pth` 均确认存在且为 `17,512,977` bytes。无主作业 fatal，整体已过
+  50%；仍等待 12 轮结束后统一进行 calibration-only 评估，下一节点为第 9 轮。
