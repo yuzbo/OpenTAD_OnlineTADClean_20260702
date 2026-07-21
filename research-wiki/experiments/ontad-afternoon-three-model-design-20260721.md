@@ -847,3 +847,41 @@ screen 明确 `effectiveness_claim_authorized=false`。这与冻结的分层门�
 只说明一轮尚未形成可执行定位，不否定容量/机制学习就绪，也不授权性能声明。
 作业已顺序进入 REMATCH；47:55 的状态为 `00300/02009`、loss=`3.1978`、
 fatal=0。成对 gate 仍等待 REMATCH 完成和后续双臂诊断。
+
+### M46 硬 reserve 一轮成对门通过，授权同提交十二轮
+
+Slurm `1179361` 已在 `g0003` 以 `COMPLETED 0:0` 正常结束，总历时
+`01:19:27`。FIXED/REMATCH 均为 `2010/2010` 成功更新与调度、零 skip、零
+监督耗尽，最关键的 `gt_birth_runtime_entry_free_collisions` 均为零。FIXED
+记录 `deferred_birth_due_to_release=132`、`active_abandonments=4`；REMATCH 为
+`145/5`，另有 2 次 candidate cancellation。由冻结 census 推导的“最多 4 个
+预测占用 + 2 个硬 birth reserve”因此在两种绑定策略的完整一轮运行中都成立，
+同时保留了同一步 release 只在下一因果决策复用的原时序合同。
+
+机制 activation 无失败：两臂的 birth/alive/end margin、三项单调 calibration
+和 endpoint start pointer 均有非零更新，causal transport 按 H2 合同保持为零。
+单调校准不变门在两臂均通过，三个 scale 全为正；calibration-only 诊断的
+birth/alive/end AUC 为 FIXED `0.845650/0.843332/0.649682`、REMATCH
+`0.325392/0.271909/0.563047`。REMATCH 的 birth/alive 低于随机仍作为正式 12 轮
+需要观察的预注册风险信号，但不是新增的一轮事后淘汰门，也不据此改损失或阈值。
+
+边界机制在两臂都确认为 `end_transition_mode=causal_delta_mlp`、
+`endpoint_start_mode=past_pointer`、`future_memory_accessed=false`、runtime 无 GT；
+pointer 均作出 480 次严格 past-only 决策。两份 calibration ledger 均为一轮固定
+`0.5` 下零发射，future-end、future-source、negative-latency、non-monotonic-emit
+违规全为零。因没有最终区间，正长度合同在本轮没有非空样本可检验，但也没有产生
+零长度区间；正式 12 轮仍由已有写出与审计门逐条强制 `start < end`。
+
+最终成对门为 `screen_pass=true`、`technical_pass=true`、
+`learning_readiness_pass=true`、`budget_pass=true`，实际整对开销
+`1.323333 GPU·h < 2.0`。`operational_pass=false` 仅来自两臂 epoch-1 固定 0.5
+下零 prediction/Recall，符合冻结的“学习就绪而非收敛”语义；因此当前 0 mAP/Recall
+不是论文性能，也不授权 effectiveness claim。FIXED/REMATCH checkpoint 分别为
+`17,512,977` bytes，SHA-256 为
+`71c21778041f3e73e80864a8ae855a188122c925d35067c551116aa4d9196b95` 与
+`6689409fd0b7e9014780a0d511d97f9c533980aa34acf497ee4130301f7f23fb`。
+
+本节点只授权从同一 clean exact
+`5edc46c34c0db56e79409fac69276450ad87e949`、同 seed-705 和冻结特征协议重新
+提交成对 12 轮及依赖终检。正式门仍只在 epoch 12 使用 birth/alive/end=`0.5`；
+不授权阈值搜索、reporting、multi-seed 或 raw-RGB。

@@ -487,3 +487,11 @@ identity-linked duplicate/fragmentation error。
   均为零；三项 margin、三项 calibration 与 pointer 均激活，transport 按合同为
   零。calibration 一轮仍 0 发射，但四类因果/时序违规为零，只记 operational
   未收敛。REMATCH 已到 `300/2009`、fatal=0；成对 gate 等待其完成。
+- M46 一轮成对门通过：`1179361` 已 `COMPLETED 0:0`；FIXED/REMATCH 均为
+  `2010/2010` 更新与调度、零 skip/监督耗尽/entry-free collision，证明真实
+  4 占用+2 硬 birth reserve 同时适用于 FIXED 与 REMATCH。七项 H2 机制激活、
+  单调校准、causal-delta end、past-only pointer、future-memory=false 和 runtime
+  无 GT 均通过；实际整对 `1.323333 GPU·h`。`screen/technical/learning-readiness`
+  为 true；一轮固定 0.5 零发射只记 operational 未收敛，不作性能结论。下一步仅
+  从 clean exact `5edc46c` 提交 feature-level seed-705 成对 12 轮与依赖终检；
+  阈值搜索、reporting、multi-seed、raw-RGB 仍禁止。
