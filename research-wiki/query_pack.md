@@ -287,3 +287,21 @@ identity-linked duplicate/fragmentation error。
 - lifecycle FIXED 已完成：三项 margin 正确激活、`2010/2010`、零
   skip/监督耗尽，但 `1` 次 runtime 空槽碰撞且 calibration 仍为零区间；
   technical gate 已无法通过，REMATCH 仅用于冻结失败分流。
+
+## 2026-07-21 08:43 最终恢复点
+
+- 第四版 `1177720` 已完成 exact `d87a116` 的双臂整链路；
+  `FAILED 1:0 / 01:07:11` 是预设科学拒绝，不是程序崩溃。
+- FIXED/REMATCH 都是 `2010/2010`、零 skip/监督耗尽，三项 margin
+  activation 通过，实际双臂 `1.119167 GPU·h`。
+- FIXED birth/alive/end AUC 为 `0.842/0.863/0.489`，REMATCH 为
+  `0.733/0.758/0.557`；所有冻结 0.5 TPR 均为零。
+- 双臂均 0 最终区间、ratio/Recall 为零，且各有 1 次 runtime
+  entry-free collision；`technical_pass=false`，不放行 P1、reporting、
+  多种子或 raw-RGB。
+- 下一实现顺序已经冻结：先修同一步 release-before-birth admission 和
+  容量审计；容量门干净后做独立 current-label calibration head，阈值仍
+  固定 0.5；只有 birth crossing 后 end 仍弱，才做 causal
+  transition-end / past-start factorization。
+- 09:00 汇总页：
+  `research-wiki/experiments/ontad-model-optimization-0900-report-20260721.md`。

@@ -580,3 +580,47 @@ prediction、`prediction/GT=0`、`Recall@0.3=0`、average mAP `0`。
 因此第四版已确定不可能通过双臂 technical gate。作业继续 REMATCH 和
 双臂 v2 诊断，目的只剩下判断三头 margin 是否保住 REMATCH 排序，以及
 下一步应走 M9 的哪一条失败分流；不授权调权或后续结果阶段。
+
+### M11 第四版最终结果与下一模型决策
+
+`1177720` 已在 exact `d87a116d3a30fb5a83af7ee7c9c3c311bc8bc30c`
+上封存完整双臂产物。Slurm 最终为预期的
+`FAILED 1:0 / 01:07:11`；这是 `screen_gate` 科学拒绝，不是运行崩溃。
+
+- REMATCH 也完成 `2010/2010` 更新，零 skip、零监督耗尽；birth/alive/end
+  margin 分别有 `1195/1336/1190` 次非零更新，均值
+  `0.111112/0.579521/0.042279`，transport 始终为零。
+- activation gate 通过；实际双臂资源 `1.119167 GPU·h < 2.0 GPU·h`。
+- FIXED birth/alive/end target-conditioned AUC 为
+  `0.842202/0.862792/0.488539`；REMATCH 为
+  `0.733084/0.757925/0.557386`。
+- FIXED 三通道正样本最大分数为 `0.198374/0.308451/0.231468`；
+  REMATCH 为 `0.180861/0.414605/0.295531`。两臂所有冻结 0.5 TPR/FPR
+  均为零。
+- 两臂均为 0 committed prediction、`prediction/GT=0`、
+  `Recall@0.3=0`、average mAP 0；FIXED/REMATCH 各有 1 次
+  GT-birth/runtime entry-free collision。
+- `technical_pass=false`、`screen_pass=false`、预算通过、无 reporting
+  访问，未授权多轮、多种子或 raw-RGB。
+
+按 M9 的预注册优先级，容量错误先于分数诊断：下一实现先保证同一步旧实例
+结束/释放在新 birth admission 前完成，并把 release eligibility 与 end
+分类置信度分开记录，直至双臂 collision、监督耗尽和 skip 全为零。容量门
+干净后，D 的 REMATCH birth/alive AUC `0.733/0.758` 满足“排序保留、
+校准不足”分支，下一模型才新增独立 current-label calibration head，并
+保持推理阈值固定 0.5。FIXED end AUC `0.489` 记录为后续
+transition-end / past-start factorization 的证据；在 birth 真正 crossing
+前不越级实现该结构。
+
+关键产物哈希：
+
+- `fixed_score_diagnosis.json`：
+  `bbd3e248e2162828090520dc4a4cdf35b37a0843ca8a3491d8429e7c9d12048a`
+- `rematch_score_diagnosis.json`：
+  `e5b9dbcd660592f36b6fe7601b4f71f85d701692256240850e2f65857908374e`
+- `optimization_activation.json`：
+  `5818730d66878da7f52c647cf6f8d8e4b5261d51eeb7b0e12935c24d04eb6e6f`
+- `pair_resource_report.json`：
+  `f0f79d418b540e3e849110681cbaee129bbba66af0610ff07ddfaf44b2d50845`
+- `screen_gate.json`：
+  `8592bdbfdda8e9624dc264d82c7896bfae81b5d25048321bee5206728e699a97`
