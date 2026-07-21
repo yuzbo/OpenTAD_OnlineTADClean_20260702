@@ -390,3 +390,13 @@ identity-linked duplicate/fragmentation error。
 - 正式 Slurm 已做无提交 `sbatch --test-only`：集群要求 finalizer 也申请 1 GPU
   且禁止显式覆盖默认内存。脚本已修复并再次通过；finalizer 的最坏 0.5 GPU·h
   被保守计入 16 GPU·小时总门，不会漏算资源。
+- F2/H2 `1178504/05` 已完整收口并均通过 learning-readiness、activation 与机制门；
+  一轮固定 0.5 静默不作永久淘汰。H2/REMATCH birth/alive AUC=`0.3254/0.2719`
+  是必须在多轮观察的风险信号，不允许据此事后改门或单臂调参。2×2 比较只授权
+  paired 12-epoch feature training，仍未授权 multi-seed/reporting/raw-RGB。
+- 当前正式恢复点：exact `a6e16a88bd5f95e284a76859ef2a4106f6b5fd27`，远端
+  `170 passed in 80.68s`；FIXED `1178653`、REMATCH `1178654` 正在 `g0066`
+  运行，依赖终检 `1178655` 等待，run 为
+  `/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260721_141835`。
+  下一步只监控 calibration 的 3/6/9/12 曲线、完整性和资源；epoch 12 自动执行
+  固定 0.5 正式门，通过后才进入 feature 多种子。

@@ -459,3 +459,43 @@ finalizer 的最坏 30 分钟不漏算：正式门在两训练臂真实 GPU 时�
 `0.5 GPU·h` 保守预算，再与总上限 `16 GPU·h` 比较。新增预算边界回归证明：
 两臂 `15.6 GPU·h` 时加 finalizer 后为 `16.1`，必须拒绝。修复后训练臂与
 finalizer 两种 `sbatch --test-only` 均通过；该操作没有创建真实 Slurm 作业。
+
+### M30 F2/H2 一轮收口、2×2 判定与正式十二轮启动
+
+F2 `1178504` 与 H2 `1178505` 均完整结束：FIXED/REMATCH 每臂都是
+`2010/2010` 次更新，零跳步、监督耗尽、容量碰撞和协议违规；实际双臂资源分别为
+`1.17306/1.31972 GPU·h`。两者均通过 `learning_readiness_pass`、损失激活与
+单调校准机制门，但固定 `0.5` 下的一轮运行门仍为 false，原因仅为零最终发射。
+这继续按 M23/M24 解释为“已能学习但尚未收敛”，不作为永久结构淘汰。
+
+一轮诊断中，F2 的 FIXED birth/alive/end AUC 为
+`0.8650/0.8927/0.4557`，REMATCH 为 `0.5815/0.5478/0.5197`；H2 的 FIXED
+为 `0.8457/0.8433/0.6497`，REMATCH 为 `0.3254/0.2719/0.5630`。H2 两臂各有
+`480` 次 endpoint pointer 决策，均严格 past-only、runtime 无 GT。H2/REMATCH
+一轮 birth/alive 低于随机是明确风险信号，但不是预注册的一轮完整性淘汰条件；
+不得据此追加事后门或只对有利臂调参，必须由冻结的 12 轮收敛曲线和 epoch-12
+固定阈值门裁决。
+
+E/F2/G/H2 的 batched-v2 2×2 比较已生成：H2 同时通过学习就绪、激活、单调
+AUC 不变和 boundary past-only/no-GT 机制门，故只授权下一门
+`paired_12_epoch_feature_training`；`multi_seed=false`、`raw_rgb=false`。
+比较产物位于
+`model_opt_boundary_calibration_batched_seed705_20260721_125631/factorial_comparison_batched_v2_a6e16a8.json`，
+SHA-256 为 `e6ed85d91dea7e972247b754eb8a9c2eb46cce5c725a8270d7556d2d0de00a0a`。
+
+正式代码冻结并推送为 `a6e16a88bd5f95e284a76859ef2a4106f6b5fd27`；共享 clean
+checkout `/data/run01/sczc063/yuzibo/projects/OpenTAD_OnlineTAD_Formal12_a6e16a8`
+通过 `170 passed in 80.68s`、SHA 不变和写探针。首次启动包装器因登录节点默认
+`python` 指向 Python 2 而在比较器解析阶段退出，尚未调用 `sbatch`、没有创建任何
+作业；改为显式 `python3` 后成功提交：
+
+- FIXED：`1178653`；
+- REMATCH：`1178654`；
+- 成对依赖终检：`1178655`；
+- run：`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260721_141835`。
+
+两条训练臂已在 `g0066` 运行，作业脚本均显式排除 `g0063`；终检处于正常
+`Dependency` 等待。`formal12_launch.json` 固定 seed 705、12 轮、成对提交、
+无阈值搜索、未访问 reporting、未授权 raw-RGB；训练从 seed 初始化而非 pilot
+续训，只在 calibration 检查第 `3/6/9/12` 轮，并由 `1178655` 自动执行第 12 轮
+固定 `0.5` 正式门。
