@@ -62,8 +62,8 @@ python -m pytest tests/test_causaltad_config_contracts.py -q
   环境变量或用户当次提供，示意命令为：
 
   ```bash
-  export http_proxy="http://${ACADEMIC_PROXY_CREDENTIAL}@10.244.6.36:3128"
-  export https_proxy="http://${ACADEMIC_PROXY_CREDENTIAL}@10.244.6.36:3128"
+export http_proxy=u-MtfrT7:vH5orjDV@10.244.6.36:3128
+export https_proxy=u-MtfrT7:vH5orjDV@10.244.6.36:3128
   ```
 
 - 禁止把 `ACADEMIC_PROXY_CREDENTIAL`、完整代理 URL、shell history、下载日志或数据文件提交到
