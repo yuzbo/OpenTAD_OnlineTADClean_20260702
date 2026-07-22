@@ -13,11 +13,12 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 2. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) before the next Pro-led route selection.
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
-5. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the current raw-RGB route, read-only upstream rule, and parallel experiment graph.
-6. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the previous slot-route evidence and its exact historical protocol.
-7. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-8. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
-9. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+5. [`../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`](../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md) for the complete current direction and [`../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`](../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md) for the independent Pro audit.
+6. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the raw-RGB route, read-only upstream rule, and parallel experiment graph.
+7. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the previous slot-route evidence and its exact historical protocol.
+8. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+9. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+10. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
@@ -37,8 +38,10 @@ encoder; an OnVLLM text adapter is optional and never replaces structured spans.
 ActionSwitch, MATR, HAT/OAT, and 2025 HEM official repositories are complete
 read-only reference baselines. All compatibility edits and A+B family fusions
 live in separate writable workspaces with source mapping, diff hashes, and
-parity receipts. The written design is awaiting user review before parallel
-acquisition and implementation.
+parity receipts. The interface and fusion rationale have been clarified and the
+independent Pro review package is ready. Implementation has not started; the
+review must first test for exact competitors, obvious multi-paper reconstruction,
+claim novelty and experiment identifiability.
 
 ## Ideas
 
@@ -121,7 +124,7 @@ acquisition and implementation.
 
 | Node | Verdict | Use |
 |---|---|---|
-| [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | design written; user review pending | Freezes raw-RGB outcome, read-only upstream baselines, writable fusion workspaces, pairwise matrix, and parallel experiment DAG before implementation. |
+| [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |

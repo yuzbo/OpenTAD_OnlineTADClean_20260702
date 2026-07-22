@@ -159,6 +159,12 @@ ratio=`16.097917`。两臂完整 24,120 更新、容量、监督、因果、正�
 的动态事件，以事件自身历史判断持续和结束，以学习式层级记忆适应样本与动作长度。
 阈值只在训练侧 calibration 划分选择；统一 0.5 仅作消融。
 
+官方方法首先在各自只读原生仓库运行，不要求 OpenTAD 化。共同接口只在 fidelity
+之后统一时间戳、输出、因果账本、指标和资源收据；不得替换官方 target、loss、
+matching、memory、decoder 或 post-processing。融合矩阵用于分解假设而非堆模块：
+AB=即时出生+定位，AD=出生+层级历史，BD/BC=记忆族对照，ABD 只有在父组合出现互补
+证据时才进入 raw-RGB 主实验，ABCD 无独立增益即删除。
+
 最终主模型必须直接读取原始 RGB。现有 `FrameWindowDataset` 和
 `OnlineVideoMAEAdapter` 只提供接口脚手架，stub 必须替换为真实严格因果视觉编码器。
 可选 OnVLLM 文本头共享同一事件状态，但标准 `{start,end,class,score,event_id}` 区间
@@ -183,6 +189,8 @@ ratio=`16.097917`。两臂完整 24,120 更新、容量、监督、因果、正�
   `docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`
 - 路线记录：
   `research-wiki/experiments/ontad-rgb-dynamic-event-memory-design-20260722.md`
+- 当前方向报告：`CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`
+- Pro 审判 Prompt：`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`
 
 旧 FIXED/REMATCH 证据恢复入口：
 

@@ -140,6 +140,14 @@ preregistered from deterministic reruns and metric rounding; a failed
 reproduction is reported as a baseline-integration failure and is not silently
 replaced by a locally simplified look-alike.
 
+The official native baselines do not need an OpenTAD interface. They remain
+executable in their original stacks. A neutral interchange contract is introduced
+only after native fidelity, and only for matched timestamps, data splits, decoded
+events, causal ledgers, metrics, and resource receipts. It may not replace an
+official target, loss, assignment, memory update, decoder, or post-processing
+rule. If a donor cannot be mapped without changing those semantics, it remains a
+native-only baseline and the proposed fusion boundary must move or be abandoned.
+
 ## 4. Model architecture
 
 ### 4.1 Raw-RGB causal visual encoder
@@ -294,11 +302,13 @@ for each stage:
 Clone A/B/C/D concurrently, freeze SHAs, inspect licenses, run official unit or
 checkpoint evaluations, and write fidelity receipts.
 
-### Lane 2: OpenTAD adapters and feature-level fusion
+### Lane 2: neutral parity adapters and feature-level fusion
 
-Implement four isolated adapters behind a shared `StreamingEventModel` interface.
-Run A/B/C/D and AB/AD/BD/BC/ABD/ABCD as a Slurm array on official features and
-on the project's frozen SigLIP2 features. Checkpoints are evaluated by calibration
+After each native run passes, implement the smallest lossless adapter needed for
+common audit and fusion tensors. OpenTAD is the project's data/evaluation/Slurm
+container, not a baseline requirement or a scientific contribution. Run A/B/C/D
+and AB/AD/BD/BC/ABD/ABCD as a Slurm array on official features and on the
+project's frozen SigLIP2 features. Checkpoints are evaluated by calibration
 workers as soon as they appear. Epoch count is not assumed in advance; official
 schedules are used for fidelity and matched optimizer-update budgets are used for
 fusion comparisons.

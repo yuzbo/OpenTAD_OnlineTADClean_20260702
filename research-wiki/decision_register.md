@@ -991,12 +991,20 @@ Resolution:
 4. treat feature experiments as fast fidelity and mechanism gates only;
 5. make raw-RGB ABD the primary paper candidate and keep structured On-TAD spans
    authoritative if an OnVLLM output adapter is added.
+6. do not require official native baselines to use OpenTAD; permit only a minimal
+   post-fidelity interchange contract, and keep a donor native-only if parity
+   cannot be maintained;
+7. treat AB/AD/BD/BC as parent-child hypothesis tests, not as a promise to keep
+   every donor; ABD and ABCD are removed if their direct-parent evidence does not
+   identify a complementary gain.
 
 Sources:
 
 - `docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`;
 - [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md);
 - [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md).
+- `CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`;
+- `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`.
 
 Reversibility:
 

@@ -111,6 +111,14 @@ These sources are mapped at high level but not fully decomposed into individual 
 
 If these become active again, create dedicated pages before using them as claims.
 
+## Raw-RGB Dynamic Event Memory Review Package: 2026-07-22
+
+| Source | Imported Understanding | Wiki Nodes |
+|---|---|---|
+| `CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md` | Defines the final raw-RGB strict-causal On-TAD target, distinguishes native official baselines from neutral parity adapters, explains each parent-child fusion hypothesis, and states publication/kill conditions. | [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md), [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md), [decision_register.md#dr-029-replace-fixed-slots-with-raw-rgb-dynamic-event-memory-and-preserve-official-baselines-read-only](decision_register.md) |
+| `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md` | Zero-context Pro prompt requiring primary-source exact-competitor search, multi-paper obvious-combination attack, claim-by-claim novelty audit, interface/fusion identifiability review, and a better task/method/parallel experiment plan even if the current route is rejected. | [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md), [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) |
+| Design commit `ebea561c01d312ceac6430c26c590be2f20caa47` | Local design anchor before the report and Pro prompt; contains the raw-RGB architecture specification, DR-029, G16 and the dependency-aware experiment graph. | [gap_map.md#G16-fixed-instance-slots-and-fixed-memory-horizons-fail-under-dynamic-streams](gap_map.md), [decision_register.md#dr-029-replace-fixed-slots-with-raw-rgb-dynamic-event-memory-and-preserve-official-baselines-read-only](decision_register.md) |
+
 ## Fresh Literature Audit and Independent Review: 2026-07-11
 
 | Source | Main Imported Conclusions | Wiki Nodes |

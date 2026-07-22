@@ -27,6 +27,16 @@ scope: Append-only timeline of wiki mutations and major research decisions.
   specification on branch `codex/ontad-rgb-event-memory` from commit `36081a5`.
 - This milestone records design only: no official baseline has been modified and
   no fusion or new raw-RGB training result is claimed yet.
+- Clarified that official-native A/B/C/D baselines never require OpenTAD
+  conversion. OpenTAD is only the new route's experiment container; a post-
+  fidelity adapter may standardize audit fields but cannot replace official
+  scientific behavior.
+- Reframed the fusion matrix as identifiable parent-child hypotheses: AB tests
+  birth plus localization, AD birth plus hierarchy, BD/BC isolate memory, ABD
+  requires complementary parent evidence, and ABCD is optional.
+- Added `CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md` and a zero-context Pro
+  prompt requiring exact-competitor search, obvious-combination rejection,
+  innovation audit, and a better task/method/parallel-experiment proposal.
 
 ## 2026-07-11
 

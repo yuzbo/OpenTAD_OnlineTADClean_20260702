@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:ontad-rgb-dynamic-event-memory-design-20260722
 title: "Raw-RGB Dynamic Event Memory Design Freeze"
-status: design-written-awaiting-user-review
-outcome: pending
+status: pro-review-package-ready
+outcome: pending-review
 updated: 2026-07-22
 ---
 
@@ -43,6 +43,11 @@ official On-TAD and event-memory donors.
    pre/post HEAD, tree hash, status, or file inventory changes.
 7. Thresholds are calibration policies rather than a universal 0.5 rule.
 8. Structured On-TAD output is mandatory; OnVLLM language output is optional.
+9. Official native runs do not require OpenTAD. The neutral adapter exists only
+   for lossless parity, matched comparison, causal audit and isolated fusion.
+10. The fusion matrix is a parent-child hypothesis study: AB tests birth plus
+    localization, AD tests birth plus hierarchy, BD/BC isolate memory families,
+    ABD is retained only after complementary parent evidence, and ABCD is optional.
 
 ## Planned Parallel Lanes
 
@@ -131,3 +136,15 @@ gate. ABCD is optional and cannot delay the primary ABD path.
 
 No official repository has been modified, and no fusion implementation or new
 training run is claimed at this design checkpoint.
+
+## Review Package
+
+- current direction report:
+  `CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`;
+- independent Pro review prompt:
+  `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`.
+
+The Pro review is required to search for an exact competitor, perform a
+multi-paper obvious-combination attack, audit every candidate claim, and return a
+revised task, solution and dependency-aware experiment plan even if it rejects
+the current route.

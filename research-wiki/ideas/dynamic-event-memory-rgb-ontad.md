@@ -35,6 +35,13 @@ reference baselines. They are never patched. Writable A/B/C/D compatibility
 replicas and AB/AD/BD/BC/ABD/ABCD fusion workspaces are separate and trace every
 ported or changed file back to an official SHA and source path.
 
+Official-native baselines do not require OpenTAD conversion. A neutral adapter is
+allowed only after native fidelity and only to standardize timestamps, splits,
+decoded messages, causal ledgers, metrics, and resource accounting. It must not
+replace official target generation, loss, matching, memory, decoder, or post-
+processing. OpenTAD is an experiment container for the new route, not an
+innovation claim.
+
 ## Primary Model
 
 - dense causal start hazard creates ragged event records, not fixed slots;
@@ -56,6 +63,22 @@ but the structured On-TAD interval remains authoritative.
 Faithful A/B/C/D baselines precede AB, AD, BD, BC, ABD, and optional ABCD. The
 paper main candidate is raw-RGB ABD. Each fusion is compared with both parents
 under matched input, update budget, calibration, decoder contract, and metrics.
+
+The matrix is hypothesis decomposition rather than module accumulation:
+
+- AB asks whether immediate start birth and strong localization are compatible;
+- AD asks whether a born event can be maintained by hierarchical history without
+  fixed switches or fixed windows;
+- BD asks whether memory structure alone improves MATR while its end-centric
+  lifecycle remains unchanged;
+- BC compares a different long/short-history donor against D;
+- ABD survives only if its parent experiments expose complementary gains;
+- ABCD is deleted unless C adds an isolated gain on top of ABD.
+
+The faithful MATR arm retains its official current-end/past-start behavior. The
+primary ABD arm does not: the event created at start owns all subsequent class,
+continuation, memory and end decisions, while the MATR-derived localizer supplies
+localization capacity under that event-conditioned contract.
 
 ## Success Conditions
 
