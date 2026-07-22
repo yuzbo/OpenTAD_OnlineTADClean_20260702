@@ -228,3 +228,5 @@ checks, and writes a SHA-256 source manifest before creating
 `OFFICIAL_MATR_DATA_READY`. No smoke or training job may be submitted before
 that sentinel exists. This is a source-access/cache repair only, not a model
 or performance result.
+
+At the first hourly monitor, the resumable direct official archive had reached `244/11,622` 512KB ranges (about 125MB); its detached N16 session remained alive. The initial high-concurrency transfer exposed proxy disconnects, so the active downloader deliberately uses a single conservative range worker and a durable completion bitmap. This retains every completed range and classifies the issue as egress stability, not data or model failure. The three staged files, source manifest and `OFFICIAL_MATR_DATA_READY` remain absent, therefore the real-data five-lane smoke has not been submitted.
