@@ -1,0 +1,46 @@
+{
+  "auditor": "codex-gpt-5.6-sol-xhigh",
+  "cross_family_independence": false,
+  "date": "2026-07-22",
+  "evaluation_type": "real_gt_calibration_only_feature_level",
+  "initial_reviewer_verdict": "fail",
+  "protocol_reconciliation": {
+    "status": "retracted_initial_binding_finding",
+    "reason": "Frozen configs and milestones preregister epoch 12 as the formal fixed-threshold gate; calibration-selected checkpoints have a separate candidate-retention role."
+  },
+  "integrity_status": "pass",
+  "operational_status": "fail",
+  "checks": {
+    "ground_truth_provenance": {
+      "status": "pass"
+    },
+    "score_normalization_and_thresholds": {
+      "status": "pass"
+    },
+    "artifact_and_replay_chain": {
+      "status": "pass"
+    },
+    "formal_result_call_chain": {
+      "status": "pass"
+    },
+    "scope": {
+      "status": "warn",
+      "details": "One seed, cached causal features, 40-video calibration split; reporting not accessed."
+    }
+  },
+  "valid_formal_results": {
+    "fixed": {
+      "checkpoint_epoch": 12,
+      "average_map_pct": 1.6144836863320113,
+      "recall_tiou_0p3": 0.15416666666666667,
+      "prediction_gt_ratio": 18.841666666666665
+    },
+    "rematch": {
+      "checkpoint_epoch": 12,
+      "average_map_pct": 1.1784729601500554,
+      "recall_tiou_0p3": 0.0875,
+      "prediction_gt_ratio": 16.097916666666666
+    }
+  },
+  "next_gate": "model_optimization_on_fit_and_calibration_only"
+}

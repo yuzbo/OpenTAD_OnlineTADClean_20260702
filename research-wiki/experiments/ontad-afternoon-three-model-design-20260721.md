@@ -1067,3 +1067,35 @@ FIXED `1179456`、REMATCH `1179457` 与依赖终检 `1179458`。首次状态核�
 因此当前仍没有新的合法正式 mAP/Recall，也没有 FIXED/REMATCH 性能裁决。下一节点是
 8 份 replay verification receipt 完成以及 `1179458` 固定 0.5 正式终检；在此之前
 继续禁止 reporting、阈值搜索、multi-seed 与 raw-RGB。
+
+### M53 重放与正式第 12 轮门完成；技术通过、运行性能未过门
+
+checkpoint-only 重放 FIXED `1179456`、REMATCH `1179457` 分别以
+`COMPLETED 0:0 / 00:15:41` 与 `COMPLETED 0:0 / 00:15:27` 结束，依赖终检
+`1179458` 也以 `COMPLETED 0:0 / 00:00:32` 返回。两臂第 3/6/9/12 轮共 8 份
+verification receipt 均为 `passed=true`、`reorder_only=true`，事件 payload 和
+calibration 指标逐项复现源 run；未来端点、未来 source、mutable、emit 时间倒退和
+sequence 倒退计数全部为零。FIXED/REMATCH 的源训练加重放累计资源分别为
+`6.155833/6.163611 GPU·h`，两臂合计 `12.319444 GPU·h`，加冻结 finalizer reserve
+后为 `12.819444 < 16 GPU·h`。
+
+协议复核纠正了一次审计误判：冻结配置、合同和 M23/M24/M30/M47 均预注册“第 3/6/9/12
+轮 calibration 曲线用于观察收敛与保留候选，固定 `0.5` 的正式科学门只评第 12 轮”。
+因此 REMATCH 的 calibration receipt 选择第 9 轮，不意味着正式门应把第 12 轮替换为
+第 9 轮。最初同家族只读审计遗漏了这条预注册上下文，错误地把 epoch-12 评测判成
+selected-checkpoint 绑定失败；该判断已撤回，未提交的 selected-finalizer 改动也已取消。
+保留审计记录并明确纠正，避免以后再次混淆“曲线候选”与“冻结正式门”。
+
+合法的单 seed、calibration-only、第 12 轮正式结果是：FIXED
+`average_mAP=1.614484` percentage points、Recall@0.3=`0.154167`、prediction/GT
+比=`18.841667`；REMATCH `average_mAP=1.178473`、Recall@0.3=`0.0875`、
+prediction/GT 比=`16.097917`。技术门为 **PASS**：每臂 24,120 次更新完整，容量、
+监督、严格因果、正长度、不可变、sequence、split、阈值和预算均通过；运行性能门为
+**FAIL**，因为两臂 prediction/GT 比都高于冻结上限 4.0，Recall@0.3 都低于冻结下限
+0.25。FIXED 相对 REMATCH 高 `0.436011` mAP 点，只是单 seed calibration 方向诊断，
+不能升级为论文有效性结论。
+
+正式门已经把下一阶段锁定为 `model_optimization_on_fit_and_calibration_only`。下一步不再
+重跑同一 12 轮，也不搜索/降低 `0.5`：只用 fit 与 calibration 诊断大量错误发射、低
+Recall 和边界/类别误差来源，再成对设计最小模型改动；reporting、multi-seed 与 raw-RGB
+继续锁定。
