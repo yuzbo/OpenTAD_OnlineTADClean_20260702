@@ -1162,7 +1162,7 @@ Reversibility:
 
 ## DR-032: Absorb the DUCA-TTDI Review Without Replacing the Strict-Causal EventMATR Route
 
-Status: active scope guard and external-method review.
+Status: archived non-executing scope guard; not an EventMATR experiment.
 
 Decision:
 
@@ -1171,6 +1171,10 @@ Decision:
 > standards for the DUCA repository, but treat TTDI and every numerical training
 > recipe as unproven proposals. Do not import this offline full-window route into
 > the official-MATR-parent EventMATR feature study.
+
+This decision exists only because the supplied attachment is a DUCA review. It
+does not authorize DUCA implementation, cloning, training, resource use or a
+paper claim in the current EventMATR route.
 
 Reason:
 

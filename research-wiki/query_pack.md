@@ -112,7 +112,8 @@ emit latency、活动事件数、记忆和吞吐。因果、正长度、不可�
 3. native isolation、四个 B×O 模型、损失、ragged runtime、训练/终检/locked-test 脚本和
    精确源码身份收据均已实现。
 4. 本地完整合同为 `62 passed`；official protocol、Python compile、Git-Bash syntax 与
-   `git diff --check` 均通过。这证明实现链，不证明性能。
+   `git diff --check` 均通过；同一 exact 已部署到 N16R4 并再次 `62 passed in 49.26s`。
+   这些只证明实现链，不证明性能。
 5. 下一门是单卡 Linux 上的真实官方训练批次 smoke：五路各 forward/backward/Adam step、
    finite loss/gradient、event/owner gradient、checkpoint strict reload，且 test access=false。
 6. smoke PASS 后并行释放 native + 四个 EventMATR `100`-epoch lane，随后冻结终点各做一次
@@ -125,9 +126,9 @@ emit latency、活动事件数、记忆和吞吐。因果、正长度、不可�
 实验记录：
 `research-wiki/experiments/ontad-matr-official-parent-event-model-20260722.md`。
 
-## 外部 DUCA-TTDI 审查边界
+## 外部附件归档（非当前路线，不进入实验）
 
-2026-07-22 的 DUCA 审查固定到另一仓库
+DUCA 只在本节出现，因为用户提供的附件本身审查的是另一仓库
 `yuzbo/OpenTAD_C3_CoarseClean_20260702@a00498e`，附件 SHA-256 为
 `36523B2F1A7456F8D4A4314EA445971F8066EEC59611F9632D7BC1D33E31A884`。
 它审查的是离线 full-window pre-backbone 不规则 RGB 采样，不是当前严格因果 EventMATR。
@@ -138,3 +139,4 @@ U/L/T 单变量待证伪假设，2000/6000 updates、LR/loss/schedule、55% sign
 唯一迁移护栏是：未来 raw-RGB 若引入非均匀采样/压缩，原始 physical timestamps 必须
 进入 backbone 和 localization head，不能只在输出端做坐标逆映射。完整记录见
 `research-wiki/experiments/duca-ttdi-external-review-absorption-20260722.md` 与 DR-032。
+DUCA 不进入当前模型、四路作业、数据、训练预算或论文主结果。

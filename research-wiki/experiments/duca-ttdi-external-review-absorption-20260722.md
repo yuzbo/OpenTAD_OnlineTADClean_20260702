@@ -1,13 +1,17 @@
 ---
-type: external-review-absorption
+type: external-review-archive
 node_id: exp:duca-ttdi-external-review-absorption-20260722
-title: "DUCA-TTDI External Review: Verification, Adoption and Scope Boundary"
-status: absorbed-with-qualifications
-outcome: partial-accept
+title: "External DUCA-TTDI Attachment Archive: Verification and Scope Boundary"
+status: archived-nonexecuting
+outcome: partial-accept-for-reviewed-duca-only
 updated: 2026-07-22
 ---
 
 # DUCA-TTDI 外部审查：完整吸收、独立复核与路线边界
+
+> **非当前实验。** DUCA 出现在这里，唯一原因是用户本次提供的附件本身审查
+> `OpenTAD_C3_CoarseClean_20260702` 的 DUCA 离线取帧路线。本页只保存和复核该附件，
+> 不把 DUCA 代码、模块、训练设置或实验作业带入当前 EventMATR 课题。
 
 ## 一句话裁决
 
