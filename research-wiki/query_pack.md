@@ -17,11 +17,13 @@ scope: Current compressed context for the strictly causal On-TAD task.
 回看、offline NMS 或事后改写历史区间。推理时不得读取 GT identity、annotation、
 terminal 或其他未来字段。
 
-当前是**特征级**实验：输入为冻结的 causal SigLIP2 stride-8、768 维缓存特征，
-不是 raw-RGB 联合训练。只有特征级 FIXED/REMATCH 正式门、重复性和论文主结果规划
-依次通过后，才讨论 raw-RGB 的 frozen/PEFT/joint 阶梯。
+旧 FIXED/REMATCH 阶段是**特征级**机制证伪：输入为冻结的 causal SigLIP2
+stride-8、768 维缓存特征，不是最终论文模型。该阶段已经得到合法但很低的单种子结果，
+因此被保留为槽位路线的负基线。当前主路线转为“动态事件生命周期 + 层级自适应记忆”，
+并明确以原始 RGB 严格因果联合训练作为最终交付；特征实验只负责快速复现、归因和筛选，
+不能代替 raw-RGB 主结果。
 
-## 冻结科学问题
+## 旧 FIXED/REMATCH 冻结问题（历史基线）
 
 主假设比较 first-crossing **FIXED** 与 per-prefix **REMATCH** 两种监督绑定：
 
@@ -35,7 +37,7 @@ terminal 或其他未来字段。
 正式 birth/alive/end 阈值固定为 `0.5`。校准集只用于预注册的第 3/6/9/12 轮
 checkpoint 选择，不搜索或降低阈值；reporting split 在正式授权前保持未访问。
 
-## 当前 H2 模型
+## 旧 H2 模型（历史基线）
 
 当前模型使用 6 个物理 slot，但语义是“最多 4 个预测实例占用 + 2 个硬 birth
 reserve”，不是允许 6 个实例长期占满。冻结的 411 视频 census 为：320,205 个
@@ -93,7 +95,7 @@ H2 还包括：
    类别和分数重新排序。这是序列化/评测合同缺口，不是模型 lifecycle、容量、因果或
    定位性能失败，也不需要重训。
 
-## 当前执行点 M52
+## 历史执行点 M52
 
 并列帧 tie-break、sequence fail-closed 摘要和逐事件 replay 等价验证已在 exact
 `0daf681b4e8e36a64066a2f6fa8e0458a98b429a` 实现并推送。排序仍以
@@ -150,20 +152,39 @@ ratio=`16.097917`。两臂完整 24,120 更新、容量、监督、因果、正�
 预算全部通过，所以技术链路成立；但 prediction/GT 都远高于上限 4，Recall 都低于
 下限 0.25，运行性能门明确失败。FIXED 的 `+0.436011` mAP 点只作为单 seed 方向信号。
 
-下一任务是 `model_optimization_on_fit_and_calibration_only`：先分解假阳性、类别、起止
-边界和重复生命周期的来源，再成对改进损失/生命周期校准；不搜索或降低 0.5，不访问
-reporting，不启动 multi-seed/raw-RGB，也不再原样重跑本次 12 轮。
+旧路线不再原样重跑。当前任务是从官方 ActionSwitch、MATR、HAT/OAT 和 2025 HEM
+完整实现出发，建立 A/B/C/D 忠实基线与 AB/AD/BD/BC/ABD/ABCD 融合矩阵。官方仓库
+作为完整只读金标准，单方法兼容修改和 A+B 融合都在独立可写工作区完成，并保存
+上游 SHA、源文件映射、差异哈希和等价性收据。模型以开始状态转变即时创建无固定数量
+的动态事件，以事件自身历史判断持续和结束，以学习式层级记忆适应样本与动作长度。
+阈值只在训练侧 calibration 划分选择；统一 0.5 仅作消融。
+
+最终主模型必须直接读取原始 RGB。现有 `FrameWindowDataset` 和
+`OnlineVideoMAEAdapter` 只提供接口脚手架，stub 必须替换为真实严格因果视觉编码器。
+可选 OnVLLM 文本头共享同一事件状态，但标准 `{start,end,class,score,event_id}` 区间
+始终是权威输出。完整设计见
+`docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`。
 
 ## 结论边界
 
 当前可以声称：H2 的训练、监督、严格因果和真实 4+2 容量机制已在一轮与十二轮成对
 运行中通过；源账本失败被定位为同帧序列化合同问题，并已用 exact 回归修复。
 
-当前不能声称：FIXED 优于 REMATCH、达到论文主结果、对外数据集泛化、raw-RGB
-端到端有效，或已经获得合法 reporting mAP/Recall。正式终检完成前，最准确的状态是：
-**十二轮模型已训练并保全，checkpoint-only 等价重放正在运行，最终性能裁决待定。**
+当前不能声称：FIXED 优于 REMATCH、达到论文主结果、对外数据集泛化，或 raw-RGB
+端到端有效。最准确的状态是：**旧槽位路线技术合同通过但性能门失败；新的动态事件
+记忆 raw-RGB 路线已经完成设计，正等待书面设计复核后进入并行复现与实现。**
 
-## 恢复入口
+## 当前路线恢复入口
+
+- 活跃分支：`codex/ontad-rgb-event-memory`
+- 干净设计工作区：
+  `E:/DeskTop/TAD/OpenTAD_OnlineTADClean_20260702/_codex_worktrees/ontad-rgb-event-memory-clean`
+- 设计规范：
+  `docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`
+- 路线记录：
+  `research-wiki/experiments/ontad-rgb-dynamic-event-memory-design-20260722.md`
+
+旧 FIXED/REMATCH 证据恢复入口：
 
 - 分支：`codex/ontad-science-fixed-rematch`
 - 代码库：`https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702`

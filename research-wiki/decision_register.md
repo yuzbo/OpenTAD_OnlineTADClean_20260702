@@ -954,3 +954,53 @@ Reversibility:
   before seed 705. The prohibition on scientific runs with open P0 contracts,
   repeated locked-reporting access, or unregistered budget overrun is not
   reversible without new evidence.
+
+## DR-029: Replace Fixed Slots with Raw-RGB Dynamic Event Memory and Preserve Official Baselines Read-Only
+
+Status: active design decision; supersedes DR-028 as the current implementation
+direction without rewriting the completed FIXED/REMATCH evidence.
+
+Decision:
+
+> Use complete official ActionSwitch, MATR, HAT/OAT, and 2025 HEM repositories
+> as untouched read-only reference baselines. Implement compatibility changes
+> and A+B family fusions only in separate writable workspaces. The final method
+> must consume original RGB and maintain ragged start-conditioned event records
+> with learned hierarchical memory rather than a manually fixed slot count.
+
+Reason:
+
+- the fixed-slot route passed its technical contracts but produced low recall
+  and severe over-emission, and its capacity safety required dataset-specific
+  census plus a hard birth reserve;
+- the user's final target is raw-RGB On-TAD or an optional OnVLLM extension, not
+  a cached-feature system;
+- ActionSwitch, MATR, HAT/OAT, and HEM already contain mature solutions to
+  different parts of the problem, so fusion must start from their full official
+  designs rather than isolated paper descriptions or simplified rewrites;
+- keeping official trees immutable makes baseline fidelity, debugging, and
+  attribution possible even when an integration attempt fails.
+
+Resolution:
+
+1. maintain detached full official repositories under an external read-only
+   root and assert SHA/tree cleanliness before and after use;
+2. create independent writable A/B/C/D replicas and AB/AD/BD/BC/ABD/ABCD
+   workspaces;
+3. record upstream/source/diff/license manifests and parity tests for every port;
+4. treat feature experiments as fast fidelity and mechanism gates only;
+5. make raw-RGB ABD the primary paper candidate and keep structured On-TAD spans
+   authoritative if an OnVLLM output adapter is added.
+
+Sources:
+
+- `docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`;
+- [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md);
+- [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md).
+
+Reversibility:
+
+- Fusion membership and visual backbone may change after matched evidence. The
+  read-only preservation of official baselines, strict causal contract, and
+  requirement that final evidence include original-RGB input are not relaxed by
+  feature-level results.

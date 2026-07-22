@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-20
+updated: 2026-07-22
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -13,35 +13,38 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 2. [`../PRO_DIVERGENT_IDEA_PROMPT_20260711.md`](../PRO_DIVERGENT_IDEA_PROMPT_20260711.md) before the next Pro-led route selection.
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
-5. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) for the current readiness verdict, then [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the repair and experiment order.
-6. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-7. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
-8. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+5. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the current raw-RGB route, read-only upstream rule, and parallel experiment graph.
+6. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the previous slot-route evidence and its exact historical protocol.
+7. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+8. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+9. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
-The task remains standard, fully supervised, strictly causal On-TAD. The active
-route is a clean feature-level comparison of **FIXED first-crossing binding**
-against **per-prefix REMATCH**, with identical runtime lifecycle and cached
-causal features. Raw-RGB joint training remains conditional and blocked.
+The task remains standard, fully supervised, strictly causal On-TAD. The old
+feature-level FIXED/REMATCH slot route completed its technical contract but
+failed its operational performance gate, so it is retained as a negative
+baseline rather than the active architecture.
 
-The lifecycle/scientific-contract repair has passed its earlier real-data
-Slurm smoke and deterministic profile. Shared model optimization is now
-implemented at `0258b853aa284f9650d931e680116b63b289e192`: fit-only priors,
-tempered class-imbalance weights, a one-token birth-start range, supervised
-REMATCH costs, and removal of scalar-route pointer work. These changes are
-shared across both arms and preserve the single-variable comparison.
+The active design is raw-RGB dynamic event memory On-TAD: immediate start-state
+detection creates ragged event records; each event maintains its own identity,
+start anchor, class belief, continuation and end state; hierarchical learned
+memory adapts its effective span to the sample and action duration. Cached-
+feature experiments are only the fast reproduction/attribution layer. The
+paper's mandatory result must consume original RGB through a real causal visual
+encoder; an OnVLLM text adapter is optional and never replaces structured spans.
 
-The old profile is only a pre-optimization upper bound. The active order is
-same-commit N16R4 smoke, same-commit strict profile, then the registered
-one-epoch seed-705 calibration-only technical screen if the two-GPU-hour cap
-still passes. No seed-level result currently exists; multi-seed paper evidence
-and raw-RGB joint training remain conditional and blocked.
+ActionSwitch, MATR, HAT/OAT, and 2025 HEM official repositories are complete
+read-only reference baselines. All compatibility edits and A+B family fusions
+live in separate writable workspaces with source mapping, diff hashes, and
+parity receipts. The written design is awaiting user review before parallel
+acquisition and implementation.
 
 ## Ideas
 
 | Node | Status | Role |
 |---|---|---|
+| [idea:dynamic-event-memory-rgb-ontad](ideas/dynamic-event-memory-rgb-ontad.md) | design-written | Active route: raw-RGB immediate event birth, start-conditioned lifecycle, and learned hierarchical memory without fixed semantic slots. |
 | [idea:anytime-semantic-event-alarms](ideas/anytime-semantic-event-alarms.md) | conditional-P0 | Pro Rank 1; direct e-process/video-FAR overlap requires a novelty and validity gate. |
 | [idea:petal-ontad](ideas/petal-ontad.md) | revise/feature-kill-gate | Full raw-video package demoted; only the FRESH/TTF/PES matched-feature falsification study is active. |
 | [idea:three-clock-event-observability](ideas/three-clock-event-observability.md) | rejected-out-of-scope | PIVOT changes the task to physically anchored streaming event verification and must not be revived in this project. |
@@ -118,6 +121,7 @@ and raw-RGB joint training remain conditional and blocked.
 
 | Node | Verdict | Use |
 |---|---|---|
+| [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | design written; user review pending | Freezes raw-RGB outcome, read-only upstream baselines, writable fusion workspaces, pairwise matrix, and parallel experiment DAG before implementation. |
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
 | [exp:formal-training-none](experiments/formal-training-none.md) | no evidence | Reminder that no formal multi-seed result exists. |

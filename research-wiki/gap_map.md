@@ -1,6 +1,6 @@
 ---
 type: gap_map
-updated: 2026-07-12
+updated: 2026-07-22
 status: active
 scope: Stable gaps and anti-repetition constraints for Online/Causal TAD.
 ---
@@ -254,3 +254,29 @@ The target is not merely to unfreeze a backbone. A defensible solution must join
 5. lower redundant training/inference cost than overlapping-window processing.
 
 Candidate route: [ideas/petal-ontad.md](ideas/petal-ontad.md).
+
+## G16: Fixed Instance Slots and Fixed Memory Horizons Fail Under Dynamic Streams
+
+Status: unresolved, active implementation gap.
+
+The completed FIXED/REMATCH route showed that a manually selected slot capacity
+can be made technically safe only through dataset-specific concurrency census,
+birth reserve, and fail-closed capacity gates. That is a useful negative
+baseline, but it is not an elegant general solution for arbitrary overlap,
+repetition, or action duration. Fixed history windows and fixed memory token
+budgets create the analogous problem on the temporal axis.
+
+Required solution:
+
+- a detected start creates a ragged event record rather than claiming one of a
+  fixed number of semantic slots;
+- each active event carries its own start anchor, identity, class belief, and
+  end state, preventing free end-to-wrong-start attachment;
+- compact active-event state is retained until end/cancel without a learned or
+  manually chosen semantic-instance cap;
+- visual history uses sample-conditioned retention and merge decisions so the
+  effective memory span adapts to content and action length;
+- finite-hardware guards fail visibly and never silently truncate an active
+  event or rewrite a finalized interval.
+
+Primary route: [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md).

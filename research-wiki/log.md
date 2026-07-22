@@ -1,11 +1,32 @@
 ---
 type: log
-updated: 2026-07-20
+updated: 2026-07-22
 status: active
 scope: Append-only timeline of wiki mutations and major research decisions.
 ---
 
 # Research Wiki Log
+
+## 2026-07-22 — Raw-RGB Dynamic Event Memory Design
+
+- Recorded the completed FIXED/REMATCH feature route as a technically valid but
+  operationally failed fixed-slot baseline; historical results remain unchanged.
+- Promoted `idea:dynamic-event-memory-rgb-ontad` as the active architecture:
+  immediate start-state event birth, start-conditioned lifecycle, ragged active
+  events, and learned hierarchical visual memory.
+- Froze original RGB as the mandatory final input. Cached features are now only
+  for official fidelity, fast mechanism attribution, and screening. Optional
+  OnVLLM language output cannot replace structured On-TAD intervals.
+- Registered complete official ActionSwitch, MATR, HAT/OAT, and 2025 HEM
+  repositories as detached read-only reference baselines. No patch or fusion is
+  permitted in those trees.
+- Registered separate writable A/B/C/D compatibility replicas and
+  AB/AD/BD/BC/ABD/ABCD fusion workspaces, with exact upstream/source/diff/license
+  manifests and official-to-adapter parity tests.
+- Added DR-029, G16, the design evidence record, graph edges, and the full written
+  specification on branch `codex/ontad-rgb-event-memory` from commit `36081a5`.
+- This milestone records design only: no official baseline has been modified and
+  no fusion or new raw-RGB training result is claimed yet.
 
 ## 2026-07-11
 
