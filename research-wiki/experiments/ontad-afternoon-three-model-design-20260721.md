@@ -988,3 +988,55 @@ RuntimeError、OOM、non-finite 标记与非有限 loss 均为零；MaxRSS 约�
 FIXED/REMATCH 优劣裁决；未访问 reporting、未搜索或降低固定 `0.5`、未启动
 raw-RGB。下一持久节点为第 12 轮训练完整性审计、四 checkpoint recovery 或失败
 quarantine，随后才允许 calibration-only 曲线与依赖终检执行。
+
+### M51 十二轮训练与校准完成，终检发现并列帧账本排序合同缺口
+
+FIXED `1179373` 与 REMATCH `1179374` 已分别在 `g0043/g0030` 以
+`COMPLETED 0:0` 正常结束，历时 `05:53:51/05:54:34`。两臂均完成
+`12 × 2010 = 24,120` 次成功更新和同数 scheduler step，skip、监督耗尽与
+`gt_birth_runtime_entry_free_collisions` 均为零；没有 fatal、OOM、NaN/Inf
+或 non-finite loss。四个预注册 checkpoint（第 3/6/9/12 轮）均已进入共享
+`recovery/`，SHA-256 清单完整且没有生成 quarantine。真实“最多 4 个预测占用
++ 2 个硬 birth reserve”因此首次通过完整十二轮 FIXED/REMATCH 容量审计。
+
+训练审计还确认 H2 的三项单调 lifecycle calibration、三项 margin 与 past-only
+start pointer 在两臂均有非零更新；causal transport 按冻结 H2 合同为零。两臂
+第 12 轮最后一个 minibatch loss 为 `1.7597/2.1855`，相对更早轮次上升；这只
+作为训练曲线风险信号记录，不等价于验证性能、过拟合结论或调参授权。
+
+四 checkpoint 的 calibration-only `average_mOnlineAP`（单位为 fraction）为：
+
+- FIXED：第 3/6/9/12 轮分别为 `0.0000059524 / 0.0000802264 /
+  0.0022547243 / 0.0072212087`，选择第 12 轮；选中 checkpoint SHA-256 为
+  `507088028827dfec655a6e011857fc21bd173e67366f8cf0a42824eb240bf5d1`；
+- REMATCH：第 3/6/9/12 轮分别为 `0.0000087057 / 0.0010357575 /
+  0.0095973653 / 0.0049836061`，选择第 9 轮；选中 checkpoint SHA-256 为
+  `189d83309aa6b2e22d93e38b2d9baa2cd5310dd90aacc30e8617f2cb36415748`。
+
+这些数值仅用于冻结 calibration split 上的 checkpoint 选择，不能当作 reporting
+主结果。FIXED 第 12 轮账本有 `9,044` 个最终发射，REMATCH 选中的第 9 轮账本有
+`12,434` 个；两臂总训练/校准分配开销为约 `11.8042 GPU·h`。未访问 reporting，
+未搜索或降低 birth/alive/end=`0.5`，未启动 raw-RGB。
+
+依赖终检 `1179375` 在 15 秒后以 `FAILED 1:0` 退出，且在写出
+`formal12_gate.json` 之前被完整 PETAL 发射协议拒绝；因此本 run 尚无合法的正式
+mAP/Recall 或 FIXED/REMATCH 性能裁决。失败不是训练、容量、未来信息或区间长度
+问题，而是发射账本的并列帧排序合同缺口：运行时 `sequence_id` 按不可变提交顺序
+连续写入，但 DDP 汇总后的 `sort_emission_ledger` 在相同 `emit_frame` 内按区间、
+类别和分数重新排序，没有把显式 `sequence_id` 作为 tie-breaker。
+
+对两臂全部 8 份 calibration 账本做了独立只读审计：FIXED 第 3/6/9/12 轮分别有
+`19/1293/1582/433` 个 sequence 倒序点，REMATCH 为 `0/45/608/740`；所有倒序
+都发生在完全相同的 `emit_frame`，真正的时间倒退为零。每个 stream 的 sequence
+均无重复、连续覆盖 `0..N-1`，event id 与 sequence 一致；按原生 sequence 查看时
+emit frame 从不倒退。8 份账本同时满足零重复 event、严格正长度、
+`end <= source <= emit`、immutable=true，未来端点、未来特征、负延时和
+non-monotonic emit 均为零。故该终检失败属于序列化顺序/评测合同问题，不是实例
+lifecycle 倒退，也不能改写成定位性能失败。
+
+安全恢复路径是：在账本生成处让相同 `emit_frame` 的显式 sequence 保持提交顺序，
+增加“并列帧多发射”和全协议回归；经 exact clean N16R4 套件通过后，只从已保全的
+8 个 checkpoint 重新运行 calibration-only 因果推理，重建 ledger、candidate、
+selection receipt 与 SHA-256 链，再重跑依赖终检。终检继续禁止静默重排；不需要
+重训，不改变模型、数据、seed、FIXED/REMATCH、阈值或划分。正式门通过前仍不授权
+multi-seed、reporting 或 raw-RGB。

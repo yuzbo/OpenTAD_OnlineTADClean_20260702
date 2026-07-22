@@ -525,3 +525,15 @@ identity-linked duplicate/fragmentation error。
   不作过拟合或性能裁决。recovery/quarantine/audit/calibration 仍等待第 12 轮；
   下一节点为四 checkpoint 完整性、容量/监督审计、calibration-only 曲线和固定
   `0.5` 依赖终检，reporting、阈值搜索与 raw-RGB 继续锁定。
+- M51 当前恢复点：FIXED `1179373`/REMATCH `1179374` 已各完成 12×2010 更新并
+  `COMPLETED 0:0`；两份审计均为 24,120 updates/scheduler、零 skip/监督耗尽/
+  entry-free collision，四 checkpoint recovery/SHA 完整、无 quarantine，完整十二轮
+  4+2 容量门通过。calibration-only 选择 FIXED epoch 12（`0.0072212087`
+  fraction，9,044 发射）与 REMATCH epoch 9（`0.0095973653` fraction，12,434
+  发射），但这些不是 reporting 主结果。终检 `1179375` 在写 gate 前因
+  `non_monotonic_sequence` 失败，故无合法正式 mAP/Recall。全 8 账本审计已证明
+  sequence 唯一连续、正长度/不可变/因果全过，全部倒序只发生在相同 emit frame；
+  根因是 DDP ledger sort 没用显式 sequence 打破并列。下一步在生成处修 tie-break、
+  exact clean 回归后仅从已保存 checkpoint 重放 calibration、收据、哈希和终检；
+  终检不静默改写账本，也不重训、不改固定 0.5/模型/数据/seed，不访问 reporting，
+  不启动 multi-seed 或 raw-RGB。
