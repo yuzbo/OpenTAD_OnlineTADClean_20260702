@@ -10,7 +10,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 ## 2026-07-23 — Official MATR data staging
 
 - The N16 academic Google Drive route remains the sole data source. Its credential is process-local and absent from the repository, Wiki, and logs.
-- The direct official archive is being downloaded by a resumable 512KB range state machine. At the first hourly monitor it had completed `244/11,622` ranges (about 125MB); the download screen was still detached and alive.
+- The direct official archive is being downloaded by a resumable 512KB range state machine. The second hourly monitor reached `542/11,622` ranges (about 278MB); the download screen remained detached and alive, a net gain of 298 complete ranges since the preceding record.
 - Earlier multi-connection `ProxyError` traces are classified as an academic egress stability limit, not a source-integrity, dataset, model, or result failure. The active single-connection downloader preserves its state and continues after transient proxy failures.
 - `OFFICIAL_MATR_DATA_READY`, both official feature pickles, the annotation, and the source manifest remain absent. Five-lane smoke and all training stay blocked until archive, format, and SHA-256 validation complete.
 
