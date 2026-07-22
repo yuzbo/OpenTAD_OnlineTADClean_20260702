@@ -149,6 +149,88 @@ def test_streaming_emission_ledger_sort_is_rank_order_independent():
     assert sorted_dict["v2"][0]["emit_frame"] == 8
 
 
+def test_streaming_emission_ledger_sort_preserves_sequence_on_tied_frames():
+    from opentad.evaluations.online_instance_metrics import audit_causal_emissions
+    from opentad.utils.online_protocol import sort_emission_ledger
+
+    stream = "video=v1|stream=calibration"
+    result_dict = {
+        "v1": [
+            {
+                "event_id": "e1",
+                "video_id": "v1",
+                "stream_key": stream,
+                "emit_frame": 16,
+                "source_frame": 16,
+                "sequence_id": 1,
+                "start_frame": 8,
+                "end_frame": 16,
+                "segment": [8, 16],
+                "label": "A",
+                "score": 0.9,
+                "immutable": True,
+            },
+            {
+                "event_id": "e0",
+                "video_id": "v1",
+                "stream_key": stream,
+                "emit_frame": 16,
+                "source_frame": 16,
+                "sequence_id": 0,
+                "start_frame": 4,
+                "end_frame": 16,
+                "segment": [4, 16],
+                "label": "B",
+                "score": 0.1,
+                "immutable": True,
+            },
+            {
+                "event_id": "e2",
+                "video_id": "v1",
+                "stream_key": stream,
+                "emit_frame": 24,
+                "source_frame": 24,
+                "sequence_id": 2,
+                "start_frame": 16,
+                "end_frame": 24,
+                "segment": [16, 24],
+                "label": "A",
+                "score": 0.8,
+                "immutable": True,
+            },
+        ]
+    }
+
+    sorted_dict = sort_emission_ledger(result_dict)
+
+    assert [row["sequence_id"] for row in sorted_dict["v1"]] == [0, 1, 2]
+    assert audit_causal_emissions(sorted_dict)["passed"] is True
+
+
+def test_streaming_emission_ledger_sort_does_not_hide_cross_frame_sequence_error():
+    from opentad.utils.online_protocol import (
+        ProtocolViolation,
+        sort_emission_ledger,
+        summarize_emission_ledger,
+        validate_emission_ledger_summary,
+    )
+
+    result_dict = {
+        "v1": [
+            {"stream_key": "s1", "emit_frame": 16, "sequence_id": 0},
+            {"stream_key": "s1", "emit_frame": 8, "sequence_id": 1},
+        ]
+    }
+
+    sorted_dict = sort_emission_ledger(result_dict)
+    summary = summarize_emission_ledger(sorted_dict)
+
+    assert [row["sequence_id"] for row in sorted_dict["v1"]] == [1, 0]
+    assert summary["no_future"]["non_monotonic_sequence_rows"] == 1
+    with pytest.raises(ProtocolViolation, match="non_monotonic_sequence_rows"):
+        validate_emission_ledger_summary(summary)
+
+
 def test_streaming_emission_ledger_summary_reports_latency_and_no_future():
     from opentad.utils.online_protocol import summarize_emission_ledger, validate_emission_ledger_summary
 
@@ -188,6 +270,7 @@ def test_streaming_emission_ledger_summary_reports_latency_and_no_future():
     assert summary["latency_sec"]["mean"] == pytest.approx(0.2)
     assert summary["latency_sec"]["p95"] == pytest.approx(0.38)
     assert summary["no_future"]["future_end_violations"] == 0
+    assert summary["no_future"]["non_monotonic_sequence_rows"] == 0
     validate_emission_ledger_summary(summary)
 
 
@@ -209,6 +292,27 @@ def test_streaming_emission_ledger_summary_rejects_future_rows():
     )
 
     with pytest.raises(ProtocolViolation, match="no-future audit"):
+        validate_emission_ledger_summary(summary)
+
+
+def test_streaming_emission_ledger_summary_rejects_nonmonotonic_sequence():
+    from opentad.utils.online_protocol import (
+        ProtocolViolation,
+        summarize_emission_ledger,
+        validate_emission_ledger_summary,
+    )
+
+    summary = summarize_emission_ledger(
+        {
+            "v1": [
+                {"stream_key": "s1", "emit_frame": 16, "sequence_id": 1},
+                {"stream_key": "s1", "emit_frame": 16, "sequence_id": 0},
+            ]
+        }
+    )
+
+    assert summary["no_future"]["non_monotonic_sequence_rows"] == 1
+    with pytest.raises(ProtocolViolation, match="non_monotonic_sequence_rows"):
         validate_emission_ledger_summary(summary)
 
 

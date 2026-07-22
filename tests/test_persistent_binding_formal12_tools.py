@@ -29,6 +29,17 @@ def _recovery_module():
     return module
 
 
+def _replay_module():
+    path = ROOT / "tools/verify_persistent_binding_calibration_replay.py"
+    spec = importlib.util.spec_from_file_location(
+        "verify_persistent_binding_calibration_replay",
+        path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _payload(arm, *, predictions=100, ratio=1.0, recall=0.5, gpu_hours=6.0):
     binding = {
         "fixed": "fixed_birth_slot",
@@ -166,6 +177,91 @@ def test_formal12_submitter_encodes_pairing_and_locked_split_contract():
     assert r'checkpoint="\$RECOVERY/checkpoint/epoch_\${zero}.pth"' in source
     assert "positive_duration_hard_transition_reserve_" in source
     assert "precalibration_quarantine.v2" in source
+
+
+def test_formal12_calibration_replay_reuses_checkpoints_without_training():
+    source = (
+        ROOT
+        / "tools/remote/submit_persistent_binding_formal12_calibration_replay_n16r4.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "SOURCE_RUN" in source
+    assert "SOURCE_COMMIT" in source
+    assert "calibration_replay_only" in source
+    assert "training_reused" in source
+    assert "verify_persistent_binding_calibration_replay.py" in source
+    assert "replay_event_payload_equality_required" in source
+    assert "cumulative_source_plus_replay" in source
+    assert "--evaluation-role calibration" in source
+    assert "--evaluation-role reporting" not in source
+    assert "tools/train.py" not in source
+    assert "3:2 6:5 9:8 12:11" in source
+    assert "tools/evaluate_persistent_binding_formal12.py" in source
+    assert "--dependency=afterok:" in source
+    assert "replay_silent_ledger_correction" in source
+
+
+def _replay_row(event_id, sequence_id, emit_frame, *, score=0.5):
+    return {
+        "event_id": event_id,
+        "video_id": "v1",
+        "stream_key": "video=v1|stream=calibration",
+        "sequence_id": sequence_id,
+        "start_frame": 0,
+        "end_frame": emit_frame,
+        "source_frame": emit_frame,
+        "emit_frame": emit_frame,
+        "segment": [0, emit_frame],
+        "label": "A",
+        "score": score,
+        "immutable": True,
+    }
+
+
+def test_calibration_replay_verifier_accepts_tied_frame_reorder_only(tmp_path):
+    module = _replay_module()
+    row_0 = _replay_row("e0", 0, 8, score=0.4)
+    row_1 = _replay_row("e1", 1, 8, score=0.6)
+    row_2 = _replay_row("e2", 2, 16)
+    source = tmp_path / "source.json"
+    replay = tmp_path / "replay.json"
+    source.write_text(
+        __import__("json").dumps({"results": {"v1": [row_1, row_0, row_2]}}),
+        encoding="utf-8",
+    )
+    replay.write_text(
+        __import__("json").dumps({"results": {"v1": [row_0, row_1, row_2]}}),
+        encoding="utf-8",
+    )
+
+    result = module.verify_replay(source_ledger=source, replay_ledger=replay)
+
+    assert result["passed"] is True
+    assert result["reorder_only"] is True
+    assert result["event_payloads_identical"] is True
+    assert result["source_tied_sequence_violations"] == 1
+    assert not any(result["replay_violation_counts"].values())
+
+
+def test_calibration_replay_verifier_rejects_payload_change(tmp_path):
+    module = _replay_module()
+    source = tmp_path / "source.json"
+    replay = tmp_path / "replay.json"
+    source.write_text(
+        __import__("json").dumps(
+            {"results": {"v1": [_replay_row("e0", 0, 8, score=0.4)]}}
+        ),
+        encoding="utf-8",
+    )
+    replay.write_text(
+        __import__("json").dumps(
+            {"results": {"v1": [_replay_row("e0", 0, 8, score=0.5)]}}
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="changed an emitted event payload"):
+        module.verify_replay(source_ledger=source, replay_ledger=replay)
 
 
 def test_formal12_training_recovery_is_validated_and_atomic(tmp_path):

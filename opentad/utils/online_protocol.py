@@ -141,6 +141,28 @@ def _result_sort_value(row, key, default):
         return default
 
 
+def _result_sequence_sort_value(row):
+    if not isinstance(row, dict):
+        return (1, 0.0)
+    for key in ("sequence_id", "sequence", "emission_index"):
+        if key not in row:
+            continue
+        try:
+            return (0, float(row[key]))
+        except (TypeError, ValueError):
+            return (0, float("inf"))
+    return (1, 0.0)
+
+
+def _result_stream_sort_value(row):
+    if not isinstance(row, dict):
+        return ""
+    for key in ("runtime_stream_key", "stream_key", "stream_id"):
+        if key in row:
+            return str(row[key])
+    return ""
+
+
 def sort_emission_ledger(result_dict):
     """Sort streaming-safe result rows into prefix emission order after DDP gather."""
     sorted_results = {}
@@ -149,6 +171,8 @@ def sort_emission_ledger(result_dict):
             rows,
             key=lambda row: (
                 _result_sort_value(row, "emit_frame", -1),
+                _result_stream_sort_value(row),
+                _result_sequence_sort_value(row),
                 _result_sort_value(row, "source_grid", -1),
                 _result_sort_value(row, "start_frame", -1),
                 _result_sort_value(row, "end_frame", -1),
@@ -206,10 +230,12 @@ def summarize_emission_ledger(result_dict):
     future_source_violations = 0
     negative_latency_rows = 0
     non_monotonic_emit_rows = 0
+    non_monotonic_sequence_rows = 0
 
     for video_name, rows in result_dict.items():
         per_video[video_name] = len(rows)
         last_emit_by_stream = {}
+        last_sequence_by_stream = {}
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -233,6 +259,16 @@ def summarize_emission_ledger(result_dict):
                 if previous_emit is not None and emit_frame < previous_emit:
                     non_monotonic_emit_rows += 1
                 last_emit_by_stream[stream_key] = emit_frame
+            sequence = None
+            for key in ("sequence_id", "sequence", "emission_index"):
+                if key in row:
+                    sequence = _to_float(row.get(key))
+                    break
+            if sequence is not None:
+                previous_sequence = last_sequence_by_stream.get(stream_key)
+                if previous_sequence is not None and sequence <= previous_sequence:
+                    non_monotonic_sequence_rows += 1
+                last_sequence_by_stream[stream_key] = sequence
             if source_grid is not None:
                 source_grids.append(source_grid)
             if emit_frame is not None and end_frame is not None and end_frame > emit_frame:
@@ -255,6 +291,7 @@ def summarize_emission_ledger(result_dict):
             future_source_violations=future_source_violations,
             negative_latency_rows=negative_latency_rows,
             non_monotonic_emit_rows=non_monotonic_emit_rows,
+            non_monotonic_sequence_rows=non_monotonic_sequence_rows,
         ),
     )
 
