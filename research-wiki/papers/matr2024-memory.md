@@ -27,6 +27,16 @@ Primary source: [arXiv:2408.02957](https://arxiv.org/abs/2408.02957). The
 attached that sentence to the CAG-QIL CVF footnote; this page records the
 correct direct source.
 
+Official code: [skhcjh231/MATR_codebase](https://github.com/skhcjh231/MATR_codebase),
+audited at `ba05a98d451b3541c1a5377026f17dc1102fa217` on 2026-07-22.
+
+The released THUMOS14 training command uses the official RGB+flow feature
+pickles and the defaults in `util/config.py`: 64-frame segments, 10 queries,
+seven memory segments with `gap2`, batch 64, 100 epochs, seed 52, Adam from
+`1e-8` to `1e-5` with cosine warm-up/restarts, focal classification, class
+threshold 0.1 and NMS 0.3. These settings, rather than the former OpenTAD
+12-epoch recipe, define the native parity and matched EventMATR experiments.
+
 ## Overlap
 
 - online temporal action localization;
@@ -45,4 +55,5 @@ CESR should not claim memory/history as novelty. The delta must be:
 
 ## Required Baseline Role
 
-At least conceptual comparison. If implementable, use a MATR-style feature baseline.
+Use the exact native implementation as the primary parent and baseline. A
+MATR-style rewrite is not sufficient evidence of fidelity.

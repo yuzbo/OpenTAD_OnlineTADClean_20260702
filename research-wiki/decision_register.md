@@ -1097,3 +1097,183 @@ Reversibility:
   after profiling. The standard task, strict causality, read-only donor policy,
   standard output, model-first priority and ban on report-split tuning are not
   relaxed without new scientific evidence.
+
+## DR-031: Retire the OpenTAD K×O Recipe and Use Official MATR as the Sole Parent
+
+Status: active; supersedes DR-030 as the executable route while retaining its
+strict-causal task and raw-RGB final target.
+
+Decision:
+
+> Abandon the old FIXED/REMATCH-derived 12-epoch K×O experiment. Build the new
+> event model as a controlled child of the exact official MATR implementation,
+> preserve MATR's THUMOS14 training recipe, and use ActionSwitch only as the
+> start-transition donor and native comparison.
+
+Reason:
+
+- the discarded K×O code inherited seed 705, 12 epochs, batch one, SigLIP2
+  features, AdamW `2e-4` and a six-entry guard from a low-performing internal
+  route rather than a front-line official method;
+- those changes would confound the proposed ownership mechanism with a new
+  feature representation, optimizer, schedule, batching regime and detector;
+- MATR is the closest official parent because it already performs standard
+  On-TAD with current-end and past-memory-start decoders on THUMOS14/MUSES;
+- ActionSwitch directly supplies the complementary class-agnostic state-change
+  idea, but its released objective and eight-epoch recipe are not a substitute
+  for MATR's interval-localization setting.
+
+Resolution:
+
+1. freeze read-only MATR SHA
+   `ba05a98d451b3541c1a5377026f17dc1102fa217` and ActionSwitch SHA
+   `838a6ccbd8f2cce414688ff2843380d712aa7b89`;
+2. require native MATR parity on the official supplied features and defaults;
+3. keep exact `native_matr` outside the factorial, and use four eventized cells
+   `B0O0/B1O0/B0O1/B1O1`, where `B` is immediate prefix-visible birth and `O`
+   is sticky owner identity;
+4. keep official MATR's 100 epochs, batch 64, seed 52, segment 64, ten queries,
+   seven memory segments, optimizer/scheduler/loss/evaluation settings for all
+   matched arms;
+5. change only the registered event-birth and owner-conditioned lifecycle
+   mechanisms; apply any stricter causal post-processing adaptation symmetrically
+   and prove it event-equivalent to generation-order execution;
+6. treat HAT and HEM as later memory references, not extra ingredients in the
+   first candidate;
+7. authorize raw-RGB work only after the candidate beats both direct parents
+   and passes association, causality, latency and resource checks.
+
+The uncommitted OpenTAD K×O implementation and launcher were never deployed and
+are not migrated. Completed FIXED/REMATCH results remain historical negative
+evidence only.
+
+Sources:
+
+- [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md);
+- [papers/matr2024-memory.md](papers/matr2024-memory.md);
+- [papers/actionswitch2024-state.md](papers/actionswitch2024-state.md).
+
+Reversibility:
+
+- The exact birth/ownership implementation can be revised after direct-parent
+  learning curves. The official-parent fidelity requirement, strict causality,
+  standard output and raw-RGB final evidence cannot be removed without an
+  explicit task change.
+
+## DR-032: Absorb the DUCA-TTDI Review Without Replacing the Strict-Causal EventMATR Route
+
+Status: active scope guard and external-method review.
+
+Decision:
+
+> Partially accept the external review fixed to DUCA commit `a00498e`: adopt its
+> verified correctness findings, true-time diagnostic and matched experimental
+> standards for the DUCA repository, but treat TTDI and every numerical training
+> recipe as unproven proposals. Do not import this offline full-window route into
+> the official-MATR-parent EventMATR feature study.
+
+Reason:
+
+- independent fixed-commit inspection confirms selected-axis GT training,
+  rank-index detector embeddings, post-hoc TrueTimeMap output remapping, a local
+  RGB-slope gradient bridge, mandatory union semantics, incomplete five-budget
+  cost parsing and missing aggregate semantic-equivalence checks;
+- these facts make selected-rank time distortion a strong causal hypothesis,
+  not a proven performance root cause;
+- a post-VideoMAE TTDI cannot repair irregular tubelet composition that already
+  occurred inside the visual backbone;
+- the review's `2000/6000` updates, learning rates, loss weights, policy mixture,
+  `55%` sign threshold and `0.2`-point tolerance are proposals without terminal
+  learning-curve or power evidence;
+- DUCA consumes a complete offline window, while EventMATR must remain prefix
+  causal and uses official uniformly timed MATR features in its current stage.
+
+Resolution:
+
+1. preserve the attachment hash
+   `36523B2F1A7456F8D4A4314EA445971F8066EEC59611F9632D7BC1D33E31A884` and
+   its fourteen-section disposition in the linked absorption record;
+2. if DUCA resumes, first fix parser, source-equivalence and mandatory
+   completeability, then read terminal matched results and run a single-variable
+   U/L/T TTDI test only when selection quality improves without mAP improvement;
+3. do not call TTDI successful until matched uniform, high-tIoU, multi-seed and
+   full-stack cost evidence pass;
+4. keep official MATR `ba05a98...`, native parity, official 100 epochs and the
+   EventMATR birth/owner mechanism study unchanged;
+5. carry only one future raw-RGB guardrail into EventMATR: any later nonuniform
+   sampling or token compression must preserve original physical timestamps
+   through the visual backbone and localization head, not merely remap output.
+
+Source:
+
+- [experiments/duca-ttdi-external-review-absorption-20260722.md](experiments/duca-ttdi-external-review-absorption-20260722.md).
+
+Reversibility:
+
+- TTDI, physical-coordinate heads and legal-swap ranking remain reversible DUCA
+  candidates. The strict-causal task boundary and official-MATR-parent decision
+  are not changed by evidence from an offline full-window sampler.
+
+## DR-033: Release EventMATR Only Through a Real Official-Data Smoke
+
+Status: active implementation gate.
+
+Decision:
+
+> Accept the current EventMATR implementation as locally contract-complete, but
+> do not release any 100-epoch performance job until one real official MATR
+> training batch passes native plus all four eventized lanes under an exact,
+> clean source identity. Do not substitute another feature representation.
+
+Reason:
+
+- local unit/contract tests cannot demonstrate that the official THUMOS14
+  pickles, annotation conventions, batch collation and GPU graph work together;
+- the former smoke checked only imports and synthetic tests and could have
+  released five expensive jobs without proving forward/backward, optimizer or
+  checkpoint compatibility;
+- exact native parity requires the official MATR RGB+flow 4096-dimensional
+  feature and label package, not SigLIP2 or a convenient OpenTAD cache;
+- every run must remain attributable to one clean commit, one Git tree and one
+  frozen manifest rather than silently mixing worker sources;
+- current N16R4 storage inventory did not find the exact official package, and
+  its Google Drive endpoint timed out, so a formal job would fail before
+  answering a model question.
+
+Resolution:
+
+1. the smoke uses only `THUMOS14Dataset(subset="train")` and never mounts test;
+2. it runs `native_matr`, `B0O0`, `B1O0`, `B0O1` and `B1O1`, each through real
+   forward, full loss backward, one Adam step, finite-gradient checks and strict
+   checkpoint reload;
+3. eventized lanes additionally require nonzero transition-head and owner-head
+   gradients;
+4. the launcher, smoke, five training workers and finalizer bind commit, tree,
+   manifest SHA-256 and smoke receipt; dirty/untracked/mismatched source fails;
+5. a PASS releases the native lane and four 100-epoch eventized lanes in
+   parallel; every lane uses full official validation/train data and only the
+   terminal epoch-100 checkpoint;
+6. training performs no calibration or test-driven selection; one locked test
+   per frozen lane is a later, separately submitted action;
+7. until the exact official data are staged, record the blocker and do not
+   launch substitute or partial-data experiments.
+
+Local evidence on 2026-07-23:
+
+- implementation commit `64d7f78dd8ed1436bac08ebfb03b51c90142129b`,
+  tree `bc6f5057e954ed448dcb5173489eba7c4dcba27d`, manifest SHA-256
+  `B6D3B51A14253E66A9D5C110F5B08FDAF96C31EB48FB2DF9A3B57CD5E61FB1C9`;
+- complete suite `62 passed`;
+- official-protocol validator PASS;
+- Python compile, all Git-Bash entrypoint syntax and `git diff --check` PASS;
+- no Linux real-data smoke, 100-epoch result or performance claim yet.
+
+Source:
+
+- [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md).
+
+Reversibility:
+
+- Smoke implementation details may be optimized if they preserve the same
+  scientific checks. Official-data parity, zero test access during training and
+  exact-source fail-closed behavior are not relaxed for convenience.

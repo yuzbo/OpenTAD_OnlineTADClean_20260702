@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:ontad-rgb-dynamic-event-memory-design-20260722
 title: "Raw-RGB Dynamic Event Memory Design Freeze"
-status: review-revised
-outcome: core-factorial-pending
+status: superseded-by-dr031
+outcome: historical-design-record
 updated: 2026-07-22
 ---
 
@@ -15,10 +15,13 @@ Record the transition from the technically valid but low-performing fixed-slot
 feature baseline to a raw-RGB, slot-free dynamic-event method built from faithful
 official On-TAD and event-memory donors.
 
-The independent review has now been absorbed. The donor-letter fusion graph is
-retained below as historical design context, but no longer authorizes work. The
-active experiment is the smaller `K×O` ownership/capacity factorial described at
-the end of this record.
+The independent review has now been absorbed. The donor-letter fusion graph and
+the later internal OpenTAD `K×O` graph are retained below as historical design
+context, but neither authorizes work. On 2026-07-22 the user rejected the old
+FIXED/REMATCH-derived training recipe. DR-031 now makes the exact official MATR
+implementation the sole executable parent and replaces this experiment with
+the official-setting `B×O` EventMATR study in
+`ontad-matr-official-parent-event-model-20260722.md`.
 
 ## Reproducible Starting Point
 

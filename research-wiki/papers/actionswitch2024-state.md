@@ -14,6 +14,15 @@ added: 2026-07-11
 
 # ActionSwitch 2024
 
+Official code: [musicalOffering/ActionSwitch-release](https://github.com/musicalOffering/ActionSwitch-release),
+audited at `838a6ccbd8f2cce414688ff2843380d712aa7b89` on 2026-07-22.
+
+The released THUMOS14 state model uses 4096-dimensional features, history 48,
+four states, batch 64, eight epochs, AdamW (`3e-4` to `1e-6`, weight decay
+0.01), 3072 scheduled iterations and conservativeness penalty 0.025. This is a
+native comparison and a start-transition mechanism donor. It does not replace
+MATR's 100-epoch interval-localization setting in the matched child study.
+
 ## One-line thesis
 
 Model class-agnostic action-switch states to identify action instance boundaries and handle concurrent or same-class actions in online localization.

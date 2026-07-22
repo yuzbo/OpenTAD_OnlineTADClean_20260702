@@ -1,0 +1,206 @@
+---
+type: experiment
+node_id: exp:ontad-matr-official-parent-event-model-20260722
+title: "Official-MATR-Parent Event Ownership Factorial"
+status: implementation-verified-locally
+outcome: pending
+updated: 2026-07-23
+---
+
+# Official-MATR-Parent Event Ownership Factorial — 2026-07-22
+
+## Decision
+
+The former OpenTAD FIXED/REMATCH training recipe is retired for the new model.
+Its 12 epochs, seed 705, SigLIP2 stride-8 cache, batch size one, AdamW `2e-4`
+and six-entry capacity guard are historical evidence only. No new-model job may
+inherit them, and the uncommitted OpenTAD `K×O` launcher was not deployed.
+
+The single executable parent is the official ECCV 2024 MATR implementation:
+
+- upstream: `https://github.com/skhcjh231/MATR_codebase`;
+- exact upstream SHA: `ba05a98d451b3541c1a5377026f17dc1102fa217`;
+- untouched reference: read-only;
+- writable derived repository:
+  `E:/DeskTop/TAD/OpenTAD_OnlineTADClean_20260702/_codex_worktrees/matr-event-memory-official-parent`;
+- local import commit: `33276e139b97597d17a3ebc35eddb118acbde0dd`.
+- locally verified implementation commit:
+  `64d7f78dd8ed1436bac08ebfb03b51c90142129b`;
+- implementation Git tree: `bc6f5057e954ed448dcb5173489eba7c4dcba27d`;
+- frozen manifest SHA-256:
+  `B6D3B51A14253E66A9D5C110F5B08FDAF96C31EB48FB2DF9A3B57CD5E61FB1C9`.
+
+The derived repository is a separate writable tree. The official reference is
+not edited. A later implementation commit is recorded below after the complete
+local contract suite passes; neither commit is a performance result.
+
+ActionSwitch is a mechanism donor and native comparison, not the parent:
+
+- upstream: `https://github.com/musicalOffering/ActionSwitch-release`;
+- exact SHA: `838a6ccbd8f2cce414688ff2843380d712aa7b89`;
+- borrowed idea: class-agnostic state transitions for concurrent starts;
+- its released eight-epoch state-classification recipe is not substituted for
+  the MATR localization recipe.
+
+HAT SHA `a38dad6a266f49546be7b19e5cd1918bb1ba1e34` and OnVTG/HEM SHA
+`4f629e8959129d80ac1aa80e01ac351782846841` remain read-only later-stage
+references. HEM is OnVTG rather than closed-set On-TAD and cannot define the
+main experiment schedule.
+
+## Why MATR Is the Parent
+
+MATR directly solves standard On-TAD on THUMOS14 and MUSES, predicts complete
+action intervals, and already separates current-segment end localization from
+past-memory start retrieval. The missing behavior is exactly our target delta:
+MATR uses fresh per-prefix instance queries and normally discovers an instance
+around its end, whereas the proposed model should create a provisional event at
+prefix-visible start evidence, preserve its owner identity, update its class and
+boundaries, then close it with owner-conditioned end evidence.
+
+## Official Setting That Must Be Preserved
+
+The native parity run and all four matched arms use the official THUMOS14 code
+defaults unless the changed factor requires otherwise:
+
+- official supplied RGB+flow feature pickles, `4096` dimensions;
+- streaming segment length `64`;
+- `10` decoder queries;
+- `7` historical memory segments, `gap2` sampling;
+- hidden dimension `1024`, FFN `2048`, three encoder and five decoder layers;
+- batch size `64`, one parallel video stream;
+- `100` epochs, random seed `52`;
+- Adam, learning rate from `1e-8` to `1e-5`, cosine warm-up/restarts with
+  `T_up=3`, `T_0=10`, `gamma=0.9`, weight decay `1e-4`;
+- focal classification, official loss weights, class threshold `0.1`, memory
+  flag threshold `0.5`, online-order NMS threshold `0.3`;
+- THUMOS14 mAP at tIoU `0.3:0.1:0.7`.
+
+The official code's post-hoc `online_nms` is allowed for native parity. For the
+strict-causal matched study it must be replayed incrementally in generation-time
+order and proven event-equivalent; no future proposal may alter an earlier
+commit. This is a task-contract adaptation applied identically to every arm,
+not a claimed model improvement.
+
+## New Model: EventMATR (Provisional Name)
+
+The model retains the official MATR encoder, memory queue, two decoders and
+prediction heads. Exact upstream MATR remains a separate `native_matr` lane.
+Every cell below is an eventized model with the same transition head, owner
+decoder and loss schema, so the factorial changes only two controlled factors:
+
+- `B`: when a prefix-visible action-start transition is detected;
+- `O`: whether the resulting event keeps an owner query until cancel/end.
+
+```text
+native_matr = exact official architecture/labels/losses, kept outside B×O
+B0O0 = delayed MATR-style event birth + fresh end-time rematching
+B1O0 = immediate transition event birth + fresh end-time rematching
+B0O1 = delayed MATR-style event birth + sticky persistent owner
+B1O1 = immediate transition event birth + sticky persistent owner
+```
+
+`B1O1` creates a ragged event record at the first causal start transition. Each
+record contains its owner query, start distribution, class belief, alive belief,
+and causal memory view. It is updated from current and past features only. Its
+end decoder is conditioned on the owner query; decoded `end_time` is separate
+from later immutable `emit_time`. There is no manually selected semantic slot
+count. A physical safety ceiling may only fail closed and invalidate the run;
+it may not silently truncate events.
+
+START/ALIVE/END/BACKGROUND are learned by one competitive four-state head.
+Formal START and END decisions use the winning state, not a universal sigmoid
+`0.5` threshold. For an active owner, BACKGROUND is a learned CANCEL: it removes
+the provisional event without emitting an interval and records the reason and
+frame. The official MATR `flag_threshold=0.5` is preserved only inside the
+native MATR memory-admission path; it is not the EventMATR birth/end rule.
+
+The official ten queries remain per-prefix prediction bandwidth, not a fixed
+bank of ten persistent event slots. Runtime event records are ragged and have
+no semantic count limit. Any optional physical resource ceiling is an explicit
+fail-closed systems guard and is not a model prior.
+
+Training may use full interval annotations to construct prefix-visible birth,
+alive and first-crossing end targets. Runtime state may never contain GT IDs or
+future endpoints. Same-class overlap uses permutation-aware training until a
+birth is owned, then sticky ownership prevents owner swaps.
+
+## Scientific Comparisons
+
+The primary decision is not whether the candidate exceeds the old `1.614` mAP
+negative baseline. It must:
+
+1. reproduce native MATR before claiming an improvement;
+2. beat both direct parents `B1O0` and `B0O1` under the official 100-epoch
+   setting;
+3. improve mAP/Recall and reduce wrong-start, owner-swap, fragmentation and
+   duplicate-close errors on overlap and same-class strata;
+4. not obtain the gain through later emission, future access, more visual
+   features or unmatched post-processing;
+5. retain zero causal, positive-length, immutable-output and double-close
+   violations.
+
+Feature results establish the event mechanism only. The final paper still
+requires original-RGB strict-causal training. After this factorial passes, the
+official MATR input projection is replaced by one causal visual backbone under
+frozen/adaptor/joint comparisons while the successful event mechanism remains
+fixed.
+
+## Execution DAG
+
+```mermaid
+flowchart LR
+  R["Read-only MATR @ ba05a98"] --> I["Separate derived EventMATR tree"]
+  A["Read-only ActionSwitch @ 838a6cc"] --> I
+  I --> S["One real train batch: native + four B×O lanes"]
+  S -->|PASS only| N["native_matr, 100 epochs"]
+  S -->|PASS only| F0["B0O0, 100 epochs"]
+  S -->|PASS only| F1["B1O0, 100 epochs"]
+  S -->|PASS only| F2["B0O1, 100 epochs"]
+  S -->|PASS only| F3["B1O1, 100 epochs"]
+  N --> J["Native parity, direct-parent and causality adjudication"]
+  F0 --> J
+  F1 --> J
+  F2 --> J
+  F3 --> J
+  J -->|pass| T["One locked THUMOS14 test per lane"]
+  T -->|mechanism pass| RGB["Raw-RGB frozen / adapter / joint"]
+  J -->|fail| K["Kill or revise event mechanism"]
+```
+
+The native lane and four eventized arms are released in parallel only after a
+single-GPU real official training-batch smoke proves forward, backward, one
+Adam step, finite losses/gradients, transition/owner gradients and strict
+checkpoint reload for all five lanes. The smoke and every worker must match the
+same clean Git commit, Git tree and frozen-manifest SHA-256.
+
+Training uses the complete official THUMOS14 validation/train set. It performs
+no calibration split, constructs no test loader, does not inspect test metrics
+and keeps only `terminal_epoch100.pth`. After all training and causal contracts
+pass, each frozen terminal model is permitted one separately submitted locked
+THUMOS14 test evaluation. This restores the official setting and prevents
+checkpoint selection on the test set.
+
+## Implementation and Current Gate
+
+The derived implementation now includes native isolation, all four matched
+event lanes, ragged causal event memory, owner-conditioned decoding, four-state
+supervision, learned cancellation, end/emit separation, immutable ledgers,
+positive-length intervals and padding/EOS/true-duration guards. The dangerous
+hand rules that merged events with the same start or cosine similarity `>0.95`
+were removed because they can collapse legitimate same-time same-class
+instances.
+
+Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
+Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
+These are implementation and contract results only. The real-data smoke and
+formal 100-epoch DAG have not run because the exact official MATR THUMOS14
+feature/annotation files are not present on the configured N16R4 storage and
+the remote node cannot currently fetch the Google Drive release. Substituting
+SigLIP2/OpenTAD features would destroy official-parent parity, so the launcher
+fails closed instead.
+
+The main scientific risk before performance evidence is the train/runtime
+distribution gap between dense per-query owner prototypes used for supervision
+and ragged persistent owner trajectories used online. Cancellation rate,
+missed-start rate, owner swaps and overlap-stratified results must therefore be
+reported; the local tests do not establish model quality.

@@ -169,3 +169,17 @@ If these become active again, create dedicated pages before using them as claims
 | STARE 2026 | Latency-aware evaluation and ranking reversal are already strong contributions in streaming perception. | [papers/stare2026-stream-latency.md](papers/stare2026-stream-latency.md) |
 | Multimodal distillation 2023 | Train-time privileged modalities with RGB-only inference are not a PIVOT novelty. | [papers/radevski2023-multimodal-distillation.md](papers/radevski2023-multimodal-distillation.md) |
 | Boundary uncertainty and TAD diagnostics | Distributional boundaries and human annotation disagreement are established; PIVOT needs a different population-measurement object. | [papers/xie2020-boundary-uncertainty.md](papers/xie2020-boundary-uncertainty.md), [papers/alwassel2018-tad-diagnostics.md](papers/alwassel2018-tad-diagnostics.md) |
+
+## Official-Parent Event Model Audit: 2026-07-22
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| Official MATR `ba05a98d451b3541c1a5377026f17dc1102fa217` | Establishes the sole executable parent and native THUMOS14 data/model/100-epoch settings; internal OpenTAD 12-epoch settings are retired. | [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md), [papers/matr2024-memory.md](papers/matr2024-memory.md), [decision_register.md#dr-031-retire-the-opentad-ko-recipe-and-use-official-matr-as-the-sole-parent](decision_register.md) |
+| Official ActionSwitch `838a6ccbd8f2cce414688ff2843380d712aa7b89` | Supplies the class-agnostic start-state-transition idea as a read-only donor, but not the MATR localization schedule or the executable parent. | [papers/actionswitch2024-state.md](papers/actionswitch2024-state.md), [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md) |
+| Derived EventMATR `64d7f78dd8ed1436bac08ebfb03b51c90142129b` (tree `bc6f5057e954ed448dcb5173489eba7c4dcba27d`) | Implements the separate native lane, four eventized `B×O` cells, learned four-state lifecycle/cancellation, ragged event memory, official 100-epoch terminal protocol, real-data five-lane smoke and exact-source receipts. Local contract evidence is `62 passed`; no formal mAP exists. | [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md), [decision_register.md#dr-033-release-eventmatr-only-through-a-real-official-data-smoke](decision_register.md) |
+
+## External DUCA-TTDI Review: 2026-07-22
+
+| Source | Main Imported Conclusions | Wiki Nodes |
+|---|---|---|
+| External review of `yuzbo/OpenTAD_C3_CoarseClean_20260702@a00498e`, attachment SHA-256 `36523B2F1A7456F8D4A4314EA445971F8066EEC59611F9632D7BC1D33E31A884` | Fixed-commit verification confirms offline full-window scope, selected-rank detector time, post-hoc true-time remap, mandatory-union limitations, incomplete K parser and missing semantic-equivalence receipts. TTDI is retained as a falsifiable DUCA hypothesis; exact training numbers are not frozen. Only a future physical-time guardrail transfers to raw-RGB EventMATR. | [experiments/duca-ttdi-external-review-absorption-20260722.md](experiments/duca-ttdi-external-review-absorption-20260722.md), [decision_register.md#dr-032-absorb-the-duca-ttdi-review-without-replacing-the-strict-causal-eventmatr-route](decision_register.md) |

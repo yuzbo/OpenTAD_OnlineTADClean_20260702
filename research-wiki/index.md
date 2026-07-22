@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-22
+updated: 2026-07-23
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -14,11 +14,13 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
 5. [`../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`](../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md) for the complete current direction and [`../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`](../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md) for the independent Pro audit.
-6. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the raw-RGB route, read-only upstream rule, and parallel experiment graph.
-7. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the previous slot-route evidence and its exact historical protocol.
-8. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-9. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
-10. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+6. [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md) for the active official-MATR-parent EventMATR model and `B×O` experiment.
+7. [experiments/duca-ttdi-external-review-absorption-20260722.md](experiments/duca-ttdi-external-review-absorption-20260722.md) for the independently verified DUCA-TTDI review, its partial-adoption matrix, and the explicit boundary separating offline DUCA from strict-causal EventMATR.
+8. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the preceding raw-RGB design/review history.
+9. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the retired slot-route evidence and its exact historical protocol.
+10. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+11. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+12. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
@@ -27,21 +29,26 @@ feature-level FIXED/REMATCH slot route completed its technical contract but
 failed its operational performance gate, so it is retained as a negative
 baseline rather than the active architecture.
 
-The active design is raw-RGB dynamic event memory On-TAD: immediate start-state
-detection creates ragged event records; each event maintains its own identity,
-start anchor, class belief, continuation and end state; hierarchical learned
-memory adapts its effective span to the sample and action duration. Cached-
-feature experiments are only the fast reproduction/attribution layer. The
-paper's mandatory result must consume original RGB through a real causal visual
-encoder; an OnVLLM text adapter is optional and never replaces structured spans.
+The executable parent is now the exact official ECCV 2024 MATR implementation,
+not the internal OpenTAD detector. EventMATR retains MATR's THUMOS14 data,
+optimizer, 100-epoch schedule, memory queue and dual decoders, then tests an
+identifiable `B×O` factorial: immediate ActionSwitch-style event birth versus
+delayed MATR discovery, and rematching versus sticky owner identity. The former
+12-epoch OpenTAD K×O recipe was never deployed and is retired.
 
-ActionSwitch, MATR, HAT/OAT, and 2025 HEM official repositories are complete
-read-only reference baselines. All compatibility edits and A+B family fusions
-live in separate writable workspaces with source mapping, diff hashes, and
-parity receipts. The interface and fusion rationale have been clarified and the
-independent Pro review package is ready. Implementation has not started; the
-review must first test for exact competitors, obvious multi-paper reconstruction,
-claim novelty and experiment identifiability.
+MATR and ActionSwitch references remain untouched at recorded SHAs; derived
+code lives in an independent writable repository. Feature experiments prove
+only the start-owned event mechanism. The paper's mandatory result still has to
+consume original RGB through a real causal visual encoder; an OnVLLM adapter is
+optional and never replaces structured spans.
+
+The derived implementation is locally contract-complete: exact native MATR is
+outside the four eventized `B×O` cells, learned lifecycle decisions use
+four-state competition rather than a universal event threshold, and the full
+suite is `62 passed`. No performance result exists yet. Formal release is
+fail-closed at the real-data smoke because the exact official MATR THUMOS14
+feature/annotation files are not currently present on N16R4; substitute feature
+sets are forbidden because they would invalidate parent parity.
 
 ## Ideas
 
@@ -124,6 +131,8 @@ claim novelty and experiment identifiability.
 
 | Node | Verdict | Use |
 |---|---|---|
+| [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |
+| [exp:duca-ttdi-external-review-absorption-20260722](experiments/duca-ttdi-external-review-absorption-20260722.md) | partial-accept | Verifies the external DUCA audit, adopts correctness and true-time diagnostic requirements, rejects unvalidated numerical recipes, and prevents the offline DUCA route from replacing EventMATR. |
 | [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |
