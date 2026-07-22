@@ -204,3 +204,27 @@ distribution gap between dense per-query owner prototypes used for supervision
 and ragged persistent owner trajectories used online. Cancellation rate,
 missed-start rate, owner swaps and overlap-stratified results must therefore be
 reported; the local tests do not establish model quality.
+
+### N16R4 official-data staging update — 2026-07-23
+
+The user provided an N16 academic egress route for the official MATR Google
+Drive release. The controlled invocation exports `http_proxy` and
+`https_proxy` only to the download process, through the N16 endpoint
+`10.244.6.36:3128`; its credential is externally injected and deliberately
+not stored in this repository, the Wiki, terminal logs, or Git history. A
+requests probe through that route reached the official Drive folder with HTTP
+200. The first `gdown` run then exposed a non-scientific staging issue:
+`gdown` tried to create its cookie cache under the quota-limited login home.
+The downloader was repaired to place `HOME`/`XDG_CACHE_HOME` under the project
+data root, retaining no credential, and restarted through the same academic
+route.
+
+The official folder contains `thumos_dataset.zip` (and an unrelated official
+checkpoint), rather than the three expected files at its top level. The
+stager now verifies the archive with `unzip -tq`, extracts it under the data
+root, locates `thumos_all_feature_val_V3.pickle`,
+`thumos_all_feature_test_V3.pickle`, and `thumos14_v2.json`, performs format
+checks, and writes a SHA-256 source manifest before creating
+`OFFICIAL_MATR_DATA_READY`. No smoke or training job may be submitted before
+that sentinel exists. This is a source-access/cache repair only, not a model
+or performance result.

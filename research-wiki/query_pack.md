@@ -5,6 +5,16 @@ status: active
 scope: Current compressed context for the official-parent strict-causal On-TAD task.
 ---
 
+> N16 academic data-staging rule (2026-07-23): official MATR Google Drive
+> retrieval uses process-local `http_proxy` and `https_proxy` through the N16
+> academic endpoint `10.244.6.36:3128`. Credentials are externally injected
+> and must never be committed or written into this Wiki. The official Drive
+> probe returned HTTP 200. The staged downloader stores its cache on the data
+> disk, verifies/extracts the official `thumos_dataset.zip`, then validates and
+> hashes the two feature pickles plus `thumos14_v2.json`; only the resulting
+> `OFFICIAL_MATR_DATA_READY` sentinel may release the five-lane real-data
+> smoke.
+
 # Query Pack: Official-MATR-Parent Strictly Causal On-TAD
 
 ## 最终任务

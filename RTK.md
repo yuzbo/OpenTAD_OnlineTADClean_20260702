@@ -53,3 +53,21 @@ python -m pytest tests/test_causaltad_config_contracts.py -q
 - N16R4 远端只在 `~/run/yuzibo` 或 `/data/run01/sczc063/yuzibo` 下放代码、环境、数据、日志和输出。
 - 登录节点只做编辑、编译、轻量检查和提交 Slurm；训练必须用 `sbatch`。
 - THUMOS14 在线 TAD 默认用预提取特征，推荐放在 `$BASE/thumos14/features/` 下，并保持 annotation/class map 在 `$BASE/thumos14/annotations/`。
+
+## N16 学术下载出口（非模型配置）
+
+- N16 官方 Google Drive 数据 staging 使用受控学术出口 `10.244.6.36:3128`，仅为下载官方
+  数据、依赖或论文资料服务；它不是训练、评测或模型的一部分。
+- 在启动下载进程的**受控会话**中同时注入 `http_proxy` 和 `https_proxy`。凭据必须来自受控
+  环境变量或用户当次提供，示意命令为：
+
+  ```bash
+  export http_proxy="http://${ACADEMIC_PROXY_CREDENTIAL}@10.244.6.36:3128"
+  export https_proxy="http://${ACADEMIC_PROXY_CREDENTIAL}@10.244.6.36:3128"
+  ```
+
+- 禁止把 `ACADEMIC_PROXY_CREDENTIAL`、完整代理 URL、shell history、下载日志或数据文件提交到
+  Git/Wiki。运行记录只写入端点、变量名、官方源、文件哈希和非敏感的可达性/验证结果。
+- 为避免登录目录配额污染，`gdown`/Python 下载任务必须将 `HOME`、`XDG_CACHE_HOME` 和
+  `PIP_CACHE_DIR` 指向 `/data/run01/sczc063/yuzibo/<project-data-root>` 下的运行时目录；下载
+  完成后必须验证官方归档、数据格式和 SHA-256，生成 ready sentinel 后才可提交 smoke。
