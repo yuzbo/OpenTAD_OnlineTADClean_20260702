@@ -1040,3 +1040,30 @@ lifecycle 倒退，也不能改写成定位性能失败。
 selection receipt 与 SHA-256 链，再重跑依赖终检。终检继续禁止静默重排；不需要
 重训，不改变模型、数据、seed、FIXED/REMATCH、阈值或划分。正式门通过前仍不授权
 multi-seed、reporting 或 raw-RGB。
+
+### M52 并列帧序列化修复通过 exact 回归并启动 checkpoint-only 重放
+
+账本生成处的并列帧排序合同已在精确提交
+`0daf681b4e8e36a64066a2f6fa8e0458a98b429a` 修复：排序仍以
+`emit_frame` 为第一关键字，但同一帧内优先保持显式 `sequence_id` 的不可变提交顺序；
+跨帧 sequence 错误不会被这一规则掩盖。协议摘要同时新增 sequence 倒序计数，使非法
+账本在进入正式评测前 fail-closed。新增回归覆盖同帧多发射、跨帧错误保留、摘要审计，
+并加入 checkpoint-only replay 验证器，逐事件比较源账本与重放账本，要求事件 payload
+完全相同且唯一允许的变化是同帧排列顺序。
+
+新 exact clean N16R4 checkout 已通过 `190 passed in 87.71s`、两条 Bash 语法检查、
+no-submit 前置检查，结束 SHA 与工作树均保持干净。该修复没有改变模型、checkpoint、
+数据、seed、阈值或 FIXED/REMATCH 轴；也没有重新运行 `tools/train.py`。
+
+只重放 calibration/评测的 run 为
+`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_calibration_replay_seed705_20260722_103003`：
+FIXED `1179456`、REMATCH `1179457` 与依赖终检 `1179458`。首次状态核验时两臂均在
+`g0066` 运行约 1 分 42 秒，终检按依赖等待，fatal=0；此时尚未生成 epoch receipt
+或最终 gate，属于正常的重放早期状态。冻结合同要求两臂第 3/6/9/12 轮全部证明：
+源/重放事件集合与 payload 完全一致、只纠正同帧次序、sequence/正长度/不可变/四类
+因果时序违规为零，并逐项复现原 calibration 指标、选择 epoch 和 checkpoint hash。
+资源收据必须把原十二轮训练与本次重放累计计算，不能用重放隐藏训练成本。
+
+因此当前仍没有新的合法正式 mAP/Recall，也没有 FIXED/REMATCH 性能裁决。下一节点是
+8 份 replay verification receipt 完成以及 `1179458` 固定 0.5 正式终检；在此之前
+继续禁止 reporting、阈值搜索、multi-seed 与 raw-RGB。
