@@ -15,7 +15,7 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > `OFFICIAL_MATR_DATA_READY` sentinel may release the five-lane real-data
 > smoke.
 
-> Current staging status (second hourly monitor): the resumable official archive download is `542/11,622` 512KB ranges complete (about 278MB) and the N16 screen session is alive. This is a gain of 298 complete ranges since the preceding monitor. The proxy cannot sustain aggressive parallelism, so a single-range worker is intentionally used for integrity-preserving resume. No ready sentinel, feature/annotation file, manifest, smoke job, model result, or performance claim exists yet.
+> Current staging status (third hourly monitor): the resumable official archive download is `1,041/11,622` 512KB ranges complete (about 533MB) and the N16 screen session is alive. This is a gain of 499 complete ranges since the preceding monitor. The proxy cannot sustain aggressive parallelism, so a single-range worker is intentionally used for integrity-preserving resume. No ready sentinel, feature/annotation file, manifest, smoke job, model result, or performance claim exists yet.
 
 # Query Pack: Official-MATR-Parent Strictly Causal On-TAD
 
