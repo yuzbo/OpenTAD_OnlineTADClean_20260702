@@ -36,6 +36,62 @@ def make_parser():
     parser.add_argument('--max_memory_len', default=7, type=int)
 
     parser.add_argument('--memory_sampler', default='gap2', type=str, help='[gapN or all]')
+
+    # Event-memory factorial.  The defaults are the untouched MATR behaviour:
+    # detections are completed from the current segment plus past memory and
+    # queries are freshly matched at every step.  The four experiment arms
+    # change only these two factors.
+    parser.add_argument(
+        '--birth_mode',
+        default='matr_delayed',
+        choices=('matr_delayed', 'instant_transition'),
+        type=str,
+    )
+    parser.add_argument(
+        '--model_variant',
+        default='native_matr',
+        choices=('native_matr', 'eventmatr'),
+        type=str,
+        help='Exact official MATR or the eventized BxO model; never infer native from an event arm.',
+    )
+    parser.add_argument(
+        '--ownership_mode',
+        default='fresh_rematch',
+        choices=('fresh_rematch', 'sticky_owner'),
+        type=str,
+    )
+    parser.add_argument(
+        '--event_arm',
+        default=None,
+        choices=('b0o0', 'b1o0', 'b0o1', 'b1o1'),
+        type=str,
+        help='Optional derived arm id; must agree with birth/ownership modes.',
+    )
+    parser.add_argument(
+        '--event_birth_logit_threshold',
+        default=None,
+        type=float,
+        help='Test-only threshold injection; formal EventMATR uses state argmax and leaves this unset.',
+    )
+    parser.add_argument(
+        '--event_end_logit_threshold',
+        default=None,
+        type=float,
+        help='Test-only threshold injection; formal EventMATR uses state argmax and leaves this unset.',
+    )
+    parser.add_argument(
+        '--event_resource_limit',
+        default=0,
+        type=int,
+        help='Physical fail-closed guard only; 0 means no semantic instance-count limit.',
+    )
+    parser.add_argument(
+        '--study_protocol',
+        default='upstream_native',
+        choices=('upstream_native', 'matched_study', 'locked_test'),
+        type=str,
+        help='Audit label separating untouched upstream behaviour, terminal-epoch training, and one-shot test.',
+    )
     
     parser.add_argument('--use_flag', action='store_true')
     parser.add_argument('--flag_threshold', default=0.5, type=float)

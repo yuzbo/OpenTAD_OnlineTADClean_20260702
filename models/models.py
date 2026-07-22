@@ -6,6 +6,13 @@ import numpy as np
 import math
 import random
 from .transformer import build_transformer
+from .event_memory import (
+    DynamicEventMemory,
+    EventTransitionHead,
+    OwnerEventDecoder,
+    resolve_event_modes,
+    resolve_model_variant,
+)
 
 class MATR(nn.Module):
     def __init__(self, args):
@@ -69,6 +76,38 @@ class MATR(nn.Module):
         self.video_name = None
         self.memory_queue = None
         self.memory_queue_index = None
+
+        # Exact upstream MATR is an independent model variant.  Every BxO cell,
+        # including b0o0, is EventMATR and shares the event transition head.
+        self.model_variant = resolve_model_variant(args)
+        self.birth_mode, self.ownership_mode, self.event_arm = resolve_event_modes(args)
+        self.event_enabled = self.model_variant == "eventmatr"
+        if self.event_enabled:
+            if torch.cuda.is_available() and torch.cuda.device_count() != 1:
+                raise RuntimeError(
+                    "EventMATR streaming state requires exactly one visible GPU "
+                    "per process"
+                )
+            self.event_transition_head = EventTransitionHead(n_embedding_dim)
+            # Keep decoder capacity identical across the 2x2 study.  O0/O1
+            # changes only how a persistent record obtains its owner state:
+            # O0 refreshes it from current queries, whereas O1 carries it
+            # forward.  Both paths use this same lifecycle/class decoder.
+            self.event_owner_decoder = OwnerEventDecoder(
+                n_embedding_dim, n_class, num_heads=n_dec_head
+            )
+            self.event_memory = DynamicEventMemory(
+                birth_mode=self.birth_mode,
+                ownership_mode=self.ownership_mode,
+                birth_logit_threshold=getattr(
+                    args, "event_birth_logit_threshold", None
+                ),
+                end_logit_threshold=getattr(args, "event_end_logit_threshold", None),
+                min_duration_frames=getattr(args, "event_min_duration_frames", 1),
+                emit_delay_frames=getattr(args, "event_emit_delay_frames", 0),
+                resource_limit=getattr(args, "event_resource_limit", 0),
+                segment_size=n_seglen,
+            )
     
     def forward(self, inputs, device):
         # inputs - batch x seq_len x featsize
@@ -131,7 +170,11 @@ class MATR(nn.Module):
         
         decoded_x_cls = decoded_x[:,:self.num_queries]
         decoded_x_reg = decoded_x[:,self.num_queries:]
-        
+
+        # Preserve the native query tensors for the optional EventMATR heads.
+        event_class_query = decoded_x_cls
+        event_regression_query = decoded_x_reg
+
         decoded_x_cls = torch.cat([end_cls_feature, decoded_x_cls], dim=2)
         anc_cls = self.classification_head(decoded_x_cls)
 
@@ -157,7 +200,229 @@ class MATR(nn.Module):
         if self.use_flag:
             out['pred_flag'] = anc_flag
 
+        if self.event_enabled:
+            (
+                event_state_logits,
+                learned_birth_logits,
+                event_alive_logits,
+                event_end_logits,
+                event_query_features,
+            ) = self.event_transition_head(
+                event_class_query, event_regression_query
+            )
+
+            # All four EventMATR cells use the same learned competitive START
+            # state.  B0/B1 differ in the prefix at which START is supervised,
+            # not in head capacity or a fixed probability gate.
+            event_birth_logits = learned_birth_logits
+
+            start_bin = torch.argmax(anc_stcls, dim=-1)
+            selected_start_residual = torch.gather(
+                anc_start_offset,
+                2,
+                start_bin.unsqueeze(-1),
+            ).squeeze(-1)
+            current_frames = infos['current_frame']
+            if not torch.is_tensor(current_frames):
+                current_frames = torch.as_tensor(
+                    current_frames, device=anc_cls.device, dtype=anc_cls.dtype
+                )
+            else:
+                current_frames = current_frames.to(
+                    device=anc_cls.device, dtype=anc_cls.dtype
+                )
+            candidate_start_frames = current_frames.reshape(-1, 1) - (
+                start_bin.to(anc_cls.dtype) + selected_start_residual
+            ) * self.n_seglen
+            event_end_offsets = anc_end_offset.squeeze(-1)
+
+            out.update(
+                {
+                    "event_birth_logits": event_birth_logits,
+                    "event_alive_logits": event_alive_logits,
+                    "event_end_logits": event_end_logits,
+                    "event_state_logits": event_state_logits,
+                    "event_end_offsets": event_end_offsets,
+                    "event_query_features": event_query_features,
+                    "event_candidate_start_frames": candidate_start_frames,
+                }
+            )
+
+            run_runtime = (not self.training) or bool(
+                getattr(self.args, "event_runtime_during_training", False)
+            )
+            if run_runtime:
+                # A MATR batch contains consecutive prefixes.  Lifecycle state
+                # must therefore be unrolled in presentation order; decoding
+                # all owners once before the batch would hide births from later
+                # prefixes in the same batch.
+                runtime_rows = []
+                video_names = infos['video_name']
+                for batch_index in range(event_birth_logits.size(0)):
+                    owner_runtime = {}
+                    real_prefix = bool(
+                        self._slice_prefix_info(
+                            infos, "is_real_prefix", batch_index, True
+                        )[0]
+                    )
+                    if self.ownership_mode == "fresh_rematch" and real_prefix:
+                        self.event_memory.rematch_active_owners(
+                            video_names[batch_index],
+                            event_query_features[batch_index],
+                            anc_cls[batch_index],
+                        )
+                    (
+                        owner_embeddings,
+                        owner_padding_mask,
+                        owner_record_ids,
+                    ) = self.event_memory.owner_batch(
+                        [video_names[batch_index]],
+                        device=event_query_features.device,
+                        dtype=event_query_features.dtype,
+                        embedding_dim=self.n_embedding_dim,
+                    )
+                    if owner_embeddings.size(1) > 0:
+                        (
+                            owner_state_logits,
+                            owner_end_offsets,
+                            owner_class_logits,
+                            owner_updated_embeddings,
+                        ) = self.event_owner_decoder(
+                            owner_embeddings,
+                            event_query_features[
+                                batch_index : batch_index + 1
+                            ],
+                            owner_padding_mask,
+                        )
+                        owner_runtime = {
+                            "owner_state_logits": owner_state_logits,
+                            "owner_end_offsets": owner_end_offsets,
+                            "owner_class_logits": owner_class_logits,
+                            "owner_updated_embeddings": owner_updated_embeddings,
+                            "owner_valid_mask": ~owner_padding_mask,
+                            "owner_record_ids": owner_record_ids,
+                        }
+                    runtime_rows.append(
+                        self.event_memory.step(
+                            video_names=[video_names[batch_index]],
+                            current_frames=current_frames[
+                                batch_index : batch_index + 1
+                            ],
+                            birth_logits=event_birth_logits[
+                                batch_index : batch_index + 1
+                            ],
+                            alive_logits=event_alive_logits[
+                                batch_index : batch_index + 1
+                            ],
+                            end_logits=event_end_logits[
+                                batch_index : batch_index + 1
+                            ],
+                            end_offsets=event_end_offsets[
+                                batch_index : batch_index + 1
+                            ],
+                            class_logits=anc_cls[batch_index : batch_index + 1],
+                            query_features=event_query_features[
+                                batch_index : batch_index + 1
+                            ],
+                            candidate_start_frames=candidate_start_frames[
+                                batch_index : batch_index + 1
+                            ],
+                            candidate_state_logits=event_state_logits[
+                                batch_index : batch_index + 1
+                            ],
+                            is_real_prefix=self._slice_prefix_info(
+                                infos, "is_real_prefix", batch_index, True
+                            ),
+                            true_durations=self._slice_prefix_info(
+                                infos, "true_duration", batch_index, None
+                            ),
+                            is_eos=self._slice_prefix_info(
+                                infos, "is_eos", batch_index, False
+                            ),
+                            **owner_runtime,
+                        )
+                    )
+                runtime = {
+                    key: torch.cat([row[key] for row in runtime_rows], dim=0)
+                    for key in runtime_rows[0]
+                }
+            else:
+                shape = event_birth_logits.shape
+                runtime = {
+                    "new_birth_mask": torch.zeros(
+                        shape, dtype=torch.bool, device=anc_cls.device
+                    ),
+                    "ended_mask": torch.zeros(
+                        shape, dtype=torch.bool, device=anc_cls.device
+                    ),
+                    "emitted_mask": torch.zeros(
+                        shape, dtype=torch.bool, device=anc_cls.device
+                    ),
+                    "cancelled_mask": torch.zeros(
+                        shape, dtype=torch.bool, device=anc_cls.device
+                    ),
+                    "active_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "runtime_capacity_exhaustions": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "padding_prefixes_ignored": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "eos_observed": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                }
+            out.update(
+                {
+                    "event_new_birth_mask": runtime["new_birth_mask"],
+                    "event_ended_mask": runtime["ended_mask"],
+                    "event_emitted_mask": runtime["emitted_mask"],
+                    "event_cancelled_mask": runtime["cancelled_mask"],
+                    "event_active_count": runtime["active_count"],
+                    "event_runtime_capacity_exhaustions": runtime[
+                        "runtime_capacity_exhaustions"
+                    ],
+                    "event_padding_prefixes_ignored": runtime[
+                        "padding_prefixes_ignored"
+                    ],
+                    "event_eos_observed": runtime["eos_observed"],
+                }
+            )
+
+            # Dense prototypes train the same decoder used for ragged runtime
+            # records.  This path is deliberately present in every BxO cell,
+            # so ownership persistence is the only O-axis intervention.
+            (
+                owner_prototype_state_logits,
+                owner_prototype_end_offsets,
+                owner_prototype_class_logits,
+                _,
+            ) = self.event_owner_decoder(
+                event_query_features, event_query_features
+            )
+            out["event_owner_state_logits"] = owner_prototype_state_logits
+            out["event_owner_end_offsets"] = owner_prototype_end_offsets
+            out["event_owner_class_logits"] = owner_prototype_class_logits
+
         return out
+
+    def reset_event_runtime(self, video_name=None):
+        """Reset only EventMATR runtime records; native MATR is a no-op."""
+        if self.event_enabled:
+            self.event_memory.reset(video_name)
+
+    @staticmethod
+    def _slice_prefix_info(infos, key, index, default):
+        if key not in infos:
+            return [default]
+        value = infos[key]
+        if torch.is_tensor(value):
+            return value[index : index + 1]
+        if isinstance(value, (list, tuple)):
+            return [value[index]]
+        return [value]
             
     def input_projection(self, inputs):
         if self.rgb and self.flow:

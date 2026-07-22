@@ -1,0 +1,175 @@
+{
+  "protocol_id": "eventmatr_bxo_official_thumos14_v2",
+  "scientific_scope": "feature-level On-TAL mechanism attribution; not raw-RGB evidence",
+  "upstreams": {
+    "matr": {
+      "role": "read-only official parent and exact native_matr lane",
+      "commit": "ba05a98d451b3541c1a5377026f17dc1102fa217"
+    },
+    "actionswitch": {
+      "role": "read-only state-transition donor",
+      "commit": "838a6ccbd8f2cce414688ff2843380d712aa7b89"
+    },
+    "hat": {
+      "role": "read-only reference; excluded from this study",
+      "commit": "a38dad6a266f49546be7b19e5cd1918bb1ba1e34"
+    },
+    "onvtg": {
+      "role": "read-only reference; excluded from this study",
+      "commit": "4f629e8959129d80ac1aa80e01ac351782846841"
+    }
+  },
+  "data_contract": {
+    "dataset": "THUMOS14",
+    "input": "official pre-extracted two-stream RGB+flow features",
+    "feature_dim": 4096,
+    "segment_frames": 64,
+    "training_feature_env": "MATR_TRAIN_FEATURE",
+    "training_source": "complete official THUMOS14 validation/train feature pickle",
+    "test_source": "locked official THUMOS14 test feature pickle",
+    "test_during_training": false,
+    "calibration_split": false
+  },
+  "training_protocol": {
+    "name": "matched_study",
+    "source": "official_complete_validation_train",
+    "epochs": 100,
+    "checkpoint_policy": "terminal_epoch",
+    "checkpoint_epoch": 100,
+    "checkpoint_filename": "terminal_epoch100.pth",
+    "test_during_training": false,
+    "test_loader_during_training": false,
+    "test_driven_checkpoint_selection": false,
+    "locked_test_once_per_lane": true
+  },
+  "common": {
+    "rgb": true,
+    "flow": true,
+    "feat_dim": 4096,
+    "num_frame": 64,
+    "num_queries": 10,
+    "max_memory_len": 7,
+    "memory_sampler": "gap2",
+    "batch": 64,
+    "epochs": 100,
+    "optimizer": "Adam",
+    "min_lr": 1e-08,
+    "max_lr": 1e-05,
+    "weight_decay": 0.0001,
+    "lr_Tup": 3,
+    "lr_Tcycle": 10,
+    "lr_gamma": 0.9,
+    "use_focal": true,
+    "random_seed": 52,
+    "cls_threshold": 0.1,
+    "nms_threshold": 0.3,
+    "use_flag": true,
+    "official_flag_threshold": 0.5,
+    "event_state_decision": "argmax",
+    "event_birth_logit_threshold": null,
+    "event_end_logit_threshold": null
+  },
+  "factors": {
+    "birth_mode": {
+      "b0": "matr_delayed",
+      "b1": "instant_transition"
+    },
+    "ownership_mode": {
+      "o0": "fresh_rematch",
+      "o1": "sticky_owner"
+    }
+  },
+  "lanes": {
+    "native_matr": {
+      "model_variant": "native_matr",
+      "role": "exact official MATR architecture, head, labels, and losses under terminal-epoch training"
+    },
+    "b0o0": {
+      "model_variant": "eventmatr",
+      "event_arm": "b0o0",
+      "birth_mode": "matr_delayed",
+      "ownership_mode": "fresh_rematch"
+    },
+    "b1o0": {
+      "model_variant": "eventmatr",
+      "event_arm": "b1o0",
+      "birth_mode": "instant_transition",
+      "ownership_mode": "fresh_rematch"
+    },
+    "b0o1": {
+      "model_variant": "eventmatr",
+      "event_arm": "b0o1",
+      "birth_mode": "matr_delayed",
+      "ownership_mode": "sticky_owner"
+    },
+    "b1o1": {
+      "model_variant": "eventmatr",
+      "event_arm": "b1o1",
+      "birth_mode": "instant_transition",
+      "ownership_mode": "sticky_owner"
+    }
+  },
+  "arm_roles": {
+    "b0o0": "eventized delayed-birth and fresh-rematch control",
+    "b1o0": "instant birth only",
+    "b0o1": "persistent ownership only",
+    "b1o1": "proposed EventMATR model"
+  },
+  "output_contract": {
+    "root_env": "MATR_OUTPUT_ROOT",
+    "run_tag_env": "MATR_RUN_TAG",
+    "layout": "${MATR_OUTPUT_ROOT}/result/[ontal]_[thumos14]_ON_TAL_<${MATR_RUN_TAG}__${LANE}__timestamp>",
+    "completion_receipt": "eventmatr_bxo_completion.json"
+  },
+  "environment_contract": {
+    "preferred": "source ${MATR_ENV_ACTIVATE}",
+    "preferred_example": "$BASE/conda_envs/opentad/bin/activate",
+    "fallback": "source ${MATR_CONDA_SH}; conda activate ${MATR_CONDA_ENV}"
+  },
+  "smoke_protocol": {
+    "input": "real_official_training_data",
+    "batches_per_lane": 1,
+    "batch_size": 64,
+    "lanes": [
+      "native_matr",
+      "b0o0",
+      "b1o0",
+      "b0o1",
+      "b1o1"
+    ],
+    "test_access": false,
+    "receipt": "eventmatr_real_smoke.json",
+    "required_status": "PASS",
+    "forward": true,
+    "backward": true,
+    "optimizer_step": true,
+    "checkpoint_reload": true,
+    "finite_loss": true,
+    "event_gradient_for_event_lanes": true,
+    "owner_gradient_for_event_lanes": true
+  },
+  "source_identity_protocol": {
+    "clean_worktree_required": true,
+    "fields": [
+      "commit",
+      "tree",
+      "manifest_sha256"
+    ],
+    "worker_reverify": true,
+    "dirty_fails": true
+  },
+  "dag": [
+    "clean-source capture plus Linux GPU real-data smoke",
+    "native_matr plus four eventized BxO lanes train for 100 epochs in parallel",
+    "dependent terminal-checkpoint integrity finalizer without test access",
+    "separately submitted one-shot locked THUMOS14 test for each completed lane"
+  ],
+  "forbidden_in_formal_training": [
+    "calibration feature construction or access",
+    "THUMOS14 test loader construction",
+    "test-driven checkpoint selection",
+    "fixed event birth or end threshold",
+    "shortened inherited screening schedules",
+    "raw-RGB performance claims"
+  ]
+}

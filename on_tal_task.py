@@ -26,24 +26,57 @@ from pathlib import Path
 import glob
 from collections import OrderedDict
 
+
+def write_model_predictions(args, model, infos, outputs, path, label_map):
+    model_variant = getattr(args, 'model_variant', None)
+    if model_variant is None:
+        model_variant = 'eventmatr' if getattr(args, 'event_arm', None) else 'native_matr'
+    if model_variant == 'native_matr':
+        # Strict native evaluator path, independent of every BxO cell.
+        make_txt(args, infos, outputs, path, label_map)
+    else:
+        make_eventmatr_txt(args, model, infos, path, label_map)
+
 def on_tal(args):
     if args.mode == 'train':
         train(args)
     elif args.mode == 'eval':
         eval(args)
+
+
+def training_state(model, criterion, optimizer, scheduler, epoch, args):
+    return {
+        'epoch': epoch,
+        'state_dict': model.state_dict(),
+        'criterion_dict': criterion.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'study_protocol': getattr(args, 'study_protocol', 'upstream_native'),
+        'model_variant': getattr(args, 'model_variant', 'native_matr'),
+    }
         
 def train(args):
     save_path = args.save_path
+    matched_study = getattr(args, 'study_protocol', 'upstream_native') == 'matched_study'
+    if matched_study and args.epochs != 100:
+        raise ValueError('matched_study requires the preregistered terminal epoch 100')
+
     train_dataset = THUMOS14Dataset(args, subset='train')
-    test_dataset = THUMOS14Dataset(args, subset='test')
-    
     train_loader = torch.utils.data.DataLoader(train_dataset, 
                                             batch_size=args.batch, shuffle= False,
                                             num_workers=args.num_workers, pin_memory=True,drop_last=False)
-    
-    test_loader = torch.utils.data.DataLoader(test_dataset, 
-                                            batch_size=args.batch, shuffle= False,
-                                            num_workers=args.num_workers, pin_memory=True,drop_last=False) 
+
+    # The formal matched study trains on the complete official validation/train
+    # features.  It must not construct or iterate a THUMOS test loader.  The
+    # untouched upstream path remains available outside the formal protocol.
+    if matched_study:
+        test_dataset = None
+        test_loader = None
+    else:
+        test_dataset = THUMOS14Dataset(args, subset='test')
+        test_loader = torch.utils.data.DataLoader(test_dataset,
+                                                batch_size=args.batch, shuffle=False,
+                                                num_workers=args.num_workers, pin_memory=True, drop_last=False)
     
     model = build_model(args)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -95,6 +128,15 @@ def train(args):
         
         if args.wandb:
             wandb.log(train_log)
+        if matched_study:
+            if epoch == args.epochs:
+                result_path = os.path.join(save_path, 'terminal_epoch100.pth')
+                torch.save(
+                    training_state(model, criterion, optimizer, scheduler, epoch, args),
+                    result_path,
+                )
+            continue
+
         if epoch % args.test_freq == 0:
             print_log(save_path, '----- %s at epoch #%d' % ('Test', epoch))
             test_log = test_one_epoch(args, test_dataset, test_loader, model, criterion, optimizer, epoch, device)
@@ -110,13 +152,7 @@ def train(args):
                 wandb.log(test_log)
 
         if max_mAP < test_log['mAP_test']:
-            state = {
-                'epoch': epoch,
-                'state_dict': model.state_dict(),
-                'criterion_dict': criterion.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-            }
+            state = training_state(model, criterion, optimizer, scheduler, epoch, args)
             result_path = save_path + '/best_epoch%d.pth' % epoch
             
             # remove previous epoch model
@@ -184,7 +220,14 @@ def eval(args):
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         
         if args.make_output:
-            make_txt(args, infos, outputs, proposal_txt_path, test_dataset.label_name)
+            write_model_predictions(
+                args,
+                model,
+                infos,
+                outputs,
+                proposal_txt_path,
+                test_dataset.label_name,
+            )
     
     proposal_json_path = os.path.join(args.save_path, (proposal_file+'.json')).format('pred')
     proposal_pred_txt_path = proposal_txt_path.format('pred')
@@ -282,7 +325,14 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         
         if args.make_output:
-            make_txt(args, infos, outputs, proposal_txt_path, train_dataset.label_name)
+            write_model_predictions(
+                args,
+                model,
+                infos,
+                outputs,
+                proposal_txt_path,
+                train_dataset.label_name,
+            )
     
     if epoch % args.train_eval_step == 0:
         proposal_json_path = os.path.join(args.save_path, (proposal_file+'.json')).format('pred')
@@ -373,7 +423,14 @@ def test_one_epoch(args, test_dataset, test_loader, model, criterion, optimizer,
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         
         if args.make_output:
-            make_txt(args, infos, outputs, proposal_txt_path, test_dataset.label_name)
+            write_model_predictions(
+                args,
+                model,
+                infos,
+                outputs,
+                proposal_txt_path,
+                test_dataset.label_name,
+            )
     
     if epoch % args.test_eval_step == 0:
         proposal_json_path = os.path.join(args.save_path, (proposal_file+'.json')).format('pred')

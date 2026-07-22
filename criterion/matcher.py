@@ -66,6 +66,57 @@ class HungarianMatcher(nn.Module):
         sts = -st_offset
         ends = -ed_offset
         return torch.stack([sts, ends], dim=-1)
+
+    @torch.no_grad()
+    def match_event_owners(
+        self,
+        state_logits,
+        class_logits,
+        class_ids,
+        state_index,
+        occupied_queries=None,
+    ):
+        """Assign prefix-visible GT events to MATR query identities.
+
+        This auxiliary assignment is used only to construct training targets.
+        Runtime ownership never receives GT.  ``occupied_queries`` makes O1
+        identity persistent and fail-closed when the official prediction
+        bandwidth is genuinely insufficient; no target is truncated.
+        """
+        if state_logits.ndim != 2 or state_logits.size(-1) != 4:
+            raise ValueError("state_logits must be [Q,4]")
+        class_ids = [int(class_id) for class_id in class_ids]
+        if not class_ids:
+            return []
+        occupied = set(int(query) for query in (occupied_queries or ()))
+        free_queries = [
+            query for query in range(state_logits.size(0)) if query not in occupied
+        ]
+        if len(class_ids) > len(free_queries):
+            raise RuntimeError(
+                "{} EventMATR identities require assignment but only {} of {} "
+                "official MATR queries are free; targets were not truncated".format(
+                    len(class_ids), len(free_queries), state_logits.size(0)
+                )
+            )
+        state_log_probs = state_logits.log_softmax(dim=-1)
+        class_log_probs = class_logits.log_softmax(dim=-1)
+        cost_rows = []
+        for class_id in class_ids:
+            class_id = min(max(0, class_id), class_logits.size(-1) - 2)
+            score = (
+                state_log_probs[free_queries, int(state_index)]
+                + class_log_probs[free_queries, class_id]
+            )
+            cost_rows.append(-score)
+        cost = torch.stack(cost_rows, dim=0).detach().cpu().numpy()
+        target_indices, free_indices = linear_sum_assignment(cost)
+        assignment = [-1] * len(class_ids)
+        for target_index, free_index in zip(target_indices, free_indices):
+            assignment[int(target_index)] = int(free_queries[int(free_index)])
+        if any(query < 0 for query in assignment):
+            raise RuntimeError("incomplete EventMATR owner assignment")
+        return assignment
     
     @torch.no_grad()
     def forward(self, outputs, targets, device):

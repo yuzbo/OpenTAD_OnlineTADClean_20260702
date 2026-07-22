@@ -10,6 +10,7 @@ from multiprocessing import Pool
 import argparse
 import copy
 import random
+import math
 from util.utils import *
 
 class THUMOS14Dataset(data.Dataset):
@@ -35,6 +36,25 @@ class THUMOS14Dataset(data.Dataset):
         self.detect_len = args.detect_len
         self.anti_len = args.anti_len
         self.max_memory_len = args.max_memory_len
+
+        self.event_birth_mode = getattr(
+            args, "birth_mode", getattr(args, "event_birth_mode", "matr_delayed")
+        )
+        self.event_ownership_mode = getattr(
+            args,
+            "ownership_mode",
+            getattr(args, "event_owner_mode", "fresh_rematch"),
+        )
+        self.model_variant = getattr(args, "model_variant", None)
+        if self.model_variant is None:
+            self.model_variant = (
+                "eventmatr" if getattr(args, "event_arm", None) else "native_matr"
+            )
+        if self.model_variant not in {"native_matr", "eventmatr"}:
+            raise ValueError("invalid model_variant: {}".format(self.model_variant))
+        if self.model_variant == "native_matr" and getattr(args, "event_arm", None):
+            raise ValueError("native_matr must not carry an EventMATR event_arm")
+        self.event_enabled = self.model_variant == "eventmatr"
         
         self._getDatasetDict()
         self._loadFeaturelen()
@@ -316,22 +336,111 @@ class THUMOS14Dataset(data.Dataset):
                 'reg_label': reg_label,
                 'stcls_label': stcls_label
             }
+            current_frame = ed - 1
+            true_duration = int(self.video_len[video_name])
+            is_real_prefix = current_frame < true_duration
+            is_eos = current_frame == true_duration - 1
+            if self.event_enabled:
+                if is_real_prefix:
+                    event_targets, event_valid_mask = self._make_event_targets(
+                        video_name, current_frame
+                    )
+                else:
+                    event_targets = torch.zeros(
+                        (self.num_queries, 8), dtype=torch.float32
+                    )
+                    event_valid_mask = torch.zeros(
+                        (self.num_queries,), dtype=torch.bool
+                    )
+                _gt['event_targets'] = event_targets
+                _gt['event_valid_mask'] = event_valid_mask
         
             _info = {
                 "video_name": video_name,
-                "current_frame": ed-1,
+                "current_frame": current_frame,
                 "ed": ed,
                 "st": st,
                 "duration": self.video_len[video_name],
                 "video_time": float(self.video_dict[video_name]["duration"]),
                 "frame_to_time": float(self.video_dict[video_name]["duration"])/self.video_len[video_name],
-                "segment_flag": self.flag_label[v_set][index]
+                "segment_flag": self.flag_label[v_set][index],
+                "is_real_prefix": is_real_prefix,
+                "true_duration": true_duration,
+                "is_eos": is_eos,
             }
                 
             gt.append(_gt)
             info.append(_info)
             feature.append(_feature)
         return feature, gt, info
+
+    def _make_event_targets(self, video_name, current_frame):
+        """Build causal prefix labels for EventMATR arms only.
+
+        Rows have the fixed training shape ``[num_queries, 8]`` because MATR
+        has ``num_queries`` prediction bandwidth, not because runtime events
+        live in a fixed semantic slot bank.  The columns are:
+
+        ``event_id, class_id, start_frame, end_frame, admission_frame,
+        birth_first_crossing, alive, end_first_crossing``.
+
+        B1 admission is the first observed frame at/after the GT start.  B0
+        uses the first frame at which the original MATR end-near candidate is
+        eligible.  If the data contains more simultaneous supervised events
+        than the official query bandwidth, training fails explicitly instead
+        of silently truncating labels.  Native MATR never calls this method;
+        all four EventMATR cells, including b0o0, do.
+        """
+        target = torch.zeros((self.num_queries, 8), dtype=torch.float32)
+        valid = torch.zeros((self.num_queries,), dtype=torch.bool)
+        previous_frame = float(current_frame) - 1.0
+        rows = []
+        for event_id, event in enumerate(self.gt_action[video_name]):
+            end_frame = float(event[0])
+            start_frame = end_frame - float(event[1])
+            class_id = int(event[2])
+            if self.event_birth_mode == "instant_transition":
+                admission_frame = float(math.ceil(start_frame))
+            else:
+                # Mirrors the strict target window in _loadPropLabel:
+                # gt_end < current + anti_len.
+                delayed_visible = float(math.floor(end_frame - self.anti_len) + 1)
+                admission_frame = max(float(math.ceil(start_frame)), delayed_visible)
+            end_crossing_frame = max(
+                float(math.ceil(end_frame)), admission_frame + 1.0
+            )
+            birth = previous_frame < admission_frame <= float(current_frame)
+            # First crossing is the START state; ALIVE begins on the next
+            # prefix so the competitive state target is unambiguous.
+            alive = admission_frame < float(current_frame) < end_crossing_frame
+            end = previous_frame < end_crossing_frame <= float(current_frame)
+            if not (birth or alive or end):
+                continue
+            rows.append(
+                [
+                    float(event_id),
+                    float(class_id),
+                    start_frame,
+                    end_frame,
+                    admission_frame,
+                    float(birth),
+                    float(alive),
+                    float(end),
+                ]
+            )
+        if len(rows) > self.num_queries:
+            raise RuntimeError(
+                "{} has {} simultaneous EventMATR supervision rows at frame {}, "
+                "exceeding MATR's {} query prediction bandwidth; labels were "
+                "not truncated".format(
+                    video_name, len(rows), current_frame, self.num_queries
+                )
+            )
+        if rows:
+            row_tensor = torch.tensor(rows, dtype=torch.float32)
+            target[: len(rows)] = row_tensor
+            valid[: len(rows)] = True
+        return target, valid
     
     def _get_base_data(self,video_name,st,ed):        
         if self.rgb and self.flow:

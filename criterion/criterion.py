@@ -110,6 +110,49 @@ class CriterionMATR(nn.Module):
         self.num_queries = args.num_queries
         self.anti_len = args.anti_len
         self.max_memory_len = args.max_memory_len
+
+        self.event_birth_mode = getattr(
+            args, "birth_mode", getattr(args, "event_birth_mode", "matr_delayed")
+        )
+        self.event_ownership_mode = getattr(
+            args,
+            "ownership_mode",
+            getattr(args, "event_owner_mode", "fresh_rematch"),
+        )
+        self.model_variant = getattr(args, "model_variant", None)
+        if self.model_variant is None:
+            self.model_variant = (
+                "eventmatr" if getattr(args, "event_arm", None) else "native_matr"
+            )
+        if self.model_variant not in {"native_matr", "eventmatr"}:
+            raise ValueError("invalid model_variant: {}".format(self.model_variant))
+        if self.model_variant == "native_matr" and getattr(args, "event_arm", None):
+            raise ValueError("native_matr must not carry an EventMATR event_arm")
+        self.event_enabled = self.model_variant == "eventmatr"
+        if self.event_enabled:
+            self.weight_dict['loss_event_birth'] = float(
+                getattr(args, "event_birth_coef", 1.0)
+            )
+            self.weight_dict['loss_event_start_offset'] = float(
+                getattr(args, "event_start_offset_coef", 1.0)
+            )
+            self.weight_dict['loss_event_alive'] = float(
+                getattr(args, "event_alive_coef", 1.0)
+            )
+            self.weight_dict['loss_event_end'] = float(
+                getattr(args, "event_end_coef", 1.0)
+            )
+            self.weight_dict['loss_event_end_offset'] = float(
+                getattr(args, "event_end_offset_coef", 1.0)
+            )
+            self.weight_dict['loss_event_owner_class'] = float(
+                getattr(args, "event_owner_class_coef", 1.0)
+            )
+            self.weight_dict['loss_event_owner_state'] = float(
+                getattr(args, "event_owner_state_coef", 1.0)
+            )
+            self._event_owner_by_video = {}
+            self._event_last_frame_by_video = {}
         
         empty_weight = None
         if args.use_empty_weight:
@@ -204,6 +247,254 @@ class CriterionMATR(nn.Module):
 
         losses['loss_reg_stcls'] = loss_stcls
         return losses
+
+    @staticmethod
+    def _state_margin(state_logits, state_index):
+        competing = torch.cat(
+            (
+                state_logits[..., :state_index],
+                state_logits[..., state_index + 1 :],
+            ),
+            dim=-1,
+        )
+        return state_logits[..., state_index] - competing.max(dim=-1).values
+
+    @staticmethod
+    def _info_values(values, batch_size):
+        if torch.is_tensor(values):
+            values = values.detach().cpu().reshape(-1).tolist()
+        elif not isinstance(values, (list, tuple)):
+            values = [values]
+        if len(values) != batch_size:
+            raise ValueError("info field does not match EventMATR batch size")
+        return list(values)
+
+    def _reset_event_supervision_if_needed(self, video_name, current_frame):
+        previous = self._event_last_frame_by_video.get(video_name)
+        if previous is not None and current_frame <= previous:
+            self._event_owner_by_video.pop(video_name, None)
+        self._event_last_frame_by_video[video_name] = current_frame
+
+    def loss_event(self, outputs, targets, infos):
+        """Prefix-visible supervision shared by every EventMATR BxO cell."""
+        required = {
+            'event_state_logits',
+            'event_birth_logits',
+            'event_alive_logits',
+            'event_end_logits',
+            'event_end_offsets',
+            'event_candidate_start_frames',
+            'event_owner_state_logits',
+            'event_owner_end_offsets',
+            'event_owner_class_logits',
+        }
+        missing = sorted(required.difference(outputs))
+        if missing:
+            raise KeyError("missing EventMATR outputs: {}".format(missing))
+        if 'event_targets' not in targets or 'event_valid_mask' not in targets:
+            raise KeyError("EventMATR arms require prefix-visible dataset targets")
+
+        state_logits = outputs['event_state_logits']
+        batch_size, num_queries, _ = state_logits.shape
+        device = state_logits.device
+        event_targets = targets['event_targets'].to(device)
+        event_valid = targets['event_valid_mask'].to(device).bool()
+        if event_targets.shape != (batch_size, num_queries, 8):
+            raise ValueError(
+                "event_targets must be [B,Q,8], got {}".format(
+                    tuple(event_targets.shape)
+                )
+            )
+
+        birth_target = torch.zeros(
+            (batch_size, num_queries), device=device, dtype=state_logits.dtype
+        )
+        alive_target = torch.zeros_like(birth_target)
+        end_target = torch.zeros_like(birth_target)
+        start_target = torch.zeros_like(birth_target)
+        end_offset_target = torch.zeros_like(birth_target)
+        owner_class_target = torch.full(
+            (batch_size, num_queries), -100, device=device, dtype=torch.long
+        )
+        owner_state_target = torch.zeros(
+            (batch_size, num_queries), device=device, dtype=torch.long
+        )
+
+        video_names = [str(value) for value in self._info_values(
+            infos['video_name'], batch_size
+        )]
+        current_frames = [float(value) for value in self._info_values(
+            infos['current_frame'], batch_size
+        )]
+        real_prefixes = [bool(value) for value in self._info_values(
+            infos.get('is_real_prefix', [True] * batch_size), batch_size
+        )]
+
+        owner_assignments = 0
+        for batch_index, (video_name, current_frame) in enumerate(
+            zip(video_names, current_frames)
+        ):
+            if not real_prefixes[batch_index]:
+                continue
+            self._reset_event_supervision_if_needed(video_name, current_frame)
+            rows = event_targets[batch_index][event_valid[batch_index]]
+            if rows.numel() == 0:
+                continue
+
+            if self.event_ownership_mode == "sticky_owner":
+                owner_map = self._event_owner_by_video.setdefault(video_name, {})
+                new_rows = [
+                    row for row in rows if int(row[0].item()) not in owner_map
+                ]
+                if new_rows:
+                    occupied = set(owner_map.values())
+                    assigned = self.matcher.match_event_owners(
+                        state_logits[batch_index],
+                        outputs['pred_cls'][batch_index],
+                        [int(row[1].item()) for row in new_rows],
+                        state_index=1,
+                        occupied_queries=occupied,
+                    )
+                    for row, query_index in zip(new_rows, assigned):
+                        owner_map[int(row[0].item())] = int(query_index)
+                        owner_assignments += 1
+                assignments = [owner_map[int(row[0].item())] for row in rows]
+            else:
+                assignments = [-1] * len(rows)
+                occupied = set()
+                # Fresh O0 association is recomputed from the current prefix.
+                for state_index, column in ((3, 7), (1, 5), (2, 6)):
+                    selected = [
+                        index
+                        for index, row in enumerate(rows)
+                        if bool(row[column].item())
+                    ]
+                    if not selected:
+                        continue
+                    matched = self.matcher.match_event_owners(
+                        state_logits[batch_index],
+                        outputs['pred_cls'][batch_index],
+                        [int(rows[index, 1].item()) for index in selected],
+                        state_index=state_index,
+                        occupied_queries=occupied,
+                    )
+                    for row_index, query_index in zip(selected, matched):
+                        assignments[row_index] = int(query_index)
+                        occupied.add(int(query_index))
+                        owner_assignments += 1
+                if any(query_index < 0 for query_index in assignments):
+                    raise RuntimeError("fresh EventMATR association was incomplete")
+
+            for row, query_index in zip(rows, assignments):
+                is_birth = bool(row[5].item())
+                is_alive = bool(row[6].item())
+                is_end = bool(row[7].item())
+                if int(is_birth) + int(is_alive) + int(is_end) != 1:
+                    raise RuntimeError(
+                        "each EventMATR supervision row must have exactly one "
+                        "START/ALIVE/END state"
+                    )
+                owner_class_target[batch_index, query_index] = int(row[1].item())
+                if is_birth:
+                    birth_target[batch_index, query_index] = 1.0
+                    start_target[batch_index, query_index] = row[2]
+                    owner_state_target[batch_index, query_index] = 1
+                if is_alive:
+                    alive_target[batch_index, query_index] = 1.0
+                    owner_state_target[batch_index, query_index] = 2
+                if is_end:
+                    end_target[batch_index, query_index] = 1.0
+                    owner_state_target[batch_index, query_index] = 3
+                    end_offset_target[batch_index, query_index] = (
+                        current_frame - float(row[3].item())
+                    ) / self.segment_size
+
+            if self.event_ownership_mode == "sticky_owner":
+                owner_map = self._event_owner_by_video[video_name]
+                for row in rows:
+                    if bool(row[7].item()):
+                        owner_map.pop(int(row[0].item()), None)
+
+        owner_logits = outputs['event_owner_state_logits']
+        owner_end_offsets = outputs['event_owner_end_offsets']
+        owner_class_logits = outputs['event_owner_class_logits']
+
+        real_query_mask = torch.tensor(
+            real_prefixes, device=device, dtype=torch.bool
+        ).unsqueeze(1).expand(-1, num_queries)
+
+        def masked_bce(logits, labels):
+            if real_query_mask.any():
+                return F.binary_cross_entropy_with_logits(
+                    logits[real_query_mask], labels[real_query_mask]
+                )
+            return logits.sum() * 0.0
+
+        losses = {
+            'loss_event_alive': masked_bce(
+                outputs['event_alive_logits'], alive_target
+            ),
+            'loss_event_end': masked_bce(
+                outputs['event_end_logits'], end_target
+            ),
+        }
+        if real_query_mask.any():
+            losses['loss_event_owner_state'] = F.cross_entropy(
+                owner_logits[real_query_mask], owner_state_target[real_query_mask]
+            )
+        else:
+            losses['loss_event_owner_state'] = owner_logits.sum() * 0.0
+        class_positive = owner_class_target >= 0
+        if class_positive.any():
+            losses['loss_event_owner_class'] = F.cross_entropy(
+                owner_class_logits[class_positive],
+                owner_class_target[class_positive],
+            )
+        else:
+            losses['loss_event_owner_class'] = owner_class_logits.sum() * 0.0
+        end_positive = end_target.bool()
+        if end_positive.any():
+            losses['loss_event_end_offset'] = 0.5 * (
+                F.smooth_l1_loss(
+                    outputs['event_end_offsets'][end_positive],
+                    end_offset_target[end_positive],
+                )
+                + F.smooth_l1_loss(
+                    owner_end_offsets[end_positive],
+                    end_offset_target[end_positive],
+                )
+            )
+        else:
+            losses['loss_event_end_offset'] = (
+                outputs['event_end_offsets'].sum() + owner_end_offsets.sum()
+            ) * 0.0
+
+        losses['loss_event_birth'] = masked_bce(
+            outputs['event_birth_logits'], birth_target
+        )
+        birth_positive = birth_target.bool()
+        if birth_positive.any():
+            losses['loss_event_start_offset'] = F.smooth_l1_loss(
+                outputs['event_candidate_start_frames'][birth_positive]
+                / self.segment_size,
+                start_target[birth_positive] / self.segment_size,
+            )
+        else:
+            losses['loss_event_start_offset'] = (
+                outputs['event_candidate_start_frames'].sum() * 0.0
+            )
+
+        losses.update(
+            {
+                'event_birth_positive_count': birth_target.sum().detach(),
+                'event_alive_positive_count': alive_target.sum().detach(),
+                'event_end_positive_count': end_target.sum().detach(),
+                'event_owner_assignment_count': torch.tensor(
+                    float(owner_assignments), device=device
+                ),
+            }
+        )
+        return losses
     
     def get_loss(self, loss, outputs, targets, infos, indices, **kwargs):
         loss_map = {
@@ -228,5 +519,8 @@ class CriterionMATR(nn.Module):
         losses = {}
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, infos, indices))
+
+        if self.event_enabled:
+            losses.update(self.loss_event(outputs, targets, infos))
             
-        return losses 
+        return losses

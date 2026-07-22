@@ -122,6 +122,64 @@ def make_txt(args, infos, outputs, file_path, label_map):
             f.write(str_to_be_added + "\r\n")
             f.close()
 
+def make_eventmatr_txt(args, model, infos, file_path, label_map):
+    """Drain newly emitted EventMATR ledger rows into MATR's evaluator format.
+
+    The native ``make_txt`` path is left untouched for the separate exact-MATR
+    lane.  Every EventMATR arm emits each immutable event exactly once as
+    ``video, gentime, start, end, class, score``.
+    """
+    pred_path = file_path.format('pred')
+    Path(pred_path).touch()
+    module = model.module if hasattr(model, 'module') else model
+    if not getattr(module, 'event_enabled', False):
+        return
+    written = getattr(module, '_event_written_ids', None)
+    if written is None:
+        written = {}
+        module._event_written_ids = written
+
+    video_names = infos['video_name']
+    frame_to_times = infos['frame_to_time']
+    if torch.is_tensor(frame_to_times):
+        frame_to_times = frame_to_times.detach().cpu().reshape(-1).tolist()
+    elif not isinstance(frame_to_times, (list, tuple)):
+        frame_to_times = [frame_to_times]
+    scale_by_video = {
+        str(video): float(scale)
+        for video, scale in zip(video_names, frame_to_times)
+    }
+    lines = []
+    for video_name, scale in scale_by_video.items():
+        key = (str(pred_path), video_name)
+        seen = written.setdefault(key, set())
+        for row in module.event_memory.ledger(video_name):
+            event_id = int(row['event_id'])
+            if event_id in seen:
+                continue
+            class_id = int(row['class_id'])
+            if class_id < 0 or class_id >= len(label_map):
+                raise RuntimeError(
+                    "EventMATR emitted invalid class id {} for {}".format(
+                        class_id, video_name
+                    )
+                )
+            score = min(1.0, max(0.0, float(row['score'])))
+            values = [
+                video_name,
+                round(float(row['emit_frame']) * scale, 2),
+                round(float(row['start_frame']) * scale, 2),
+                round(float(row['end_frame']) * scale, 2),
+                str(label_map[class_id]),
+                round(score, 4),
+            ]
+            lines.append("   ".join(str(value) for value in values))
+            seen.add(event_id)
+    if lines:
+        with open(pred_path, "a+") as file:
+            for line in lines:
+                file.write(line + "\r\n")
+
 def non_max_suppression(proposal_dict, nms_threshold):
     final_proposal_dict = []
     sorted_proposals = sorted(proposal_dict, key=lambda proposal:float(proposal[5]), reverse=True)
@@ -237,6 +295,10 @@ def online_nms(args, pred_path, dataset):
 def memory_initialize(model, args):
     model.module.memory_queue = None
     model.module.memory_queue_index = None
+    if hasattr(model.module, 'reset_event_runtime'):
+        model.module.reset_event_runtime()
+    if hasattr(model.module, '_event_written_ids'):
+        model.module._event_written_ids = {}
         
 class CosineAnnealingWarmUpRestarts(_LRScheduler):
     def __init__(self, optimizer, T_0, T_mult=1, eta_max=0.1, T_up=0, gamma=1., last_epoch=-1):
