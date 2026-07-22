@@ -518,3 +518,10 @@ identity-linked duplicate/fragmentation error。
   状态占用与绑定监督而与旧 soft-reserve 轨迹分化，不作故障或性能结论。
   recovery/quarantine/audit/calibration 仍等待 12 轮结束；下一节点为 epoch 9，
   reporting、阈值搜索与 raw-RGB 继续锁定。
+- M50 第 9 轮恢复点：FIXED `1179373` 与 REMATCH `1179374` 均已进入第 10 轮，
+  约完成 `76.46%/76.25%`；两份节点本地 `epoch_8.pth` 均为 `17,512,977`
+  bytes。第 9 轮末 loss 为 FIXED `1.4225`、REMATCH `1.3099`，无 fatal/OOM/
+  non-finite loss，资源稳定。FIXED 第 8→9 轮近平台只是轮末 minibatch 现象，
+  不作过拟合或性能裁决。recovery/quarantine/audit/calibration 仍等待第 12 轮；
+  下一节点为四 checkpoint 完整性、容量/监督审计、calibration-only 曲线和固定
+  `0.5` 依赖终检，reporting、阈值搜索与 raw-RGB 继续锁定。

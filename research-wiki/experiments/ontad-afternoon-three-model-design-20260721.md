@@ -963,3 +963,28 @@ FIXED 在前三轮后、REMATCH 在第一轮后均出现数值轨迹分化；真
 当前没有提前运行 calibration，没有可报告的最终区间、mAP 或 Recall；未访问
 reporting、未搜索或降低固定 `0.5`、未启动 raw-RGB。下一持久节点为成对第 9 轮
 checkpoint；若作业、fatal、recovery 或 quarantine 状态先变化则提前记录。
+
+### M50 硬 reserve 正式十二轮第 9 轮成对 checkpoint
+
+FIXED `1179373` 与 REMATCH `1179374` 均已完成第 9 轮并进入第 10 轮；08:30
+左右的直接进度分别为第 10 轮 `350/2009` 与 `300/2009`，即约完成
+`76.46%/76.25%`。依赖终检 `1179375` 继续正常等待。通过各自 allocation 内的
+只读 `srun --overlap` 核验，两份节点本地 `epoch_8.pth` 均存在且为
+`17,512,977` bytes；FIXED/REMATCH 分别于北京时间 08:25:37、08:26:52 落盘。
+
+前九轮末 minibatch loss 为：
+
+- FIXED：`2.9177 / 2.2809 / 1.9829 / 1.8696 / 1.7073 / 1.6277 / 1.4664 / 1.4235 / 1.4225`；
+- REMATCH：`2.9213 / 2.4360 / 2.0485 / 1.9065 / 1.7041 / 1.6309 / 1.4571 / 1.3957 / 1.3099`。
+
+REMATCH 到第 9 轮仍持续下降；FIXED 第 8→9 轮仅从 `1.4235` 到 `1.4225`，接近
+平台。由于这些值只是各轮最后一个 minibatch，而不是完整验证集曲线，当前不能把
+FIXED 的近平台写成过拟合、收敛失败或调参依据。两臂日志中的 Traceback、
+RuntimeError、OOM、non-finite 标记与非有限 loss 均为零；MaxRSS 约为 FIXED
+`2,081,472 KiB`、REMATCH `2,012,424 KiB`，节点和资源状态稳定。
+
+`recovery/`、`quarantine/`、训练完整性 audit 与 calibration 产物仍为 pending，
+符合冻结合同。当前没有提前运行 calibration，也没有最终区间、mAP、Recall 或
+FIXED/REMATCH 优劣裁决；未访问 reporting、未搜索或降低固定 `0.5`、未启动
+raw-RGB。下一持久节点为第 12 轮训练完整性审计、四 checkpoint recovery 或失败
+quarantine，随后才允许 calibration-only 曲线与依赖终检执行。
