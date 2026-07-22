@@ -126,17 +126,23 @@ emit latency、活动事件数、记忆和吞吐。因果、正长度、不可�
 实验记录：
 `research-wiki/experiments/ontad-matr-official-parent-event-model-20260722.md`。
 
-## 外部附件归档（非当前路线，不进入实验）
+## 正确外部审判的最终吸收（2026-07-23 复核）
 
-DUCA 只在本节出现，因为用户提供的附件本身审查的是另一仓库
-`yuzbo/OpenTAD_C3_CoarseClean_20260702@a00498e`，附件 SHA-256 为
-`36523B2F1A7456F8D4A4314EA445971F8066EEC59611F9632D7BC1D33E31A884`。
-它审查的是离线 full-window pre-backbone 不规则 RGB 采样，不是当前严格因果 EventMATR。
-独立复核接受 selected-rank 时间扭曲、mandatory completeability、五预算 parser、
-source-equivalence、matched uniform/high-tIoU/multi-seed/full-stack cost 等问题；TTDI 仅是
-U/L/T 单变量待证伪假设，2000/6000 updates、LR/loss/schedule、55% sign 与 0.2 mAP
-容差均未冻结。该审查不改变 MATR 母体、官方 100 epochs 或 EventMATR 第一阶段。
-唯一迁移护栏是：未来 raw-RGB 若引入非均匀采样/压缩，原始 physical timestamps 必须
-进入 backbone 和 localization head，不能只在输出端做坐标逆映射。完整记录见
-`research-wiki/experiments/duca-ttdi-external-review-absorption-20260722.md` 与 DR-032。
-DUCA 不进入当前模型、四路作业、数据、训练预算或论文主结果。
+唯一有效附件是 `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`：新附件为
+`70,393` bytes、`1,412` 行，SHA-256
+`ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D`，与 M55 已吸收的
+正确附件逐字节一致。用户已确认此前介入的另一附件是复制错误；其内容、建议和所谓
+可迁移护栏全部撤回，不属于当前课题知识。
+
+最终态度不是“完全认可”，而是 `PARTIAL / REVISE`：接受标准 closed-set 全监督严格因果
+On-TAD、标准最终区间输出、donor 只读、拒绝模块汤、start-owned identity/owner-conditioned
+end 作为核心待证问题、关联/延时/资源指标和 feature→raw 证据边界；不接受固定槽位、
+`K=32/B=128`、30k updates、seed 3407、固定 loss/effect gate/backbone、`end=t`、四 donor
+parity 阻塞核心或单个未收敛种子自动杀死路线。
+
+历史 `K×O` 只保留“因素必须可识别”的思想。当前正式设计以 DR-031 的 slot-free `B×O`
+为准：比较延迟/即时 birth 与 fresh-rematch/sticky-owner，exact native MATR 为独立第五路；
+capacity/learned retention 在 ownership 成立后另做固定总预算实验。EventMATR exact
+`64d7f78dd8ed1436bac08ebfb03b51c90142129b` 已通过本地和 N16R4 合同测试，但官方真实
+数据 smoke 与性能仍未完成，所以当前只能说“实现可复核”，不能说“模型有效”。完整处置见
+`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md` 与 DR-034。

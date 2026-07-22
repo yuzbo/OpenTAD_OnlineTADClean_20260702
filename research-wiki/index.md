@@ -14,8 +14,8 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 3. [`../PRO_DIVERGENT_IDEA_REVIEW_20260711.md`](../PRO_DIVERGENT_IDEA_REVIEW_20260711.md) for the complete Pro answer and [`../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md`](../PRO_DIVERGENT_IDEA_ABSORPTION_20260711.md) for the independent verdict.
 4. [gap_map.md](gap_map.md) for unresolved research gaps.
 5. [`../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`](../CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md) for the complete current direction and [`../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`](../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md) for the independent Pro audit.
-6. [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md) for the active official-MATR-parent EventMATR model and `B×O` experiment.
-7. [experiments/duca-ttdi-external-review-absorption-20260722.md](experiments/duca-ttdi-external-review-absorption-20260722.md) only when tracing the user-provided external DUCA attachment; it is an archived non-executing review and not a current experiment.
+6. [`../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`](../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md) for the complete independent disposition and its 2026-07-23 current-code revalidation.
+7. [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md) for the active official-MATR-parent EventMATR model and `B×O` experiment.
 8. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the preceding raw-RGB design/review history.
 9. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the retired slot-route evidence and its exact historical protocol.
 10. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
@@ -132,7 +132,6 @@ sets are forbidden because they would invalidate parent parity.
 | Node | Verdict | Use |
 |---|---|---|
 | [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |
-| [exp:duca-ttdi-external-review-absorption-20260722](experiments/duca-ttdi-external-review-absorption-20260722.md) | archived external attachment; non-executing | Records why the attachment's DUCA advice is only partly accepted; it contributes no module, job or result to EventMATR. |
 | [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |
 | [exp:cancelled-pilots-20260710](experiments/cancelled-pilots-20260710.md) | incomplete | Shows full-packet training is too slow and unstable. |

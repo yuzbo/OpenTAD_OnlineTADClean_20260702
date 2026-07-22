@@ -1015,8 +1015,9 @@ Reversibility:
 
 ## DR-030: Narrow Dynamic Event Memory to an Identifiable Ownership Factorial
 
-Status: active; supersedes DR-029 as the executable experiment route while
-preserving its final raw-RGB target and read-only donor boundary.
+Status: superseded by DR-031 as an executable recipe; retained as the historical
+disposition of the external review while preserving its scientific narrowing,
+final raw-RGB target and read-only donor boundary.
 
 Decision:
 
@@ -1160,64 +1161,6 @@ Reversibility:
   standard output and raw-RGB final evidence cannot be removed without an
   explicit task change.
 
-## DR-032: Absorb the DUCA-TTDI Review Without Replacing the Strict-Causal EventMATR Route
-
-Status: archived non-executing scope guard; not an EventMATR experiment.
-
-Decision:
-
-> Partially accept the external review fixed to DUCA commit `a00498e`: adopt its
-> verified correctness findings, true-time diagnostic and matched experimental
-> standards for the DUCA repository, but treat TTDI and every numerical training
-> recipe as unproven proposals. Do not import this offline full-window route into
-> the official-MATR-parent EventMATR feature study.
-
-This decision exists only because the supplied attachment is a DUCA review. It
-does not authorize DUCA implementation, cloning, training, resource use or a
-paper claim in the current EventMATR route.
-
-Reason:
-
-- independent fixed-commit inspection confirms selected-axis GT training,
-  rank-index detector embeddings, post-hoc TrueTimeMap output remapping, a local
-  RGB-slope gradient bridge, mandatory union semantics, incomplete five-budget
-  cost parsing and missing aggregate semantic-equivalence checks;
-- these facts make selected-rank time distortion a strong causal hypothesis,
-  not a proven performance root cause;
-- a post-VideoMAE TTDI cannot repair irregular tubelet composition that already
-  occurred inside the visual backbone;
-- the review's `2000/6000` updates, learning rates, loss weights, policy mixture,
-  `55%` sign threshold and `0.2`-point tolerance are proposals without terminal
-  learning-curve or power evidence;
-- DUCA consumes a complete offline window, while EventMATR must remain prefix
-  causal and uses official uniformly timed MATR features in its current stage.
-
-Resolution:
-
-1. preserve the attachment hash
-   `36523B2F1A7456F8D4A4314EA445971F8066EEC59611F9632D7BC1D33E31A884` and
-   its fourteen-section disposition in the linked absorption record;
-2. if DUCA resumes, first fix parser, source-equivalence and mandatory
-   completeability, then read terminal matched results and run a single-variable
-   U/L/T TTDI test only when selection quality improves without mAP improvement;
-3. do not call TTDI successful until matched uniform, high-tIoU, multi-seed and
-   full-stack cost evidence pass;
-4. keep official MATR `ba05a98...`, native parity, official 100 epochs and the
-   EventMATR birth/owner mechanism study unchanged;
-5. carry only one future raw-RGB guardrail into EventMATR: any later nonuniform
-   sampling or token compression must preserve original physical timestamps
-   through the visual backbone and localization head, not merely remap output.
-
-Source:
-
-- [experiments/duca-ttdi-external-review-absorption-20260722.md](experiments/duca-ttdi-external-review-absorption-20260722.md).
-
-Reversibility:
-
-- TTDI, physical-coordinate heads and legal-swap ranking remain reversible DUCA
-  candidates. The strict-causal task boundary and official-MATR-parent decision
-  are not changed by evidence from an offline full-window sampler.
-
 ## DR-033: Release EventMATR Only Through a Real Official-Data Smoke
 
 Status: active implementation gate.
@@ -1281,3 +1224,59 @@ Reversibility:
 - Smoke implementation details may be optimized if they preserve the same
   scientific checks. Official-data parity, zero test access during training and
   exact-source fail-closed behavior are not relaxed for convenience.
+
+## DR-034: Withdraw the Mis-Pasted Review and Revalidate the Correct On-TAD Review
+
+Status: active provenance correction; does not alter the executable model gate.
+
+Decision:
+
+> Withdraw the previously supplied unrelated attachment and every conclusion
+> derived from it. Treat only `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`,
+> SHA-256 `ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D`,
+> as the valid external review. Keep its verdict as partial acceptance after
+> rechecking it against the current EventMATR implementation.
+
+Reason:
+
+- the user explicitly confirmed that the intervening attachment was copied in
+  error, so it cannot be retained as a scientific source, transferable design
+  guardrail or archived experiment for this project;
+- the newly supplied correct file is byte-identical to the review already
+  absorbed at M55: `70,393` bytes, `1,412` lines and the same SHA-256;
+- since M55, the target-version visibility gap has been materially reduced by
+  exact EventMATR commit `64d7f78dd8ed1436bac08ebfb03b51c90142129b`, its
+  clean tree/manifest and local plus N16R4 contract tests;
+- performance evidence remains absent because the exact official MATR THUMOS14
+  package has not passed the real-data smoke, so implementation verification is
+  not a reason to upgrade the scientific verdict to PASS;
+- the review's identifiability principle remains valid, but DR-031 deliberately
+  replaces its historical fixed-slot `K×O` prescription with a slot-free `B×O`
+  test of birth timing and sticky ownership under the exact official MATR parent.
+
+Resolution:
+
+1. delete the unrelated detailed review record and its current-Wiki source-map,
+   index and query-pack entries;
+2. retain one correction milestone so the withdrawn input cannot be mistaken for
+   an accepted project source after context compaction;
+3. use `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md` as the
+   canonical claim-by-claim disposition, including the 2026-07-23 revalidation;
+4. fully retain task narrowing, standard output, read-only donors, no module soup,
+   owner-association diagnostics and the feature-to-raw evidence boundary;
+5. do not freeze the review's arbitrary capacities, budgets, loss weights, seed,
+   backbone or effect thresholds, and do not revive semantic slots as the main
+   model factor;
+6. keep DR-031 and DR-033 as the executable route: official-data five-lane smoke,
+   then native MATR plus four official-setting `B×O` 100-epoch runs.
+
+Source:
+
+- `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`;
+- [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md).
+
+Reversibility:
+
+- Future scientific evidence can change the model or experiment design. A source
+  explicitly withdrawn by the user cannot be restored as evidence without a new,
+  explicit request.

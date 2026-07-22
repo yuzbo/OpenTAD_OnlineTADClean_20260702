@@ -5,6 +5,8 @@
 - 审判原文：`Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`；
 - 附件路径：
   `C:/Users/skywalker/.codex/attachments/479ced54-d744-478e-8fe7-6da0b4f258a8/pasted-text.txt`；
+- 用户 2026-07-23 重新提供的正确附件：
+  `C:/Users/skywalker/.codex/attachments/69069486-1dca-4e85-ad1c-3c835cedd942/pasted-text.txt`；
 - 原文 SHA-256：
   `ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D`；
 - 原问题：`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`；
@@ -213,3 +215,97 @@ track ID，则哪一个未来先结束在当下可能本来就不可辨识。模
 
 这一路线接受审判最有价值的“收窄和可识别性”建议，同时拒绝把工程完整性、任意常数
 和自然组件迁移误当成最终算法。
+
+## 10. 2026-07-23 正确附件与当前实现的再次复核
+
+### 10.1 文件身份与错误输入撤回
+
+用户重新提供的正确附件为 `70,393` bytes、`1,412` 行，其 SHA-256 与本页最初吸收的
+正确附件完全相同：
+
+```text
+ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D
+```
+
+因此这不是第二份审判，也不改变原文内容。此前误贴的另一课题附件已由用户明确撤回；
+其分析、建议、模块、数值和所谓可迁移护栏均不再是本项目知识或决策来源。当前唯一有效
+的外部审判对象就是本页记录的 `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`。
+
+### 10.2 审判之后已经发生的事实变化
+
+原审判无法读取目标分支，所以它关于“尚未实现”和“snapshot 不可见”的判断当时成立，
+现在需要用新证据更新：
+
+- 唯一父模型已冻结为官方 MATR
+  `ba05a98d451b3541c1a5377026f17dc1102fa217`；ActionSwitch
+  `838a6ccbd8f2cce414688ff2843380d712aa7b89` 只提供即时状态转移思想；
+- 派生 EventMATR 已在独立工作目录实现并提交为
+  `64d7f78dd8ed1436bac08ebfb03b51c90142129b`，tree 为
+  `bc6f5057e954ed448dcb5173489eba7c4dcba27d`；
+- exact native MATR 与四个事件化模型分离；四臂只改变 birth 时机和 owner 保持，
+  共享其余主干、头、损失和官方训练设置；
+- 生命周期由 `BACKGROUND/START/ALIVE/END` 四态竞争学习，`BACKGROUND` 可取消 active
+  owner；不使用统一事件 `0.5`，不使用 same-start 或 cosine 手工去重；
+- ragged EventRecord 没有人工语义槽位数；官方十个 query 仍是每个 prefix 的预测带宽，
+  不是十个持久实例槽；
+- 本地与 N16R4 exact checkout 均通过完整 `62` 项测试、协议和脚本检查；这些只证明
+  实现合同，不证明定位性能；
+- 精确官方 MATR THUMOS14 特征与标注尚未在 N16R4 落盘，所以真实批次 smoke、官方
+  100-epoch 训练和 mAP/Recall 仍未产生。不得用 SigLIP2/OpenTAD 特征替代后宣称
+  official parity。
+
+这使“目标版本不可见”从当前阻断项变成已解决的实现可见性问题，但没有消除最重要的
+性能与创新性风险。
+
+### 10.3 对建议的最终态度
+
+**仍然不完全认可，裁决维持 `PARTIAL / REVISE`。**
+
+完全认可：
+
+1. 主任务收窄到标准、closed-set、全监督、严格因果 On-TAD；权威输出只有
+   `{start,end,class,score}`，event identity 只作内部状态和诊断。
+2. “动态记忆”“raw RGB”“状态机”或多个官方模块的自然拼接都不足以构成创新；最值得
+   证伪的核心是 start-visible birth 后的持久身份，以及 owner-conditioned end 是否能
+   在同类重叠、交叉结束和迟到出生中减少错误关联。
+3. 官方方法必须只读、母体设置必须尽量原生、融合因素必须可归因，不能做 ABCD soup。
+4. active EventRecord 容量与视觉历史/token memory 是两个问题，必须分别建模、计量和
+   消融。
+5. 必须报告 wrong-start、owner-swap、fragmentation、duplicate close、birth/end/emit
+   delay、并发压力、因果性、不可变性和资源分布，不能只报 mAP。
+6. feature 结果只能验证事件机制；最终 raw-RGB 结论仍需要真实因果视觉编码器证据。
+
+有条件认可：
+
+1. 原审判的 `K×O` 出发点——把资源分配与 ownership 拆开——是正确的，但固定语义槽
+   不是当前必需因素。用户明确反对人工槽位后，当前实现改用 `B×O`：
+   `B` 比较延迟 MATR-style discovery 与即时 transition birth，`O` 比较 fresh rematch
+   与 sticky owner；exact native MATR 是独立第五路。这个设计更直接检验当前论文核心。
+2. capacity/retention 仍要验证，但后置为独立的固定总预算实验；只有 ownership 产生
+   稳定增益后，才比较完整历史、学习保留、真实压缩和 fail-closed 物理 guard。
+3. FineAction、MUSES 或 MultiTHUMOS 可作为后续外部/压力集，但必须先核验标注是否真的
+   支持同类重叠、实例关联和所声称指标。
+4. frozen/adapter/joint raw-RGB 阶梯合理，但具体 backbone 必须由当前官方母体兼容性、
+   因果性和资源画像选择，不能预先冻结为 MViTv2-S。
+
+明确不认可：
+
+1. 把“obvious combination”当成路线已被彻底否定。它是必须正面击败的审稿风险，不是
+   exact competitor 已存在的证据；真正创新仍取决于新的 On-TAD owner learning 及结果。
+2. 把 `K=32`、`B=128`、30k/15k updates、seed 3407、固定 loss 权重、效应阈值或
+   GPU-hour 数直接写成科学规则。
+3. 要求四个 donor 全部完成 native parity 后才验证核心模型，或把接口工程置于模型
+   学习问题之前。
+4. 用 `end=t` 合并预测边界、决策时刻和发射时刻，或用一个未收敛单种子失败自动杀死
+   整条路线。
+5. 把固定 preallocated semantic-slot 对照强制作为当前主实验；它与用户已冻结的
+   ragged event-memory 方向不一致，也会重新引入已知的人为容量混杂。
+
+### 10.4 更新后的执行结论
+
+原审判提供了有效的“收窄、反显然性和可识别归因”框架，但当前可执行实验以 DR-031、
+DR-033 为准，而不是历史 DR-030：先补齐精确官方数据，运行五路真实批次 smoke，再并行
+运行 native MATR 与四个 `B×O` 100-epoch 模型。只有即时 birth + sticky ownership 在
+官方设置下形成 mAP/Recall、关联错误和延时上的可信增益，才进入 learned retention 与
+raw-RGB frozen/adapter/joint。当前状态是**实现已可复核、科学性能仍未知**，不能把测试
+通过写成模型有效，也不能把外部审判的 `REVISE` 写成模型已经失败。
