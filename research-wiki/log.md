@@ -37,6 +37,19 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - Added `CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md` and a zero-context Pro
   prompt requiring exact-competitor search, obvious-combination rejection,
   innovation audit, and a better task/method/parallel-experiment proposal.
+- Completed the feature-input novelty audit through 2026-07-22 with primary
+  ActionSwitch, MATR, HAT/OAT, HEM, OpenHOUSE, MOTR/TrackFormer, and recent
+  On-TAD/streaming-video sources plus an independent adversarial review. No
+  exact single-method competitor was found; the verdict is `proceed with
+  caution`, not a novelty pass.
+- Narrowed the potentially publishable feature claim to variable-effective-
+  cardinality identity-persistent event trajectories with event-owned start-to-
+  end closure. Demoted generic memory, adaptive size, strict causality,
+  calibration, donor fusion, and full-prefix storage from novelty claims.
+- Recorded the mandatory rejection controls: ActionSwitch at multiple switch
+  counts, MATR, a MOTR-style temporal track-query control, pairing/identity/
+  latency/concurrency metrics, and FineAction or MultiTHUMOS coverage. No
+  performance competitiveness is claimed before these experiments run.
 
 ## 2026-07-11
 
@@ -207,3 +220,4 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-22: M51 FIXED `1179373`/REMATCH `1179374` 均 `COMPLETED 0:0`：各 24,120 更新与 scheduler step、零 skip/监督耗尽/GT-birth entry-free collision，四 checkpoint recovery/SHA 完整且无 quarantine；真实 4+2 reserve 通过完整十二轮容量门。calibration-only 曲线选择 FIXED epoch 12（`0.0072212087` fraction）与 REMATCH epoch 9（`0.0095973653`）。终检 `1179375` 在 15 秒内因完整 PETAL 协议的 `non_monotonic_sequence` 失败，尚无合法正式 mAP/Recall。8 份账本只读审计证明所有 `19/1293/1582/433` 与 `0/45/608/740` 个倒序均是同一 emit frame 内 DDP 汇总排序忽略显式 sequence 的 tie-order；sequence 唯一连续，按 sequence 的 emit 不倒退，正长度、不可变和未来信息审计全过。下一步只修账本生成 tie-break、加回归并从保全 checkpoint 重放 calibration/hash/finalizer，不重训、不改 0.5/数据/模型，不访问 reporting 或 raw-RGB。
 - 2026-07-22: M52 并列帧 sequence tie-break、fail-closed 摘要与逐事件 replay 等价验证已在精确提交 `0daf681b4e8e36a64066a2f6fa8e0458a98b429a` 实现并推送；N16R4 exact clean 为 `190 passed in 87.71s`，Bash/no-submit 前置检查通过且工作树干净。仅校准/评测重放 run `formal12_calibration_replay_seed705_20260722_103003` 已提交 FIXED `1179456`、REMATCH `1179457`、依赖终检 `1179458`；首检两臂均在 `g0066` RUNNING、fatal=0，终检正常等待。该链路不训练，必须逐事件证明源/重放 payload 相同且只改同帧顺序，复现全部 calibration 指标/选择/hash，并把源训练与重放资源累计计费；此时尚无新 receipt 或合法正式 mAP/Recall，reporting、固定 0.5 搜索、multi-seed 和 raw-RGB 仍锁定。
 - 2026-07-22: M53 checkpoint-only 重放 `1179456/57` 与终检 `1179458` 均 `COMPLETED 0:0`；8 份 replay receipt 全部事件相等、只改同帧次序且因果/正长度/不可变/sequence 违规为零，累计两臂 `12.319444 GPU·h`。复核冻结配置与 M23/M24/M30/M47 后纠正一次审计误判：第 3/6/9/12 轮选择只用于曲线/候选，正式固定 `0.5` 门预注册为第 12 轮，因此 REMATCH 选 e9 不替换正式 e12。合法 e12 calibration-only 结果为 FIXED mAP=`1.614484`pp、Recall@0.3=`0.154167`、prediction/GT=`18.841667`，REMATCH mAP=`1.178473`pp、Recall=`0.0875`、ratio=`16.097917`；技术门 PASS，运行性能门因两臂过量发射且低 Recall 而 FAIL，下一阶段为 fit/calibration-only 模型优化，multi-seed/reporting/raw-RGB 继续锁定。
+- 2026-07-22: M55 完整读取并吸收 `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`（SHA-256 `ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D`）。裁决为“格式/主题近完整，但目标版本证据和算法闭合不完整，建议部分采纳”：接受任务收窄、标准输出、组合式显然性、donor 只读、ABCD 删除、0.5 仅控制和 feature→raw 门；拒绝 `end=t`、任意 `K=32/B=128/30k/lambda`、四 donor parity 阻塞核心和把 start-owned state 直接当贡献。DR-030 将执行路线改为 matched-feature `K×O` 四臂并强制 Temporal TrackFormer 控制，补充 late-birth 训练、cancel/rebirth、permutation-aware overlap 与 end/emit 分离；最小 snapshot、direct fidelity、synthetic tests 和轻量 raw smoke 并行，formal raw/H×R/multi-seed/report 继续受核心机制门约束。完整处置见 `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`。

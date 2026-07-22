@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:ontad-rgb-dynamic-event-memory-design-20260722
 title: "Raw-RGB Dynamic Event Memory Design Freeze"
-status: pro-review-package-ready
-outcome: pending-review
+status: review-revised
+outcome: core-factorial-pending
 updated: 2026-07-22
 ---
 
@@ -14,6 +14,11 @@ updated: 2026-07-22
 Record the transition from the technically valid but low-performing fixed-slot
 feature baseline to a raw-RGB, slot-free dynamic-event method built from faithful
 official On-TAD and event-memory donors.
+
+The independent review has now been absorbed. The donor-letter fusion graph is
+retained below as historical design context, but no longer authorizes work. The
+active experiment is the smaller `K×O` ownership/capacity factorial described at
+the end of this record.
 
 ## Reproducible Starting Point
 
@@ -58,7 +63,7 @@ official On-TAD and event-memory donors.
 - launch calibration and multi-seed/report jobs through scheduler dependencies
   after their registered parents pass.
 
-## Dependency-Aware Parallel Experiment Graph
+## Historical Pre-Review Dependency Graph
 
 ```mermaid
 flowchart LR
@@ -148,3 +153,55 @@ The Pro review is required to search for an exact competitor, perform a
 multi-paper obvious-combination attack, audit every candidate claim, and return a
 revised task, solution and dependency-aware experiment plan even if it rejects
 the current route.
+
+## Active Post-Review Experiment Graph
+
+```mermaid
+flowchart LR
+  S["Minimal immutable snapshot + direct donor SHAs"]
+  N["ActionSwitch/MATR native fidelity"]
+  T["Synthetic overlap, late birth, cancel/rebirth, causality"]
+  R["Light raw causal backbone smoke"]
+  F["Feature KxO: K0O0/K1O0/K0O1/K1O1"]
+  V["Learning/resource curves + freeze gates"]
+  D{"K1O1 beats K0O1 and K1O0 on accuracy + association?"}
+  M["Fixed-budget HxR memory factorial"]
+  G["Raw frozen/adapter/joint"]
+  C["Multi-seed + one audited external dataset"]
+  P["Report-once"]
+  X["Kill or keep owner-only result"]
+
+  S --> N
+  S --> F
+  S --> T
+  S --> R
+  N --> D
+  T --> D
+  F --> V --> D
+  D -->|yes| M
+  D -->|yes| G
+  R --> G
+  M --> C
+  G --> C --> P
+  D -->|no| X
+```
+
+Execution rules:
+
+- snapshot/fidelity work is minimal and parallel; it cannot become a multi-day
+  blocker for the model screen;
+- `K0O1` is the Temporal TrackFormer-style fixed-bank persistent-owner control;
+- all four feature arms share the same physical guard and matched model/training
+  budget; ragged packing alone is not a contribution;
+- the end boundary is decoded separately from `emit_time`;
+- late birth receives a real training path, and same-class exchange-equivalent
+  cases receive permutation-aware treatment;
+- update counts, `K_runtime`, visual token budget, loss weights and numerical
+  effect gates are frozen only after parent learning/resource curves;
+- HAT/HEM fidelity, learned hierarchy, formal raw training, multi-seed and
+  report split do not run before the core owner mechanism survives;
+- a raw prefix/gradient/cache smoke may proceed in parallel because it does not
+  claim performance or consume the formal joint-training budget.
+
+Full disposition:
+`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`.

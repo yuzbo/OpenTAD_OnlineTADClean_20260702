@@ -1012,3 +1012,88 @@ Reversibility:
   read-only preservation of official baselines, strict causal contract, and
   requirement that final evidence include original-RGB input are not relaxed by
   feature-level results.
+
+## DR-030: Narrow Dynamic Event Memory to an Identifiable Ownership Factorial
+
+Status: active; supersedes DR-029 as the executable experiment route while
+preserving its final raw-RGB target and read-only donor boundary.
+
+Decision:
+
+> Do not implement the A/B/C/D donor soup or launch full raw-RGB joint training.
+> First test, in one matched feature-level code path, whether birth-allocated
+> active events and sticky start ownership independently improve strict-causal
+> On-TAD over fixed-bank, rematched and Temporal TrackFormer-style controls.
+
+Accepted review findings:
+
+- no single exact competitor was found, but ActionSwitch, MOTR/TrackFormer,
+  HEM/Backtrace Mamba and E2E-LOAD/StreamFormer make the broad package an obvious
+  combination;
+- standard authoritative output is `{start,end,class,score}`; event ID and
+  provisional birth remain internal diagnostics;
+- generic dynamic memory, active/visual state separation, raw input, interface
+  fidelity and Pareto reporting are not headline contributions;
+- ABCD is scientifically underidentified; HAT/HEM memory must not precede the
+  ownership screen;
+- a uniform `0.5` remains a control only, and report-split search remains banned;
+- raw-RGB evidence is mandatory eventually, but feature evidence must first
+  isolate the event mechanism.
+
+Independent qualifications and rejections:
+
+- the Pro response could not read nine target-version materials and is not a
+  complete code/design audit;
+- `K×O` is accepted only after `K` is defined as fixed preallocation versus
+  birth allocation under the same physical guard, not ragged versus padded code;
+- `K0O1` must implement a credible Temporal TrackFormer control;
+- `end=t` is rejected: decoded end time and later commit/emit time are distinct;
+- late birth needs its own prefix-visible matching/training path; cancel/rebirth
+  and exchange-equivalent same-class overlap remain open algorithm questions;
+- `K=32`, `B=128`, loss weights, 30k updates, seed 3407 and numerical effect
+  gates are unfrozen until direct-parent variance and learning/resource curves;
+- a public immutable snapshot is required for reproducibility but runs in
+  parallel and cannot displace the model-first priority;
+- one unconverged single-seed failure does not kill the scientific question;
+  after readiness and variance are closed it may kill further resource spend.
+
+Executable matrix:
+
+```text
+K0O0 = fixed preallocated bank + per-prefix rematching
+K1O0 = birth-allocated packed set + per-prefix rematching
+K0O1 = fixed preallocated bank + sticky owner (Temporal TrackFormer control)
+K1O1 = birth-allocated packed set + sticky owner (candidate)
+```
+
+All arms share the same encoder, decoder depth, physical guard, data exposure,
+successful updates, calibration rule and evaluator. `K1O1` survives only if it
+beats both direct parents, reduces wrong-start/owner-swap errors in the relevant
+strata, and does not obtain the gain through excess delay, overflow or memory.
+Exceeding the old FIXED result alone is insufficient.
+
+Parallel work allowed before this gate:
+
+1. minimal ActionSwitch/MATR native fidelity and immutable donor SHAs;
+2. synthetic overlap, reversed/nested ends, late birth, cancel/rebirth,
+   overflow and future-perturbation tests;
+3. a light raw-backbone prefix/gradient/cache/latency smoke with no performance
+   claim or formal joint-training budget.
+
+After a pass, run the fixed-budget hierarchy × retention factorial and raw
+frozen/adapter/joint comparisons in parallel, then multi-seed and one
+annotation-audited external dataset. OnVLLM remains a separate future project.
+
+Sources:
+
+- `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`;
+- `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`;
+- [ideas/dynamic-event-memory-rgb-ontad.md](ideas/dynamic-event-memory-rgb-ontad.md);
+- [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md).
+
+Reversibility:
+
+- Numerical budgets, backbone and memory design are deliberately reversible
+  after profiling. The standard task, strict causality, read-only donor policy,
+  standard output, model-first priority and ban on report-split tuning are not
+  relaxed without new scientific evidence.

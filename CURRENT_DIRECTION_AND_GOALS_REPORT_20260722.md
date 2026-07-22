@@ -7,6 +7,13 @@ out-of-scope: 不新增实验数字，不把候选创新写成已验证结论
 
 # 当前方向与目标完整报告：Raw-RGB Dynamic Event Memory On-TAD
 
+> **独立审判吸收更新（2026-07-22）：** 本报告后文的 A/B/C/D、ABD/ABCD 组合是
+> 审判前候选，不再是当前执行矩阵。`DR-030` 已将主实验收窄为
+> `fixed/preallocated vs birth-allocated` × `rematch vs sticky owner` 的 `K×O`
+> 因子实验，并要求 Temporal TrackFormer 作为显然性控制。最终 raw-RGB 目标不变；
+> HAT/HEM、层级记忆和 OnVLLM 均后置。完整理由见
+> `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`。
+
 ## 1. 一句话结论
 
 最终目标是一个直接读取原始 RGB 视频、标准全监督、严格因果的 On-TAD 模型：
@@ -25,10 +32,10 @@ out-of-scope: 不新增实验数字，不把候选创新写成已验证结论
 
 - 标准 closed-set、fully supervised Online Temporal Action Localization；
 - 时刻 `t` 只能读取来源时间不晚于 `t` 的 RGB 帧和历史状态；
-- 开始阶段允许发布可撤销的临时开始、类别和事件状态；
-- 每个动作实例有独立且稳定的 `event_id`；
+- 开始阶段维护可撤销的临时开始、类别和事件状态，并作为附加诊断；
+- 每个动作实例有独立且稳定的内部 `event_id`；
 - 结束判定必须以该事件自己的开始锚点和历史轨迹为条件；
-- 最终输出为 `{start, end, class, score, event_id}`；
+- 标准最终输出为 `{start, end, class, score}`；`event_id` 只进入审计元数据；
 - 最终区间满足 `start < end <= source_frame <= emit_frame`；
 - 每个事件最多结束一次，最终输出一旦写出不可删除、替换或回改；
 - 同时报告视频时间延时、墙钟延时、吞吐、峰值记忆和因果违规。
@@ -211,24 +218,29 @@ ABD 至少显示机制存活。其他官方复现、pairwise fusion、正确性�
 
 ## 9. 预期信息增益与停止条件
 
-- A 强、AB 不增益：B 定位器与即时事件出生冲突，重构 localizer 或停止 AB；
-- D 强、AD 不增益：层级记忆不能维护 ActionSwitch 式事件，重新检查事件—记忆接口；
-- BD≈B、AD>A：收益主要来自事件生命周期而不是通用记忆；
-- BD>B、AD≈A：收益主要来自记忆结构，动态生命周期创新较弱；
-- ABD 不超过所有直接父模型：完整路线不成立，不能用 raw-RGB 预算挽救；
-- feature ABD 有效、raw-RGB 无增益：问题在视觉适配或训练预算，不等于事件机制失败；
-- raw-RGB ABD 在精度、延时或记忆上形成 Pareto 改善：进入多种子和论文主结果；
+- `K0O1 > K0O0`、`K1O1 ≈ K0O1`：收益来自一般 persistent query，动态出生
+  不是独立创新；
+- `K1O0 > K0O0`、`K1O1 ≈ K1O0`：收益来自容量/分配，sticky ownership 主张失败；
+- `K1O1` 同时超过 `K0O1` 和 `K1O0`，且降低 wrong-start/owner-swap：核心交互存活；
+- 只提高普通 mAP、没有对应关联错误改善：不能支持 ownership claim；
+- feature 核心有效、raw-RGB 无增益：问题在视觉适配或训练预算，不等于事件机制失败；
+- raw-RGB 候选在精度、延时或记忆上形成 Pareto 改善：进入多种子和论文主结果；
 - 任意因果、错配、不可变或正长度违规：技术无效，不能报告定位性能。
 
 ## 10. 当前下一步
 
-1. 用独立 Pro 审查先进行最新竞品和组合显然性审判；
-2. 若 verdict 为 GO/REVISE 且存在可保留 claim，建立 A/B/C/D 只读参考目录；
-3. 同时创建可写副本、融合工作区和 raw-RGB 基础设施分支；
-4. 先得到 fidelity/parity/contract receipts，再解释任何融合性能；
-5. 按依赖图自动提交 pairwise、ABD、raw-RGB 和多种子作业。
+1. 并行冻结最小 snapshot、ActionSwitch/MATR/Temporal TrackFormer 直接参考和 SHA；
+2. 在同一 feature 路径实现 `K0O0/K1O0/K0O1/K1O1`，先画像父模型收敛、方差、
+   资源，再冻结更新数和 go/kill gate；
+3. 同时完成 overlap、crossed/nested end、late birth、cancel/rebirth、overflow 和
+   future-perturbation tests；
+4. 允许轻量 raw prefix/gradient/cache/latency smoke 并行，但不启动正式 joint；
+5. 核心通过后才并行启动 fixed-budget memory 因子、raw frozen/adapter/joint，最后
+   运行多种子、一个 annotation-audited 外部集和 report-once。
 
 完整架构规范见
 [raw-RGB dynamic event memory design](docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md)，
 并行实验图见
 [Wiki design record](research-wiki/experiments/ontad-rgb-dynamic-event-memory-design-20260722.md)。
+审判逐条吸收见
+[review absorption](PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md)。

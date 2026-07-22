@@ -1,9 +1,15 @@
 # Raw-RGB Dynamic Event Memory On-TAD / OnVLLM Design
 
-Status: written for user review
+Status: superseded in part by independent-review absorption and DR-030
 Date: 2026-07-22
 Branch: `codex/ontad-rgb-event-memory`
 Starting point: `36081a5` from `codex/ontad-science-fixed-rematch`
+
+> Revision boundary: the original A/B/C/D and ABD/ABCD plan below is preserved
+> as the pre-review design. The active executable plan is the `K×O` core
+> factorial in `PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`
+> and DR-030. Raw RGB remains the final target; generic donor fusion, HEM memory
+> and OnVLLM no longer precede the ownership screen.
 
 ## 1. Outcome and scope
 
@@ -13,7 +19,8 @@ video stream. At time `t`, it may consume only frames at or before `t`. It must:
 
 1. detect an action start as soon as causal visual evidence makes the transition
    observable;
-2. publish a provisional start time and provisional class distribution;
+2. maintain a provisional start time and class distribution as internal state
+   and optional diagnostic output;
 3. maintain each ongoing action as an independent dynamic event;
 4. update its class, boundary belief, and memory using only newly arrived evidence;
 5. close the same event when its end is detected; and
@@ -29,14 +36,16 @@ same event states and produce open-vocabulary event descriptions, but it must no
 replace or weaken the structured interval output. The shared causal event engine
 is therefore designed once and exposed through two output adapters:
 
-- mandatory `StructuredOnTADHead`: class, start, end, confidence, event ID;
-- optional `StreamingLanguageEventHead`: text conditioned on the same event ID
-  and causal event state.
+- mandatory `StructuredOnTADHead`: class, start, end and confidence;
+- internal audit metadata: event ID, birth/cancel/late-birth and owner trajectory;
+- optional future `StreamingLanguageEventHead`: a separate follow-up, not part
+  of the main-paper method.
 
 ## 2. Explicit non-goals
 
-- No fixed semantic slot count, fixed switch count, or manually chosen maximum
-  number of simultaneous action instances.
+- No fixed semantic slot/switch count as the model's instance semantics. A
+  measured physical safety guard is allowed, must fail closed, and is not the
+  learned effective active-event cardinality.
 - No free end-to-any-past-start matching as the primary association mechanism.
 - No universal `0.5` start/end decision rule. An all-0.5 configuration is an
   ablation only.

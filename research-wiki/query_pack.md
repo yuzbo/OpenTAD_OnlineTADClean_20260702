@@ -7,196 +7,113 @@ scope: Current compressed context for the strictly causal On-TAD task.
 
 # Query Pack: Strictly Causal On-TAD
 
-## 任务目标
+## 最终任务
 
-研究对象是标准、全监督、严格因果的在线时序动作定位（On-TAD）。模型在时刻
-`t` 只能读取当前及过去的视频证据，端到端维护动作实例的出生、持续和结束，并在
-动作结束后以低延时一次性写出不可修改的 `{start, end, class, score}` 最终区间。
+研究标准、closed-set、全监督、严格因果的 Online Temporal Action Localization。
+最终模型直接读取原始 RGB；时刻 `t` 只能使用来源时间不晚于 `t` 的帧和内部状态。
+模型在开始证据出现后创建并维护动作实例，在检测到结束后低延时一次性提交不可修改的
+`{start,end,class,score}` 正长度区间。
 
-本库只讨论 On-TAD 方法、数据、训练和评测。不得引入未来帧、未来端点标签、全视频
-回看、offline NMS 或事后改写历史区间。推理时不得读取 GT identity、annotation、
-terminal 或其他未来字段。
+`event_id`、provisional start/class、cancel、late birth 和 owner trajectory 是内部状态
+及附加诊断，不是标准 On-TAD 基准字段。结束边界必须从已见证据独立解码，满足
+`start < end <= source_time <= emit_time`，不能令 `end=emit_time`。OnVLLM 是独立后续
+课题，不进入当前主论文。
 
-旧 FIXED/REMATCH 阶段是**特征级**机制证伪：输入为冻结的 causal SigLIP2
-stride-8、768 维缓存特征，不是最终论文模型。该阶段已经得到合法但很低的单种子结果，
-因此被保留为槽位路线的负基线。当前主路线转为“动态事件生命周期 + 层级自适应记忆”，
-并明确以原始 RGB 严格因果联合训练作为最终交付；特征实验只负责快速复现、归因和筛选，
-不能代替 raw-RGB 主结果。
+feature-level 实验只用于快速机制归因，不能支持 raw-RGB claim。推理不得读取未来帧、
+GT identity/annotation、terminal 信息、全视频回看、offline NMS 或事后修改输出。
 
-## 旧 FIXED/REMATCH 冻结问题（历史基线）
+## 已冻结历史证据 M53
 
-主假设比较 first-crossing **FIXED** 与 per-prefix **REMATCH** 两种监督绑定：
+旧 H2 FIXED/REMATCH 是 frozen SigLIP2 stride-8、768 维特征上的槽位负基线。源训练
+FIXED `1179373`、REMATCH `1179374` 各完成 `12×2010=24,120` 更新；真实
+4 占用+2 birth reserve、监督、因果、正长度、不可变和 recovery 门均通过。序列化
+tie-break 修复 exact `0daf681b4e8e36a64066a2f6fa8e0458a98b429a`；checkpoint-only
+重放 `1179456/1179457` 与终检 `1179458` 均 `COMPLETED 0:0`，8 份事件等价收据
+证明只改同一 emit frame 内排序。累计双臂资源 `12.319444 GPU·h`。
 
-- 两臂使用同一 seed 705、fit/calibration 划分、输入特征、模型、损失、优化器、
-  训练轮次、槽位、阈值、解码器、推理和指标；
-- 唯一主比较轴是实例出生后，监督 target 是否固定绑定到原 slot；
-- FIXED 检验持久身份是否能减少实例漂移和碎片化；REMATCH 是允许每个 prefix
-  重新匹配的对照；
-- runtime 状态只依赖预测和过去记忆，最终区间只提交一次。
+预注册正式门使用 epoch 12、固定 `0.5`：
 
-正式 birth/alive/end 阈值固定为 `0.5`。校准集只用于预注册的第 3/6/9/12 轮
-checkpoint 选择，不搜索或降低阈值；reporting split 在正式授权前保持未访问。
+- FIXED：mAP=`1.614484`pp，Recall@0.3=`0.154167`，prediction/GT=`18.841667`；
+- REMATCH：mAP=`1.178473`pp，Recall@0.3=`0.0875`，prediction/GT=`16.097917`。
 
-## 旧 H2 模型（历史基线）
+技术链路 PASS，性能门因严重过量发射与低 Recall FAIL。FIXED 的单 seed 差值只作
+方向信号。旧路线不再原样重跑；超过 1.614 mAP 也不足以证明新模型或创新。
 
-当前模型使用 6 个物理 slot，但语义是“最多 4 个预测实例占用 + 2 个硬 birth
-reserve”，不是允许 6 个实例长期占满。冻结的 411 视频 census 为：320,205 个
-token、6,328 个动作实例、同一步最多 2 个 birth、最大可见并发 4，birth/end 全覆盖，
-GT 容量缺口为零。因此每一步必须保留 2 个 entry-free 槽接收新 birth；同一步释放的
-slot 到下一决策才可复用。
+## M54 创新边界
 
-H2 还包括：
+截至 2026-07-22，没有发现同时覆盖 original RGB、标准全监督 strict-causal On-TAD、
+开始出生、持久实例身份、动态有效活动数、owner-conditioned end、同类重叠、学习式
+历史压缩和不可变区间的单篇 exact match；但 ActionSwitch + MOTR/TrackFormer +
+HEM/Backtrace Mamba + E2E-LOAD/StreamFormer 可以显然重构高层方案。
 
-- episode-balanced monotone birth/alive/end calibration；
-- causal-delta transition-end；
-- 只回看已观察 token 的 past-only start pointer；
-- 失败时先保全 audit、配置、checkpoint 与 SHA-256 到 quarantine，再 fail-closed；
-- 全程审计监督耗尽、skip、容量碰撞、未来特征/端点、负延时、非正长度区间、
-  immutable 和 sequence 顺序。
+因此不能把以下内容单独列作贡献：即时开始、重叠动作、persistent query 概念、一般
+长历史/层级记忆、active/visual memory 分离、strict causality、raw input、OpenTAD
+接口、阈值校准或 Pareto 报告。最强待证问题是：在只有时间段监督、没有空间轨迹几何的
+On-TAD 中，birth-time owner learning 是否能在同类重叠和交叉结束下减少 wrong-start、
+owner swap、fragmentation 和 duplicate，而不增加提交延时与资源。
 
-## 已完成的关键证据
+## M55 独立深度审判吸收
 
-1. 一轮硬 reserve 成对验证 `1179361` 在 exact
-   `5edc46c34c0db56e79409fac69276450ad87e949` 上 `COMPLETED 0:0`。FIXED 与
-   REMATCH 各完成 `2010/2010` 更新与 scheduler step，skip、监督耗尽、
-   `gt_birth_runtime_entry_free_collisions` 均为零；七项 H2 机制、单调校准、
-   causal-delta end、past-only pointer、runtime-no-GT、技术和 learning-readiness
-   门全部通过。epoch 1 固定 0.5 零发射只表示尚未 operational，不是性能拒绝。
+审判原文 SHA-256：
+`ACA5BB6E9950993F170922250F6C915D41AF72BE027984406714315A92D96B8D`。
+回答包含要求的 A--L 全部章节，任务/竞品/claim/接口/融合/状态机/raw/DAG/论文主题
+覆盖近完整；但审判者没有读到目标分支及九项目标材料，所以结论是
+`FORMALLY COMPLETE / EVIDENCE-INCOMPLETE / PARTIALLY ACCEPTED`，不能当当前代码审计。
 
-2. 正式十二轮源训练 FIXED `1179373` 与 REMATCH `1179374` 均
-   `COMPLETED 0:0`，每臂完成 `12×2010=24,120` 更新和同数 scheduler step；
-   skip、监督耗尽、GT-birth entry-free collision、fatal、OOM、NaN/Inf 均为零。
-   第 3/6/9/12 轮 checkpoint、recovery manifest 和 SHA-256 完整，无 quarantine。
-   这证明真实 4+2 reserve 首次通过两臂完整十二轮容量与训练完整性门。
+完全采纳：标准输出不含 event ID；provisional 只作内部/诊断；OnVLLM 分离；donor
+只读 native-first；ABCD 删除；`0.5` 只作控制；feature 不支持 raw claim；显式统计
+late birth、orphan end、cancel、overflow、owner swap；active event 与 visual history
+分账但总资源都计入。
 
-3. 源 calibration-only 曲线（fraction）为：
+不直接采纳：公开快照作为唯一最高科学优先级、四 donor parity 全部阻塞核心模型、
+`end=t`、`K=32`、`B=128`、固定 loss 权重、30k updates、seed 3407、任意效应阈值、
+单个未收敛 seed 直接杀死路线、前五天主要做接口工程、start-owned state 本身已经足够
+新颖。E2E-LOAD/MViTv2-S 是 raw 候选，不是冻结唯一主干。
 
-   - FIXED e3/e6/e9/e12：`0.0000059524 / 0.0000802264 /
-     0.0022547243 / 0.0072212087`，选择 e12，9,044 个最终发射；
-   - REMATCH e3/e6/e9/e12：`0.0000087057 / 0.0010357575 /
-     0.0095973653 / 0.0049836061`，选择 e9，12,434 个最终发射。
+审判还留下两个算法缺口：其 late-birth 状态与“只匹配当前 start GT”的训练规则互相
+冲突；同类、同前缀、无额外 identity 标注的交换等价实例在部分时刻本来不可辨识，需
+permutation-aware matching/metric，而不能承诺绝对保证。
 
-   这些值只用于 calibration checkpoint 选择，不是 reporting 主结果，不能据此宣称
-   FIXED 优于 REMATCH。源两臂实际分配资源约为 `5.896111 + 5.908056 =
-   11.804167 GPU·h`；后续重放资源必须累计报告，不能隐藏这一成本。
+完整逐条处置：
+`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`。
 
-4. 旧终检 `1179375` 在产生 `formal12_gate.json` 之前因
-   `non_monotonic_sequence` 退出，因此当时没有合法正式 mAP/Recall。对 8 份源
-   calibration ledger 的独立只读审计证明：
+## 当前执行路线 DR-030
 
-   - FIXED e3/e6/e9/e12 的 sequence inversion 为 `19/1293/1582/433`，
-     REMATCH 为 `0/45/608/740`；
-   - 所有 inversion 都发生在相同 `emit_frame` 内，真正的 emit 时间倒退为零；
-   - 每个 stream 的 sequence 唯一、连续覆盖 `0..N-1`，event id 与 sequence 一致；
-   - 按原生 sequence 查看时 emit frame 不倒退；重复 event、非正长度、未来端点、
-     未来特征、负延时和 immutable 违规均为零。
+审判前 A/B/C/D、AB/AD/BD/BC/ABD/ABCD 组合图保留为历史设计，不再授权执行。
+当前使用同一 feature 代码路径做机制 `K×O`：
 
-   根因是 DDP 汇总后的 ledger sort 在并列 emit frame 内忽略显式 sequence，按区间、
-   类别和分数重新排序。这是序列化/评测合同缺口，不是模型 lifecycle、容量、因果或
-   定位性能失败，也不需要重训。
+```text
+K0 = fixed preallocated query/switch bank
+K1 = birth-allocated packed event set，active cardinality 随样本变化
+O0 = per-prefix rematching/reassignment
+O1 = birth-time sticky owner until cancel/end
 
-## 历史执行点 M52
+K0O0 = 固定 bank + rematch
+K1O0 = birth-allocated + rematch
+K0O1 = 固定 bank + sticky owner（Temporal TrackFormer 控制）
+K1O1 = birth-allocated + sticky owner（候选模型）
+```
 
-并列帧 tie-break、sequence fail-closed 摘要和逐事件 replay 等价验证已在 exact
-`0daf681b4e8e36a64066a2f6fa8e0458a98b429a` 实现并推送。排序仍以
-`emit_frame` 为第一关键字，同一帧内才按显式 sequence 保持提交顺序，所以跨帧错误
-不会被静默修正。N16R4 exact clean 通过 `190 passed in 87.71s`、两条 Bash 语法
-检查和 no-submit preflight，结束 SHA 与工作树干净。
+四臂共享同一物理安全 guard、encoder、decoder depth、参数/数据暴露、成功更新数、
+calibration 与 evaluator。`K1O1` 必须同时超过 `K0O1` 和 `K1O0`，并在 wrong-start、
+owner-swap、同类重叠/交叉结束上形成对应增益；只提高普通 mAP 不够。
 
-当前仅从源 run
-`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_boundary_calibration_batched_seed705_20260722_040902`
-保全的 checkpoint 重放 calibration/评测，不调用训练。新 run 为
-`/data/run01/sczc063/yuzibo/runs/persistent_binding/formal12_calibration_replay_seed705_20260722_103003`：
+物理 guard 必须存在并 fail closed，但其值由并发分布和硬件压力测试决定，不是 semantic
+slot。学习目标是有效活动事件数。late birth 需独立 prefix-visible training；cancel 后
+是否 re-birth 必须冻结。所有数值训练预算、loss 权重、memory token 数和效应 gate 先
+画像再注册。
 
-- FIXED replay `1179456`；
-- REMATCH replay `1179457`；
-- 依赖正式终检 `1179458`。
+## 下一步
 
-首次核验时两条 replay 臂均在 `g0066` 运行、fatal=0，终检按依赖等待；尚未产生
-epoch receipt 或最终 gate，属于正常早期状态。监控脚本为
-`C:\tmp\ontad_calibration_replay_progress_0daf681.ps1`。
+1. 数小时内并行冻结最小本地/公开 snapshot 与直接 donor SHA，不做大接口工程；
+2. 同时实现 `K×O`、Temporal TrackFormer 控制和 synthetic overlap/late-birth/
+   cancel-rebirth/future-perturbation tests；
+3. 同时允许轻量 raw prefix/gradient/cache/latency smoke，但不启动 formal raw training；
+4. 画像父模型收敛、显存、吞吐和方差后，冻结更新数、guard 与 go/kill gate，四臂并行；
+5. 核心通过后并行运行 fixed-budget `H×R` memory 和 raw frozen/adapter/joint；
+6. 最后才做多种子、一个 annotation-audited 外部集和 report-once。
 
-每臂第 3/6/9/12 轮 replay receipt 必须同时证明：
-
-1. 源与重放包含相同视频、stream、event id 和逐事件 payload；
-2. 唯一变化是同一 emit frame 内的序列化次序；
-3. replay sequence、正长度、不可变与全部因果/时序违规为零；
-4. calibration 指标、选择 epoch、checkpoint SHA 和选择收据与源完全一致；
-5. 资源收据累计源训练和本次 replay。
-
-两臂通过后，`1179458` 才能执行固定 0.5 正式门，并必须写出
-`formal12_gate.json`、pair completion 和 artifact manifest。只有此时产生的指标才是
-合法的 feature-level seed-705 正式结果。
-
-## 下一步裁决
-
-- 若 replay 事件或指标不等价：判为 replay/协议实现失败，保全证据并停止，不解释为
-  模型性能。
-- 若容量、因果、正长度、immutable 或 sequence 门失败：按对应科学合同拒绝，不绕门。
-- 若 replay 与正式终检均通过：先完整记录 FIXED/REMATCH 单 seed 结果、延时、容量、
-  因果和资源，再决定是否授权 feature-level multi-seed；不能直接跳到 raw-RGB。
-- multi-seed 通过后才进入论文主实验：强在线基线、消融、不同动作长度/相邻动作/
-  并发实例分层、延时—精度曲线、资源与确定性审计；最后才评估 raw-RGB 阶梯。
-
-## M53 正式门结论与下一任务
-
-重放 `1179456/1179457` 与终检 `1179458` 均已 `COMPLETED 0:0`，8 份事件等价/
-因果收据和累计资源门全部通过。冻结协议明确：第 3/6/9/12 轮只组成 calibration
-曲线并保留候选，固定 `0.5` 的正式科学门始终使用第 12 轮；REMATCH 曲线选择 e9
-不替换正式 e12。此前把它解释为 checkpoint 绑定错误的同家族审计遗漏了预注册上下文，
-已经纠正且没有据此提交代码或追加实验。
-
-合法第 12 轮 calibration-only 结果：FIXED mAP=`1.614484`pp、Recall@0.3=
-`0.154167`、prediction/GT=`18.841667`；REMATCH mAP=`1.178473`pp、Recall=`0.0875`、
-ratio=`16.097917`。两臂完整 24,120 更新、容量、监督、因果、正长度、序列、固定阈值和
-预算全部通过，所以技术链路成立；但 prediction/GT 都远高于上限 4，Recall 都低于
-下限 0.25，运行性能门明确失败。FIXED 的 `+0.436011` mAP 点只作为单 seed 方向信号。
-
-旧路线不再原样重跑。当前任务是从官方 ActionSwitch、MATR、HAT/OAT 和 2025 HEM
-完整实现出发，建立 A/B/C/D 忠实基线与 AB/AD/BD/BC/ABD/ABCD 融合矩阵。官方仓库
-作为完整只读金标准，单方法兼容修改和 A+B 融合都在独立可写工作区完成，并保存
-上游 SHA、源文件映射、差异哈希和等价性收据。模型以开始状态转变即时创建无固定数量
-的动态事件，以事件自身历史判断持续和结束，以学习式层级记忆适应样本与动作长度。
-阈值只在训练侧 calibration 划分选择；统一 0.5 仅作消融。
-
-官方方法首先在各自只读原生仓库运行，不要求 OpenTAD 化。共同接口只在 fidelity
-之后统一时间戳、输出、因果账本、指标和资源收据；不得替换官方 target、loss、
-matching、memory、decoder 或 post-processing。融合矩阵用于分解假设而非堆模块：
-AB=即时出生+定位，AD=出生+层级历史，BD/BC=记忆族对照，ABD 只有在父组合出现互补
-证据时才进入 raw-RGB 主实验，ABCD 无独立增益即删除。
-
-最终主模型必须直接读取原始 RGB。现有 `FrameWindowDataset` 和
-`OnlineVideoMAEAdapter` 只提供接口脚手架，stub 必须替换为真实严格因果视觉编码器。
-可选 OnVLLM 文本头共享同一事件状态，但标准 `{start,end,class,score,event_id}` 区间
-始终是权威输出。完整设计见
-`docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`。
-
-## 结论边界
-
-当前可以声称：H2 的训练、监督、严格因果和真实 4+2 容量机制已在一轮与十二轮成对
-运行中通过；源账本失败被定位为同帧序列化合同问题，并已用 exact 回归修复。
-
-当前不能声称：FIXED 优于 REMATCH、达到论文主结果、对外数据集泛化，或 raw-RGB
-端到端有效。最准确的状态是：**旧槽位路线技术合同通过但性能门失败；新的动态事件
-记忆 raw-RGB 路线已经完成设计，正等待书面设计复核后进入并行复现与实现。**
-
-## 当前路线恢复入口
-
-- 活跃分支：`codex/ontad-rgb-event-memory`
-- 干净设计工作区：
-  `E:/DeskTop/TAD/OpenTAD_OnlineTADClean_20260702/_codex_worktrees/ontad-rgb-event-memory-clean`
-- 设计规范：
-  `docs/superpowers/specs/2026-07-22-raw-rgb-dynamic-event-memory-ontal-design.md`
-- 路线记录：
-  `research-wiki/experiments/ontad-rgb-dynamic-event-memory-design-20260722.md`
-- 当前方向报告：`CURRENT_DIRECTION_AND_GOALS_REPORT_20260722.md`
-- Pro 审判 Prompt：`PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_PROMPT_20260722.md`
-
-旧 FIXED/REMATCH 证据恢复入口：
-
-- 分支：`codex/ontad-science-fixed-rematch`
-- 代码库：`https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702`
-- 完整实验记录：`research-wiki/experiments/ontad-afternoon-three-model-design-20260721.md`
-- 时间日志：`research-wiki/log.md`
-- 当前代码提交：`0daf681b4e8e36a64066a2f6fa8e0458a98b429a`
-- 源训练提交：`5edc46c34c0db56e79409fac69276450ad87e949`
+恢复入口：分支 `codex/ontad-rgb-event-memory`；工作区
+`E:/DeskTop/TAD/OpenTAD_OnlineTADClean_20260702/_codex_worktrees/ontad-rgb-event-memory-clean`；
+主决策 `research-wiki/decision_register.md` / DR-030；实验图
+`research-wiki/experiments/ontad-rgb-dynamic-event-memory-design-20260722.md`。
