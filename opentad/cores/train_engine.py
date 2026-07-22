@@ -83,13 +83,30 @@ def train_one_epoch(
     logging_interval=200,
     runtime_debug_interval=-1,
     scaler=None,
+    fail_on_nonfinite=False,
 ):
     """Training the model for one epoch"""
 
     logger.info("[Train]: Epoch {:d} started".format(curr_epoch))
     losses_tracker = {}
+    loss_nonzero_updates = {}
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
+    audit_fields = (
+        "gt_supervision_exhaustions",
+        "gt_birth_runtime_entry_free_collisions",
+        "candidate_arbitration_suppressions",
+        "candidate_cancellations",
+        "active_abandonments",
+        "deferred_birth_due_to_release",
+    )
+    epoch_audit = {
+        "expected_updates": int(num_iters),
+        "successful_updates": 0,
+        "scheduler_steps": 0,
+        "skipped_updates": 0,
+        **{field: 0 for field in audit_fields},
+    }
 
     target = _unwrap_model(model)
     if hasattr(target, "reset_online_states"):
@@ -113,6 +130,9 @@ def train_one_epoch(
         # forward pass
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             losses = model(**data_dict, return_loss=True)
+        detector_audit = getattr(target, "last_episode_audit", {})
+        for field in audit_fields:
+            epoch_audit[field] += int(detector_audit.get(field, 0))
 
         if not torch.isfinite(losses["cost"]):
             logger.error(
@@ -120,7 +140,12 @@ def train_one_epoch(
                 curr_epoch,
                 iter_idx,
             )
+            if fail_on_nonfinite:
+                raise FloatingPointError(
+                    f"non-finite training cost at epoch={curr_epoch} iter={iter_idx}"
+                )
             optimizer.zero_grad(set_to_none=True)
+            epoch_audit["skipped_updates"] += 1
             continue
 
         # compute the gradients
@@ -159,8 +184,14 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+                if fail_on_nonfinite:
+                    raise FloatingPointError(
+                        "non-finite training gradient at "
+                        f"epoch={curr_epoch} iter={iter_idx} param={bad_param_name}"
+                    )
                 optimizer.zero_grad(set_to_none=True)
                 scaler.update()
+                epoch_audit["skipped_updates"] += 1
                 continue
             scaler.step(optimizer)
             scaler.update()
@@ -182,12 +213,20 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+                if fail_on_nonfinite:
+                    raise FloatingPointError(
+                        "non-finite training gradient at "
+                        f"epoch={curr_epoch} iter={iter_idx} param={bad_param_name}"
+                    )
                 optimizer.zero_grad(set_to_none=True)
+                epoch_audit["skipped_updates"] += 1
                 continue
             optimizer.step()
+        epoch_audit["successful_updates"] += 1
 
         # update scheduler
         scheduler.step()
+        epoch_audit["scheduler_steps"] += 1
 
         # update ema
         if model_ema is not None:
@@ -198,7 +237,10 @@ def train_one_epoch(
         for key, value in losses.items():
             if key not in losses_tracker:
                 losses_tracker[key] = AverageMeter()
-            losses_tracker[key].update(value.item())
+                loss_nonzero_updates[key] = 0
+            scalar = value.item()
+            losses_tracker[key].update(scalar)
+            loss_nonzero_updates[key] += int(scalar != 0.0)
 
         # printing each logging_interval
         if ((iter_idx != 0) and (iter_idx % logging_interval) == 0) or ((iter_idx + 1) == num_iters):
@@ -230,6 +272,13 @@ def train_one_epoch(
                         iter_idx,
                         _format_debug_report(debug_report),
                     )
+    epoch_audit["mean_losses"] = {
+        key: float(value.avg) for key, value in losses_tracker.items()
+    }
+    epoch_audit["loss_nonzero_updates"] = {
+        key: int(loss_nonzero_updates[key]) for key in losses_tracker
+    }
+    return epoch_audit
 
 
 def val_one_epoch(

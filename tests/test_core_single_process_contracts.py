@@ -81,7 +81,7 @@ def test_train_one_epoch_supports_unwrapped_single_process_model():
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda _step: 1.0)
     train_loader = [{"inputs": torch.tensor([1.0])}]
 
-    train_one_epoch(
+    audit = train_one_epoch(
         train_loader,
         model,
         optimizer,
@@ -93,6 +93,9 @@ def test_train_one_epoch_supports_unwrapped_single_process_model():
 
     assert model.seen_epochs == [3]
     assert model.weight.detach().item() != 0.0
+    assert audit["mean_losses"]["cost"] > 0
+    assert audit["mean_losses"]["aux"] > 0
+    assert audit["loss_nonzero_updates"] == {"cost": 1, "aux": 1}
 
 
 def test_build_optimizer_supports_unwrapped_single_process_model():
@@ -130,3 +133,67 @@ def test_build_optimizer_supports_unwrapped_single_process_model():
     assert isinstance(optimizer, torch.optim.AdamW)
     assert id(model.backbone.weight) in optimizer_param_ids
     assert id(model.head.weight) in optimizer_param_ids
+
+
+def test_build_optimizer_supports_feature_detector_with_no_backbone():
+    torch = _torch_or_skip()
+
+    from opentad.cores.optimizer import build_optimizer
+
+    class FeatureDetector(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.backbone = None
+            self.head = torch.nn.Linear(4, 2)
+
+    model = FeatureDetector()
+    optimizer = build_optimizer(
+        dict(type="AdamW", lr=2e-4, weight_decay=0.05),
+        model,
+        _Logger(),
+    )
+
+    optimizer_param_ids = {
+        id(param)
+        for group in optimizer.param_groups
+        for param in group["params"]
+    }
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert id(model.head.weight) in optimizer_param_ids
+    assert id(model.head.bias) in optimizer_param_ids
+
+
+def test_train_one_epoch_can_hard_fail_on_nonfinite_gradient():
+    torch = _torch_or_skip()
+
+    from opentad.cores.train_engine import train_one_epoch
+
+    class NonFiniteGradientModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.tensor(0.0))
+
+        def forward(self, inputs, return_loss=False):
+            assert return_loss is True
+            loss = torch.sqrt(self.weight) + inputs.sum() * 0.0
+            return {"cost": loss}
+
+    model = NonFiniteGradientModel()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda _step: 1.0,
+    )
+
+    with pytest.raises(FloatingPointError, match="non-finite training gradient"):
+        train_one_epoch(
+            [{"inputs": torch.tensor([1.0])}],
+            model,
+            optimizer,
+            scheduler,
+            curr_epoch=0,
+            logger=_Logger(),
+            logging_interval=1,
+            fail_on_nonfinite=True,
+        )

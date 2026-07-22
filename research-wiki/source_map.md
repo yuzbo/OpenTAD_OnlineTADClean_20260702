@@ -1,6 +1,6 @@
 ---
 type: source_map
-updated: 2026-07-11
+updated: 2026-07-20
 status: active
 scope: Mapping from source records, reviews, attachments, online notes, and code snapshots to wiki nodes.
 ---
@@ -88,6 +88,16 @@ This page maps raw source records to the structured wiki. It answers: "Where did
 | N16R4 smoke job `1159843`, 2026-07-12 | Author-provided remote evidence: `COMPLETED`, `00:03:46`, exit `0:0`; three train routes and PES inference passed bounded smoke, update audits, and zero slot exhaustion. This is engineering evidence only. | [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) |
 | GitHub checker fix `d6b0bca`, 2026-07-12 | Replaces ambiguous bare `python` with fail-closed Python 3 selection after the login shell exposed a Python 2 JSON-reader failure; regression contract and real-artifact rerun passed. | [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md) |
 | `PRO_PES_STAGE1_CODE_SCIENCE_DISCUSSION_PROMPT_20260712.md` | Repository-pinned Pro prompt at `d6b0bca` for two-round code/protocol audit, task-definition verification, Stage-1 identifiability review, fresh novelty search, claim map, matched experiment correction, cost gate, and interactive clarification before pilot or raw-video permission. | [experiments/persistent-feature-kill-test-20260712.md](experiments/persistent-feature-kill-test-20260712.md), [decision_register.md#dr-027-hold-the-scientific-pilot-after-smoke-until-identifiability-review](decision_register.md) |
+
+## Clean FIXED/REMATCH Route: 2026-07-20
+
+| Source | Imported Understanding | Wiki Nodes |
+|---|---|---|
+| `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_REVIEW_20260720.md` | Complete readiness review archived byte-identically from the attachment; 61,985 bytes, 643 logical lines, SHA-256 `D463A28BC64E8418AC697263EB7AB6866EBC719718A91735B7A53E52FCD0E88F`; static audit pinned to `27a59de`; verdict: repair before scientific run. | [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md), [experiments/ontad-science-fixed-rematch-problem-map-20260720.md](experiments/ontad-science-fixed-rematch-problem-map-20260720.md) |
+| `PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md` | Independent P0/P1/P2 accept/qualify/resolve matrix against `95fa963`; distinguishes persistent science blockers from completed smoke/profile work and corrects the MATR citation. | [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md), [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md), [decision_register.md#dr-028-repair-the-fixedrematch-scientific-contract-before-any-seed-run](decision_register.md) |
+| N16R4 FIXED/REMATCH smoke job `1176737` | FP32 real backward pass, parameter update, checkpoint/reload, streaming inference and ledger consistency passed. Engineering evidence only; it supersedes the old “crash-only” status but not the readiness verdict. | [experiments/ontad-science-fixed-rematch-smoke-20260720.md](experiments/ontad-science-fixed-rematch-smoke-20260720.md), [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) |
+| N16R4 strict profile job `1176983` | Both arms trained for 250 real chunks with zero immediate capacity loss and exact pre-training ledger equivalence; the registered pair costs 12.572 GPU-hours after safety factor, so the 2-hour gate failed. | [experiments/ontad-science-fixed-rematch-profile-20260720.md](experiments/ontad-science-fixed-rematch-profile-20260720.md), [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) |
+| CAG-QIL ICCV 2021, SimOn arXiv:2211.04905, MATR arXiv:2408.02957 | First-party sources support the direct On-TAL baseline boundary. The source review's MATR sentence was attached to the CAG-QIL footnote and is corrected to the MATR paper. | [papers/cagaqil2021-decision-context.md](papers/cagaqil2021-decision-context.md), [papers/simon2022-sequential-ontal.md](papers/simon2022-sequential-ontal.md), [papers/matr2024-memory.md](papers/matr2024-memory.md) |
 
 ## Coverage Gaps Still Remaining
 

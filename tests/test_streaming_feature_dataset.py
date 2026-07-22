@@ -127,6 +127,29 @@ def test_dataset_keeps_terminal_metadata_out_of_model_meta(tmp_path):
     assert sample["stream_control"]["is_video_end"] is True
 
 
+def test_strict_causal_control_never_exposes_video_end_to_detector(tmp_path):
+    ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)
+    dataset = _dataset_class()(
+        ann_file=ann_file,
+        subset_name="training",
+        class_map=class_map,
+        data_path=feature_dir,
+        cache_manifest=manifest_file,
+        chunk_size=2,
+        feature_stride=8,
+        strict_causal_control=True,
+    )
+
+    for index in dataset.packet_manifests["train_a"]:
+        control = dataset[index]["stream_control"]
+        assert "is_video_end" not in control
+        assert "chunk_index" not in control
+    assert dataset[0]["stream_control"] == {
+        "video_id": "train_a",
+        "is_video_start": True,
+    }
+
+
 def test_dataset_constructs_training_only_prefix_observable_schedule(tmp_path):
     ann_file, class_map, feature_dir, manifest_file = _fixture(tmp_path)
     Dataset = _dataset_class()

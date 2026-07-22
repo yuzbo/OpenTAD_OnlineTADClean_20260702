@@ -1,5 +1,9 @@
 _EXPORTS = {
     "set_seed": ("misc", "set_seed"),
+    "configure_strict_determinism": (
+        "misc",
+        "configure_strict_determinism",
+    ),
     "update_workdir": ("misc", "update_workdir"),
     "create_folder": ("misc", "create_folder"),
     "save_config": ("misc", "save_config"),
