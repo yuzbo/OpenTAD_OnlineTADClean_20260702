@@ -83,6 +83,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
   - zero-shot/open-vocabulary VLM main claim;
   - offline distillation as main novelty.
 - 2026-07-26: Official five-lane EventMATR smoke `1190635` completed `0:0` on `g0013` in 2:08. The exact corrected source, official-data manifest, finite loss/gradient/Adam, event/owner gradients, strict checkpoint reload, and `test_access=false` all passed for native MATR plus B0O0/B1O0/B0O1/B1O1. This is an execution gate only; it supplies no mAP, Recall, or ranking evidence. Five matched 100-epoch lanes are now eligible for manual release without mounting locked test data.
+- 2026-07-26: First formal submissions `1190688`–`1190692` failed at `00:00:00` before Python/model startup because Slurm did not receive `MATR_ENV_ACTIVATE`; this is an environment-injection failure, not a data, protocol, or model result. With the previously verified N16 activation path explicitly exported, native `1190693`, B0O0 `1190694`, B1O0 `1190695`, B0O1 `1190696`, and B1O1 `1190697` were released under one exact source/data/receipt root. The scheduler rejected `afterok:1190635` after that smoke had already completed, so the direct releases retained the independently rechecked PASS receipt rather than changing any scientific gate.
 - Created compressed `query_pack.md` for future ideation and review prompts.
 - Added `discussion_timeline.md` to record major conversation turns and conceptual pivots.
 - Added `decision_register.md` to record decisions, reasons, counterarguments, source files, and reversibility.

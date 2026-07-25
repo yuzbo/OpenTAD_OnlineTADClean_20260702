@@ -209,6 +209,17 @@ This clears only the execution gate for five independent, exact-setting,
 no mAP, Recall, or model-ranking claim is authorized until all terminal
 checkpoints complete and the separately locked final evaluation gate runs.
 
+The first formal submissions (`1190688`–`1190692`) exited before Python/model
+startup because Slurm workers did not inherit `MATR_ENV_ACTIVATE`. Their logs
+contain only that missing activation diagnostic, so they are classified as an
+environment-injection failure. The verified N16 activation path was supplied
+explicitly and the unchanged five lanes were re-released as native `1190693`,
+B0O0 `1190694`, B1O0 `1190695`, B0O1 `1190696`, and B1O1 `1190697`, under
+`formal100_seed52_20260726_065156_ba3f153`. The completed smoke was inspected
+before release; the scheduler's refusal to accept an `afterok` reference to an
+already completed job was also scheduling-only and no dependency bypass changed
+the source/data/receipt gate.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and

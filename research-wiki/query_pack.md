@@ -21,6 +21,9 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > Adam, required event/owner gradients, strict reload, and `test_access=false`.
 > This authorizes five matched 100-epoch training lanes only; it is not mAP,
 > Recall, or model-ranking evidence, and locked test remains unmounted.
+> Formal jobs `1190693`–`1190697` are the active five-lane release. Earlier
+> `1190688`–`1190692` stopped before Python because the Slurm environment lacked
+> `MATR_ENV_ACTIVATE`; they are environment-only failures, preserved for audit.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive
