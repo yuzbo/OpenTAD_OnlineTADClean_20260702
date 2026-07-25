@@ -233,6 +233,16 @@ the exact source changed, a new five-lane official smoke `1190702` was
 submitted at `real_smoke_seed52_20260726_070027_92cf34a`; no formal lane may
 be released from this commit before that receipt passes.
 
+Smoke `1190702` then completed `0:0` on `g0017` in `01:45`, with `PASS`,
+`test_access=false`, exact commit/tree/manifest equality, and the same five
+finite one-batch forward/backward/Adam plus strict-reload results. It is still
+technical execution evidence only. The exact matched 100-epoch release is now
+native `1190735`, B0O0 `1190736`, B1O0 `1190737`, B0O1 `1190738`, and B1O1
+`1190739`, rooted at `formal100_seed52_20260726_074828_92cf34a`. All five
+workers started with their per-lane source-identity receipts and no mounted
+locked-test input. Formal completion, terminal checkpoint hashes, and the
+subsequent one-shot locked evaluation remain pending.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and

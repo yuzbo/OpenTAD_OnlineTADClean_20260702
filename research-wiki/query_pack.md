@@ -28,6 +28,10 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > launcher and stopped before Python; native-only training was cancelled to keep
 > the pair valid. Exact wrapper-only fix `92cf34a` passed 63 tests and has new
 > same-commit official smoke `1190702`; do not release formal lanes until PASS.
+> Current: smoke `1190702` passed and exact formal 100-epoch lanes are RUNNING:
+> native `1190735`, B0O0 `1190736`, B1O0 `1190737`, B0O1 `1190738`, and B1O1
+> `1190739`. They use the exact `92cf34a` source, official train features, and
+> prewritten lane identity receipts; locked test remains unmounted.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive
