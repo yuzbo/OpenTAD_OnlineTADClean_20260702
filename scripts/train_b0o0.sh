@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "${SCRIPT_DIR}/train_eventmatr_common.sh" b0o0 \
+exec bash "${SCRIPT_DIR}/train_eventmatr_common.sh" b0o0 \
   --birth_mode matr_delayed \
   --ownership_mode fresh_rematch \
   "$@"
