@@ -16,6 +16,10 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > verifier test inherited launch identity. Exact fix `ba3f153` passed remote
 > protocol plus 63 tests; replacement smoke `1190605` is pending. Formal lanes
 > remain blocked.
+
+> Latest: `1190605` exposed one missing official runtime dependency (`typeguard`
+> 4.1.5) only after all contract tests; it was restored and verified. Unchanged
+> source/data smoke `1190635` is pending; no batch-level model evidence yet.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

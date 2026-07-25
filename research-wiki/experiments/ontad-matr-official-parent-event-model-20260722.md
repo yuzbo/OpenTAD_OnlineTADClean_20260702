@@ -268,3 +268,13 @@ identity. The new remote isolated worktree passed the official protocol and all
 identity-gated execution. Corrected real five-lane smoke `1190605` is submitted
 at `real_smoke_seed52_20260726_044939_ba3f153`, currently pending. Formal 100-epoch
 lanes remain unsubmitted.
+
+Smoke `1190605` then reached `g0005`, completed the source-identity and all
+`63` protocol tests, and failed only when importing the official MATR transformer:
+the fixed N16 OpenTAD environment lacked `typeguard==4.1.5`, an exact dependency
+listed in the official `requirements.txt`. No real model batch, gradient, optimizer
+step, checkpoint, test access, or performance result followed. The missing package
+was installed from the configured academic PyPI mirror and import-verified; this is
+an environment repair, not a source or model modification. Re-submitted smoke
+`1190635` uses the unchanged `ba3f153` source/data/manifest and is pending. Formal
+100-epoch lanes remain blocked on a valid five-lane receipt.
