@@ -24,6 +24,10 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > Formal jobs `1190693`–`1190697` are the active five-lane release. Earlier
 > `1190688`–`1190692` stopped before Python because the Slurm environment lacked
 > `MATR_ENV_ACTIVATE`; they are environment-only failures, preserved for audit.
+> Superseded: the four event-arm retries then exposed a non-executable common
+> launcher and stopped before Python; native-only training was cancelled to keep
+> the pair valid. Exact wrapper-only fix `92cf34a` passed 63 tests and has new
+> same-commit official smoke `1190702`; do not release formal lanes until PASS.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

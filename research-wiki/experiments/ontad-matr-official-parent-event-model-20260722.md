@@ -220,6 +220,19 @@ before release; the scheduler's refusal to accept an `afterok` reference to an
 already completed job was also scheduling-only and no dependency bypass changed
 the source/data/receipt gate.
 
+The re-released event arms then exposed a second pre-model launcher defect:
+`train_b*` tried to execute the non-executable common shell file directly.
+Jobs `1190694`–`1190697` therefore ended with exit `126` before Python; native
+`1190693` was cancelled after 3:42 to prevent an unmatched, unusable single-arm
+training result. All logs are retained. Commit
+`92cf34aa07bebee2a7a7e3661431d5055804b29b`
+(tree `aef4f64bc020df9d39ead9811fbc01407f1c754a`) changes only those four
+wrappers to invoke the common file through `bash`. Its isolated N16 worktree
+is clean and passed the official-protocol verifier plus `63` tests. Because
+the exact source changed, a new five-lane official smoke `1190702` was
+submitted at `real_smoke_seed52_20260726_070027_92cf34a`; no formal lane may
+be released from this commit before that receipt passes.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
