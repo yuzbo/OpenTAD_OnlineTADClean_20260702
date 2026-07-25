@@ -293,3 +293,34 @@ def test_identity_verifier_accepts_clean_repo_and_rejects_dirty_or_mismatch(
         env={**os.environ},
     )
     assert mismatch.returncode != 0
+
+
+def test_identity_verifier_does_not_inherit_launch_identity_for_another_repo(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "isolated-repo"
+    repo.mkdir()
+    manifest = repo / "protocol.json"
+    tracked = repo / "tracked.txt"
+    manifest.write_text('{"protocol":"test"}\n', encoding="utf-8")
+    tracked.write_text("clean\n", encoding="utf-8")
+    assert _run("git", "init", cwd=repo).returncode == 0
+    assert _run("git", "config", "user.email", "contract@example.invalid", cwd=repo).returncode == 0
+    assert _run("git", "config", "user.name", "Contract Test", cwd=repo).returncode == 0
+    assert _run("git", "add", "protocol.json", "tracked.txt", cwd=repo).returncode == 0
+    assert _run("git", "commit", "-m", "clean source", cwd=repo).returncode == 0
+
+    monkeypatch.setenv("MATR_SOURCE_COMMIT", "0" * 40)
+    result = _run(
+        sys.executable,
+        str(IDENTITY),
+        "--project-dir",
+        str(repo),
+        "--manifest",
+        str(manifest),
+        "--output",
+        str(repo / "identity.json"),
+        cwd=repo,
+    )
+    assert result.returncode == 0, result.stderr

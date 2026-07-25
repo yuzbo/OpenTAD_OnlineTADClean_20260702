@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -58,8 +57,18 @@ def _clean_status(project_dir: Path, output: Path) -> str:
     return "\n".join(lines)
 
 
-def _expected(cli_value: str | None, env_name: str) -> str | None:
-    return cli_value if cli_value is not None else os.environ.get(env_name)
+def _expected(cli_value: str | None) -> str | None:
+    """Return an explicit verifier expectation, never ambient worker state.
+
+    Slurm exports ``MATR_SOURCE_*`` to the real worker so that the real smoke
+    receipt can bind itself to the launch source.  This verifier is also run
+    by contract tests against a freshly created temporary Git repository.
+    Letting ambient launch variables act as verifier arguments makes that
+    independent clean-repository check falsely compare the temporary source
+    with the experiment checkout.  Callers that require an exact source
+    already pass all three ``--expected-*`` values explicitly.
+    """
+    return cli_value
 
 
 def _load_smoke(path: Path, identity: dict[str, str]) -> dict[str, Any]:
@@ -108,11 +117,9 @@ def main() -> None:
             "manifest_sha256": _sha256(manifest),
         }
         expected = {
-            "commit": _expected(args.expected_commit, "MATR_SOURCE_COMMIT"),
-            "tree": _expected(args.expected_tree, "MATR_SOURCE_TREE"),
-            "manifest_sha256": _expected(
-                args.expected_manifest_sha256, "MATR_MANIFEST_SHA256"
-            ),
+            "commit": _expected(args.expected_commit),
+            "tree": _expected(args.expected_tree),
+            "manifest_sha256": _expected(args.expected_manifest_sha256),
         }
         for field, expected_value in expected.items():
             if expected_value is not None and identity[field] != expected_value:
