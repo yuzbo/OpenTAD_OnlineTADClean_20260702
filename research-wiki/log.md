@@ -7,6 +7,8 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 
 # Research Wiki Log
 
+- 2026-07-26: Official MATR THUMOS14 staging completed: ZIP integrity, 200 train/val features, 213 locked-test features, 412 annotations, and a three-file SHA-256 manifest passed. A final stager syntax error was independently corrected as a data-preparation defect only. Smoke `1190483` was submitted from exact EventMATR `64d7f78d` / tree `bc6f5057`; N16 rejected the script's redundant `--mem=32G`, so the resubmission uses its default per-GPU allocation without changing code, data, or model. It is pending; no performance claim exists.
+
 ## 2026-07-23 — Official MATR data staging
 
 - The N16 academic Google Drive route remains the sole data source. Its credential is process-local and absent from the repository, Wiki, and logs.

@@ -6,6 +6,11 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 ---
 
 > N16 academic data-staging rule (2026-07-23): official MATR Google Drive
+
+> Status update (2026-07-26): official data is now verified and hash-frozen;
+> real five-lane smoke `1190483` is pending with N16 default per-GPU memory after
+> its scheduler rejected a redundant explicit memory directive. No test access,
+> performance result, or raw-RGB release exists yet.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

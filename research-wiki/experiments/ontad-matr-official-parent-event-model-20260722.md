@@ -230,3 +230,22 @@ that sentinel exists. This is a source-access/cache repair only, not a model
 or performance result.
 
 At the third hourly monitor, the resumable direct official archive had reached `1,041/11,622` 512KB ranges (about 533MB), a gain of 499 complete ranges; its detached N16 session remained alive. The initial high-concurrency transfer exposed proxy disconnects, so the active downloader deliberately uses a single conservative range worker and a durable completion bitmap. This retains every completed range and classifies the issue as egress stability, not data or model failure. The three staged files, source manifest and `OFFICIAL_MATR_DATA_READY` remain absent, therefore the real-data five-lane smoke has not been submitted.
+
+### N16R4 official-data completion and smoke release — 2026-07-26
+
+The official archive completed `11,622/11,622` ranges. Independent verification
+passed ZIP integrity, 200 train/val feature videos, 213 locked-test feature videos,
+and 412 annotation videos; every sampled feature record has both `rgb` and `flow`.
+Frozen SHA-256 values are `5ee13ac9…e2e1c57` (ZIP), `d4660b31…5d45ac9b`
+(train/val features), and `7c493d80…f0ad4993` (locked-test features). The
+stager's final format expression had a bracket syntax defect after its archive
+check; independent validation repaired only that staging step before writing the
+manifest and readiness sentinel. This is not a data or model failure.
+
+The first N16 submit was rejected pre-queue because its per-GPU memory policy
+disallows the redundant script-level `--mem=32G` request. Source, data, and model
+were unchanged. Resubmission removes only that scheduler directive at submit time
+and uses N16's default single-GPU memory allocation: Slurm smoke `1190483`, run
+`real_smoke_seed52_20260726_035205`. It runs native MATR plus B0O0/B1O0/B0O1/B1O1
+on one true batch of 64 train prefixes, with test access absent. It is pending;
+there is no performance or model-validity conclusion yet.
