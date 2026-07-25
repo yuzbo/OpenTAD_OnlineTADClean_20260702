@@ -82,6 +82,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
   - full visual tower first;
   - zero-shot/open-vocabulary VLM main claim;
   - offline distillation as main novelty.
+- 2026-07-26: Official five-lane EventMATR smoke `1190635` completed `0:0` on `g0013` in 2:08. The exact corrected source, official-data manifest, finite loss/gradient/Adam, event/owner gradients, strict checkpoint reload, and `test_access=false` all passed for native MATR plus B0O0/B1O0/B0O1/B1O1. This is an execution gate only; it supplies no mAP, Recall, or ranking evidence. Five matched 100-epoch lanes are now eligible for manual release without mounting locked test data.
 - Created compressed `query_pack.md` for future ideation and review prompts.
 - Added `discussion_timeline.md` to record major conversation turns and conceptual pivots.
 - Added `decision_register.md` to record decisions, reasons, counterarguments, source files, and reversibility.

@@ -4,7 +4,6 @@ updated: 2026-07-23
 status: active
 scope: Current compressed context for the official-parent strict-causal On-TAD task.
 ---
-
 > N16 academic data-staging rule (2026-07-23): official MATR Google Drive
 
 > Status update (2026-07-26): official data is now verified and hash-frozen;
@@ -17,9 +16,11 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > protocol plus 63 tests; replacement smoke `1190605` is pending. Formal lanes
 > remain blocked.
 
-> Latest: `1190605` exposed one missing official runtime dependency (`typeguard`
-> 4.1.5) only after all contract tests; it was restored and verified. Unchanged
-> source/data smoke `1190635` is pending; no batch-level model evidence yet.
+> Latest: corrected-source smoke `1190635` is `PASS` (`COMPLETED 0:0`, g0013,
+> 2:08): all five official train-batch lanes completed finite forward/backward/
+> Adam, required event/owner gradients, strict reload, and `test_access=false`.
+> This authorizes five matched 100-epoch training lanes only; it is not mAP,
+> Recall, or model-ranking evidence, and locked test remains unmounted.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

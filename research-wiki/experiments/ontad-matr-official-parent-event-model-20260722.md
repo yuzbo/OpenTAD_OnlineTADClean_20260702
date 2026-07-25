@@ -190,6 +190,25 @@ hand rules that merged events with the same start or cosine similarity `>0.95`
 were removed because they can collapse legitimate same-time same-class
 instances.
 
+### Real official five-lane smoke passed — 2026-07-26
+
+Slurm `1190635` completed with `0:0` on `g0013` in `00:02:08`. Its
+`eventmatr_real_smoke.json` is `PASS`, binds the corrected isolated source
+commit `ba3f153c18892859a12ff76f9c6afa0c0ab5460e`, tree
+`fe21d82a2e1fc3f025853d43ca5fe53b17c5b14c`, and the frozen official-data
+manifest `b6d3b51a14253e66a9d5c110f5b08fdaf96c31eb48fb2df9a3b57cd5e61fb1c9`.
+All five lanes used one true official training batch of shape `64×64×4096`,
+performed finite forward/backward/Adam steps, produced the required event and
+owner gradients, and passed strict checkpoint reload. `test_access=false`.
+The native/B0O0/B1O0/B0O1/B1O1 smoke losses were respectively `3.1775`,
+`11.3117`, `11.6944`, `15.2711`, and `12.8936`; these single-batch values are
+technical diagnostics only, not comparative performance evidence.
+
+This clears only the execution gate for five independent, exact-setting,
+100-epoch matched-training lanes. Test data remains unmounted during training;
+no mAP, Recall, or model-ranking claim is authorized until all terminal
+checkpoints complete and the separately locked final evaluation gate runs.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
