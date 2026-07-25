@@ -11,6 +11,11 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > real five-lane smoke `1190483` is pending with N16 default per-GPU memory after
 > its scheduler rejected a redundant explicit memory directive. No test access,
 > performance result, or raw-RGB release exists yet.
+
+> Correction: `1190483` failed before any model operation because a temporary-repo
+> verifier test inherited launch identity. Exact fix `ba3f153` passed remote
+> protocol plus 63 tests; replacement smoke `1190605` is pending. Formal lanes
+> remain blocked.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

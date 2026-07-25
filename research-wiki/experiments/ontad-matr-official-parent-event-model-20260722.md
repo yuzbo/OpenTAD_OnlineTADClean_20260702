@@ -249,3 +249,22 @@ and uses N16's default single-GPU memory allocation: Slurm smoke `1190483`, run
 `real_smoke_seed52_20260726_035205`. It runs native MATR plus B0O0/B1O0/B0O1/B1O1
 on one true batch of 64 train prefixes, with test access absent. It is pending;
 there is no performance or model-validity conclusion yet.
+
+### Smoke-contract recovery — 2026-07-26
+
+Smoke `1190483` reached `g0053` but stopped in `00:00:51` before the real-data
+program: the worker inherited `MATR_SOURCE_*`, and a unit test that deliberately
+creates an unrelated temporary Git repository accidentally treated those ambient
+values as its expected identity. The remote suite therefore reported `61 passed,
+1 failed`; no forward pass, optimizer step, feature batch, gradient, checkpoint,
+or test access occurred. This is a verifier-isolation defect, not a model or data
+failure.
+
+Derived commit `ba3f153c18892859a12ff76f9c6afa0c0ab5460e`
+(tree `fe21d82a2e1fc3f025853d43ca5fe53b17c5b14c`) makes the verifier accept only
+explicit `--expected-*` arguments and adds a regression test for ambient-launch
+identity. The new remote isolated worktree passed the official protocol and all
+`63` tests, then was cleaned of generated `__pycache__` directories before
+identity-gated execution. Corrected real five-lane smoke `1190605` is submitted
+at `real_smoke_seed52_20260726_044939_ba3f153`, currently pending. Formal 100-epoch
+lanes remain unsubmitted.

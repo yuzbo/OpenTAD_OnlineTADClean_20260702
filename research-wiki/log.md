@@ -7,6 +7,8 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 
 # Research Wiki Log
 
+- 2026-07-26: Smoke `1190483` reached a GPU but failed before any real-data model work because a contract test's temporary Git repository inherited `MATR_SOURCE_*` from Slurm. Classified verifier isolation—not data, model, gradient, or performance failure. Derived fix `ba3f153` passes the remote official protocol and `63` tests; corrected isolated smoke `1190605` is pending. Formal lanes remain blocked on its receipt.
+
 - 2026-07-26: Official MATR THUMOS14 staging completed: ZIP integrity, 200 train/val features, 213 locked-test features, 412 annotations, and a three-file SHA-256 manifest passed. A final stager syntax error was independently corrected as a data-preparation defect only. Smoke `1190483` was submitted from exact EventMATR `64d7f78d` / tree `bc6f5057`; N16 rejected the script's redundant `--mem=32G`, so the resubmission uses its default per-GPU allocation without changing code, data, or model. It is pending; no performance claim exists.
 
 ## 2026-07-23 — Official MATR data staging
