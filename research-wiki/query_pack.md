@@ -45,6 +45,10 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > remain RUNNING `0:0`, finite, and free of fatal/OOM/non-finite-gradient markers.
 > Six-hour checkpoint: native passed epoch 12 (now epoch 13); event arms reached
 > epochs 35–36. All remain RUNNING `0:0`, finite, and test remains unmounted.
+> Partial terminal state: B0O0/B0O1/B1O1 completed `0:0` with one epoch-100
+> checkpoint each; B1O0 is finalizing epoch 100 and native remains in epoch 32.
+> Do not evaluate or interpret any completed arm until all five lanes pass the
+> terminal artifact and completion-contract gate.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

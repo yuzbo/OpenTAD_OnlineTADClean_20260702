@@ -295,6 +295,16 @@ their current/running-average losses are `0.0861/0.3377`, `0.1209/0.3211`,
 fatal/OOM/non-finite-gradient marker. The registered terminal-only checkpoint
 rule remains in force; no evaluation has been launched.
 
+### Partial terminal completion
+
+Event arms B0O0 `1190736`, B0O1 `1190738`, and B1O1 `1190739` have completed
+`0:0` and each produced exactly one `terminal_epoch100.pth` of `2,150,337,711`
+bytes. B1O0 `1190737` is in its terminal epoch (`1618/3270`), while native
+`1190735` remains in epoch 32. No completion receipt or test evaluation is
+permitted until all five lanes have independently completed and their terminal
+artifacts have been hash-verified; the three completed arms are not partial
+performance results.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
