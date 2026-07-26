@@ -261,6 +261,16 @@ Those are neither locked-test results nor an operational/pass-fail judgment and
 must not be compared or reported as model performance. The formal outcomes stay
 pending epoch-100 completion and the separately gated final evaluation.
 
+At the two-hour checkpoint, all five jobs remain `RUNNING 0:0` on their original
+nodes. Native MATR is in epoch 6 (`99/3270`, loss `0.3683`, running average
+`0.5914`); B0O0/B1O0/B0O1/B1O1 have reached epoch 12 at `2775/3270`,
+`1808/3270`, `2822/3270`, and `2144/3270`, with current/running-average losses
+`0.1817/0.5513`, `0.1420/0.5405`, `0.1674/0.5348`, and `0.1339/0.5336`.
+No terminal checkpoint exists yet by the registered terminal-epoch-only policy,
+and no fatal, OOM, or non-finite-gradient marker was found. This unequal wall
+clock progress is expected from different node throughput; it is not a model
+comparison.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and

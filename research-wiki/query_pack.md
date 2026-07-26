@@ -36,6 +36,9 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > epoch 6, all RUNNING with finite losses and no fatal/OOM/non-finite-gradient
 > marker. Do not mistake interim train-split zero-emission mAP/time diagnostics
 > for a locked-test metric or a performance verdict.
+> Two-hour checkpoint: native reached epoch 6; all four event arms reached epoch
+> 12, all still RUNNING `0:0` with finite losses and no fatal/OOM/non-finite
+> gradient marker. Only terminal epoch-100 checkpoints are valid artifacts.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive
