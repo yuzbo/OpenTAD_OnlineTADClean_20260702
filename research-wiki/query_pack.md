@@ -32,6 +32,10 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > native `1190735`, B0O0 `1190736`, B1O0 `1190737`, B0O1 `1190738`, and B1O1
 > `1190739`. They use the exact `92cf34a` source, official train features, and
 > prewritten lane identity receipts; locked test remains unmounted.
+> One-hour checkpoint: native is in epoch 4 and B0O0/B1O0/B0O1/B1O1 are in
+> epoch 6, all RUNNING with finite losses and no fatal/OOM/non-finite-gradient
+> marker. Do not mistake interim train-split zero-emission mAP/time diagnostics
+> for a locked-test metric or a performance verdict.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

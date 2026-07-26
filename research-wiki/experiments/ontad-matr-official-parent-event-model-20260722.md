@@ -243,6 +243,24 @@ workers started with their per-lane source-identity receipts and no mounted
 locked-test input. Formal completion, terminal checkpoint hashes, and the
 subsequent one-shot locked evaluation remain pending.
 
+### Formal progress checkpoint — epochs 3/6 reached
+
+At one hour, all five formal jobs remained `RUNNING` with exit code `0:0`:
+native MATR `1190735` was in epoch 4 (`1125/3270`, loss `0.5465`, running
+average `0.7055`); B0O0 `1190736`, B1O0 `1190737`, B0O1 `1190738`, and B1O1
+`1190739` were in epoch 6 at `2911/3270`, `2344/3270`, `2879/3270`, and
+`2542/3270`, with current/running-average losses `0.4673/0.9728`,
+`0.4930/1.0326`, `0.5367/0.9642`, and `0.4901/1.0022`. No traceback, OOM, or
+non-finite gradient marker was present. All five generated `opts.json` records
+use `matched_study` and point `video_feature_all_test` to the non-existent
+`LOCKED_TEST_NOT_MOUNTED.pickle` sentinel.
+
+The native training loop prints interim train-split emission metrics; early
+zero predictions yield `Average-mAP=0` and undefined average time difference.
+Those are neither locked-test results nor an operational/pass-fail judgment and
+must not be compared or reported as model performance. The formal outcomes stay
+pending epoch-100 completion and the separately gated final evaluation.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
