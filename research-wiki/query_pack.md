@@ -41,6 +41,8 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > gradient marker. Only terminal epoch-100 checkpoints are valid artifacts.
 > Three-hour checkpoint: native epoch 7; event arms epoch 18; all five still
 > RUNNING `0:0` with finite losses. Treat this only as numerical-health evidence.
+> Four-hour checkpoint: native passed epoch 9, event arms reached epoch 24; all
+> remain RUNNING `0:0`, finite, and free of fatal/OOM/non-finite-gradient markers.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive

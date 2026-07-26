@@ -89,6 +89,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-26: One-hour formal checkpoint: all five jobs remain RUNNING `0:0`; native is in epoch 4 and all four event arms are in epoch 6, with finite loss and no traceback/OOM/non-finite-gradient marker. Every lane records the matched-study locked-test sentinel. Early train-split zero-emission mAP/time diagnostics are explicitly non-evaluative and do not authorize a performance claim.
 - 2026-07-26: Two-hour checkpoint: all five remain RUNNING `0:0`; native reached epoch 6 and all four event arms reached epoch 12 with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal checkpoint is expected until epoch 100; differing node throughput is not a comparative result.
 - 2026-07-26: Three-hour checkpoint: native is in epoch 7 and all event arms in epoch 18; all five remain RUNNING `0:0` with finite losses and no fatal/OOM/non-finite-gradient marker. Loss traces are operational evidence only, not a cross-arm performance comparison.
+- 2026-07-26: Four-hour checkpoint: native passed epoch 9 and event arms reached epoch 24; all remain RUNNING `0:0`, with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal artifact or performance conclusion exists.
 - Created compressed `query_pack.md` for future ideation and review prompts.
 - Added `discussion_timeline.md` to record major conversation turns and conceptual pivots.
 - Added `decision_register.md` to record decisions, reasons, counterarguments, source files, and reversibility.

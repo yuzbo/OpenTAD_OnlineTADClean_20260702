@@ -279,6 +279,14 @@ and `2079/3270`, with current/running-average losses `0.1405/0.4659`,
 traces only establish continued numerical progress, not a cross-arm result or
 the registered final detection performance.
 
+At four hours, native passed the registered epoch-9 monitor point and remains
+`RUNNING 0:0` at `2163/3270` (loss `0.1414`, running average `0.4642`). The
+four event arms are in epoch 24, also `RUNNING 0:0`: B0O0 `2631/3270`
+(`0.0773/0.3819`), B1O0 `727/3270` (`0.1164/0.3750`), B0O1 `2848/3270`
+(`0.1200/0.3900`), and B1O1 `1539/3270` (`0.0961/0.3735`). There is still no
+fatal/OOM/non-finite-gradient evidence and no terminal checkpoint. This is a
+health and protocol checkpoint only; no interim metric becomes a model claim.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
