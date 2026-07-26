@@ -271,6 +271,14 @@ and no fatal, OOM, or non-finite-gradient marker was found. This unequal wall
 clock progress is expected from different node throughput; it is not a model
 comparison.
 
+At three hours, all jobs remain `RUNNING 0:0` with no fatal/OOM/non-finite
+gradient marker. Native is in epoch 7 (`2700/3270`, loss `0.3774`, average
+`0.5764`); event arms are in epoch 18 at `2953/3270`, `1490/3270`, `3085/3270`,
+and `2079/3270`, with current/running-average losses `0.1405/0.4659`,
+`0.1189/0.4616`, `0.1148/0.4595`, and `0.1177/0.4574`. These optimization
+traces only establish continued numerical progress, not a cross-arm result or
+the registered final detection performance.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
