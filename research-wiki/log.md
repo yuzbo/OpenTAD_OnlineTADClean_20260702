@@ -90,6 +90,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-26: Two-hour checkpoint: all five remain RUNNING `0:0`; native reached epoch 6 and all four event arms reached epoch 12 with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal checkpoint is expected until epoch 100; differing node throughput is not a comparative result.
 - 2026-07-26: Three-hour checkpoint: native is in epoch 7 and all event arms in epoch 18; all five remain RUNNING `0:0` with finite losses and no fatal/OOM/non-finite-gradient marker. Loss traces are operational evidence only, not a cross-arm performance comparison.
 - 2026-07-26: Four-hour checkpoint: native passed epoch 9 and event arms reached epoch 24; all remain RUNNING `0:0`, with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal artifact or performance conclusion exists.
+- 2026-07-26: Six-hour checkpoint: native passed epoch 12 and is in epoch 13; event arms reached epochs 35–36. All remain RUNNING `0:0` with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal artifact or evaluation exists.
 - Created compressed `query_pack.md` for future ideation and review prompts.
 - Added `discussion_timeline.md` to record major conversation turns and conceptual pivots.
 - Added `decision_register.md` to record decisions, reasons, counterarguments, source files, and reversibility.

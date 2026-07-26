@@ -287,6 +287,14 @@ four event arms are in epoch 24, also `RUNNING 0:0`: B0O0 `2631/3270`
 fatal/OOM/non-finite-gradient evidence and no terminal checkpoint. This is a
 health and protocol checkpoint only; no interim metric becomes a model claim.
 
+At six hours, native passed the epoch-12 monitor point and is in epoch 13
+(`446/3270`, loss `0.1764`, average `0.3906`). B0O0/B1O0/B0O1/B1O1 are in
+epochs 36/35/36/36 at `2811/3270`, `3144/3270`, `3198/3270`, and `1481/3270`;
+their current/running-average losses are `0.0861/0.3377`, `0.1209/0.3211`,
+`0.1376/0.3399`, and `0.0898/0.3261`. All lanes remain `RUNNING 0:0` with no
+fatal/OOM/non-finite-gradient marker. The registered terminal-only checkpoint
+rule remains in force; no evaluation has been launched.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and
