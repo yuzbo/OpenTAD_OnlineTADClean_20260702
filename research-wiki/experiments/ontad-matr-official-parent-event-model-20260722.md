@@ -305,6 +305,17 @@ permitted until all five lanes have independently completed and their terminal
 artifacts have been hash-verified; the three completed arms are not partial
 performance results.
 
+### Fourth event-arm terminal artifact — 2026-07-27
+
+B1O0 `1190737` has now completed `0:0` after `17:19:10`, adding its single
+`terminal_epoch100.pth` of `2,150,337,711` bytes. Thus all four event arms
+have terminal artifacts under the exact `92cf34a` source; native MATR `1190735`
+is still running on `g0013` (epoch 42, batch 3204/3270 at this check). No fatal,
+OOM, RuntimeError, or non-finite-gradient marker was found in the inspected
+native or B1O0 logs. This is numerical/execution status only: the five-lane
+completion receipt, terminal hashes, and any locked-test evaluation remain
+blocked until native MATR independently reaches epoch 100.
+
 Local verification on 2026-07-23 is `62 passed`; the official-protocol checker,
 Python compilation, all Git-Bash launch scripts and `git diff --check` pass.
 These are implementation and contract results only. The real-data smoke and

@@ -92,6 +92,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 - 2026-07-26: Four-hour checkpoint: native passed epoch 9 and event arms reached epoch 24; all remain RUNNING `0:0`, with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal artifact or performance conclusion exists.
 - 2026-07-26: Six-hour checkpoint: native passed epoch 12 and is in epoch 13; event arms reached epochs 35–36. All remain RUNNING `0:0` with finite losses and no fatal/OOM/non-finite-gradient marker. No terminal artifact or evaluation exists.
 - 2026-07-26: Partial terminal completion: B0O0 `1190736`, B0O1 `1190738`, and B1O1 `1190739` completed `0:0`, each with one 2,150,337,711-byte epoch-100 checkpoint. B1O0 is still finishing epoch 100 and native remains in epoch 32. No completion receipt, test access, or partial performance interpretation is allowed.
+- 2026-07-27: B1O0 `1190737` completed `0:0` in 17:19:10 and produced one 2,150,337,711-byte terminal epoch-100 checkpoint. Native `1190735` remains independently running on g0013 (epoch 42, batch 3204/3270); inspected native/B1O0 logs contain no fatal, OOM, RuntimeError, or non-finite-gradient marker. This is not a performance result and does not authorize completion, test access, or partial ranking.
 - Created compressed `query_pack.md` for future ideation and review prompts.
 - Added `discussion_timeline.md` to record major conversation turns and conceptual pivots.
 - Added `decision_register.md` to record decisions, reasons, counterarguments, source files, and reversibility.

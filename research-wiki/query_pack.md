@@ -49,6 +49,11 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 > checkpoint each; B1O0 is finalizing epoch 100 and native remains in epoch 32.
 > Do not evaluate or interpret any completed arm until all five lanes pass the
 > terminal artifact and completion-contract gate.
+> Latest terminal state: B1O0 `1190737` also completed `0:0` with one
+> 2,150,337,711-byte epoch-100 checkpoint. Native `1190735` alone remains
+> running (epoch 42, batch 3204/3270); no inspected fatal/OOM/RuntimeError/
+> non-finite-gradient marker. All performance interpretation and locked-test
+> access remain blocked pending native completion, hashes, and the pair receipt.
 > retrieval uses process-local `http_proxy` and `https_proxy` through the N16
 > academic endpoint `10.244.6.36:3128`. Credentials are externally injected
 > and must never be committed or written into this Wiki. The official Drive
