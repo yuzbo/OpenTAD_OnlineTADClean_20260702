@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:ontad-matr-official-parent-event-model-20260722
 title: "Official-MATR-Parent Event Ownership Factorial"
-status: d0-replay-submitted
-outcome: pending-d0
+status: d0-replay-recovery-submitted
+outcome: pending-d0-recovery
 updated: 2026-07-28
 ---
 
@@ -473,3 +473,61 @@ background-dominated gradients direct D1 toward event-normalized censored
 hazard and stable temporal birth assignment. Only after D1 contracts pass may
 the registered v2 N/R/T/H/TH model pilots begin. Locked test, multi-seed,
 hierarchical visual-memory claims, and raw-RGB training remain blocked.
+
+### D0 proposal-writer contract failure and exact recovery — 2026-07-28
+
+The first D0 array `1199738` and its three scheduler retries
+`1199787/1199804/1199809` all ended with exit `1:0`. This was not a GPU,
+environment, checkpoint-load, or model-learning failure. Every lane completed
+all `3,270` chronological train-prefix replay batches before the same
+post-replay assertion failed:
+
+```text
+B0O0: proposal/ledger mismatch: 0 lines vs 626 rows
+B1O0: proposal/ledger mismatch: 0 lines vs 1716 rows
+B0O1: proposal/ledger mismatch: 0 lines vs 367 rows
+B1O1: proposal/ledger mismatch: 0 lines vs 17 rows
+```
+
+The exact defect was a filename disagreement inside the diagnostic program.
+It truncated and later read `proposal_pred_train_replay.txt`, while the inherited
+EventMATR writer expanded its template to the extensionless
+`proposal_pred_train_replay`. The four `.txt` files were therefore zero bytes
+while the four extensionless files contained emitted rows. No
+`d0_audit_receipt.json` or `d0_pair_completion.json` was produced, so no
+gradient distribution or diagnostic mAP is recoverable from this failed run.
+The real-batch gradient audit executed before replay without terminating, but
+its numbers were held in memory and are not evidence until a receipt persists
+them.
+
+The progress logs do provide a narrower runtime fact. B0O0/B1O0/B0O1/B1O1
+recorded respectively `797/626/626/2`, `2116/1716/1716/2`,
+`799/336/336/79`, and `1854/6/6/49` for
+`births/ends/emits/max_active`. Thus frozen v1 is not uniformly runtime-zero in
+eval-mode full-prefix replay. These counts are still diagnostic only: v1 uses
+`true_duration`, offline EOS and complete-video timing, and the missing receipt
+prevents pairing, invariant, gradient or mAP adjudication.
+
+The minimal repair changes only the proposal template suffix and adds an
+explicit writer/checker-path assertion plus regression coverage:
+
+- exact diagnostic commit:
+  `ca914f3ea337d1e8f0f005d394a05ec81edc0ee7`;
+- tree: `05e3cd8f11d30bdd65c5fba6c1b712e001c6a52d`;
+- local contract result: `4 passed`;
+- N16 exact-clean contract result: `4 passed`;
+- model, loss, checkpoint, source training, dataset and locked-test policy:
+  unchanged.
+
+The impossible old finalizer `1199739` was identity-checked and cancelled after
+it entered `DependencyNeverSatisfied`. The checkpoint-only recovery run is:
+
+- output:
+  `/data/run01/sczc063/yuzibo/runs/eventmatr_v1_d0/eventmatr_v1_d0_seed52_20260728_203713_ca914f3`;
+- four-lane array: `1200180`, currently `PENDING (Priority)`;
+- fail-closed finalizer: `1200181`, currently `PENDING (Dependency)`;
+- `test_access=false`, source training remains exact `92cf34a`.
+
+This is a replay recovery, not retraining. The next evidence gate remains four
+complete lane receipts plus `d0_pair_completion.json`; only those persisted
+gradient/logit/runtime distributions may choose the D1 learning change.

@@ -233,6 +233,29 @@ unroll。Pro 声称的四个 sandbox 代码/patch 文件没有随附件提供，
 不计入项目证据。完整处置见
 `PRO_TH_EVENTMATR_CODE_REVIEW_ABSORPTION_20260728.md` 与 DR-035。
 
+## 2026-07-28：D0 recovery 当前交接
+
+首轮 D0 四臂不是模型失败。四臂都完成了 `3270/3270` 个 official-train
+prefix replay，并产生非零 runtime emit；随后审计器因为检查
+`proposal_pred_train_replay.txt`、而继承 writer 写入无扩展名文件，统一触发
+proposal/ledger mismatch。失败 run 没有持久化梯度、logit、配对或 mAP receipt，
+因此只能证明 eval runtime 非全零，不能选择最终 D1，也不能形成论文性能。
+
+最小合同修复为 exact
+`ca914f3ea337d1e8f0f005d394a05ec81edc0ee7`、tree
+`05e3cd8f11d30bdd65c5fba6c1b712e001c6a52d`；本地和 N16 均 `4 passed`，
+模型、loss、checkpoint、官方数据和 test 锁不变。当前 checkpoint-only recovery：
+
+- run：`eventmatr_v1_d0_seed52_20260728_203713_ca914f3`；
+- 四路数组：`1200180`；
+- 依赖终检：`1200181`；
+- `test_access=false`。
+
+下一次接手优先运行 `C:\tmp\ontad_d0_monitor_ca914f3.ps1`。只有四份
+`d0_audit_receipt.json` 与 `d0_pair_completion.json` 都完成后，才依据持久化的
+gradient/logit/runtime 分布裁决 D1；不得把 v1 的 true-duration/EOS replay mAP
+写成严格因果论文结果，也不得提前访问 locked test、启动 multi-seed 或 raw-RGB。
+
 ## 正确外部审判的最终吸收（2026-07-23 复核）
 
 唯一有效附件是 `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`：新附件为
