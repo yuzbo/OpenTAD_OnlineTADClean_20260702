@@ -2,7 +2,7 @@
 #SBATCH --job-name=eventmatr-v1-d0
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=04:00:00
 set -euo pipefail

@@ -34,6 +34,8 @@ def test_d0_slurm_releases_exact_four_event_lanes_without_test():
     assert "D0 audit forbids locked-test inputs" in worker
     assert "#SBATCH --mem=" not in worker
     assert "#SBATCH --mem=" not in finalizer
+    assert "#SBATCH --gpus=1" in worker
+    assert "#SBATCH --gres=" not in worker
     assert "D0 audit forbids locked-test inputs" in submit
     assert "afterok:${ARRAY_JOB}" in submit
     assert "D0 output root already exists" in submit
