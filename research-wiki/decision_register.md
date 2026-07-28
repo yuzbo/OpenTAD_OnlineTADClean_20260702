@@ -1421,6 +1421,11 @@ Reason:
 
 - D0 separately identifies extreme birth/end sparsity and an unclosed sticky
   lifecycle, so loss repair and trajectory repair require separate tests;
+- the official train annotations contain same-class repetition in `180/200`
+  videos and place `50.18%` of instances within 64 frames of a same-class
+  neighbor, but true same-class overlap involves only `9/3,007` instances in
+  two videos; T is therefore a repeated-instance/reacquisition hypothesis, not
+  an abundant-overlap premise;
 - local D1 mechanism tests show the intended gradients, stable assignment,
   dynamic capacity, cancel/reacquisition and ledger invariants can execute, but
   synthetic solvability does not establish dataset effect;
@@ -1439,7 +1444,8 @@ Resolution:
 2. interpret train-prefix mAP only as optimization diagnostics and keep
    `strict_causal_paper_result_valid=false`;
 3. require later ordinary-duration-free-BCE, detached/oracle/predicted unroll,
-   state-machine removal, same-class overlap and truncation counterfactuals;
+   state-machine removal, near-neighbor repeat, same-class overlap and
+   truncation counterfactuals;
 4. demote R if it does not change downstream error-state recovery, T if it does
    not improve identity lifecycle metrics, H if ordinary causal BCE matches it,
    and TH if gains disappear under parameter/training-budget controls;

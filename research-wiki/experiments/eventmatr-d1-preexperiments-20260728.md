@@ -74,6 +74,30 @@ The deterministic synthetic receipt establishes:
 
 These are mechanism proofs, not dataset-effect proofs.
 
+### THUMOS14 identity-pressure truth audit
+
+A read-only audit of the official train annotations (`200` videos, `3,007`
+instances, `20` classes) separates two often conflated identity problems:
+
+- `180/200` videos contain repeated instances of the same class;
+- true same-class temporal overlap is rare: `5` overlapping pairs in `2`
+  videos, involving `9/3,007` annotations (`0.299%`); the cases are
+  `FrisbeeCatch` and `VolleyballSpiking`;
+- near-neighbor repetition is common: `453` same-class pairs overlap or are
+  separated by at most `16` frames, involving `677/3,007` annotations
+  (`22.51%`) in `56` videos;
+- at `64` frames, the corresponding count is `1,348` pairs and `1,509/3,007`
+  participating annotations (`50.18%`) in `102` videos;
+- any-class concurrency occurs in `23` videos and never exceeds two
+  simultaneous annotated instances in this split.
+
+Therefore THUMOS14 does support a real **nearby repeated-instance association
+and reacquisition** problem, but it is a weak natural benchmark for a headline
+**simultaneous same-class overlap** claim. The latter remains an adversarial
+correctness stratum; T/TH must earn their value through repeated-instance owner
+stability, fragmentation, duplicate rebirth, cancellation and reacquisition,
+not through the existence of many same-class overlaps.
+
 ### Exact-source official-data smoke
 
 Slurm job `1200932` completed `0:0` in `00:02:00`. Its receipt is `PASS` on one
@@ -93,7 +117,7 @@ it matches the final registered pilot source exactly.
 |---|---|---|---|
 | N | official native MATR anchor | whether D1 gains exceed the parent under the same train-only budget | reproducible finite anchor; never treated as strict-causal paper evidence by itself |
 | R | balanced state risk + shared chronological ragged train/inference runtime | whether lifecycle failure is an exposure/state-distribution problem | smaller train/inference lifecycle gap, real downstream false-track/cancel/rebirth supervision, stable gradient and closure |
-| T | R + temporal assignment, identity lock, cancellation, reacquisition | whether sticky failure is an identity/lifecycle problem | fewer owner/ID switches, duplicates and fragments; better same-class overlap and reacquisition |
+| T | R + temporal assignment, identity lock, cancellation, reacquisition | whether sticky failure is a repeated-instance identity/lifecycle problem | fewer owner/ID switches, duplicates and fragments; better near-neighbor association and reacquisition; same-class overlap only as a small stress stratum |
 | H | R + interval-censored first birth and right-censored end hazards | whether dense background averaging causes sparse under-learning | improved birth/end calibration, timing and closure versus R and ordinary duration-free BCE |
 | TH | trajectory + censored-hazard composition | whether the repairs are complementary | distinct improvements from T and H and a closed strict-causal lifecycle, not merely lower training loss |
 
@@ -107,7 +131,7 @@ with the registered metrics and checkpoint payload.
 | Candidate | Problem truth | Current solvability test | Innovation verdict | Decision |
 |---|---|---|---|---|
 | D1 chronological event repair (R) | D0 has gradients but v1 training does not expose the inference lifecycle to its own false births/cancels/rebirths | shared differentiable ragged runtime plus oracle/predicted track mixing; R vs N and detached/oracle-only controls later | strongest standalone D1 candidate only if errors change downstream state; otherwise scheduled-sampling/recurrent-unroll overlap dominates | active |
-| D1 temporal identity lifecycle (T) | B1O1 closes `6/1854` records and leaves `1407` active; same-class ownership is a known hard case | stable pre-birth assignment, post-birth lock, owner-conditioned end, cancel/reacquisition; T vs R | potentially task-specific state-machine contribution, but overlaps tracking-by-query and ActionSwitch | active, conditional |
+| D1 temporal identity lifecycle (T) | B1O1 closes `6/1854` records and leaves `1407` active; `90%` of train videos repeat a class and `50.18%` of instances have a same-class neighbor within 64 frames, but natural same-class overlap is only `0.299%` of instances | stable pre-birth assignment, post-birth lock, owner-conditioned end, cancel/reacquisition; T vs R on near-neighbor repeats, with overlap as a stress test | potentially task-specific state-machine contribution, but overlaps tracking-by-query and ActionSwitch; cannot use abundant same-class overlap as the paper premise | active, conditional |
 | D1 censored lifecycle risk (H) | birth/end positives are about `0.1477%`; learned logits are substantially below the already rare constant prior | event-normalized interval-censored birth and right-censored end; H vs R and ordinary duration-free BCE later | survival/censoring is not new; contribution can only be strict-causal On-TAD coupling and demonstrated necessity | active component |
 | D1 full composition (TH) | sparse risk and unaligned ownership are independent D0 failures | factorial N/R/T/H/TH, then component removals and stress strata | only currently plausible headline: one strict-causal lifecycle process coupling C1–C4 | conditionally promising |
 | Ledger and causal audit | D0 exposed invalid duration/EOS use and negative starts; v1 nevertheless proved no-duplicate/capacity invariants useful | runtime assertions and adversarial tests | correctness/reproducibility protocol, not standalone novelty | mandatory substrate |
@@ -156,8 +180,8 @@ Immediate hard kill:
 Scientific kill or demotion:
 
 - R does not reduce error-state exposure/train-inference lifecycle gap;
-- T does not improve same-class owner swaps, fragmentation, cancellation and
-  reacquisition;
+- T does not improve near-neighbor repeated-instance owner swaps,
+  fragmentation, duplicate rebirth, cancellation and reacquisition;
 - H is matched by ordinary duration-free BCE on calibration, timing and closure;
 - TH gains disappear after parameter/budget controls or do not exceed its
   strongest component;
