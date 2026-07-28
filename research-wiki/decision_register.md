@@ -1404,3 +1404,59 @@ Reversibility:
 - The exact D1 implementation and pilot hyperparameters remain reversible.
   D0 provenance, the dual-failure diagnosis and the strict-causal metadata
   boundary may change only if a new audited receipt contradicts them.
+
+## DR-037: Gate EventMATR D1 by Problem Truth, Repair Specificity, and Composite Novelty
+
+Status: active pre-experiment decision.
+
+Decision:
+
+> Evaluate every surviving EventMATR idea against a named failure and a direct
+> counterfactual. Use N/R/T/H/TH only as the first attribution layer: R tests
+> chronological train/inference state alignment, T tests trajectory identity,
+> H tests censored sparse lifecycle risk, and TH tests their complementarity.
+> Do not claim novelty from any individual known primitive.
+
+Reason:
+
+- D0 separately identifies extreme birth/end sparsity and an unclosed sticky
+  lifecycle, so loss repair and trajectory repair require separate tests;
+- local D1 mechanism tests show the intended gradients, stable assignment,
+  dynamic capacity, cancel/reacquisition and ledger invariants can execute, but
+  synthetic solvability does not establish dataset effect;
+- exact-source official-data smoke `1200932` proves the registered D1 source
+  can execute all five lanes with finite gradients without locked-test access;
+- the novelty audit finds strong primitive overlap with survival likelihood,
+  tracking-by-query, same-class online TAL and autoregressive/scheduled-sampling
+  training;
+- the only conditionally defensible contribution is their task-specific
+  composition as one audited strict-causal Online-TAD lifecycle process.
+
+Resolution:
+
+1. run fixed seed-52 5/10/20-epoch train-only pilots in that order, releasing a
+   longer horizon only after complete finite receipts at the preceding gate;
+2. interpret train-prefix mAP only as optimization diagnostics and keep
+   `strict_causal_paper_result_valid=false`;
+3. require later ordinary-duration-free-BCE, detached/oracle/predicted unroll,
+   state-machine removal, same-class overlap and truncation counterfactuals;
+4. demote R if it does not change downstream error-state recovery, T if it does
+   not improve identity lifecycle metrics, H if ordinary causal BCE matches it,
+   and TH if gains disappear under parameter/training-budget controls;
+5. retain CESR, PCEH, CRS-EPS and PETAL only in the bounded substrate/component
+   roles recorded in the D1 idea inventory;
+6. keep locked test, multiple seeds, raw RGB, distillation and threshold search
+   blocked until the D1 mechanism gate passes.
+
+Sources:
+
+- [experiments/eventmatr-d1-preexperiments-20260728.md](experiments/eventmatr-d1-preexperiments-20260728.md);
+- `.aris/traces/novelty-check/2026-07-28_run01/`;
+- EventMATR D1 source `1f4bb29ad58dddcc33f6ff2bdc57a5934ee5c53d`;
+- exact-source smoke receipt from Slurm job `1200932`.
+
+Reversibility:
+
+- Candidate ranking and architecture details remain reversible after direct
+  counterfactuals. The causal boundary, source/receipt audit, and prohibition
+  against promoting train-prefix diagnostics to paper evidence are not relaxed.

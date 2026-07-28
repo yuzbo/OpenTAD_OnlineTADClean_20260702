@@ -606,3 +606,24 @@ paper answer. After D1 integration tests pass, the registered
 `N/R/T/H/TH` seed-52 pilots may test respectively the native anchor,
 training/runtime repair, trajectory identity, censored hazard and their full
 combination.
+
+### D1 implementation and pre-experiment release — 2026-07-28
+
+The D1 core is implemented at
+`dd394c6fd3509f707065297b18c8157e6c85a05f`; the fail-closed pilot protocol is
+registered at `1f4bb29ad58dddcc33f6ff2bdc57a5934ee5c53d`, tree
+`aad757531cfcbfb79b616756466251f946574035`, manifest SHA-256
+`1aa1524364a82853fe67bc04fded600274414d31eae139aec06f9d0261aa8582`.
+It passes `83` local contract tests and deterministic mechanism checks.
+
+Exact-source official-data smoke `1200932` completed `0:0` and wrote a `PASS`
+receipt for all N/R/T/H/TH lanes after forward, backward, one optimizer step,
+strict checkpoint reload, and finite event/owner gradient checks. The receipt
+has `test_access=false`, `checkpoint_updated=false`, and
+`strict_causal_paper_result_valid=false`.
+
+The registered 5-epoch seed-52 array is `1200955`. Only indices `0–4` were
+released; 10/20 epochs remain gated on complete, finite and interpretable
+5-epoch receipts. The comprehensive problem-truth, solvability, idea-inventory
+and novelty record is
+[eventmatr-d1-preexperiments-20260728.md](eventmatr-d1-preexperiments-20260728.md).
