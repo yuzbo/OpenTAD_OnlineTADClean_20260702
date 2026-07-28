@@ -71,7 +71,7 @@ if [[ -n "${SLURM_ACCOUNT:-}" ]]; then
   SBATCH_COMMON+=(--account "${SLURM_ACCOUNT}")
 fi
 
-ARRAY_JOB="$(
+ARRAY_JOB_RAW="$(
   sbatch --parsable "${SBATCH_COMMON[@]}" \
     --array=0-3%4 \
     --output "${MATR_D0_OUTPUT_ROOT}/logs/%x.%A_%a.out" \
@@ -79,14 +79,20 @@ ARRAY_JOB="$(
     --export=ALL \
     "${SCRIPT_DIR}/slurm_eventmatr_v1_d0.sh"
 )"
-FINAL_JOB="$(
+ARRAY_JOB="${ARRAY_JOB_RAW%%;*}"
+if ! FINAL_JOB_RAW="$(
   sbatch --parsable "${SBATCH_COMMON[@]}" \
     --dependency="afterok:${ARRAY_JOB}" \
     --output "${MATR_D0_OUTPUT_ROOT}/logs/%x.%j.out" \
     --error "${MATR_D0_OUTPUT_ROOT}/logs/%x.%j.err" \
     --export=ALL \
     "${SCRIPT_DIR}/slurm_eventmatr_v1_d0_finalize.sh"
-)"
+)"; then
+  scancel "${ARRAY_JOB}"
+  echo "finalizer submission failed; cancelled D0 array ${ARRAY_JOB}" >&2
+  exit 1
+fi
+FINAL_JOB="${FINAL_JOB_RAW%%;*}"
 
 python3 - "${MATR_D0_OUTPUT_ROOT}" "${ARRAY_JOB}" "${FINAL_JOB}" <<'PY'
 import json
