@@ -23,13 +23,17 @@ def test_d0_slurm_releases_exact_four_event_lanes_without_test():
     worker = (ROOT / "scripts" / "slurm_eventmatr_v1_d0.sh").read_text(
         encoding="utf-8"
     )
+    finalizer = (
+        ROOT / "scripts" / "slurm_eventmatr_v1_d0_finalize.sh"
+    ).read_text(encoding="utf-8")
     submit = (ROOT / "scripts" / "submit_eventmatr_v1_d0.sh").read_text(
         encoding="utf-8"
     )
     assert "LANES=(b0o0 b1o0 b0o1 b1o1)" in worker
     assert "--array=0-3%4" in submit
     assert "D0 audit forbids locked-test inputs" in worker
-    assert "#SBATCH --mem=48G" in worker
+    assert "#SBATCH --mem=" not in worker
+    assert "#SBATCH --mem=" not in finalizer
     assert "D0 audit forbids locked-test inputs" in submit
     assert "afterok:${ARRAY_JOB}" in submit
     assert "D0 output root already exists" in submit
