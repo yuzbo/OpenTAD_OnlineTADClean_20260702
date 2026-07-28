@@ -12,6 +12,7 @@ from .event_memory import (
     OwnerEventDecoder,
     resolve_event_modes,
     resolve_model_variant,
+    temporal_viterbi_assignment,
 )
 
 class MATR(nn.Module):
@@ -82,6 +83,23 @@ class MATR(nn.Module):
         self.model_variant = resolve_model_variant(args)
         self.birth_mode, self.ownership_mode, self.event_arm = resolve_event_modes(args)
         self.event_enabled = self.model_variant == "eventmatr"
+        self.event_lifecycle_version = getattr(
+            args, "event_lifecycle_version", "v1_dense"
+        )
+        if self.event_lifecycle_version not in {"v1_dense", "d1_censored"}:
+            raise ValueError(
+                "event_lifecycle_version must be v1_dense or d1_censored"
+            )
+        if not self.event_enabled and self.event_lifecycle_version != "v1_dense":
+            raise ValueError("native_matr cannot enable an EventMATR D1 lifecycle")
+        self.event_d1_enabled = (
+            self.event_enabled and self.event_lifecycle_version == "d1_censored"
+        )
+        self.event_d1_lane = getattr(args, "event_d1_lane", "th")
+        if self.event_d1_lane not in {"r", "t", "h", "th"}:
+            raise ValueError("event_d1_lane must be r, t, h, or th")
+        self.event_d1_use_identity = self.event_d1_lane in {"t", "th"}
+        self.event_d1_use_hazard = self.event_d1_lane in {"h", "th"}
         if self.event_enabled:
             if torch.cuda.is_available() and torch.cuda.device_count() != 1:
                 raise RuntimeError(
@@ -107,13 +125,32 @@ class MATR(nn.Module):
                 emit_delay_frames=getattr(args, "event_emit_delay_frames", 0),
                 resource_limit=getattr(args, "event_resource_limit", 0),
                 segment_size=n_seglen,
+                enable_reacquisition=(
+                    self.event_d1_enabled and self.event_d1_use_identity
+                ),
+                strict_causal_boundary=self.event_d1_enabled,
             )
     
     def forward(self, inputs, device):
         # inputs - batch x seq_len x featsize
         self.device = device
         infos = inputs['infos']
-        inputs = inputs['inputs']     
+        event_targets = inputs.get("event_targets")
+        event_valid_mask = inputs.get("event_valid_mask")
+        if self.event_d1_enabled:
+            forbidden = {
+                "duration",
+                "true_duration",
+                "video_time",
+                "frame_to_time",
+            }.intersection(infos)
+            if forbidden:
+                raise RuntimeError(
+                    "D1 model boundary received future/full-video metadata: {}".format(
+                        sorted(forbidden)
+                    )
+                )
+        inputs = inputs['inputs']
         st = infos['st']
         ed = infos['ed']
         bs = inputs.shape[0]
@@ -234,6 +271,8 @@ class MATR(nn.Module):
             candidate_start_frames = current_frames.reshape(-1, 1) - (
                 start_bin.to(anc_cls.dtype) + selected_start_residual
             ) * self.n_seglen
+            if self.event_d1_enabled:
+                candidate_start_frames = candidate_start_frames.clamp_min(0.0)
             event_end_offsets = anc_end_offset.squeeze(-1)
 
             out.update(
@@ -248,8 +287,10 @@ class MATR(nn.Module):
                 }
             )
 
-            run_runtime = (not self.training) or bool(
-                getattr(self.args, "event_runtime_during_training", False)
+            run_runtime = (
+                self.event_d1_enabled
+                or (not self.training)
+                or bool(getattr(self.args, "event_runtime_during_training", False))
             )
             if run_runtime:
                 # A MATR batch contains consecutive prefixes.  Lifecycle state
@@ -258,6 +299,25 @@ class MATR(nn.Module):
                 # prefixes in the same batch.
                 runtime_rows = []
                 video_names = infos['video_name']
+                ragged_state_logits = []
+                ragged_state_targets = []
+                ragged_end_offsets = []
+                ragged_end_targets = []
+                ragged_class_logits = []
+                ragged_class_targets = []
+                ragged_embeddings = []
+                ragged_group_keys = []
+                ragged_sources = []
+                temporal_history = {}
+                if self.event_d1_enabled and self.training:
+                    if event_targets is None or event_valid_mask is None:
+                        raise RuntimeError(
+                            "D1 training requires prefix-visible event targets"
+                        )
+                    event_targets = event_targets.to(event_state_logits.device)
+                    event_valid_mask = event_valid_mask.to(
+                        event_state_logits.device
+                    ).bool()
                 for batch_index in range(event_birth_logits.size(0)):
                     owner_runtime = {}
                     real_prefix = bool(
@@ -265,6 +325,112 @@ class MATR(nn.Module):
                             infos, "is_real_prefix", batch_index, True
                         )[0]
                     )
+                    video_name = str(video_names[batch_index])
+                    frame_value = float(current_frames[batch_index].item())
+                    target_by_id = {}
+                    oracle_births = []
+                    if (
+                        self.event_d1_enabled
+                        and self.training
+                        and real_prefix
+                    ):
+                        rows = event_targets[batch_index][
+                            event_valid_mask[batch_index]
+                        ]
+                        for row in rows:
+                            target_by_id[int(row[0].item())] = row
+
+                        history = temporal_history.setdefault(video_name, [])
+                        history.append(
+                            {
+                                "frame": frame_value,
+                                "state_logits": event_state_logits[batch_index],
+                                "class_logits": anc_cls[batch_index],
+                                "query_features": event_query_features[batch_index],
+                            }
+                        )
+                        active_target_ids = {
+                            record.target_event_id
+                            for record in self.event_memory.records(video_name)
+                            if record.target_event_id is not None
+                        }
+                        teacher_ratio = float(
+                            getattr(
+                                self.args,
+                                "event_teacher_forcing_ratio",
+                                0.5,
+                            )
+                        )
+                        teacher_ratio = min(1.0, max(0.0, teacher_ratio))
+                        for target_event_id, row in target_by_id.items():
+                            is_birth = bool(row[5].item())
+                            missing_track = target_event_id not in active_target_ids
+                            if not (is_birth or missing_track):
+                                continue
+                            start_frame = float(row[2].item())
+                            lower = max(0.0, start_frame - self.n_seglen + 1.0)
+                            window = [
+                                item
+                                for item in history
+                                if lower <= item["frame"] <= frame_value
+                            ]
+                            window_state = torch.stack(
+                                [item["state_logits"] for item in window],
+                                dim=0,
+                            )
+                            window_class = torch.stack(
+                                [item["class_logits"] for item in window],
+                                dim=0,
+                            )
+                            if self.event_d1_lane == "r":
+                                class_id = min(
+                                    max(0, int(row[1].item())),
+                                    window_class.size(-1) - 2,
+                                )
+                                score = (
+                                    window_state[-1].log_softmax(dim=-1)[:, 1]
+                                    + window_class[-1].log_softmax(dim=-1)[
+                                        :, class_id
+                                    ]
+                                )
+                                path = [int(score.detach().argmax().item())]
+                            else:
+                                path = temporal_viterbi_assignment(
+                                    window_state,
+                                    window_class,
+                                    torch.stack(
+                                        [
+                                            item["query_features"]
+                                            for item in window
+                                        ],
+                                        dim=0,
+                                    ),
+                                    int(row[1].item()),
+                                )
+                            if not path:
+                                continue
+                            # Reproducible oracle/predicted mixture without a
+                            # second RNG stream or future annotations.
+                            draw = (
+                                (
+                                    target_event_id * 1103515245
+                                    + int(frame_value) * 12345
+                                )
+                                & 0xFFFF
+                            ) / 65536.0
+                            oracle_births.append(
+                                {
+                                    "query_index": int(path[-1]),
+                                    "target_event_id": int(target_event_id),
+                                    "start_frame": max(0.0, start_frame),
+                                    "source": (
+                                        "oracle"
+                                        if is_birth
+                                        else "oracle_reacquisition"
+                                    ),
+                                    "force_create": draw < teacher_ratio,
+                                }
+                            )
                     if self.ownership_mode == "fresh_rematch" and real_prefix:
                         self.event_memory.rematch_active_owners(
                             video_names[batch_index],
@@ -302,6 +468,55 @@ class MATR(nn.Module):
                             "owner_valid_mask": ~owner_padding_mask,
                             "owner_record_ids": owner_record_ids,
                         }
+                        if self.event_d1_enabled and self.training:
+                            metadata = self.event_memory.record_metadata(
+                                video_name, owner_record_ids
+                            )
+                            for owner_index, record_info in enumerate(metadata):
+                                target_event_id = record_info["target_event_id"]
+                                target_row = (
+                                    None
+                                    if target_event_id is None
+                                    else target_by_id.get(int(target_event_id))
+                                )
+                                if target_row is None:
+                                    target_state = 0
+                                    target_class = -100
+                                    target_end_offset = 0.0
+                                else:
+                                    states = [
+                                        bool(target_row[column].item())
+                                        for column in (5, 6, 7)
+                                    ]
+                                    target_state = 1 + states.index(True)
+                                    target_class = int(target_row[1].item())
+                                    target_end_offset = (
+                                        frame_value - float(target_row[3].item())
+                                    ) / self.n_seglen
+                                ragged_state_logits.append(
+                                    owner_state_logits[0, owner_index]
+                                )
+                                ragged_state_targets.append(target_state)
+                                ragged_end_offsets.append(
+                                    owner_end_offsets[0, owner_index]
+                                )
+                                ragged_end_targets.append(target_end_offset)
+                                ragged_class_logits.append(
+                                    owner_class_logits[0, owner_index]
+                                )
+                                ragged_class_targets.append(target_class)
+                                ragged_embeddings.append(
+                                    owner_updated_embeddings[0, owner_index]
+                                )
+                                ragged_group_keys.append(
+                                    (
+                                        video_name,
+                                        int(record_info["event_id"]),
+                                        target_event_id,
+                                        frame_value,
+                                    )
+                                )
+                                ragged_sources.append(record_info["source"])
                     runtime_rows.append(
                         self.event_memory.step(
                             video_names=[video_names[batch_index]],
@@ -333,12 +548,13 @@ class MATR(nn.Module):
                             is_real_prefix=self._slice_prefix_info(
                                 infos, "is_real_prefix", batch_index, True
                             ),
-                            true_durations=self._slice_prefix_info(
-                                infos, "true_duration", batch_index, None
-                            ),
                             is_eos=self._slice_prefix_info(
                                 infos, "is_eos", batch_index, False
                             ),
+                            preserve_graph=(
+                                self.event_d1_enabled and self.training
+                            ),
+                            oracle_births=[oracle_births],
                             **owner_runtime,
                         )
                     )
@@ -346,6 +562,8 @@ class MATR(nn.Module):
                     key: torch.cat([row[key] for row in runtime_rows], dim=0)
                     for key in runtime_rows[0]
                 }
+                if self.event_d1_enabled and self.training:
+                    self.event_memory.detach_graph()
             else:
                 shape = event_birth_logits.shape
                 runtime = {
@@ -390,6 +608,60 @@ class MATR(nn.Module):
                     "event_eos_observed": runtime["eos_observed"],
                 }
             )
+
+            if self.event_d1_enabled:
+                if ragged_state_logits:
+                    out["event_ragged_state_logits"] = torch.stack(
+                        ragged_state_logits
+                    )
+                    out["event_ragged_state_targets"] = torch.tensor(
+                        ragged_state_targets,
+                        device=event_state_logits.device,
+                        dtype=torch.long,
+                    )
+                    out["event_ragged_end_offsets"] = torch.stack(
+                        ragged_end_offsets
+                    )
+                    out["event_ragged_end_targets"] = torch.tensor(
+                        ragged_end_targets,
+                        device=event_state_logits.device,
+                        dtype=event_state_logits.dtype,
+                    )
+                    out["event_ragged_class_logits"] = torch.stack(
+                        ragged_class_logits
+                    )
+                    out["event_ragged_class_targets"] = torch.tensor(
+                        ragged_class_targets,
+                        device=event_state_logits.device,
+                        dtype=torch.long,
+                    )
+                    out["event_ragged_embeddings"] = torch.stack(
+                        ragged_embeddings
+                    )
+                else:
+                    out["event_ragged_state_logits"] = event_state_logits.new_zeros(
+                        (0, 4)
+                    )
+                    out["event_ragged_state_targets"] = torch.zeros(
+                        (0,), device=event_state_logits.device, dtype=torch.long
+                    )
+                    out["event_ragged_end_offsets"] = event_state_logits.new_zeros(
+                        (0,)
+                    )
+                    out["event_ragged_end_targets"] = event_state_logits.new_zeros(
+                        (0,)
+                    )
+                    out["event_ragged_class_logits"] = anc_cls.new_zeros(
+                        (0, anc_cls.size(-1))
+                    )
+                    out["event_ragged_class_targets"] = torch.zeros(
+                        (0,), device=event_state_logits.device, dtype=torch.long
+                    )
+                    out["event_ragged_embeddings"] = event_query_features.new_zeros(
+                        (0, event_query_features.size(-1))
+                    )
+                out["event_ragged_group_keys"] = ragged_group_keys
+                out["event_ragged_sources"] = ragged_sources
 
             # Dense prototypes train the same decoder used for ragged runtime
             # records.  This path is deliberately present in every BxO cell,

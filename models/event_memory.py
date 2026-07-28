@@ -19,6 +19,58 @@ _BIRTH_MODES = {"matr_delayed", "instant_transition"}
 _OWNERSHIP_MODES = {"fresh_rematch", "sticky_owner"}
 
 
+def temporal_viterbi_assignment(
+    state_logits: torch.Tensor,
+    class_logits: torch.Tensor,
+    query_features: torch.Tensor,
+    class_id: int,
+) -> List[int]:
+    """Return one stable, causal query path for a pre-birth event window.
+
+    The matcher is deliberately stop-gradient: it constructs a temporally
+    consistent supervision path, while gradients flow through the logits and
+    features selected by that path.  Emissions prefer START/class evidence and
+    transitions prefer feature continuity.  No future prefix outside the
+    supplied chronological window is inspected.
+    """
+
+    if state_logits.ndim != 3 or state_logits.size(-1) != 4:
+        raise ValueError("state_logits must be [T,Q,4]")
+    if class_logits.shape[:2] != state_logits.shape[:2]:
+        raise ValueError("class_logits must start with [T,Q]")
+    if query_features.shape[:2] != state_logits.shape[:2]:
+        raise ValueError("query_features must start with [T,Q]")
+    time_steps, query_count, _ = state_logits.shape
+    if time_steps == 0 or query_count == 0:
+        return []
+
+    foreground_classes = max(1, class_logits.size(-1) - 1)
+    class_id = min(max(0, int(class_id)), foreground_classes - 1)
+    with torch.no_grad():
+        emission = (
+            state_logits.log_softmax(dim=-1)[..., 1]
+            + class_logits.log_softmax(dim=-1)[..., class_id]
+        )
+        normalized = F.normalize(query_features, dim=-1)
+        score = emission[0]
+        backpointers = []
+        for time_index in range(1, time_steps):
+            continuity = normalized[time_index - 1] @ normalized[time_index].transpose(
+                0, 1
+            )
+            candidate = score.unsqueeze(1) + continuity
+            best_previous = candidate.argmax(dim=0)
+            score = emission[time_index] + candidate.max(dim=0).values
+            backpointers.append(best_previous)
+        query_index = int(score.argmax().item())
+        path = [query_index]
+        for best_previous in reversed(backpointers):
+            query_index = int(best_previous[query_index].item())
+            path.append(query_index)
+        path.reverse()
+    return path
+
+
 def resolve_model_variant(args) -> str:
     """Keep exact upstream MATR separate from every EventMATR factor cell."""
     variant = getattr(args, "model_variant", None)
@@ -186,6 +238,9 @@ class EventRecord:
     end_score: Optional[float] = None
     emit_frame: Optional[float] = None
     status: str = "active"
+    target_event_id: Optional[int] = None
+    source: str = "predicted"
+    reacquisition_count: int = 0
 
 
 class DynamicEventMemory:
@@ -205,6 +260,8 @@ class DynamicEventMemory:
         emit_delay_frames: int = 0,
         resource_limit: int = 0,
         segment_size: int = 64,
+        enable_reacquisition: bool = False,
+        strict_causal_boundary: bool = False,
     ):
         if birth_mode not in _BIRTH_MODES:
             raise ValueError("invalid birth_mode: {!r}".format(birth_mode))
@@ -230,11 +287,16 @@ class DynamicEventMemory:
         self.emit_delay_frames = int(emit_delay_frames)
         self.resource_limit = int(resource_limit)
         self.segment_size = int(segment_size)
+        self.enable_reacquisition = bool(enable_reacquisition)
+        self.strict_causal_boundary = bool(strict_causal_boundary)
 
         self._records: Dict[str, List[EventRecord]] = {}
+        self._cancelled_records: Dict[str, List[EventRecord]] = {}
         self._ledger: Dict[str, List[dict]] = {}
         self._previous_start_active: Dict[str, torch.Tensor] = {}
         self._last_frame: Dict[str, float] = {}
+        # Frozen v1 compatibility only.  D1 rejects this metadata at its model
+        # boundary and never populates the map.
         self._true_last_frame: Dict[str, float] = {}
         self._next_event_id: Dict[str, int] = {}
         self._next_sequence_id: Dict[str, int] = {}
@@ -243,6 +305,7 @@ class DynamicEventMemory:
             "ends": 0,
             "emits": 0,
             "cancellations": [],
+            "reacquisitions": 0,
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
@@ -251,6 +314,7 @@ class DynamicEventMemory:
     def reset(self, video_name: Optional[str] = None) -> None:
         if video_name is None:
             self._records.clear()
+            self._cancelled_records.clear()
             self._ledger.clear()
             self._previous_start_active.clear()
             self._last_frame.clear()
@@ -259,6 +323,7 @@ class DynamicEventMemory:
             self._next_sequence_id.clear()
         else:
             self._records.pop(video_name, None)
+            self._cancelled_records.pop(video_name, None)
             self._ledger.pop(video_name, None)
             self._previous_start_active.pop(video_name, None)
             self._last_frame.pop(video_name, None)
@@ -270,6 +335,7 @@ class DynamicEventMemory:
             "ends": 0,
             "emits": 0,
             "cancellations": [],
+            "reacquisitions": 0,
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
@@ -313,6 +379,49 @@ class DynamicEventMemory:
                 event_ids[batch_index, record_index] = int(record.event_id)
         return owners, padding_mask, event_ids
 
+    def record_metadata(self, video_name: str, event_ids: torch.Tensor) -> List[dict]:
+        """Expose non-tensor identity metadata for ragged training supervision."""
+
+        records = {
+            int(record.event_id): record
+            for record in self._records.get(str(video_name), ())
+            if record.status == "active"
+        }
+        metadata = []
+        for event_id in event_ids.detach().cpu().reshape(-1).tolist():
+            record = records.get(int(event_id))
+            if record is None:
+                metadata.append(
+                    {
+                        "event_id": int(event_id),
+                        "target_event_id": None,
+                        "source": "missing",
+                        "owner_query_id": -1,
+                    }
+                )
+            else:
+                metadata.append(
+                    {
+                        "event_id": int(record.event_id),
+                        "target_event_id": record.target_event_id,
+                        "source": record.source,
+                        "owner_query_id": int(record.owner_query_id),
+                    }
+                )
+        return metadata
+
+    def detach_graph(self) -> None:
+        """Detach carried state after one chronological training unroll.
+
+        Owner updates inside a batch remain differentiable.  Detaching only the
+        persistent copies prevents a graph from leaking across optimizer steps.
+        """
+
+        for records in self._records.values():
+            for record in records:
+                record.owner_embedding = record.owner_embedding.detach()
+                record.class_distribution = record.class_distribution.detach()
+
     @torch.no_grad()
     def rematch_active_owners(
         self,
@@ -345,6 +454,8 @@ class DynamicEventMemory:
             if record.event_id == int(event_id) and record.status != "emitted":
                 record.status = "cancelled"
                 del records[index]
+                if self.strict_causal_boundary:
+                    self._cancelled_records.setdefault(video_name, []).append(record)
                 self.last_audit.setdefault("cancellations", []).append(
                     {
                         "video_name": video_name,
@@ -392,10 +503,17 @@ class DynamicEventMemory:
             # Sticky means the persistent record owns its birth query identity.
             # Multiple records may exist beyond Q; the query bandwidth is not
             # used as a semantic storage limit.
-            return {
-                index: int(record.owner_query_id) % query_count
-                for index, record in enumerate(records)
-            }
+            assignments = {}
+            for index, record in enumerate(records):
+                query_index = int(record.owner_query_id)
+                if query_index < 0 or query_index >= query_count:
+                    raise RuntimeError(
+                        "sticky owner query {} is outside current query bandwidth {}".format(
+                            query_index, query_count
+                        )
+                    )
+                assignments[index] = query_index
+            return assignments
 
         anchors = torch.stack(
             [record.owner_embedding.to(query_features) for record in records], dim=0
@@ -492,11 +610,12 @@ class DynamicEventMemory:
             "end_state_confidence": float(record.end_score),
             "score": score,
             "status": "emitted",
+            "source": record.source,
+            "reacquisition_count": int(record.reacquisition_count),
         }
         self._ledger.setdefault(record.video_name, []).append(row)
         return row
 
-    @torch.no_grad()
     def step(
         self,
         *,
@@ -513,6 +632,8 @@ class DynamicEventMemory:
         is_real_prefix=None,
         true_durations=None,
         is_eos=None,
+        preserve_graph: bool = False,
+        oracle_births=None,
         owner_state_logits: Optional[torch.Tensor] = None,
         owner_end_offsets: Optional[torch.Tensor] = None,
         owner_class_logits: Optional[torch.Tensor] = None,
@@ -580,12 +701,14 @@ class DynamicEventMemory:
         real_prefixes = [bool(value) for value in optional_values(is_real_prefix, True)]
         durations = optional_values(true_durations, None)
         eos_flags = [bool(value) for value in optional_values(is_eos, False)]
+        oracle_rows = optional_values(oracle_births, ())
 
         step_audit = {
             "births": 0,
             "ends": 0,
             "emits": 0,
             "cancellations": list(self.last_audit.get("cancellations", [])),
+            "reacquisitions": 0,
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
@@ -603,6 +726,10 @@ class DynamicEventMemory:
 
             duration = durations[batch_index]
             if duration is not None:
+                if self.enable_reacquisition:
+                    raise RuntimeError(
+                        "D1 runtime forbids true_duration/full-video metadata"
+                    )
                 true_last = float(duration) - 1.0
                 if true_last < 0:
                     raise ValueError("true_duration must be positive")
@@ -613,6 +740,8 @@ class DynamicEventMemory:
                 if frame > true_last:
                     raise RuntimeError("real prefix exceeds true video duration")
             if eos_flags[batch_index]:
+                # EOS is a current observation only.  The runtime neither knows
+                # nor validates a complete-video duration.
                 true_last = self._true_last_frame.get(video_name)
                 if true_last is not None and frame != true_last:
                     raise RuntimeError("EOS must identify the final real prefix")
@@ -638,9 +767,14 @@ class DynamicEventMemory:
                     if record is None:
                         continue
                     if owner_updated_embeddings is not None:
-                        record.owner_embedding = owner_updated_embeddings[
+                        updated_embedding = owner_updated_embeddings[
                             batch_index, owner_index
-                        ].detach().clone()
+                        ]
+                        record.owner_embedding = (
+                            updated_embedding.clone()
+                            if preserve_graph
+                            else updated_embedding.detach().clone()
+                        )
                     if owner_class_logits is not None:
                         owner_probs = owner_class_logits[
                             batch_index, owner_index
@@ -648,7 +782,11 @@ class DynamicEventMemory:
                         if owner_probs.numel() > 1:
                             owner_probs = owner_probs[:-1]
                             owner_probs = owner_probs / owner_probs.sum().clamp_min(1e-8)
-                        record.class_distribution = owner_probs.detach().clone()
+                        record.class_distribution = (
+                            owner_probs.clone()
+                            if preserve_graph
+                            else owner_probs.detach().clone()
+                        )
                     state = int(
                         owner_state_logits[batch_index, owner_index].argmax().item()
                     )
@@ -657,8 +795,12 @@ class DynamicEventMemory:
                         # a probability threshold.  For an already-active
                         # record it means the proposed birth was rejected.
                         record.status = "cancelled"
+                        if self.enable_reacquisition:
+                            self._cancelled_records.setdefault(video_name, []).append(
+                                record
+                            )
                         cancelled_mask[
-                            batch_index, int(record.owner_query_id) % query_count
+                            batch_index, int(record.owner_query_id)
                         ] = True
                         step_audit["cancellations"].append(
                             {
@@ -711,7 +853,7 @@ class DynamicEventMemory:
                         record.end_score = end_confidence
                         record.status = "ended"
                         ended_mask[
-                            batch_index, int(record.owner_query_id) % query_count
+                            batch_index, int(record.owner_query_id)
                         ] = True
                         step_audit["ends"] += 1
             else:
@@ -768,7 +910,11 @@ class DynamicEventMemory:
                     record.status == "ended"
                     and frame >= record.end_frame + self.emit_delay_frames
                 ):
-                    query_index = int(record.owner_query_id) % query_count
+                    query_index = int(record.owner_query_id)
+                    if query_index < 0 or query_index >= query_count:
+                        raise RuntimeError(
+                            "record owner query is outside current query bandwidth"
+                        )
                     self._emit_record(record, frame)
                     emitted_mask[batch_index, query_index] = True
                     step_audit["emits"] += 1
@@ -796,7 +942,65 @@ class DynamicEventMemory:
             self._previous_start_active[video_name] = current_start.clone()
             birth_indices = rising.nonzero(as_tuple=False).reshape(-1).tolist()
 
-            if self.resource_limit and len(records) + len(birth_indices) > self.resource_limit:
+            oracle_by_query = {}
+            for oracle_row in oracle_rows[batch_index] or ():
+                query_index = int(oracle_row["query_index"])
+                if query_index < 0 or query_index >= query_count:
+                    raise RuntimeError(
+                        "oracle assignment query {} exceeds bandwidth {}".format(
+                            query_index, query_count
+                        )
+                    )
+                oracle_by_query[query_index] = dict(oracle_row)
+
+            # A predicted START that agrees with an oracle path is one mixed
+            # predicted/oracle track, not a duplicated semantic event.
+            birth_specs = []
+            for query_index in birth_indices:
+                spec = {
+                    "query_index": int(query_index),
+                    "target_event_id": None,
+                    "source": "predicted",
+                    "start_frame": float(
+                        candidate_start_frames[batch_index, query_index].item()
+                    ),
+                }
+                if query_index in oracle_by_query:
+                    oracle_row = oracle_by_query.pop(query_index)
+                    spec.update(oracle_row)
+                    spec["source"] = "predicted_oracle"
+                birth_specs.append(spec)
+            birth_specs.extend(
+                spec
+                for spec in oracle_by_query.values()
+                if bool(spec.get("force_create", True))
+            )
+
+            active_target_ids = {
+                record.target_event_id
+                for record in records
+                if record.status == "active" and record.target_event_id is not None
+            }
+            birth_specs = [
+                spec
+                for spec in birth_specs
+                if spec.get("target_event_id") not in active_target_ids
+            ]
+
+            potential_new = len(birth_specs)
+            if self.enable_reacquisition:
+                cancelled = self._cancelled_records.get(video_name, [])
+                cancelled_targets = {
+                    record.target_event_id
+                    for record in cancelled
+                    if record.target_event_id is not None
+                }
+                potential_new -= sum(
+                    spec.get("target_event_id") in cancelled_targets
+                    for spec in birth_specs
+                )
+
+            if self.resource_limit and len(records) + potential_new > self.resource_limit:
                 capacity_exhaustions[batch_index] = 1
                 step_audit["runtime_capacity_exhaustions"] += 1
                 self.last_audit = step_audit
@@ -805,35 +1009,104 @@ class DynamicEventMemory:
                     "{} births > {}; no event was discarded".format(
                         video_name,
                         len(records),
-                        len(birth_indices),
+                        potential_new,
                         self.resource_limit,
                     )
                 )
 
             next_id = self._next_event_id.get(video_name, 0)
-            for query_index in birth_indices:
+            for spec in birth_specs:
+                query_index = int(spec["query_index"])
                 # Both B0 and B1 store the causal past-pointer estimate.  B1's
                 # immediate property is its creation time, not a forced
                 # equality between estimated start and the current frame.
-                start_frame = min(
-                    frame,
-                    float(
-                        candidate_start_frames[batch_index, query_index].item()
+                start_frame = max(
+                    0.0,
+                    min(
+                        frame,
+                        float(spec.get("start_frame", frame)),
                     ),
                 )
+                target_event_id = spec.get("target_event_id")
+                reacquired = None
+                if self.enable_reacquisition:
+                    cancelled = self._cancelled_records.setdefault(video_name, [])
+                    if target_event_id is not None:
+                        for archived in reversed(cancelled):
+                            if archived.target_event_id == int(target_event_id):
+                                reacquired = archived
+                                break
+                    else:
+                        predicted_class = int(
+                            foreground[batch_index, query_index].argmax().item()
+                        )
+                        for archived in reversed(cancelled):
+                            archived_class = int(
+                                archived.class_distribution.argmax().item()
+                            )
+                            if (
+                                archived.target_event_id is None
+                                and archived_class == predicted_class
+                            ):
+                                reacquired = archived
+                                break
+                    if reacquired is not None:
+                        cancelled.remove(reacquired)
+                        reacquired.status = "active"
+                        reacquired.owner_query_id = query_index
+                        reacquired.owner_embedding = (
+                            query_features[batch_index, query_index].clone()
+                            if preserve_graph
+                            else query_features[
+                                batch_index, query_index
+                            ].detach().clone()
+                        )
+                        reacquired.class_distribution = (
+                            foreground[batch_index, query_index].clone()
+                            if preserve_graph
+                            else foreground[
+                                batch_index, query_index
+                            ].detach().clone()
+                        )
+                        reacquired.start_frame = min(
+                            reacquired.start_frame, start_frame
+                        )
+                        reacquired.created_frame = frame
+                        reacquired.end_frame = None
+                        reacquired.end_score = None
+                        reacquired.emit_frame = None
+                        reacquired.source = "reacquired"
+                        reacquired.reacquisition_count += 1
+                        records.append(reacquired)
+                        new_birth_mask[batch_index, query_index] = True
+                        step_audit["births"] += 1
+                        step_audit["reacquisitions"] += 1
+                        continue
                 record = EventRecord(
                     event_id=next_id,
                     video_name=video_name,
                     start_frame=float(start_frame),
                     owner_query_id=int(query_index),
-                    owner_embedding=query_features[
-                        batch_index, query_index
-                    ].detach().clone(),
-                    class_distribution=foreground[
-                        batch_index, query_index
-                    ].detach().clone(),
+                    owner_embedding=(
+                        query_features[batch_index, query_index].clone()
+                        if preserve_graph
+                        else query_features[
+                            batch_index, query_index
+                        ].detach().clone()
+                    ),
+                    class_distribution=(
+                        foreground[batch_index, query_index].clone()
+                        if preserve_graph
+                        else foreground[
+                            batch_index, query_index
+                        ].detach().clone()
+                    ),
                     birth_score=float(birth_confidences[query_index].item()),
                     created_frame=frame,
+                    target_event_id=(
+                        None if target_event_id is None else int(target_event_id)
+                    ),
+                    source=str(spec.get("source", "predicted")),
                 )
                 records.append(record)
                 new_birth_mask[batch_index, query_index] = True

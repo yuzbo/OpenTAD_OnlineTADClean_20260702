@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from .matcher import HungarianMatcher
+from models.event_memory import temporal_viterbi_assignment
 
 class CrossEntropyLoss(nn.Module):
     def __init__(self, focal=False, weight=None, reduce=True):
@@ -129,6 +130,19 @@ class CriterionMATR(nn.Module):
         if self.model_variant == "native_matr" and getattr(args, "event_arm", None):
             raise ValueError("native_matr must not carry an EventMATR event_arm")
         self.event_enabled = self.model_variant == "eventmatr"
+        self.event_lifecycle_version = getattr(
+            args, "event_lifecycle_version", "v1_dense"
+        )
+        if self.event_lifecycle_version not in {"v1_dense", "d1_censored"}:
+            raise ValueError("invalid event_lifecycle_version")
+        self.event_d1_enabled = (
+            self.event_enabled and self.event_lifecycle_version == "d1_censored"
+        )
+        self.event_d1_lane = getattr(args, "event_d1_lane", "th")
+        if self.event_d1_lane not in {"r", "t", "h", "th"}:
+            raise ValueError("invalid event_d1_lane")
+        self.event_d1_use_identity = self.event_d1_lane in {"t", "th"}
+        self.event_d1_use_hazard = self.event_d1_lane in {"h", "th"}
         if self.event_enabled:
             self.weight_dict['loss_event_birth'] = float(
                 getattr(args, "event_birth_coef", 1.0)
@@ -151,6 +165,10 @@ class CriterionMATR(nn.Module):
             self.weight_dict['loss_event_owner_state'] = float(
                 getattr(args, "event_owner_state_coef", 1.0)
             )
+            if self.event_d1_enabled and self.event_d1_use_identity:
+                self.weight_dict['loss_event_identity'] = float(
+                    getattr(args, "event_identity_coef", 1.0)
+                )
             self._event_owner_by_video = {}
             self._event_last_frame_by_video = {}
         
@@ -277,6 +295,8 @@ class CriterionMATR(nn.Module):
 
     def loss_event(self, outputs, targets, infos):
         """Prefix-visible supervision shared by every EventMATR BxO cell."""
+        if self.event_d1_enabled:
+            return self._loss_event_d1(outputs, targets, infos)
         required = {
             'event_state_logits',
             'event_birth_logits',
@@ -494,6 +514,306 @@ class CriterionMATR(nn.Module):
                 ),
             }
         )
+        return losses
+
+    def _loss_event_d1(self, outputs, targets, infos):
+        """Event-normalized censored hazards on chronological ragged tracks."""
+
+        required = {
+            "event_state_logits",
+            "event_birth_logits",
+            "event_candidate_start_frames",
+            "event_query_features",
+            "event_ragged_state_logits",
+            "event_ragged_state_targets",
+            "event_ragged_end_offsets",
+            "event_ragged_end_targets",
+            "event_ragged_class_logits",
+            "event_ragged_class_targets",
+            "event_ragged_embeddings",
+            "event_ragged_group_keys",
+            "event_ragged_sources",
+        }
+        missing = sorted(required.difference(outputs))
+        if missing:
+            raise KeyError("missing D1 EventMATR outputs: {}".format(missing))
+        if "event_targets" not in targets or "event_valid_mask" not in targets:
+            raise KeyError("D1 requires prefix-visible event targets")
+
+        state_logits = outputs["event_state_logits"]
+        birth_logits = outputs["event_birth_logits"]
+        query_features = outputs["event_query_features"]
+        class_logits = outputs["pred_cls"]
+        device = state_logits.device
+        dtype = state_logits.dtype
+        batch_size = state_logits.size(0)
+        event_targets = targets["event_targets"].to(device)
+        event_valid = targets["event_valid_mask"].to(device).bool()
+        video_names = [
+            str(value)
+            for value in self._info_values(infos["video_name"], batch_size)
+        ]
+        frames = [
+            float(value)
+            for value in self._info_values(infos["current_frame"], batch_size)
+        ]
+        real_prefixes = [
+            bool(value)
+            for value in self._info_values(
+                infos.get("is_real_prefix", [True] * batch_size), batch_size
+            )
+        ]
+        zero = state_logits.sum() * 0.0
+
+        birth_event_losses = []
+        balanced_background_losses = []
+        start_losses = []
+        assignment_count = 0
+        positive_assignments = {}
+        for birth_index in range(batch_size):
+            if not real_prefixes[birth_index]:
+                continue
+            rows = event_targets[birth_index][event_valid[birth_index]]
+            for row in rows:
+                if not bool(row[5].item()):
+                    continue
+                assignment_count += 1
+                video_name = video_names[birth_index]
+                start_frame = float(row[2].item())
+                class_id = int(row[1].item())
+                upper_frame = frames[birth_index]
+                risk_indices = [
+                    index
+                    for index in range(birth_index + 1)
+                    if real_prefixes[index]
+                    and video_names[index] == video_name
+                    and frames[index]
+                    >= max(0.0, start_frame - self.segment_size + 1.0)
+                ]
+                if not risk_indices:
+                    continue
+                if self.event_d1_lane == "r":
+                    current_score = (
+                        state_logits[birth_index].log_softmax(dim=-1)[:, 1]
+                        + class_logits[birth_index].log_softmax(dim=-1)[
+                            :, class_id
+                        ]
+                    )
+                    path = [int(current_score.detach().argmax().item())]
+                    risk_indices = [birth_index]
+                else:
+                    path = temporal_viterbi_assignment(
+                        state_logits[risk_indices],
+                        class_logits[risk_indices],
+                        query_features[risk_indices],
+                        class_id,
+                    )
+                selected = torch.stack(
+                    [
+                        birth_logits[time_index, query_index]
+                        for time_index, query_index in zip(risk_indices, path)
+                    ]
+                )
+                terminal_query = int(path[-1])
+                positive_assignments.setdefault(birth_index, set()).add(
+                    terminal_query
+                )
+                if self.event_d1_use_hazard:
+                    selected_frames = torch.tensor(
+                        [frames[index] for index in risk_indices],
+                        device=device,
+                        dtype=dtype,
+                    )
+                    interval_left = float(np.floor(start_frame))
+                    interval_right = float(np.ceil(start_frame))
+                    pre_birth = selected_frames < interval_left
+                    in_interval = (selected_frames >= interval_left) & (
+                        selected_frames <= interval_right
+                    )
+                    if not bool(in_interval.any().item()):
+                        # A truncated batch may begin at the observed crossing.
+                        in_interval[-1] = True
+                        pre_birth[-1] = False
+                    pre_survival_nll = F.softplus(selected[pre_birth]).sum()
+                    log_interval_survival = F.logsigmoid(
+                        -selected[in_interval]
+                    ).sum()
+                    interval_event_probability = (
+                        -torch.expm1(log_interval_survival)
+                    ).clamp_min(1e-8)
+                    birth_event_losses.append(
+                        pre_survival_nll - interval_event_probability.log()
+                    )
+                else:
+                    birth_event_losses.append(F.softplus(-selected[-1]))
+                start_losses.append(
+                    F.smooth_l1_loss(
+                        outputs["event_candidate_start_frames"][
+                            birth_index, terminal_query
+                        ]
+                        / self.segment_size,
+                        row[2] / self.segment_size,
+                    )
+                )
+
+        if not self.event_d1_use_hazard:
+            for batch_index in range(batch_size):
+                if not real_prefixes[batch_index]:
+                    continue
+                available = torch.ones(
+                    birth_logits.size(1), device=device, dtype=torch.bool
+                )
+                for query_index in positive_assignments.get(batch_index, ()):
+                    available[int(query_index)] = False
+                if available.any():
+                    balanced_background_losses.append(
+                        F.softplus(birth_logits[batch_index][available].max())
+                    )
+
+        ragged_logits = outputs["event_ragged_state_logits"]
+        ragged_targets = outputs["event_ragged_state_targets"]
+        ragged_end_offsets = outputs["event_ragged_end_offsets"]
+        ragged_end_targets = outputs["event_ragged_end_targets"]
+        ragged_class_logits = outputs["event_ragged_class_logits"]
+        ragged_class_targets = outputs["event_ragged_class_targets"]
+        ragged_embeddings = outputs["event_ragged_embeddings"]
+        group_keys = list(outputs["event_ragged_group_keys"])
+        if len(group_keys) != ragged_logits.size(0):
+            raise RuntimeError("ragged tensor/metadata length mismatch")
+
+        grouped = {}
+        for index, key in enumerate(group_keys):
+            group = (str(key[0]), int(key[1]))
+            grouped.setdefault(group, []).append(index)
+
+        owner_state_losses = []
+        owner_class_losses = []
+        end_hazard_losses = []
+        end_offset_losses = []
+        identity_losses = []
+        false_track_groups = 0
+        observed_end_groups = 0
+        for indices in grouped.values():
+            index_tensor = torch.tensor(indices, device=device, dtype=torch.long)
+            owner_state_losses.append(
+                F.cross_entropy(
+                    ragged_logits[index_tensor],
+                    ragged_targets[index_tensor],
+                )
+            )
+            class_mask = ragged_class_targets[index_tensor] >= 0
+            if class_mask.any():
+                owner_class_losses.append(
+                    F.cross_entropy(
+                        ragged_class_logits[index_tensor][class_mask],
+                        ragged_class_targets[index_tensor][class_mask],
+                    )
+                )
+            else:
+                false_track_groups += 1
+
+            target_event_id = group_keys[indices[0]][2]
+            if target_event_id is None:
+                continue
+            group_targets = ragged_targets[index_tensor]
+            end_margin = ragged_logits[index_tensor, 3] - ragged_logits[
+                index_tensor, :3
+            ].max(dim=-1).values
+            observed = group_targets == 3
+            if int(observed.sum().item()) > 1:
+                raise RuntimeError("a D1 track has more than one observed end")
+            at_risk = (group_targets == 1) | (group_targets == 2)
+            hazard_nll = F.softplus(end_margin[at_risk]).sum()
+            if observed.any():
+                observed_end_groups += 1
+                first_end = int(observed.nonzero(as_tuple=False)[0].item())
+                hazard_nll = hazard_nll + F.softplus(-end_margin[first_end])
+                end_offset_losses.append(
+                    F.smooth_l1_loss(
+                        ragged_end_offsets[index_tensor[first_end]],
+                        ragged_end_targets[index_tensor[first_end]],
+                    )
+                )
+            # If no observed end is present, this is a right-censored track and
+            # only its survival terms contribute.
+            if self.event_d1_use_hazard:
+                end_hazard_losses.append(hazard_nll)
+
+            if len(indices) > 1:
+                ordered = sorted(
+                    indices, key=lambda item: float(group_keys[item][3])
+                )
+                previous = ragged_embeddings[ordered[:-1]]
+                current = ragged_embeddings[ordered[1:]]
+                identity_losses.append(
+                    (1.0 - F.cosine_similarity(previous, current, dim=-1)).mean()
+                )
+
+        # Same-class concurrent instances are explicit identity negatives.
+        # Use one hardest negative per anchor so cost is linear in retained
+        # anchors rather than an unbounded trajectory-pair queue.
+        by_frame = {}
+        for index, key in enumerate(group_keys):
+            if key[2] is None or int(ragged_class_targets[index].item()) < 0:
+                continue
+            by_frame.setdefault((str(key[0]), float(key[3])), []).append(index)
+        for indices in by_frame.values():
+            for anchor in indices:
+                negatives = [
+                    other
+                    for other in indices
+                    if other != anchor
+                    and group_keys[other][2] != group_keys[anchor][2]
+                    and int(ragged_class_targets[other].item())
+                    == int(ragged_class_targets[anchor].item())
+                ]
+                if not negatives:
+                    continue
+                similarities = F.cosine_similarity(
+                    ragged_embeddings[anchor].unsqueeze(0),
+                    ragged_embeddings[negatives],
+                    dim=-1,
+                )
+                identity_losses.append(F.softplus(similarities.max()))
+
+        def mean_or_zero(values):
+            return torch.stack(values).mean() if values else zero
+
+        birth_loss = mean_or_zero(birth_event_losses)
+        if balanced_background_losses:
+            birth_loss = 0.5 * (
+                birth_loss + mean_or_zero(balanced_background_losses)
+            )
+        losses = {
+            "loss_event_birth": birth_loss,
+            "loss_event_start_offset": mean_or_zero(start_losses),
+            "loss_event_alive": zero,
+            "loss_event_end": mean_or_zero(end_hazard_losses),
+            "loss_event_end_offset": mean_or_zero(end_offset_losses),
+            "loss_event_owner_class": mean_or_zero(owner_class_losses),
+            "loss_event_owner_state": mean_or_zero(owner_state_losses),
+            "loss_event_identity": (
+                mean_or_zero(identity_losses)
+                if self.event_d1_use_identity
+                else zero
+            ),
+            "event_birth_positive_count": torch.tensor(
+                float(len(birth_event_losses)), device=device
+            ),
+            "event_alive_positive_count": (ragged_targets == 2).sum().detach(),
+            "event_end_positive_count": torch.tensor(
+                float(observed_end_groups), device=device
+            ),
+            "event_owner_assignment_count": torch.tensor(
+                float(assignment_count), device=device
+            ),
+            "event_ragged_track_count": torch.tensor(
+                float(len(grouped)), device=device
+            ),
+            "event_false_track_cancel_group_count": torch.tensor(
+                float(false_track_groups), device=device
+            ),
+        }
         return losses
     
     def get_loss(self, loss, outputs, targets, infos, indices, **kwargs):

@@ -203,6 +203,21 @@ def _gradient_norm(parameter: torch.nn.Parameter, name: str) -> float:
     return norm
 
 
+def _model_inputs(args, inputs, infos, targets):
+    if getattr(args, "event_lifecycle_version", "v1_dense") != "d1_censored":
+        return {"inputs": inputs, "infos": infos}
+    forbidden = {"duration", "true_duration", "video_time", "frame_to_time"}
+    visible_infos = {
+        key: value for key, value in infos.items() if key not in forbidden
+    }
+    return {
+        "inputs": inputs,
+        "infos": visible_infos,
+        "event_targets": targets["event_targets"],
+        "event_valid_mask": targets["event_valid_mask"],
+    }
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -217,8 +232,9 @@ def _run_lane(
     batch,
     device: torch.device,
     checkpoint_dir: Path,
+    lane_args: Optional[SimpleNamespace] = None,
 ) -> dict:
-    args = _lane_args(base_args, lane)
+    args = _lane_args(base_args, lane) if lane_args is None else lane_args
     inputs, targets, infos = _to_device(batch, device)
     model = torch.nn.DataParallel(build_model(args)).to(device)
     criterion = build_criterion(args, device)
@@ -231,7 +247,7 @@ def _run_lane(
     )
     model.train()
     criterion.train()
-    outputs = model({"inputs": inputs, "infos": infos}, device)
+    outputs = model(_model_inputs(args, inputs, infos, targets), device)
     loss_dict = criterion(outputs, targets, infos, device)
     weighted = {
         name: value * criterion.weight_dict[name]

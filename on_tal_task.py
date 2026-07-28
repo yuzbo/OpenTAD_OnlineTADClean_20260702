@@ -27,6 +27,37 @@ import glob
 from collections import OrderedDict
 
 
+D1_FORBIDDEN_MODEL_INFO = {
+    "duration",
+    "true_duration",
+    "video_time",
+    "frame_to_time",
+}
+
+
+def make_model_inputs(args, feature_inputs, infos, targets=None):
+    """Build the causal model boundary while retaining evaluator-only metadata."""
+
+    lifecycle = getattr(args, "event_lifecycle_version", "v1_dense")
+    if lifecycle == "d1_censored":
+        model_infos = {
+            key: value
+            for key, value in infos.items()
+            if key not in D1_FORBIDDEN_MODEL_INFO
+        }
+    else:
+        model_infos = infos
+    payload = {"inputs": feature_inputs, "infos": model_infos}
+    if (
+        lifecycle == "d1_censored"
+        and targets is not None
+        and bool(getattr(args, "training", False))
+    ):
+        payload["event_targets"] = targets["event_targets"]
+        payload["event_valid_mask"] = targets["event_valid_mask"]
+    return payload
+
+
 def write_model_predictions(args, model, infos, outputs, path, label_map):
     model_variant = getattr(args, 'model_variant', None)
     if model_variant is None:
@@ -200,16 +231,14 @@ def eval(args):
     # output path
     proposal_file = args.proposal_path.format({}, 'eval', str(epoch))
     proposal_txt_path = os.path.join(save_path, (proposal_file+'.txt'))
+    Path(proposal_txt_path.format("pred")).write_text("", encoding="utf-8")
     att_cnt = 0
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(test_loader, print_freq, header)):
         inputs, targets, infos = parrallel_collate_fn(inputs, targets, infos, args.p_videos)
         inputs = inputs.to(device) # batch x seq lens x feature size
         bs, seq_len, _ = inputs.shape
         targets = {k: v.to(device) for k, v in targets.items()}
-        inputs = {
-            "inputs": inputs,
-            "infos": infos
-        }
+        inputs = make_model_inputs(args, inputs, infos)
         
         # compute output
         outputs = model(inputs, device)
@@ -281,6 +310,7 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
     # output path
     proposal_file = args.proposal_path.format({},'train', str(epoch))
     proposal_txt_path = os.path.join(args.save_path, (proposal_file+'.txt'))
+    Path(proposal_txt_path.format("pred")).write_text("", encoding="utf-8")
 
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(train_loader, print_freq, header)):
         inputs, targets, infos = parrallel_collate_fn(inputs, targets, infos, args.p_videos)
@@ -288,10 +318,7 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
         bs, seq_len, _ = inputs.shape
         targets = {k: v.to(device) for k, v in targets.items()}
             
-        inputs = {
-            "inputs": inputs,
-            "infos": infos
-        }
+        inputs = make_model_inputs(args, inputs, infos, targets)
 
         outputs = model(inputs, device)
         _loss_dict = criterion(outputs, targets, infos, device)
@@ -384,16 +411,14 @@ def test_one_epoch(args, test_dataset, test_loader, model, criterion, optimizer,
     # output path
     proposal_file = args.proposal_path.format({},'test', str(epoch))
     proposal_txt_path = os.path.join(args.save_path, (proposal_file+'.txt'))
+    Path(proposal_txt_path.format("pred")).write_text("", encoding="utf-8")
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(test_loader, print_freq, header)):
         
         inputs, targets, infos = parrallel_collate_fn(inputs, targets, infos, args.p_videos)
         inputs = inputs.to(device) # batch x seq lens x feature size
         bs, seq_len, _ = inputs.shape
         targets = {k: v.to(device) for k, v in targets.items()}
-        inputs = {
-            "inputs": inputs,
-            "infos": infos
-        }
+        inputs = make_model_inputs(args, inputs, infos)
         
         # compute output
         outputs = model(inputs, device)

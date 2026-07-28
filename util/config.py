@@ -86,6 +86,26 @@ def make_parser():
         help='Physical fail-closed guard only; 0 means no semantic instance-count limit.',
     )
     parser.add_argument(
+        '--event_lifecycle_version',
+        default='v1_dense',
+        choices=('v1_dense', 'd1_censored'),
+        type=str,
+        help='Frozen v1 dense prototypes or D1 chronological censored ragged learning.',
+    )
+    parser.add_argument(
+        '--event_d1_lane',
+        default='th',
+        choices=('r', 't', 'h', 'th'),
+        type=str,
+        help='Registered D1 ablation: repair, trajectory, hazard, or their full combination.',
+    )
+    parser.add_argument(
+        '--event_teacher_forcing_ratio',
+        default=0.5,
+        type=float,
+        help='Pilot candidate for deterministic oracle/predicted track mixing; not a frozen paper hyperparameter.',
+    )
+    parser.add_argument(
         '--study_protocol',
         default='upstream_native',
         choices=('upstream_native', 'matched_study', 'locked_test'),
@@ -122,6 +142,7 @@ def make_parser():
     parser.add_argument('--reg_l1_coef', default=1, type=int)
     parser.add_argument('--reg_diou_coef', default=1, type=int)
     parser.add_argument('--reg_stcls_coef', default=1, type=int) 
+    parser.add_argument('--event_identity_coef', default=1.0, type=float)
     
     # evaluation
     parser.add_argument('--nms_threshold', default=0.3, type=float)

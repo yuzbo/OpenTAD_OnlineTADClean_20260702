@@ -1,0 +1,135 @@
+{
+  "protocol_id": "eventmatr_d1_preexperiments_v1",
+  "base_training_source": {
+    "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
+    "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
+  },
+  "scope": "standard closed-set fully-supervised strict-causal On-TAD on official MATR THUMOS14 RGB+flow features",
+  "problem_claims": {
+    "sparse_lifecycle": "dense BxQ background averaging under-scales approximately 0.1477 percent birth/end positives",
+    "runtime_gap": "prototype owner training does not train the chronological ragged inference lifecycle",
+    "identity_gap": "sticky records lack stable pre-birth assignment, learned cancellation, and reacquisition",
+    "causal_boundary": "true_duration, complete-video timing, and offline EOS are invalid model inputs"
+  },
+  "lanes": {
+    "N": {
+      "model_variant": "native_matr",
+      "role": "exact official parent anchor"
+    },
+    "R": {
+      "model_variant": "eventmatr",
+      "event_lifecycle_version": "d1_censored",
+      "event_d1_lane": "r",
+      "role": "balanced state risk plus chronological train-inference ragged repair"
+    },
+    "T": {
+      "model_variant": "eventmatr",
+      "event_lifecycle_version": "d1_censored",
+      "event_d1_lane": "t",
+      "role": "R plus temporal assignment, identity lock, cancellation, and reacquisition"
+    },
+    "H": {
+      "model_variant": "eventmatr",
+      "event_lifecycle_version": "d1_censored",
+      "event_d1_lane": "h",
+      "role": "R plus interval-censored first-birth and right-censored end hazards"
+    },
+    "TH": {
+      "model_variant": "eventmatr",
+      "event_lifecycle_version": "d1_censored",
+      "event_d1_lane": "th",
+      "role": "trajectory and censored-hazard combination"
+    }
+  },
+  "gates": [
+    {
+      "stage": "local_contracts",
+      "requires": [
+        "no-duration model boundary",
+        "observed EOS only",
+        "negative-start clamp",
+        "immutable positive-length ledger",
+        "same-class overlap identity test",
+        "Q+1 and R>Q stress",
+        "finite cross-prefix ragged gradients"
+      ]
+    },
+    {
+      "stage": "real_official_train_batch",
+      "requires": [
+        "forward",
+        "backward",
+        "one optimizer step",
+        "strict checkpoint reload",
+        "finite lifecycle and owner gradients",
+        "test_access=false"
+      ]
+    },
+    {
+      "stage": "seed52_short_pilots",
+      "epochs": [
+        5,
+        10,
+        20
+      ],
+      "lanes": [
+        "N",
+        "R",
+        "T",
+        "H",
+        "TH"
+      ],
+      "release_condition": "all prior hard contracts pass"
+    }
+  ],
+  "metrics": {
+    "detection": [
+      "mAP@0.3:0.7",
+      "Recall"
+    ],
+    "lifecycle": [
+      "birth/end/emit latency",
+      "close-to-birth ratio",
+      "active-after-observed-EOS",
+      "false-track cancellations",
+      "reacquisition success",
+      "duplicate close"
+    ],
+    "identity": [
+      "owner swap",
+      "ID switch",
+      "fragmentation",
+      "same-class overlap strata"
+    ],
+    "calibration": [
+      "birth/end NLL",
+      "Brier",
+      "ECE"
+    ],
+    "systems": [
+      "throughput",
+      "peak memory",
+      "active ragged records"
+    ]
+  },
+  "hard_failures": [
+    "future frame or future metadata access",
+    "ground-truth inference leakage",
+    "non-finite loss or gradient",
+    "negative or non-positive interval",
+    "duplicate or mutable ledger emission",
+    "silent capacity eviction",
+    "source identity mismatch"
+  ],
+  "forbidden": {
+    "locked_test_access": true,
+    "multi_seed": true,
+    "raw_rgb": true,
+    "threshold_search": true,
+    "lowering_threshold_to_force_output": true,
+    "automatic_monitoring": true
+  },
+  "fixed_preexperiment_seed": 52,
+  "test_access": false,
+  "strict_causal_paper_result_valid": false
+}
