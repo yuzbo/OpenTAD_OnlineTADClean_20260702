@@ -29,6 +29,7 @@ def test_d0_slurm_releases_exact_four_event_lanes_without_test():
     assert "LANES=(b0o0 b1o0 b0o1 b1o1)" in worker
     assert "--array=0-3%4" in submit
     assert "D0 audit forbids locked-test inputs" in worker
+    assert "#SBATCH --mem=54G" in worker
     assert "D0 audit forbids locked-test inputs" in submit
     assert "afterok:${ARRAY_JOB}" in submit
     assert "D0 output root already exists" in submit
