@@ -1280,3 +1280,68 @@ Reversibility:
 - Future scientific evidence can change the model or experiment design. A source
   explicitly withdrawn by the user cannot be restored as evidence without a new,
   explicit request.
+
+## DR-035: Freeze EventMATR v1, Separate Protocol-Zero from Learning-Zero, and Revise the Learning Core
+
+Status: active scientific revision; supersedes DR-031's `B×O` candidate as the
+paper mainline after preserving all completed v1 evidence.
+
+Decision:
+
+> Preserve `92cf34aa07bebee2a7a7e3661431d5055804b29b` as EventMATR v1 and do
+> not erase its runs. Before calling v1 an all-background neural failure, replay
+> its checkpoint in eval mode from the first prefix with a fresh writer, because
+> the formal training path disabled runtime and therefore produced an empty
+> ledger by construction. For the next model, retain the dynamic EventRecord,
+> lifecycle, end/emit separation and immutable ledger, while replacing the
+> single crossing, dense background loss and prototype-owner training with a
+> temporally stable birth assignment, event-normalized censored hazards,
+> identity-locked trajectories and training/inference-aligned ragged unroll.
+
+Reason:
+
+- the external Pro review, attachment SHA-256
+  `1BC0FDDA22B694F1EEA4485DF9478D6E252FB22AE4E53156F1B2903814023513`,
+  correctly confirmed the sparse-loss, runtime, crossing and owner mismatches;
+- independent local inspection confirmed that `true_duration` enters runtime,
+  `DynamicEventMemory.step` is non-differentiable, the training writer reads only
+  the runtime ledger, `Path.touch()` does not truncate old predictions, starts
+  may be negative and `owner_query_id % Q` aliases records when `R>Q`;
+- zero train mAP is therefore not by itself proof of a learned all-background
+  network, although the class-imbalance risk remains and must be measured on a
+  real batch;
+- the review's TH direction is scientifically promising but its per-prefix
+  Hungarian does not yet define a stable event-level birth hazard, and its
+  cancel/rebirth, censor encoding and data split require revision;
+- the four claimed sandbox code artifacts were not supplied, so their hashes,
+  9/9 tests and integration patch are not accepted as project evidence.
+
+Resolution:
+
+1. freeze v1 source/checkpoints and run an eval-only full-prefix replay plus
+   positive/negative gradient audit before any new training;
+2. treat `true_duration`, stale writer output, negative start and runtime/ledger
+   mismatch as P0 scientific-contract defects for the v2 branch;
+3. adopt `N/R/T/H/TH` as the intended factorization only after a stable temporal
+   pre-birth assignment and differentiable ragged unroll pass integration tests;
+4. do not freeze the review's rank, grace window, loss weights, teacher schedule,
+   effect sizes or epoch gates without pilot evidence;
+5. keep active-event memory in the core and defer learned visual hierarchy until
+   the trajectory-hazard mechanism passes;
+6. keep raw RGB as the final target, but do not use it to mask an unproven
+   feature-level event mechanism;
+7. distinguish hard correctness stops from soft mechanism diagnostics, then run
+   seed-52 five-lane 5/10/20-epoch pilots before any three-seed 100-epoch study.
+
+Source:
+
+- `PRO_TH_EVENTMATR_CODE_REVIEW_ABSORPTION_20260728.md`;
+- `PRO_TH_EVENTMATR_CODE_REVIEW_PROMPT_20260728.md`;
+- EventMATR v1 commit
+  `92cf34aa07bebee2a7a7e3661431d5055804b29b`.
+
+Reversibility:
+
+- The precise TH architecture remains reversible until Stage D1. The strict
+  causal metadata boundary, fresh-writer evaluation, v1 provenance and ban on
+  treating missing sandbox artifacts as verified code are not relaxed.

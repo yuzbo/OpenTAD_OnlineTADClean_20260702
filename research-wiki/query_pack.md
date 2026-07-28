@@ -206,6 +206,17 @@ memory。核心实例轨迹学习通过前，层级视觉保留/合并不能掩�
 正式归因应后置。完整外部审判 Prompt：
 `PRO_TH_EVENTMATR_CODE_REVIEW_PROMPT_20260728.md`。
 
+最新 Pro 回复已按附件 SHA-256
+`1BC0FDDA22B694F1EEA4485DF9478D6E252FB22AE4E53156F1B2903814023513`
+完整复核，项目裁决为 `PARTIAL ACCEPT / REVISE`。新增关键事实是：
+`true_duration` 提前进入 runtime，训练 runtime 默认关闭，而 train mAP writer 只读
+ledger，因此零 train mAP 首先可能是空 ledger 协议结果，不能直接证明网络已学成全背景。
+下一步先用 v1 checkpoint 做 eval-mode full-prefix replay 和真实 batch 梯度审计，再实现
+稳定跨时间 birth assignment、事件归一化 censored hazard、identity lock 和可微 ragged
+unroll。Pro 声称的四个 sandbox 代码/patch 文件没有随附件提供，其 SHA 和 `9/9` 测试
+不计入项目证据。完整处置见
+`PRO_TH_EVENTMATR_CODE_REVIEW_ABSORPTION_20260728.md` 与 DR-035。
+
 ## 正确外部审判的最终吸收（2026-07-23 复核）
 
 唯一有效附件是 `Raw-RGB Dynamic Event Memory On-TAD 独立深度审判`：新附件为
