@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-23
+updated: 2026-07-28
 status: active
 scope: Current compressed context for the official-parent strict-causal On-TAD task.
 ---
@@ -185,6 +185,26 @@ emit latency、活动事件数、记忆和吞吐。因果、正长度、不可�
 主决策：`research-wiki/decision_register.md` / DR-031。
 实验记录：
 `research-wiki/experiments/ontad-matr-official-parent-event-model-20260722.md`。
+
+## 2026-07-28：EventMATR v2 / Pro 代码审判交接
+
+EventMATR 派生代码已经发布到公开 GitHub 分支
+`codex/matr-event-memory`，远端精确 HEAD 为
+`92cf34aa07bebee2a7a7e3661431d5055804b29b`，tree 为
+`aef4f64bc020df9d39ead9811fbc01407f1c754a`。该提交仍是 EventMATR v1
+事实基线，不因下一步模型修订而删除。
+
+当前代码审计要重点复核四个学习风险：稀疏 START/ALIVE/END 被 dense 背景
+BCE/CE 淹没；训练默认不逐 prefix 展开真实 event runtime；dense owner prototype
+训练与 ragged persistent owner 推理分布不一致；单帧 START crossing 加 rising-edge
+使漏过开始后缺乏恢复路径。下一步候选不是抛弃 EventMATR，而是在保留 MATR 母体、
+动态 EventRecord、owner-conditioned end、end/emit 分离和严格因果合同的前提下，
+审判是否升级为 trajectory + censoring-aware hazard 的 EventMATR v2。
+
+分层记忆仍保留在最终路线中，但必须区分 active-event memory 与 visual-history
+memory。核心实例轨迹学习通过前，层级视觉保留/合并不能掩盖全背景塌缩；可以并行实现，
+正式归因应后置。完整外部审判 Prompt：
+`PRO_TH_EVENTMATR_CODE_REVIEW_PROMPT_20260728.md`。
 
 ## 正确外部审判的最终吸收（2026-07-23 复核）
 
