@@ -138,12 +138,20 @@ with the registered metrics and checkpoint payload.
 | CESR track-refine-commit | proposal lifecycle and identity are real needs | identity ledger and causal state survive as infrastructure | broad claim is covered by CAG-QIL, SimOn, OAT, MATR, ActionSwitch and related work | headline rejected; substrate only |
 | PCEH | instance end uncertainty is real, but the old class-level/repeated-positive formulation was invalid | D1 H repairs instance risk/right censoring; separate commit/emission hazard is not yet implemented | hazard primitive not novel; old PCEH claim remains unproved | demoted/HOLD |
 | CRS-EPS / state-transition sampling | uniform clips under-sample starts and transitions; full chronology may be expensive | only after D1 truth is established: event+uniform sampling with inclusion weights, ESS/calibration and gold full-packet comparison | efficiency/bias-control protocol, not headline | deferred enabling route |
-| PETAL / persistent trajectory | D0 sticky failure and same-class identity make persistent state relevant | feature-level T/TH is the narrow falsification; raw-video PETAL is not released | significant TrackFormer/MOT transplant risk | REVISE; feature-level only |
-| Raw-RGB dynamic event memory | appearance adaptation could matter only after the feature mechanism works | no current experiment by design | expensive substrate, not yet attributable | blocked by D1 gate |
+| PETAL / persistent trajectory | D0 sticky failure and repeated-instance identity make persistent state relevant | feature-level T/TH is the narrow falsification; raw-video PETAL is not released | significant TrackFormer/MOT transplant risk | REVISE; feature-level only |
+| Raw-RGB dynamic event memory | successor/extension of PETAL; appearance adaptation could matter only after the feature mechanism works | no current experiment by design | expensive substrate, not an independent candidate and not yet attributable | blocked by D1 gate |
+| Causal On-TAD pretraining / feature adaptation | a causal representation might help only after the lifecycle mechanism is identifiable | current frozen RGB+flow feature protocol isolates the head; no pretraining experiment now | broad, expensive infrastructure rather than the first scientific question | long-term only |
 | Evidence-aligned risk-controlled On-TAL | evidence-ready time is an interesting but different target | would require annotation-agreement and metric-value pilot | task-reformulation novelty is possible but outside the present standard benchmark | superseded for this route |
 | Three-clock/PIVOT observability | sensor/action clocks may be physically distinct | requires synchronized physical measurements | leaves standard On-TAD | rejected for this route |
 | Offline-teacher distillation | might stabilize a proven causal learner | no current experiment; would confound D1 attribution | support method only | forbidden before core D1 |
 | Continual/open-world On-TAL | unknown-class drift is scientifically valuable | requires a different dataset/protocol | separate high-ambition problem | not a near-term closed-set route |
+
+A fresh cross-file completeness audit found no omitted idea that should enter the
+current standard-task mainline. One-shot emission remains an archived baseline;
+zero-shot/open-vocabulary, anytime semantic alarms, active sensing/duty cycling,
+full-packet/full-tower training and hardware-clock observability are intentionally
+excluded because they are rejected baselines, cost/system choices, or different
+tasks rather than missing D1 mechanism candidates.
 
 ## Novelty audit
 
