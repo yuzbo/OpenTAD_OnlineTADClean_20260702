@@ -1,0 +1,55 @@
+{
+  "protocol_id": "eventmatr_v1_d0_checkpoint_replay_v1",
+  "purpose": "separate matched-training protocol-zero from learned runtime-zero before revising the EventMATR learning core",
+  "source_training_commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
+  "source_training_tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a",
+  "lanes": [
+    "b0o0",
+    "b1o0",
+    "b0o1",
+    "b1o1"
+  ],
+  "data": {
+    "dataset": "THUMOS14",
+    "subset": "official validation/train",
+    "input": "official pre-extracted RGB+flow features",
+    "locked_test_access": false,
+    "raw_rgb_claim": false
+  },
+  "checkpoint_policy": {
+    "epoch": 100,
+    "filename": "terminal_epoch100.pth",
+    "update_checkpoint": false,
+    "strict_state_dict_reload": true
+  },
+  "gradient_audit": {
+    "real_batch_size": 64,
+    "requires_positive_event_supervision": true,
+    "reports": [
+      "birth/alive/end prevalence",
+      "constant-predictor optima",
+      "raw and weighted losses",
+      "retained logit gradient mass",
+      "event/owner/shared-backbone parameter gradient norms"
+    ]
+  },
+  "replay": {
+    "model_mode": "eval",
+    "start": "first prefix of every training video",
+    "order": "strictly chronological within video",
+    "fresh_output_truncate": true,
+    "reports": [
+      "birth/end/emission/cancellation counts",
+      "active-count maximum",
+      "logit and argmax distributions",
+      "immutable ledger invariants",
+      "diagnostic train-replay mAP"
+    ]
+  },
+  "interpretation": {
+    "paper_performance_result": false,
+    "strict_causal_valid": false,
+    "invalid_reason": "v1 consumes true_duration, offline EOS, and complete-video-derived frame_to_time",
+    "next_gate": "use the receipt to choose D1 contract repair versus direct learning-core replacement"
+  }
+}
