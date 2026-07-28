@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:ontad-matr-official-parent-event-model-20260722
 title: "Official-MATR-Parent Event Ownership Factorial"
-status: implementation-verified-locally
-outcome: pending
-updated: 2026-07-23
+status: d0-replay-submitted
+outcome: pending-d0
+updated: 2026-07-28
 ---
 
 # Official-MATR-Parent Event Ownership Factorial — 2026-07-22
@@ -404,3 +404,72 @@ was installed from the configured academic PyPI mirror and import-verified; this
 an environment repair, not a source or model modification. Re-submitted smoke
 `1190635` uses the unchanged `ba3f153` source/data/manifest and is pending. Formal
 100-epoch lanes remain blocked on a valid five-lane receipt.
+
+### EventMATR-v1 Stage D0 checkpoint audit submitted — 2026-07-28
+
+The official-data five-lane smoke eventually passed, and the exact
+`92cf34aa07bebee2a7a7e3661431d5055804b29b` formal run produced terminal
+epoch-100 checkpoints for B0O0/B1O0/B0O1/B1O1. Native MATR `1190735` instead
+ended by wall-time timeout without an epoch-100 terminal artifact. This blocks
+the originally planned five-lane parity completion, but it does not invalidate
+the four frozen EventMATR checkpoints as read-only diagnostic inputs.
+
+Every `proposal_pred_train_*.txt` written during the four event-arm training
+runs is empty. Code and artifact review established that the matched training
+loop runs `model.train()` with `event_runtime_during_training=false`, while the
+proposal writer drains only the runtime ledger. Therefore the recorded
+train-split zero mAP is a protocol/runtime-off zero and cannot by itself prove
+that the learned event logits collapsed to background.
+
+Stage D0 was implemented in an independent worktree and public branch
+`codex/eventmatr-v1-d0-replay`. Its final exact source is commit
+`cc06a1e7d70fb8aadbd8282f1d928d34c71995ea`, tree
+`3755e090c49b4f132c80a6e81bb593f5d08fe79f`, protocol
+`eventmatr_v1_d0_checkpoint_replay_v1`. Local and N16 contract tests are
+`4 passed`. The audit performs no optimizer step and never updates a
+checkpoint. For each of the four lanes it:
+
+- strictly reloads the terminal epoch-100 checkpoint;
+- measures real official-train-batch event prevalence, constant-predictor
+  optima, weighted losses, retained logit gradient mass, and event/owner/shared
+  parameter gradients;
+- switches the same frozen model to `eval()` and replays every official
+  validation/train prefix from frame zero in chronological, single-video
+  batches;
+- truncates fresh proposal outputs before use and reports START/ALIVE/END
+  distributions, birth/end/emission counts, ledger invariants, and diagnostic
+  train-replay mAP;
+- binds every lane receipt to the diagnostic commit/tree, the original training
+  commit/tree, exact lane/checkpoint/opts, shared dataset identity, locked-test
+  absent sentinel, and complete receipt set.
+
+This replay is deliberately marked `strict_causal_paper_result_valid=false`:
+EventMATR-v1 consumes `true_duration`, offline EOS, and complete-video-derived
+`frame_to_time`. Its output can diagnose learned-runtime zero versus
+training-protocol zero, but cannot be reported as strict-causal paper
+performance and does not unlock the locked test.
+
+Current formal D0 run:
+
+- checkout:
+  `/data/run01/sczc063/yuzibo/EventMATR_v1_D0_cc06a1e7d70f`;
+- output:
+  `/data/run01/sczc063/yuzibo/runs/eventmatr_v1_d0/eventmatr_v1_d0_seed52_20260728_155830_cc06a1e`;
+- four-lane Slurm array: `1199738`;
+- dependent fail-closed finalizer: `1199739`;
+- launch receipt: `SUBMITTED`, `test_access=false`, both jobs `PENDING` at
+  the first independent queue check.
+
+N16 now requires partition-default memory, `--gpus=1` syntax, and a GPU request
+even for the short finalizer. Earlier resource-syntax attempts either failed
+before job creation or left pending arrays `1199723`/`1199732`; both orphan
+arrays were identity-checked and cancelled before any GPU allocation. They are
+scheduler-contract evidence only, not data or model failures. The final
+submitter now atomically cancels its array if finalizer submission fails.
+
+D0 completion will choose the next scientific action. Non-trivial logits and
+gradients with zero runtime output direct D1 toward runtime/decision alignment;
+background-dominated gradients direct D1 toward event-normalized censored
+hazard and stable temporal birth assignment. Only after D1 contracts pass may
+the registered v2 N/R/T/H/TH model pilots begin. Locked test, multi-seed,
+hierarchical visual-memory claims, and raw-RGB training remain blocked.

@@ -65,6 +65,19 @@ scope: Current compressed context for the official-parent strict-causal On-TAD t
 
 > Current staging status (third hourly monitor): the resumable official archive download is `1,041/11,622` 512KB ranges complete (about 533MB) and the N16 screen session is alive. This is a gain of 499 complete ranges since the preceding monitor. The proxy cannot sustain aggressive parallelism, so a single-range worker is intentionally used for integrity-preserving resume. No ready sentinel, feature/annotation file, manifest, smoke job, model result, or performance claim exists yet.
 
+> Latest D0 status (2026-07-28): official data and five-lane real-batch smoke
+> are complete. Four EventMATR lanes reached epoch 100; native MATR timed out
+> without a terminal epoch-100 artifact. Empty event-arm training proposal files
+> are protocol/runtime-off evidence because runtime is disabled in
+> `model.train()`, not proof of learned all-background collapse. Frozen D0 exact
+> `cc06a1e7d70fb8aadbd8282f1d928d34c71995ea` replays all official train
+> prefixes in eval mode and audits real-batch gradients without updating a
+> checkpoint. Slurm array `1199738` plus finalizer `1199739` are submitted and
+> pending under run `eventmatr_v1_d0_seed52_20260728_155830_cc06a1e`.
+> `test_access=false`; v1 true-duration/EOS use makes D0 diagnostic rather than
+> strict-causal paper performance. D1/v2, locked test, multi-seed and raw-RGB
+> remain gated on the D0 receipt.
+
 # Query Pack: Official-MATR-Parent Strictly Causal On-TAD
 
 ## 最终任务
@@ -164,23 +177,26 @@ emit latency、活动事件数、记忆和吞吐。因果、正长度、不可�
 
 ## 当前执行状态与下一步
 
-1. 官方四库已只读克隆并记录精确 SHA；MATR 原始设置已逐文件核验。
-2. 已创建独立 MATR 派生库和 `codex/matr-event-memory` 分支；官方只读树未修改。
-   当前实现 exact=`64d7f78dd8ed1436bac08ebfb03b51c90142129b`，
-   tree=`bc6f5057e954ed448dcb5173489eba7c4dcba27d`，manifest
-   SHA-256=`B6D3B51A14253E66A9D5C110F5B08FDAF96C31EB48FB2DF9A3B57CD5E61FB1C9`。
-3. native isolation、四个 B×O 模型、损失、ragged runtime、训练/终检/locked-test 脚本和
-   精确源码身份收据均已实现。
-4. 本地完整合同为 `62 passed`；official protocol、Python compile、Git-Bash syntax 与
-   `git diff --check` 均通过；同一 exact 已部署到 N16R4 并再次 `62 passed in 49.26s`。
-   这些只证明实现链，不证明性能。
-5. 下一门是单卡 Linux 上的真实官方训练批次 smoke：五路各 forward/backward/Adam step、
-   finite loss/gradient、event/owner gradient、checkpoint strict reload，且 test access=false。
-6. smoke PASS 后并行释放 native + 四个 EventMATR `100`-epoch lane，随后冻结终点各做一次
-   locked test；不是先用 calibration 选 checkpoint。
-7. 当前 N16R4 未找到精确官方 MATR feature/annotation，且远端 Google Drive 不可达；因此
-   正式 DAG 尚未提交。不得用 OpenTAD/SigLIP2 特征替换后伪称官方 parity。
-8. 结果写 Wiki并裁决机制后，才进入最终 raw-RGB 阶段。
+1. 官方四库保持只读并记录精确 SHA；唯一可写母体仍是 MATR 派生库，官方参考树未修改。
+2. 官方 THUMOS14 数据已完整下载、格式验证并冻结 SHA；五路真实批次 smoke 已 PASS，
+   `test_access=false`。
+3. exact `92cf34aa07bebee2a7a7e3661431d5055804b29b` 的四个 EventMATR 臂均完成
+   100 epochs 并保存终点 checkpoint；native `1190735` 因 wall time 超时而没有终点，
+   因此原五路 parity completion 仍未成立。
+4. 训练期 proposal 全空首先是协议事实：默认训练不展开 event runtime，writer 又只读
+   ledger；不能据此宣称网络已经学成全背景，也不能访问 locked test 猜性能。
+5. 独立 D0 分支 `codex/eventmatr-v1-d0-replay` 的 exact 为
+   `cc06a1e7d70fb8aadbd8282f1d928d34c71995ea`，tree
+   `3755e090c49b4f132c80a6e81bb593f5d08fe79f`。它严格只读 checkpoint，
+   在 official train 上做真实 batch 梯度/稀疏性审计与 eval-mode 全前缀 replay。
+6. D0 run 为 `eventmatr_v1_d0_seed52_20260728_155830_cc06a1e`，Slurm 四路数组
+   `1199738`，依赖终检 `1199739`；首检队列/依赖/commit/tree/manifest 全匹配。
+7. D0 使用 v1 的 `true_duration`、offline EOS 和全视频 frame-to-time，所以结果只回答
+   “训练协议零还是 learned-runtime 零”，不具严格因果论文性能效力。
+8. D0 若显示非退化 logits/gradient 但 runtime 零，D1 优先修 runtime/decision 对齐；
+   若显示 dense 背景主导，则优先 event-normalized censored hazard 和稳定 temporal birth
+   assignment。D1 合同通过后才并行 N/R/T/H/TH v2 pilot。
+9. locked test、multi-seed、层级视觉记忆贡献和 raw-RGB 仍全部锁定；最终目标没有变化。
 
 主决策：`research-wiki/decision_register.md` / DR-031。
 实验记录：
