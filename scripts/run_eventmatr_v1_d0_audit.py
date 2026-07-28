@@ -639,7 +639,9 @@ def _full_train_replay(
     # Explicit truncation is essential: the inherited writer only touches and
     # appends, which previously made stale-output reuse possible.
     proposal_txt.write_text("", encoding="utf-8")
-    proposal_template = str(output_dir / "proposal_{}_train_replay")
+    proposal_template = str(output_dir / "proposal_{}_train_replay.txt")
+    if Path(proposal_template.format("pred")) != proposal_txt:
+        raise RuntimeError("D0 proposal writer/checker path contract diverged")
 
     stats = {
         "event_state_logits": RunningTensorStats(),

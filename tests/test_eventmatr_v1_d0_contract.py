@@ -11,6 +11,12 @@ def test_d0_replay_is_train_only_fresh_and_checkpoint_read_only():
     assert 'THUMOS14Dataset(args, subset="train")' in source
     assert 'subset="test"' not in source
     assert 'proposal_txt.write_text("", encoding="utf-8")' in source
+    assert (
+        'proposal_template = str(output_dir / "proposal_{}_train_replay.txt")'
+        in source
+    )
+    assert "proposal_template.format(\"pred\")" in source
+    assert "D0 proposal writer/checker path contract diverged" in source
     assert 'model.load_state_dict(checkpoint["state_dict"], strict=True)' in source
     assert '"checkpoint_updated": False' in source
     assert "optimizer.step(" not in source
