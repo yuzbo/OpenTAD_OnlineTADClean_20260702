@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:ontad-matr-official-parent-event-model-20260722
 title: "Official-MATR-Parent Event Ownership Factorial"
-status: d0-replay-recovery-submitted
-outcome: pending-d0-recovery
+status: d0-complete
+outcome: revise-learning-and-runtime
 updated: 2026-07-28
 ---
 
@@ -531,3 +531,78 @@ it entered `DependencyNeverSatisfied`. The checkpoint-only recovery run is:
 This is a replay recovery, not retraining. The next evidence gate remains four
 complete lane receipts plus `d0_pair_completion.json`; only those persisted
 gradient/logit/runtime distributions may choose the D1 learning change.
+
+### D0 complete: learning signal exists, sticky ownership does not close — 2026-07-28
+
+Recovery array `1200180` and finalizer `1200181` completed `0:0`. All four
+worker stderr files are empty. The final `d0_pair_completion.json` is `PASS`,
+with `test_access=false`, `checkpoint_updated=false`, diagnostic exact
+`ca914f3ea337d1e8f0f005d394a05ec81edc0ee7`, tree
+`05e3cd8f11d30bdd65c5fba6c1b712e001c6a52d`, manifest SHA-256
+`f2b074a3ad06449c4dddf4522d935db1574190b70a46fcb21deff5495ffed260`,
+and source-training exact `92cf34aa07bebee2a7a7e3661431d5055804b29b`.
+All `203,363` real prefixes from `200` official train/validation videos were
+replayed in chronological single-video batches; the locked-test path remained
+the absent sentinel.
+
+| Lane | Births | Ends / emits | Active after EOS | Max active | Diagnostic train-replay avg mAP (%) |
+|---|---:|---:|---:|---:|---:|
+| B0O0, delayed + rematch | 797 | 626 / 626 | 1 | 2 | 12.6698 |
+| B1O0, immediate + rematch | 2,116 | 1,716 / 1,716 | 4 | 2 | 39.1084 |
+| B0O1, delayed + sticky | 799 | 336 / 336 | 64 | 79 | 0.1326 |
+| B1O1, immediate + sticky | 1,854 | 6 / 6 | 1,407 | 49 | 0.1758 |
+
+These mAP values are diagnostic train-prefix replay only. Every receipt sets
+`strict_causal_paper_result_valid=false` because v1 consumes `true_duration`,
+offline EOS and complete-video timing. They cannot rank a paper method, unlock
+the test set, or authorize multi-seed/raw-RGB training. They do establish that
+the former empty training proposal files were protocol-zero rather than a
+uniform eval-runtime zero.
+
+The network is not gradient-dead. In all four lanes the real-batch audit found
+`273` finite gradient tensors and zero zero-gradient tensors. Event-transition
+gradient norms are `0.0486–0.0837`, owner cross-attention norms
+`0.0161–0.0292`, and owner-state norms `0.0502–0.0797`. Positive and negative
+retained gradient mass is nonzero for birth and end logits in every lane.
+
+The learning problem is nevertheless severe. Across the full replay, birth and
+end positives are only about `0.1477%` of valid query-time rows; alive positives
+are `1.616%` for B0 and `2.781%` for B1. Their constant-predictor optimal
+birth/end logit is about `-6.52`, while learned mean birth logits are
+`-12.48…-12.97` and learned mean end logits are `-13.97…-14.30`. The maxima are
+positive, so this is sparse under-learning and miscalibration rather than a
+literal constant-background network. Event-normalized first-birth and
+right-censored end objectives remain necessary.
+
+The runtime problem is independent and stronger for sticky ownership. B1O1
+creates `1,854` records but closes only `6`, leaving `1,407` active after EOS;
+B0O1 leaves `64`. Fresh rematching closes nearly all accepted records. Therefore
+v1 sticky ownership is not a learned trajectory: it preserves records without
+training an aligned owner-conditioned survival/termination process.
+
+The ledger still proves useful substrate contracts: all four lanes have zero
+duplicate IDs, non-positive intervals, sequence violations, invalid classes,
+emit-before-end rows, emit-after-last-real rows and capacity exhaustion.
+However, B0O0/B0O1/B1O0 contain `3/2/5` negative-start rows, another D1 hard
+contract to remove.
+
+The D1 verdict is **both learning-core and runtime alignment**, not threshold
+tuning:
+
+1. remove `true_duration`, complete-video timing and offline EOS from the model
+   boundary; EOS is only a current signal when observed;
+2. replace dense background-dominated lifecycle training with event-normalized
+   interval-censored first-birth and right-censored end hazard;
+3. train the same ragged chronological event update used at inference, mixing
+   oracle and predicted tracks so cancel/rebirth has real supervision;
+4. establish stable pre-birth temporal assignment, then lock identity after
+   birth with explicit reacquisition rather than v1's untrained sticky record;
+5. fix negative starts and retain the already passing immutable-ledger,
+   positive-length, no-duplicate and no-capacity-exhaustion contracts.
+
+B1O0 is the functional v1 reference for D1 because immediate birth provides a
+strong diagnostic signal without sticky-record accumulation. It is not the
+paper answer. After D1 integration tests pass, the registered
+`N/R/T/H/TH` seed-52 pilots may test respectively the native anchor,
+training/runtime repair, trajectory identity, censored hazard and their full
+combination.

@@ -1345,3 +1345,62 @@ Reversibility:
 - The precise TH architecture remains reversible until Stage D1. The strict
   causal metadata boundary, fresh-writer evaluation, v1 provenance and ban on
   treating missing sandbox artifacts as verified code are not relaxed.
+
+## DR-036: D0 Proves Dual Failure — Sparse Hazard Learning and Unaligned Sticky Runtime
+
+Status: active D1 implementation decision; closes DR-035 Stage D0.
+
+Decision:
+
+> Close EventMATR-v1 D0 as a valid diagnostic PASS, not a paper-performance
+> result. The frozen network has nonzero lifecycle/owner gradients and can emit
+> intervals, so do not label it a uniform all-background collapse. Its sparse
+> birth/end learning is still badly under-scaled, and sticky ownership creates
+> records without a learned termination process. D1 must therefore combine
+> event-normalized censored hazards with training/inference-aligned ragged
+> trajectories; neither threshold adjustment nor runtime-only patching is
+> sufficient.
+
+Reason:
+
+- D0 exact `ca914f3ea337d1e8f0f005d394a05ec81edc0ee7` completed four receipts and
+  one pair receipt with `test_access=false` and unchanged checkpoints;
+- every lane has finite nonzero event-transition, owner-attention/state and
+  birth/end gradient evidence;
+- birth/end positives are about `0.1477%`, while mean learned logits are much
+  more negative than the corresponding constant-predictor optimum;
+- B1O0 closes `1,716/2,116` born events with four active after EOS, whereas
+  B1O1 closes only `6/1,854` and leaves `1,407` active after EOS;
+- duplicate, non-positive, sequence, class, emission-order and capacity
+  invariants pass, but ten negative-start rows and future-duration/EOS metadata
+  remain D1 hard defects;
+- all D0 mAP values are train-replay diagnostics with
+  `strict_causal_paper_result_valid=false`.
+
+Resolution:
+
+1. use B1O0 as the functional v1 reference, not as the paper candidate;
+2. remove `true_duration`, complete-video timing and offline EOS from runtime;
+3. implement stable pre-birth assignment and chronological differentiable
+   ragged unroll before claiming trajectory hazards;
+4. implement event-normalized interval-censored first-birth and right-censored
+   owner-conditioned end;
+5. add identity lock with cancel/reacquisition rather than retaining an
+   incorrectly born record indefinitely;
+6. require negative-start, same-class overlap, EOS, Q+1 birth and R>Q tests;
+7. after D1 contracts pass, release only the registered seed-52
+   `N/R/T/H/TH` pilots; keep locked test, multi-seed, hierarchy and raw-RGB
+   blocked.
+
+Source:
+
+- [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md);
+- D0 pair receipt from
+  `eventmatr_v1_d0_seed52_20260728_203713_ca914f3`;
+- `PRO_TH_EVENTMATR_CODE_REVIEW_ABSORPTION_20260728.md`.
+
+Reversibility:
+
+- The exact D1 implementation and pilot hyperparameters remain reversible.
+  D0 provenance, the dual-failure diagnosis and the strict-causal metadata
+  boundary may change only if a new audited receipt contradicts them.

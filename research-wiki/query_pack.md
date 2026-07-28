@@ -233,28 +233,37 @@ unroll。Pro 声称的四个 sandbox 代码/patch 文件没有随附件提供，
 不计入项目证据。完整处置见
 `PRO_TH_EVENTMATR_CODE_REVIEW_ABSORPTION_20260728.md` 与 DR-035。
 
-## 2026-07-28：D0 recovery 当前交接
+## 2026-07-28：D0 已完成，D1 当前交接
 
-首轮 D0 四臂不是模型失败。四臂都完成了 `3270/3270` 个 official-train
-prefix replay，并产生非零 runtime emit；随后审计器因为检查
-`proposal_pred_train_replay.txt`、而继承 writer 写入无扩展名文件，统一触发
-proposal/ledger mismatch。失败 run 没有持久化梯度、logit、配对或 mAP receipt，
-因此只能证明 eval runtime 非全零，不能选择最终 D1，也不能形成论文性能。
+D0 recovery 数组 `1200180` 与终检 `1200181` 均 `COMPLETED 0:0`。run
+`eventmatr_v1_d0_seed52_20260728_203713_ca914f3` 的四份
+`d0_audit_receipt.json` 与 `d0_pair_completion.json` 全部 PASS；
+`test_access=false`、`checkpoint_updated=false`，exact diagnostic/source
+身份和四个 epoch-100 checkpoint SHA 已绑定。
 
-最小合同修复为 exact
-`ca914f3ea337d1e8f0f005d394a05ec81edc0ee7`、tree
-`05e3cd8f11d30bdd65c5fba6c1b712e001c6a52d`；本地和 N16 均 `4 passed`，
-模型、loss、checkpoint、官方数据和 test 锁不变。当前 checkpoint-only recovery：
+| lane | birth | emit | EOS 后仍 active | 诊断 avg mAP (%) |
+|---|---:|---:|---:|---:|
+| B0O0 | 797 | 626 | 1 | 12.6698 |
+| B1O0 | 2,116 | 1,716 | 4 | 39.1084 |
+| B0O1 | 799 | 336 | 64 | 0.1326 |
+| B1O1 | 1,854 | 6 | 1,407 | 0.1758 |
 
-- run：`eventmatr_v1_d0_seed52_20260728_203713_ca914f3`；
-- 四路数组：`1200180`；
-- 依赖终检：`1200181`；
-- `test_access=false`。
+四臂都存在 finite、非零的 event transition、owner attention/state 与 birth/end
+梯度，因此不是网络完全死亡。真正问题有两个：birth/end 正例仅约 `0.1477%`，
+均值 logit 比常数最优值更负约 6–8 个单位；同时 sticky owner 大量出生却几乎不结束，
+说明训练对象与 ragged runtime 生命周期错位。D1 必须同时完成：
 
-下一次接手优先运行 `C:\tmp\ontad_d0_monitor_ca914f3.ps1`。只有四份
-`d0_audit_receipt.json` 与 `d0_pair_completion.json` 都完成后，才依据持久化的
-gradient/logit/runtime 分布裁决 D1；不得把 v1 的 true-duration/EOS replay mAP
-写成严格因果论文结果，也不得提前访问 locked test、启动 multi-seed 或 raw-RGB。
+1. no-duration/no-offline-EOS 模型边界；
+2. event-normalized interval-censored birth 与 right-censored end hazard；
+3. stable temporal birth assignment；
+4. differentiable chronological ragged unroll；
+5. birth 后 identity lock、错误初生 cancel 与 reacquisition；
+6. negative-start=0 和既有 ledger 不变量回归。
+
+B1O0 是 D1 的功能参考，不是论文结果。上述 mAP 全部来自 v1 official-train replay，
+因 true-duration/EOS 明确 `strict_causal_paper_result_valid=false`。下一任务是在新 v2
+分支完成 Stage D1 及测试，然后才提交 `N/R/T/H/TH` seed-52 五路 pilot；locked test、
+multi-seed、视觉层级记忆贡献实验和 raw-RGB 继续锁定。
 
 ## 正确外部审判的最终吸收（2026-07-23 复核）
 
