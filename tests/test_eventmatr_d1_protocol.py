@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from scripts.finalize_eventmatr_d1_pilot import validate_metric_lines
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -81,3 +85,72 @@ def test_d1_slurm_smoke_is_identity_gated_and_runs_real_batch_last() -> None:
     assert "run_eventmatr_d1_real_smoke.py" in source
     assert source.find("run_eventmatr_d1_real_smoke.py") > source.find("pytest")
     assert "MATR_D1_SMOKE_RECEIPT" in source
+
+
+def test_d1_seed52_pilot_array_is_registered_and_train_only() -> None:
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d1_pilot_array.sh"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "scripts" / "train_eventmatr_d1_pilot.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d1_pilot.py"
+    ).read_text(encoding="utf-8")
+    assert "LANES=(N R T H TH)" in slurm
+    assert "HORIZONS=(5 10 20)" in slurm
+    assert "TASK_ID >= 15" in slurm
+    assert "#SBATCH --gpus=1" in slurm
+    assert "#SBATCH --mem" not in slurm
+    assert "verify_source_identity.py" in slurm
+    assert "--smoke-receipt" in slurm
+    assert "--study_protocol d1_preexperiment" in launcher
+    assert "--random_seed 52" in launcher
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
+    assert "--event_teacher_forcing_ratio 0.5" in launcher
+    assert '"test_access": False' in finalizer
+    assert '"strict_causal_paper_result_valid": False' in finalizer
+    assert '"train_prefix_metrics_diagnostic_only": True' in finalizer
+
+
+def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:
+    empty = [
+        {
+            "epoch": epoch,
+            "metrics": {},
+            "test_access": False,
+            "strict_causal_paper_result_valid": False,
+        }
+        for epoch in range(1, 6)
+    ]
+    with pytest.raises(ValueError, match="non-empty"):
+        validate_metric_lines(empty, "N", 5)
+
+    common_only = [
+        {
+            "epoch": epoch,
+            "metrics": {
+                key: 0.0
+                for key in (
+                    "loss",
+                    "loss_cls",
+                    "loss_flag",
+                    "loss_reg_l1",
+                    "loss_reg_diou",
+                    "loss_reg_stcls",
+                    "lr",
+                    "mAP_train",
+                    "mAP_03_train",
+                    "mAP_04_train",
+                    "mAP_05_train",
+                    "mAP_06_train",
+                    "mAP_07_train",
+                )
+            },
+            "test_access": False,
+            "strict_causal_paper_result_valid": False,
+        }
+        for epoch in range(1, 6)
+    ]
+    with pytest.raises(ValueError, match="required keys"):
+        validate_metric_lines(common_only, "TH", 5)

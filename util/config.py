@@ -108,9 +108,14 @@ def make_parser():
     parser.add_argument(
         '--study_protocol',
         default='upstream_native',
-        choices=('upstream_native', 'matched_study', 'locked_test'),
+        choices=(
+            'upstream_native',
+            'matched_study',
+            'd1_preexperiment',
+            'locked_test',
+        ),
         type=str,
-        help='Audit label separating untouched upstream behaviour, terminal-epoch training, and one-shot test.',
+        help='Audit label separating upstream behaviour, formal training, D1 train-only pilots, and one-shot test.',
     )
     
     parser.add_argument('--use_flag', action='store_true')

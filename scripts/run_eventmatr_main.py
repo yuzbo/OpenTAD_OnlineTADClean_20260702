@@ -22,6 +22,13 @@ ARM_MODES = {
     "b1o1": ("instant_transition", "sticky_owner"),
 }
 
+D1_LANES = {
+    "R": ("r", "fresh_rematch", "b1o0"),
+    "T": ("t", "sticky_owner", "b1o1"),
+    "H": ("h", "fresh_rematch", "b1o0"),
+    "TH": ("th", "sticky_owner", "b1o1"),
+}
+
 OFFICIAL_SETTING = {
     "feat_dim": 4096,
     "num_frame": 64,
@@ -46,7 +53,51 @@ OFFICIAL_SETTING = {
 
 def _validate(args) -> str:
     lane = os.environ.get("MATR_LANE", "")
-    if lane == "native_matr":
+    d1_preexperiment = args.study_protocol == "d1_preexperiment"
+    if d1_preexperiment:
+        if args.mode != "train":
+            raise RuntimeError("d1_preexperiment is a train-only protocol")
+        if args.epochs not in {5, 10, 20}:
+            raise RuntimeError("D1 pilot epochs must be one of 5, 10, or 20")
+        if args.train_eval_step != args.epochs:
+            raise RuntimeError("D1 pilots evaluate the train prefix only at terminal epoch")
+        if lane == "N":
+            if args.model_variant != "native_matr":
+                raise RuntimeError("D1 lane N requires --model_variant native_matr")
+            if args.event_arm is not None:
+                raise RuntimeError("D1 lane N must not provide --event_arm")
+            if args.event_lifecycle_version != "v1_dense":
+                raise RuntimeError("D1 lane N must preserve the native lifecycle")
+        elif lane in D1_LANES:
+            d1_lane, ownership_mode, event_arm = D1_LANES[lane]
+            expected = {
+                "model_variant": "eventmatr",
+                "event_lifecycle_version": "d1_censored",
+                "event_d1_lane": d1_lane,
+                "birth_mode": "instant_transition",
+                "ownership_mode": ownership_mode,
+                "event_arm": event_arm,
+                "event_teacher_forcing_ratio": 0.5,
+            }
+            mismatched_lane = {
+                name: {"expected": value, "actual": getattr(args, name)}
+                for name, value in expected.items()
+                if getattr(args, name) != value
+            }
+            if mismatched_lane:
+                raise RuntimeError(
+                    f"D1 lane {lane} drift is forbidden:\n"
+                    + json.dumps(mismatched_lane, indent=2, sort_keys=True)
+                )
+            if args.event_birth_logit_threshold is not None:
+                raise RuntimeError("D1 pilots forbid a fixed birth threshold")
+            if args.event_end_logit_threshold is not None:
+                raise RuntimeError("D1 pilots forbid a fixed end threshold")
+        else:
+            raise RuntimeError(
+                f"D1 MATR_LANE must be one of {['N', *D1_LANES]}, got {lane!r}"
+            )
+    elif lane == "native_matr":
         if args.model_variant != "native_matr":
             raise RuntimeError("native_matr lane requires --model_variant native_matr")
         if args.event_arm is not None:
@@ -75,9 +126,12 @@ def _validate(args) -> str:
     if args.study_protocol == "locked_test" and args.mode != "eval":
         raise RuntimeError("locked_test is an eval-only protocol")
 
+    official_setting = dict(OFFICIAL_SETTING)
+    if d1_preexperiment:
+        official_setting.pop("epochs")
     mismatches = {
         name: {"expected": expected, "actual": getattr(args, name)}
-        for name, expected in OFFICIAL_SETTING.items()
+        for name, expected in official_setting.items()
         if getattr(args, name) != expected
     }
     if not args.rgb or not args.flow or not args.use_focal or not args.use_flag:

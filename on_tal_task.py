@@ -88,9 +88,13 @@ def training_state(model, criterion, optimizer, scheduler, epoch, args):
         
 def train(args):
     save_path = args.save_path
-    matched_study = getattr(args, 'study_protocol', 'upstream_native') == 'matched_study'
+    study_protocol = getattr(args, 'study_protocol', 'upstream_native')
+    matched_study = study_protocol == 'matched_study'
+    d1_preexperiment = study_protocol == 'd1_preexperiment'
     if matched_study and args.epochs != 100:
         raise ValueError('matched_study requires the preregistered terminal epoch 100')
+    if d1_preexperiment and args.epochs not in {5, 10, 20}:
+        raise ValueError('d1_preexperiment epochs must be one of 5, 10, or 20')
 
     train_dataset = THUMOS14Dataset(args, subset='train')
     train_loader = torch.utils.data.DataLoader(train_dataset, 
@@ -101,6 +105,9 @@ def train(args):
     # features.  It must not construct or iterate a THUMOS test loader.  The
     # untouched upstream path remains available outside the formal protocol.
     if matched_study:
+        test_dataset = None
+        test_loader = None
+    elif d1_preexperiment:
         test_dataset = None
         test_loader = None
     else:
@@ -147,6 +154,21 @@ def train(args):
     for epoch in range(start_epoch, args.epochs + 1):
         print_log(save_path, '----- %s at epoch #%d' % ('Train', epoch))
         train_log = train_one_epoch(args, train_dataset, train_loader, model, criterion, optimizer, epoch, device)
+        if d1_preexperiment:
+            metrics_path = os.path.join(save_path, 'pilot_epoch_metrics.jsonl')
+            with open(metrics_path, 'a', encoding='utf-8') as metrics_file:
+                metrics_file.write(
+                    json.dumps(
+                        {
+                            'epoch': epoch,
+                            'metrics': train_log,
+                            'strict_causal_paper_result_valid': False,
+                            'test_access': False,
+                        },
+                        sort_keys=True,
+                    )
+                    + '\n'
+                )
         
         if epoch % args.train_eval_step == 0:
             print_log(save_path, 'mAP: %.2f' % (train_log['mAP_train']))
@@ -161,7 +183,19 @@ def train(args):
             wandb.log(train_log)
         if matched_study:
             if epoch == args.epochs:
-                result_path = os.path.join(save_path, 'terminal_epoch100.pth')
+                result_path = os.path.join(
+                    save_path, 'terminal_epoch{}.pth'.format(args.epochs)
+                )
+                torch.save(
+                    training_state(model, criterion, optimizer, scheduler, epoch, args),
+                    result_path,
+                )
+            continue
+        if d1_preexperiment:
+            if epoch == args.epochs:
+                result_path = os.path.join(
+                    save_path, 'terminal_epoch{}.pth'.format(args.epochs)
+                )
                 torch.save(
                     training_state(model, criterion, optimizer, scheduler, epoch, args),
                     result_path,
