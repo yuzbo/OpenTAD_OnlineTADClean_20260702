@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-23
+updated: 2026-07-30
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -17,10 +17,11 @@ This wiki exists to prevent repeated discussion loops. Before proposing a new ta
 6. [`../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md`](../PRO_RAW_RGB_DYNAMIC_EVENT_MEMORY_REVIEW_ABSORPTION_20260722.md) for the complete independent disposition and its 2026-07-23 current-code revalidation.
 7. [experiments/ontad-matr-official-parent-event-model-20260722.md](experiments/ontad-matr-official-parent-event-model-20260722.md) for the active official-MATR-parent EventMATR model and `B×O` experiment.
 8. [experiments/ontad-rgb-dynamic-event-memory-design-20260722.md](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) for the preceding raw-RGB design/review history.
-9. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the retired slot-route evidence and its exact historical protocol.
-10. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
-11. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
-12. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
+9. [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md) for the active lifecycle repair, Pro-review disposition, implementation and exact remote evidence.
+10. [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md) and [experiments/ontad-science-fixed-rematch-plan-20260720.md](experiments/ontad-science-fixed-rematch-plan-20260720.md) for the retired slot-route evidence and its exact historical protocol.
+11. [ideas/pceh-ontad.md](ideas/pceh-ontad.md) for the previous PCEH route and why it was demoted to a component.
+12. [ideas/rejected-one-shot-emission.md](ideas/rejected-one-shot-emission.md) and [ideas/rejected-full-packet-training.md](ideas/rejected-full-packet-training.md) before reviving one-shot emission or full-packet training.
+13. [discussion_timeline.md](discussion_timeline.md), [decision_register.md](decision_register.md), and [source_map.md](source_map.md) when you need provenance for how we got here.
 
 ## Current Decision
 
@@ -38,23 +39,39 @@ delayed MATR discovery, and rematching versus sticky owner identity. The former
 
 MATR and ActionSwitch references remain untouched at recorded SHAs; derived
 code lives in an independent writable repository. Feature experiments prove
-only the start-owned event mechanism. The paper's mandatory result still has to
-consume original RGB through a real causal visual encoder; an OnVLLM adapter is
-optional and never replaces structured spans.
+the lifecycle mechanism under the official MATR feature protocol and may enter
+a paper only through a matched full-budget official comparison. Raw-RGB
+adaptation is a separate later extension, not a prerequisite for judging this
+standard benchmark route and never a substitute for official feature parity.
 
-The derived implementation is locally contract-complete: exact native MATR is
-outside the four eventized `B×O` cells, learned lifecycle decisions use
-four-state competition rather than a universal event threshold, and the full
-suite is `62 passed`. No performance result exists yet. Formal release is
-fail-closed at the real-data smoke because the exact official MATR THUMOS14
-feature/annotation files are not currently present on N16R4; substitute feature
-sets are forbidden because they would invalidate parent parity.
+The frozen v1 study exposed a real lifecycle failure: owner cancellation
+dominates and owner end never wins in collapsed routes. D1.1 repaired causal
+association, explicit cancel/continue/end, cross-batch history and censored
+risks, but both one-epoch runs failed learned-path liveness. The controlled
+effective-dose run `1204468` completed all 3,270 updates at `3.34e-6` and moved
+the event parameters materially, yet the terminal scan over 2,033,630
+candidates found no positive four-state START margin and no runtime lifecycle.
+Class-conditioned query/time structure remained non-random, so the measured
+barrier is the absolute START decision rather than a dead network or
+insufficient learning rate alone.
+
+The independent-birth route progressed through D1.3 and D1.4. Exact D1.4 source
+`fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4` passed `125/125` tests and the
+official training-batch smoke. Normalized interval survival still produced no
+positive birth decision; direct decision alignment produced `30,002` births and
+`29,974` cancellations but zero learned end, emission or reacquisition. The
+formal cross-arm structure gate therefore failed and selected no variant. The
+route is analysis-only until a frozen-checkpoint counterfactual separates
+owner-end failure from identity-transport failure. The 5/10/20-epoch matrix,
+locked test, multiple seeds, raw RGB and threshold changes remain blocked;
+paper-comparable evidence still requires a separately frozen matched 100-epoch
+native-MATR/EventMATR evaluation after a future structure pass.
 
 ## Ideas
 
 | Node | Status | Role |
 |---|---|---|
-| [idea:dynamic-event-memory-rgb-ontad](ideas/dynamic-event-memory-rgb-ontad.md) | design-written | Active route: raw-RGB immediate event birth, start-conditioned lifecycle, and learned hierarchical memory without fixed semantic slots. |
+| [idea:dynamic-event-memory-rgb-ontad](ideas/dynamic-event-memory-rgb-ontad.md) | design-active / execution-blocked | Later raw-RGB extension; the current authorized route is the official feature-based lifecycle study, and raw execution remains blocked. |
 | [idea:anytime-semantic-event-alarms](ideas/anytime-semantic-event-alarms.md) | conditional-P0 | Pro Rank 1; direct e-process/video-FAR overlap requires a novelty and validity gate. |
 | [idea:petal-ontad](ideas/petal-ontad.md) | revise/feature-kill-gate | Full raw-video package demoted; only the FRESH/TTF/PES matched-feature falsification study is active. |
 | [idea:three-clock-event-observability](ideas/three-clock-event-observability.md) | rejected-out-of-scope | PIVOT changes the task to physically anchored streaming event verification and must not be revived in this project. |
@@ -131,6 +148,7 @@ sets are forbidden because they would invalidate parent parity.
 
 | Node | Verdict | Use |
 |---|---|---|
+| [exp:eventmatr-d11-structural-repair-20260729](experiments/eventmatr-d11-structural-repair-design-20260729.md) | D1.4 structure gate failed; decision-aligned birth is live but owner end/emission remain zero | Records the accepted/corrected Pro advice, D1.1-D1.4 exact-source evidence, official-data hashes, causal assignment, ternary owner, interval-risk interventions, cancel-dominated owner diagnosis and the unchanged official-comparability boundary. |
 | [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |
 | [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |
 | [exp:pceh-smoke-20260710](experiments/pceh-smoke-20260710.md) | protocol smoke pass | Shows skeleton is runnable and causal smoke can pass; not formal evidence. |

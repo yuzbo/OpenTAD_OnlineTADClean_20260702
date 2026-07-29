@@ -1,6 +1,6 @@
 ---
 type: timeline
-updated: 2026-07-11
+updated: 2026-07-29
 status: active
 scope: Chronological record of major discussions, turns, reversals, and decisions for this Online/Causal TAD project.
 ---
@@ -689,3 +689,216 @@ Artifacts:
 - [`../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md`](../PRO_ONTAD_FIXED_REMATCH_SCIENCE_READINESS_ABSORPTION_20260720.md)
 - [experiments/ontad-science-fixed-rematch-readiness-review-20260720.md](experiments/ontad-science-fixed-rematch-readiness-review-20260720.md)
 - [decision_register.md#dr-028-repair-the-fixedrematch-scientific-contract-before-any-seed-run](decision_register.md)
+
+### T22: D1.1 Structural Repair Is Implemented, but the Learned Association Path Fails Its One-Epoch Gate
+
+User requested:
+
+> Record and analyze the Pro review completely; if the revised EventMATR route
+> is clear, execute it directly rather than stopping at discussion.
+
+Independent disposition:
+
+- accepted the review's central diagnosis and staged structural-repair route;
+- corrected its reacquisition description and refused arbitrary performance
+  thresholds without variance/power support;
+- retained standard closed-set, fully supervised, strict-causal On-TAD as the
+  task;
+- kept locked test, multiple seeds, raw RGB, threshold search and longer
+  training blocked.
+
+Implemented D1.1:
+
+- causal one-to-one predicted-birth association;
+- explicit cancel/continue/end active-owner semantics;
+- video-keyed cross-batch temporal history;
+- event-normalized censored birth/end risks;
+- teacher/predicted source separation;
+- targetless rebirth with a new immutable identity;
+- exact known-target error recovery;
+- negative-start, capacity, duplicate and positive-length guards.
+
+Execution result:
+
+- exact-source smoke `1204052` passed `99/99` tests and the official real batch;
+- one-epoch job `1204061` completed all `3,270` batches and wrote its checkpoint;
+- gradients and lifecycle transitions were live with zero capacity exhaustion;
+- the mechanism finalizer failed because predicted-associated supervision was
+  exactly zero, while predicted-unmatched and teacher sources were active;
+- the inherited train-prefix score remains diagnostic and is not paper
+  performance.
+
+Decision:
+
+> Keep the mechanism gate failed. Do not lower it and do not start the old
+> five-epoch matrix. Commit `f37e9d1` registers a read-only full-train
+> association-barrier scan; commit `7687efe` preserves the frozen 64-row
+> physical batch and restricts padding to a verified post-observed-EOS
+> lifecycle no-op. This scan cannot release performance work and cannot
+> retroactively pass the failed training receipt.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md)
+- [decision_register.md#dr-040-keep-the-d11-mechanism-gate-failed-and-diagnose-predicted-association-before-any-pilot](decision_register.md)
+
+### T23: The Old Gate Failure Is Preserved, but Its Optimization Exposure Was Invalid
+
+User requested:
+
+> Reassess why the five-epoch work did not pass the science gate, verify how
+> every threshold and gate was chosen, determine whether the gate is reasonable,
+> and execute the next clear model-aligned experiment rather than stopping at
+> discussion.
+
+New evidence:
+
+- deterministic terminal scan `1204338` found all 2,033,630 START margins
+  negative and zero terminal lifecycle;
+- same-trajectory train-mode trace `1204354` found 18,021 predicted births,
+  4,042 candidate pairs, 3,900 class mismatches, 142 geometry rejections and
+  zero assignments;
+- exact parameter audit `1204424` found all 3,270 global batches closed, but the
+  recorded average update learning rate was approximately `1e-8`;
+- the first registered warmup rate `3.34e-6` was reached only after the final
+  update, so the old run was valid execution/liveness evidence but not a valid
+  learning-capability test;
+- non-uniform per-parameter Adam steps were traced to legitimate
+  conditional-gradient branches, not missing global updates.
+
+Gate reflection:
+
+- job `1204061` remains failed because predicted-associated supervision was
+  exactly zero;
+- the claim that the structure has already proven unable to learn is withdrawn;
+- positive learned-path counts are minimal functional-liveness conditions, not
+  detection-effect thresholds;
+- zero START margin is the registered state-argmax boundary, not a searched
+  hyperparameter;
+- inherited flag/class/non-maximum-suppression values remain unchanged and are
+  not Event birth/end thresholds;
+- no percentage-point, relative-gain, coverage or multi-cycle threshold is
+  accepted without prospective variance and power support.
+
+Execution decision:
+
+> Run one fresh seed-52 epoch with the same data, order, architecture, losses,
+> teacher/predicted mixing and association decisions, but apply `3.34e-6` to
+> all 3,270 updates. Require the training receipt, deterministic predicted-only
+> terminal scan and exact parameter-delta audit to pass together. This is a
+> functional mechanism recheck, not a performance result.
+
+Implementation and current execution:
+
+- exact source `4116df154014915cc190eec0e108a94c8df5f762`, tree
+  `2114f097eefc24e3a776147fc201711878464ad2`;
+- exact-source job `1204465` passed `106/106` tests and the official real-batch
+  smoke with no test access;
+- diagnostic extension `8ceee52...` permits a failed effective-dose checkpoint
+  to be scanned without making that failure eligible for PASS;
+- controlled job `1204468` later completed but failed learned-path liveness; no
+  longer pilot, test-set, multiple-seed, raw-RGB or threshold work was released.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md)
+- [decision_register.md#dr-041-preserve-the-old-fail-but-recheck-it-at-a-valid-optimization-exposure](decision_register.md)
+
+## T24 — Valid optimization exposure isolates the absolute START barrier; D1.2 is frozen
+
+Date: 2026-07-29
+
+Evidence closure:
+
+- effective-dose job `1204468` executed all 3,270 updates at `3.34e-6`;
+- parameter audit `1204510` confirmed real parameter movement;
+- terminal scan `1204508` found no positive four-state START decision across
+  2,033,630 candidates and zero runtime birth/cancel/end/emit;
+- the same post-forward diagnostic retained non-random class-conditioned
+  query/time compatibility.
+
+Interpretation:
+
+- the tiny scheduler-floor rate was a real confound but is not a sufficient
+  explanation after the controlled recheck;
+- the defensible measured barrier is absolute four-state START activation;
+- the evidence does not establish official performance, generalization,
+  novelty, correct reacquisition or architectural impossibility.
+
+Implementation decision:
+
+- exact `69039b990822d689592155d48f57b619ecd8e25e` adds an independent binary
+  birth-risk head only to the D1 route;
+- censored birth learning, causal temporal assignment and runtime rising-edge
+  decisions share that scalar;
+- zero log-odds is fixed, not searched; old checkpoints are schema-rejected;
+- exact-source job `1204791` passed `108/108` tests and all five official
+  real-training-batch forward/backward/optimizer/reload lanes with live
+  shared/birth/owner gradients and no test access;
+- exact-source tests, official training-batch smoke and one fresh one-epoch
+  three-artifact gate precede any development pilot.
+
+Paper boundary:
+
+- one-epoch and 5/10/20-epoch evidence are development diagnostics;
+- only a prospectively frozen, matched 100-epoch official-parent comparison on
+  the locked evaluator can enter a paper performance table.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md)
+- [decision_register.md#dr-042-separate-d1-birth-risk-from-four-state-background-competition](decision_register.md)
+
+## T25 — D1.4 revives birth but exposes cancel-dominated owner and dead end
+
+Date: 2026-07-30
+
+Evidence closure:
+
+- exact source `fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4`, tree
+  `7603fc6b8226fa8f9dcb3d5212136fb47631bc32`;
+- preflight job `1205227` passed `125/125` tests and the exact official
+  training-batch smoke without test access;
+- one-epoch mechanism jobs `1205231/1205232`, parameter audits
+  `1205272/1205310`, full terminal scans `1205271/1205309` and formal gate
+  `1205337` all completed `0:0`;
+- official annotation, proposal-label, training-feature and video-length hashes
+  matched both arms and the frozen D1.3 control.
+
+Arm outcomes:
+
+- normalized survival retained zero positive logits, zero runtime lifecycle and
+  a maximum birth logit of `-0.327579`;
+- the decision-aligned bag produced `923,712` positive logits, `30,002`
+  predicted-only births and `29,974` cancellations, but zero ends, emissions
+  and reacquisitions;
+- both arms moved every required event parameter group and preserved all ledger
+  invariants with zero capacity exhaustion;
+- the formal result is `FAIL_STRUCTURE_GATE`, selected variant null, with no
+  pilot, official comparison, locked test or paper claim released.
+
+Interpretation:
+
+- aggregate interval likelihood does not guarantee a single runtime logit
+  crosses zero;
+- direct decision alignment makes birth learnable but loses rare-event
+  calibration and creates roughly ten rising births per visible birth;
+- training contains about `305,064` false-track cancel groups versus `3,003`
+  positive owner assignments and only four runtime ends, isolating a
+  cancel-dominated owner/end mismatch after birth activation;
+- this is deep mechanism evidence, not official performance or proof of
+  architectural impossibility.
+
+Next decision:
+
+- freeze all trained checkpoints and run a train-only, read-only
+  counterfactual owner unroll that separates end-hazard failure from
+  identity-transport failure;
+- only then preregister a minimal owner/end or assignment/reacquisition repair;
+- retain the matched 100-epoch official-parent comparison as the only route to
+  a paper performance result.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md)
+- [decision_register.md#dr-043-fail-d14-preserve-decision-aligned-birth-as-an-intervention-and-isolate-owner-end-failure](decision_register.md)

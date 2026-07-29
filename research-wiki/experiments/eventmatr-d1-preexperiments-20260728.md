@@ -2,7 +2,13 @@
 
 Date: 2026-07-28
 
-Status: active, train-only mechanism study
+Status: closed diagnostic record; superseded by the D1.1/D1.2 structural repair
+
+The release ladder below is preserved as the prospective plan that governed
+the original D1 run. Its 5/10/20-epoch actions are no longer active. Current
+authority is
+[eventmatr-d11-structural-repair-design-20260729.md](eventmatr-d11-structural-repair-design-20260729.md)
+and DR-043.
 
 Scope: standard closed-set, fully supervised, strict-causal Online TAD on
 official MATR THUMOS14 RGB+flow features

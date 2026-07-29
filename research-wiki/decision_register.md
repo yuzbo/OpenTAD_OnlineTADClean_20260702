@@ -1,6 +1,6 @@
 ---
 type: decision_register
-updated: 2026-07-11
+updated: 2026-07-29
 status: active
 scope: Major research decisions, reasons, counterarguments, sources, and reversibility.
 ---
@@ -1606,3 +1606,324 @@ Reversibility:
 - The redesign hold may be replaced only by source-exact counterfactual evidence
   that separates predicted-track association, cancellation supervision,
   cross-batch history and censored risk. It is not lifted by more epochs alone.
+
+## DR-040: Keep the D1.1 Mechanism Gate Failed and Diagnose Predicted Association Before Any Pilot
+
+Status: active diagnostic hold.
+
+Decision:
+
+> Treat job `1204061` as a completed one-epoch training trajectory whose
+> mechanism receipt failed, not as a training crash. Gradients, supervised
+> lifecycle risks, runtime birth/end/emission/cancellation/reacquisition and the
+> terminal checkpoint are live, but no learned predicted birth was ever
+> associated with a prefix-visible event. Keep the one-epoch gate unchanged and
+> keep every five-epoch or longer pilot blocked. Authorize only a read-only,
+> predicted-only, strict-causal association-barrier scan of the saved checkpoint.
+
+Reason:
+
+- all `3,270` training batches completed and wrote a
+  `2,150,323,335`-byte checkpoint;
+- transition/owner gradient norms were approximately `62.2584/51.5407`;
+- capacity exhaustion was exactly zero and the locked test path was absent;
+- predicted-unmatched association was non-empty, but
+  `predicted_associated` never appeared;
+- the old metric emitter created source keys only when a source occurred, so
+  both missing predicted-associated keys mean an observed zero count;
+- teacher births kept other lifecycle losses and transitions live, which shows
+  why generic non-zero gradients cannot prove that the learned inference path
+  is trained;
+- the gate contains no detection effect-size threshold. Its non-zero
+  predicted-associated condition is a direct liveness condition for the D1.1
+  mechanism and should not be removed to force a pass.
+
+Resolution:
+
+1. freeze training source `de0837cf38e05d65a40f0744b863056edc2f433a`,
+   tree `91d998e787c42895b08571ef0ed5ab5af5458a47`, and checkpoint
+   SHA-256
+   `a5e686f3e4800e654e9ed4366f13c298697ab6b076c9813f10e0f5241ba546b5`;
+2. use instrumentation source
+   `f37e9d191a06a8a703714a0cd857180c21fc069e`, tree
+   `34b2a81b2ee4a3df1d2523dcaeb0189200f68774`, and corrected scan source
+   `7687efe03981aeb1ee3cb62ae2fd94d6e6ca1dfa`, tree
+   `a85303e04f810fd582db848ecc6ce69fc7fbf196`;
+3. emit explicit zero metrics for all registered track sources so a future
+   zero cannot be confused with a spelling or parser error;
+4. decompose active START, rising birth, visible target, class mismatch,
+   start-distance rejection, admissibility, ambiguity and assignment globally
+   and per video;
+5. keep ground truth strictly after forward and label the scan as a
+   necessary-condition opportunity audit, not a reconstruction of teacher
+   ownership;
+6. preserve the frozen 64-row physical batch and allow its padding mask only as
+   a verified lifecycle no-op after an already observed current-stream EOS;
+   require unchanged checkpoint/options, existing dataset caches, zero capacity
+   exhaustion and closed global/per-video counts;
+7. record scan completion as `DIAGNOSTIC_COMPLETE` while preserving
+   `one_epoch_mechanism_gate_status=FAIL_UNCHANGED`;
+8. choose a minimal model repair only after the dominant barrier is measured;
+   do not search/lower thresholds or change data, backbone, seeds or budget.
+
+Sources:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md);
+- Pro attachment SHA-256
+  `c2cd3ce0cc52791aecc6cda9d85ef108ce4e18703c0debf51026196817231bd1`;
+- Slurm job `1204061`;
+- code commits `f37e9d191a06a8a703714a0cd857180c21fc069e` and
+  `7687efe03981aeb1ee3cb62ae2fd94d6e6ca1dfa`.
+
+Reversibility:
+
+- The diagnostic hold may be lifted only by a new source-exact training run
+  whose one-epoch mechanism receipt passes the unchanged learned-path liveness
+  condition. A read-only scan, a teacher-forced path, a non-zero train-prefix
+  score or extra epochs cannot retroactively pass job `1204061`.
+
+## DR-041: Preserve the Old FAIL but Recheck It at a Valid Optimization Exposure
+
+Status: completed; functional gate failed and superseded by DR-042.
+
+Decision:
+
+> Keep job `1204061` failed because predicted-associated supervision was zero,
+> but withdraw the stronger interpretation that the repaired mechanism has
+> already failed to learn. All 3,270 updates used `1e-8`, while the registered
+> first warmup rate `3.34e-6` was reached only after training. Run exactly one
+> fresh seed-52 epoch at `3.34e-6` with every other scientific decision
+> unchanged, and require a training receipt, deterministic predicted-only
+> terminal scan and exact parameter-delta audit before any five-epoch design may
+> be frozen.
+
+Reason:
+
+- the old training path, gradients, supervision and checkpoint were live, so
+  its finalizer failure is a real learned-path liveness failure rather than a
+  crash;
+- deterministic terminal scan `1204338` found all 2,033,630 START margins
+  negative and no terminal lifecycle, but relative oracle-query ranking remained
+  non-random;
+- same-trajectory trace `1204354` found 18,021 train-mode predicted births,
+  4,042 candidate pairs, 3,900 class mismatches, 142 start-distance rejections
+  and zero assignments;
+- exact audit `1204424` measured very small but non-zero parameter movement and
+  confirmed the average update learning rate was approximately `1e-8`;
+- terminal and train-mode observations differ in mode, checkpoint age and
+  stochasticity, so neither alone identifies a unique structural cause;
+- one controlled effective-dose run separates underexposure from an unchanged
+  structural failure without changing a threshold, model, loss, data order,
+  seed or budget.
+
+Resolution:
+
+1. use training source
+   `4116df154014915cc190eec0e108a94c8df5f762`, tree
+   `2114f097eefc24e3a776147fc201711878464ad2`;
+2. require exactly 3,270 actual optimizer updates at `3.34e-6` and a
+   hash-bound, sequential per-update trace;
+3. retain the original positive learned-path liveness requirements and zero
+   capacity exhaustion;
+4. add a separate deterministic terminal requirement for positive
+   START/birth/association, runtime birth/cancel/end, END-to-immutable-emission
+   equality and zero capacity exhaustion;
+5. reconstruct exact initialization and require closed optimizer accounting
+   plus non-zero transition and owner parameter deltas;
+6. leave Event birth/end scalar thresholds absent; retain inherited flag,
+   class and non-maximum-suppression settings unchanged;
+7. apply no detection-effect threshold and do not treat training-prefix
+   detection values as paper results;
+8. keep locked test, multiple seeds, raw RGB, threshold search and all longer
+   pilots blocked until the three-artifact combined gate passes;
+9. if the training gate fails, use diagnostic source
+   `8ceee52c102913ac08571c1bd876fb370f9b5797` only to record the failed
+   effective-dose terminal barrier; that diagnostic status cannot pass the
+   combined gate.
+
+Sources:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md);
+- Slurm jobs `1204338`, `1204354`, `1204424`, `1204465` and controlled run
+  `1204468`;
+- code commits `d14ab88f90df1ab960dbc164700e884ff922f0c9`,
+  `daea1149ecfc2cf7caedc627b4381832c5005b53`,
+  `4116df154014915cc190eec0e108a94c8df5f762` and
+  `8ceee52c102913ac08571c1bd876fb370f9b5797`.
+
+Reversibility:
+
+- Passing the combined three-artifact gate may replace this controlled hold
+  with a prospectively frozen five-epoch mechanism plan. It still cannot
+  establish performance, generalization or novelty.
+- Failure preserves the hold and routes only to the measured terminal barrier.
+  It does not prove that strict-causal EventMATR is impossible or authorize
+  lowering a decision boundary.
+
+Outcome:
+
+- job `1204468` completed all 3,270 registered updates at `3.34e-6`;
+- parameter audit `1204510` confirmed material model, transition-head and
+  owner-head movement;
+- terminal scan `1204508` found zero positive START decisions across
+  2,033,630 candidates and therefore zero runtime lifecycle;
+- conditional class/time ranking remained non-random, so invalid optimization
+  exposure is no longer a sufficient explanation, while network death,
+  impossibility and performance conclusions remain unsupported.
+
+## DR-042: Separate D1 Birth Risk from Four-State Background Competition
+
+Status: implemented; subsequent D1.3/D1.4 structure gate failed and is
+superseded by DR-043.
+
+Decision:
+
+> For `d1_censored` only, replace the four-state START margin used as birth
+> evidence with one independently trained binary birth-risk logit. Use the same
+> scalar for event-normalized interval-censored birth learning, causal temporal
+> assignment, rising-edge preview and runtime birth. Keep the post-birth
+> ternary owner decoder as the authority for cancel/continue/end. Fix the birth
+> decision at strictly positive log-odds, reject older checkpoints by schema,
+> and rerun only the one-epoch mechanism gate before any longer development
+> experiment.
+
+Reason:
+
+- valid effective-dose training moved parameters but did not make any absolute
+  four-state START margin positive;
+- the same checkpoint retained class-conditioned query and temporal structure,
+  showing that association inputs are not uniformly random;
+- reweighting the old competitive state leaves birth coupled to overwhelming
+  background, while lowering/searching a threshold would not test whether the
+  learning architecture is repaired;
+- one independent scalar is the smallest intervention consistent with the
+  already accepted censored-risk objective and creates one train/assignment/
+  inference semantic instead of three mismatched birth rules.
+
+Resolution:
+
+1. exact code source is
+   `69039b990822d689592155d48f57b619ecd8e25e`, tree
+   `7fc5e014b919d033468c9b58afdedc33afc65646`;
+2. checkpoint schema is `eventmatr_d12_independent_birth_v1`; older D1 weights
+   must fail closed;
+3. deterministic tests must prove independent birth under four-state
+   background dominance and finite shared/birth/owner gradients;
+4. remote validation must include the complete test suite and official
+   training-batch forward/backward/optimizer/checkpoint reload;
+5. the fresh seed-52 one-epoch run retains the official train features, data
+   order, 3,270 updates and fixed `3.34e-6` exposure;
+6. the training receipt, complete predicted-only terminal scan and exact
+   parameter audit must all pass on one hash-bound checkpoint;
+7. no threshold search, locked test, multiple seeds or raw RGB is authorized;
+8. a mechanism pass may release only frozen development pilots. It cannot
+   produce a paper performance claim.
+
+Official-comparability boundary:
+
+- one-epoch mechanisms, training-prefix scores and 5/10/20-epoch pilots are
+  never official paper performance;
+- the independent binary birth head is a necessary liveness repair, not a
+  standalone novelty claim. Any eventual contribution must be the validated
+  strict-causal composition of censored risk, causal assignment, explicit
+  ownership lifecycle and train/inference state alignment;
+- paper evidence requires a separately prospectively frozen, matched
+  100-epoch native-MATR/EventMATR comparison with the same official split,
+  extracted RGB-plus-flow features, optimization, post-processing, terminal
+  checkpoint policy and evaluator under the strict causal boundary;
+- locked test access is permitted only after a future structure gate passes and
+  that full-budget comparison contract is frozen.
+
+Reversibility:
+
+- failure routes only to the newly measured barrier and cannot be repaired by
+  lowering the zero-log-odds decision boundary;
+- pass authorizes protocol freezing, not a superiority, generalization or
+  novelty claim.
+
+## DR-043: Fail D1.4, Preserve Decision-Aligned Birth as an Intervention, and Isolate Owner-End Failure
+
+Status: completed structure gate; analysis-only hold.
+
+Decision:
+
+> Select neither D1.4 arm. Preserve the decision-aligned interval bag only as
+> evidence that absolute birth inactivity is causally intervenable, not as a
+> deployable model. Before any further training, use a frozen-checkpoint,
+> train-only counterfactual owner unroll to separate failure of the learned
+> right-censored end decision from failure to transport identity through
+> predicted tracks. Do not lower the birth boundary, search thresholds, add
+> seeds, run longer pilots, access locked test, or claim official performance.
+
+Reason:
+
+- normalized survival leaves all `2,033,630` individual birth logits
+  non-positive even though the mean oracle interval event probability is
+  `0.444412`; an aggregate interval likelihood is not sufficient to cross the
+  runtime decision boundary;
+- the decision-aligned bag makes `923,712` individual logits positive and
+  produces `30,002` predicted-only births, proving that the birth barrier is
+  intervenable;
+- it also produces `29,974` cancellations and zero ends, emissions and
+  reacquisitions, so birth liveness alone is not a closed lifecycle;
+- during training, approximately `332,525` births and `332,217`
+  cancellations coexist with only four learned ends;
+- `305,064` false-track cancel groups outnumber the `3,003` positive owner
+  assignments by about `101.6:1`; the current all-group owner-state average and
+  target-identity-only end risk therefore face a measured source and
+  train/inference mismatch;
+- both arms changed the birth, transition, shared-fusion and owner modules, used
+  identical official training artifacts, and exhausted no capacity, excluding
+  a no-update, data-drift or capacity explanation;
+- the post-forward assignment count is an opportunity diagnostic, not a
+  reconstructed runtime identity path, and terminal reacquisition remains zero.
+
+Resolution:
+
+1. D1.4 exact source is
+   `fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4`, tree
+   `7603fc6b8226fa8f9dcb3d5212136fb47631bc32`;
+2. exact preflight job `1205227` passed `125/125` tests and the official
+   training-batch smoke with `test_access=false`;
+3. mechanism jobs `1205231/1205232`, parameter audits `1205272/1205310`,
+   terminal scans `1205271/1205309` and cross-arm gate `1205337` all completed
+   `0:0`;
+4. formal receipt status is `FAIL_STRUCTURE_GATE`, selected variant is null,
+   and development-pilot, official-comparison, locked-test and paper-claim
+   releases are all false;
+5. the next diagnostic must keep the checkpoint frozen and compare predicted
+   owner tracks with post-forward oracle-birth and oracle-identity
+   counterfactual tracks while recording first owner decision, state margins,
+   lifetime and end/emission closure;
+6. if oracle identity still yields no end, prospectively test exposure-normalized
+   per-track end survival and true-owner/false-track family balancing; if it
+   restores end, repair causal assignment and reacquisition instead;
+7. any birth calibration term must be derived from the registered risk-set
+   sampling probability, never chosen to reproduce these observed counts.
+
+Official-comparability boundary:
+
+- every D1.3/D1.4 score is mechanism or diagnostic evidence only;
+- training-prefix detection values remain invalid because their path uses
+  full-video timing and offline termination;
+- no EventMATR performance claim is valid until a future structure passes, its
+  contract is frozen, and a matched 100-epoch native-MATR/EventMATR study uses
+  the same official split, extracted features, optimizer/scheduler,
+  post-processing, terminal checkpoint policy and evaluator before one locked
+  test.
+
+Sources:
+
+- [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md);
+- exact jobs `1205227`, `1205231`, `1205232`, `1205271`, `1205272`,
+  `1205309`, `1205310` and `1205337`;
+- structure-gate SHA-256
+  `c5cab5a5fcb92de6fb1483b5c57981bbb0a8c04af2e33a7e1b2ec11afd7ace0f`.
+
+Reversibility:
+
+- A source-exact counterfactual diagnostic may change which minimal repair is
+  preregistered. It cannot retroactively pass D1.4.
+- Only a fresh model that passes every unchanged structure-liveness and ledger
+  check can lift the analysis hold; no threshold adjustment or longer training
+  may substitute for that pass.
