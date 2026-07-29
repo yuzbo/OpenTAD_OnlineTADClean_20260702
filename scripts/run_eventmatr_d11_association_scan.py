@@ -153,6 +153,8 @@ def _validate_inputs(options: dict, checkpoint: dict, identity: dict) -> None:
 def _new_counts() -> dict:
     counts = {
         "real_prefix_count": 0,
+        "padding_prefix_count": 0,
+        "padding_noop_count": 0,
         "visible_target_prefix_count": 0,
         "visible_birth_target_prefix_count": 0,
         "visible_recovery_target_prefix_count": 0,
@@ -202,17 +204,24 @@ def _validate_count_closure(counts: dict, label: str) -> None:
         raise RuntimeError(f"visible target accounting does not close for {label}")
     if counts["predicted_birth_query_count"] != counts["runtime_birth_count"]:
         raise RuntimeError(f"predicted birth accounting does not close for {label}")
+    if counts["padding_prefix_count"] != counts["padding_noop_count"]:
+        raise RuntimeError(f"padding no-op accounting does not close for {label}")
 
 
-def _select_rows(value, indices: torch.Tensor):
+def _metadata_values(value, *, batch_size: int, label: str) -> list:
     if torch.is_tensor(value):
-        return value.index_select(0, indices.to(value.device))
-    if isinstance(value, np.ndarray):
-        return value[indices.cpu().numpy()]
-    if isinstance(value, (list, tuple)):
-        selected = [value[int(index)] for index in indices.tolist()]
-        return tuple(selected) if isinstance(value, tuple) else selected
-    raise TypeError(f"cannot select diagnostic batch rows from {type(value)!r}")
+        values = value.detach().cpu().reshape(-1).tolist()
+    elif isinstance(value, np.ndarray):
+        values = value.reshape(-1).tolist()
+    elif isinstance(value, (list, tuple)):
+        values = list(value)
+    else:
+        values = [value]
+    if len(values) != batch_size:
+        raise RuntimeError(
+            f"{label} metadata has {len(values)} rows for physical batch {batch_size}"
+        )
+    return values
 
 
 def main() -> None:
@@ -312,6 +321,8 @@ def main() -> None:
     processed_batches = 0
     forward_batches = 0
     last_real_frame: dict[str, float] = {}
+    last_physical_frame: dict[str, float] = {}
+    closed_streams: set[str] = set()
     started_at = time.perf_counter()
     torch.cuda.reset_peak_memory_stats(device)
 
@@ -323,41 +334,97 @@ def main() -> None:
             features, targets, infos = parrallel_collate_fn(
                 features, targets, infos, args.p_videos
             )
-            real_mask = infos["is_real_prefix"]
-            if not torch.is_tensor(real_mask):
-                real_mask = torch.tensor(real_mask)
-            real_indices = (
-                real_mask.detach().cpu().bool().reshape(-1).nonzero(
-                    as_tuple=False
-                ).reshape(-1)
-            )
-            if real_indices.numel() == 0:
-                continue
-            forward_batches += 1
-            features = _select_rows(features, real_indices).to(
-                device, non_blocking=True
-            )
-            target_tensors = {
-                key: _select_rows(value, real_indices).to(
-                    device, non_blocking=True
+            batch_size = int(features.size(0))
+            if batch_size != int(args.batch):
+                raise RuntimeError(
+                    f"frozen MATR requires physical batch {args.batch}, got {batch_size}"
                 )
+            names = [
+                str(value)
+                for value in _metadata_values(
+                    infos["video_name"],
+                    batch_size=batch_size,
+                    label="video_name",
+                )
+            ]
+            frames = [
+                float(value)
+                for value in _metadata_values(
+                    infos["current_frame"],
+                    batch_size=batch_size,
+                    label="current_frame",
+                )
+            ]
+            real_flags = [
+                bool(value)
+                for value in _metadata_values(
+                    infos["is_real_prefix"],
+                    batch_size=batch_size,
+                    label="is_real_prefix",
+                )
+            ]
+            eos_flags = [
+                bool(value)
+                for value in _metadata_values(
+                    infos["is_eos"],
+                    batch_size=batch_size,
+                    label="is_eos",
+                )
+            ]
+            for row_index, (video_name, frame, is_real, is_eos) in enumerate(
+                zip(names, frames, real_flags, eos_flags)
+            ):
+                previous_physical = last_physical_frame.get(video_name)
+                if previous_physical is not None and frame <= previous_physical:
+                    raise RuntimeError(
+                        f"non-monotonic physical row for {video_name}: "
+                        f"{frame} after {previous_physical}"
+                    )
+                last_physical_frame[video_name] = frame
+                if is_eos and not is_real:
+                    raise RuntimeError(
+                        f"padding row {row_index} for {video_name} cannot signal EOS"
+                    )
+                if is_real:
+                    if video_name in closed_streams:
+                        raise RuntimeError(
+                            f"real prefix for {video_name} appeared after observed EOS"
+                        )
+                    previous_real = last_real_frame.get(video_name)
+                    if previous_real is not None and frame <= previous_real:
+                        raise RuntimeError(
+                            f"non-monotonic real prefix for {video_name}: "
+                            f"{frame} after {previous_real}"
+                        )
+                    last_real_frame[video_name] = frame
+                    if is_eos:
+                        closed_streams.add(video_name)
+                elif video_name not in closed_streams:
+                    raise RuntimeError(
+                        f"padding for {video_name} appeared before observed EOS"
+                    )
+
+            forward_batches += 1
+            features = features.to(device, non_blocking=True)
+            target_tensors = {
+                key: value.to(device, non_blocking=True)
                 for key, value in targets.items()
             }
-            infos = {
-                key: _select_rows(value, real_indices)
-                for key, value in infos.items()
-            }
-            if not all(bool(value) for value in infos["is_real_prefix"]):
-                raise RuntimeError("diagnostic real-prefix filtering failed")
             if "segment_flag" not in infos:
                 raise RuntimeError(
                     "diagnostic loader omitted the inherited supervision flag"
                 )
-            runtime_infos = dict(infos)
-            runtime_infos.pop("is_real_prefix")
-            payload = make_model_inputs(args, features, runtime_infos)
+            stripped_boundary_fields = (
+                D1_RUNTIME_FORBIDDEN_MODEL_INFO.intersection(infos)
+            )
+            if stripped_boundary_fields != D1_RUNTIME_FORBIDDEN_MODEL_INFO:
+                raise RuntimeError(
+                    "diagnostic loader omitted fields required to audit stripping: "
+                    f"{sorted(D1_RUNTIME_FORBIDDEN_MODEL_INFO - stripped_boundary_fields)}"
+                )
+            payload = make_model_inputs(args, features, infos)
             expected_model_info_keys = (
-                set(runtime_infos) - D1_RUNTIME_FORBIDDEN_MODEL_INFO
+                set(infos) - D1_RUNTIME_FORBIDDEN_MODEL_INFO
             )
             if set(payload["infos"]) != expected_model_info_keys:
                 raise RuntimeError(
@@ -370,18 +437,9 @@ def main() -> None:
                 raise RuntimeError(
                     f"future/full-video metadata reached model: {sorted(forbidden)}"
                 )
+            if "event_targets" in payload or "event_valid_mask" in payload:
+                raise RuntimeError("ground truth reached the predicted-only model payload")
             outputs = model(payload, device)
-
-            real_mask = infos["is_real_prefix"]
-            if not torch.is_tensor(real_mask):
-                real_mask = torch.tensor(real_mask)
-            real_mask = real_mask.detach().cpu().bool().reshape(-1)
-            names = [str(value) for value in infos["video_name"]]
-            frames = infos["current_frame"]
-            if torch.is_tensor(frames):
-                frames = frames.detach().cpu().reshape(-1).tolist()
-            else:
-                frames = list(frames)
 
             state_logits = outputs["event_state_logits"].detach()
             birth_logits = outputs["event_birth_logits"].detach()
@@ -406,18 +464,54 @@ def main() -> None:
                 ],
                 "observed_eos_count": outputs["event_eos_observed"],
             }
+            padding_ignored = outputs["event_padding_prefixes_ignored"]
+            transition_masks = {
+                "birth": outputs["event_new_birth_mask"],
+                "end": outputs["event_ended_mask"],
+                "emit": outputs["event_emitted_mask"],
+                "cancel": outputs["event_cancelled_mask"],
+            }
 
             for row_index, video_name in enumerate(names):
-                if not bool(real_mask[row_index]):
+                if not real_flags[row_index]:
+                    if int(padding_ignored[row_index].item()) != 1:
+                        raise RuntimeError(
+                            f"padding row for {video_name} was not ignored exactly once"
+                        )
+                    nonzero_runtime = {
+                        field: int(tensor[row_index].item())
+                        for field, tensor in runtime_fields.items()
+                        if int(tensor[row_index].item()) != 0
+                    }
+                    nonzero_transitions = {
+                        field: int(tensor[row_index].sum().item())
+                        for field, tensor in transition_masks.items()
+                        if bool(tensor[row_index].any().item())
+                    }
+                    if nonzero_runtime or nonzero_transitions:
+                        raise RuntimeError(
+                            f"padding row mutated lifecycle for {video_name}: "
+                            f"runtime={nonzero_runtime}, transitions={nonzero_transitions}"
+                        )
+                    row_counts = _new_counts()
+                    row_counts["padding_prefix_count"] = 1
+                    row_counts["padding_noop_count"] = 1
+                    _add_counts(totals, row_counts)
+                    video_counts = per_video.setdefault(video_name, _new_counts())
+                    _add_counts(video_counts, row_counts)
                     continue
-                frame = float(frames[row_index])
-                previous_frame = last_real_frame.get(video_name)
-                if previous_frame is not None and frame <= previous_frame:
+                if int(padding_ignored[row_index].item()) != 0:
                     raise RuntimeError(
-                        f"non-monotonic diagnostic frame for {video_name}: "
-                        f"{frame} after {previous_frame}"
+                        f"real prefix for {video_name} was treated as padding"
                     )
-                last_real_frame[video_name] = frame
+                if int(runtime_fields["observed_eos_count"][row_index].item()) != int(
+                    eos_flags[row_index]
+                ):
+                    raise RuntimeError(
+                        f"runtime EOS observation disagrees with current signal for "
+                        f"{video_name} at frame {frames[row_index]}"
+                    )
+                frame = float(frames[row_index])
                 history.append(
                     video_name=video_name,
                     frame=frame,
@@ -571,6 +665,17 @@ def main() -> None:
             f"complete scan observed {totals['observed_eos_count']} EOS markers "
             f"for {len(dataset.video_list)} videos"
         )
+    if cli.max_batches == 0 and closed_streams != set(dataset.video_list):
+        missing = sorted(set(dataset.video_list) - closed_streams)
+        unexpected = sorted(closed_streams - set(dataset.video_list))
+        raise RuntimeError(
+            "complete scan stream closure mismatch: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    if processed_batches != forward_batches:
+        raise RuntimeError(
+            "association scan changed the frozen physical batch schedule"
+        )
     _validate_count_closure(totals, "global")
     for video_name, counts in per_video.items():
         _validate_count_closure(counts, video_name)
@@ -589,7 +694,7 @@ def main() -> None:
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
-        "protocol": "eventmatr_d11_failed_one_epoch_association_scan_v1",
+        "protocol": "eventmatr_d11_failed_one_epoch_association_scan_v2",
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,
@@ -598,7 +703,12 @@ def main() -> None:
         "checkpoint_updated": False,
         "strict_causal_paper_result_valid": False,
         "ground_truth_visible_to_model": False,
-        "padding_metadata_visible_to_model": False,
+        "padding_metadata_visible_to_model": True,
+        "padding_metadata_semantics": (
+            "structural_no_op_only_after_observed_eos"
+        ),
+        "padding_contract_verified": True,
+        "physical_batch_contract": "frozen_matr_fixed_width_preserved",
         "eos_semantics": "current_stream_termination_observation_only",
         "association_semantics": (
             "post_forward_opportunity_scan_without_target_ownership_exclusion"

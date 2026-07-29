@@ -204,11 +204,18 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
         ROOT / "scripts" / "slurm_eventmatr_d11_association_scan.sh"
     ).read_text(encoding="utf-8")
     assert 'THUMOS14Dataset(args, subset="train")' in scan
-    assert 'make_model_inputs(args, features, runtime_infos)' in scan
+    assert 'make_model_inputs(args, features, infos)' in scan
     assert "D1_RUNTIME_FORBIDDEN_MODEL_INFO" in scan
     assert '"ground_truth_visible_to_model": False' in scan
-    assert 'runtime_infos.pop("is_real_prefix")' in scan
-    assert '"padding_metadata_visible_to_model": False' in scan
+    assert '"padding_metadata_visible_to_model": True' in scan
+    assert "structural_no_op_only_after_observed_eos" in scan
+    assert '"padding_contract_verified": True' in scan
+    assert '"physical_batch_contract": "frozen_matr_fixed_width_preserved"' in scan
+    assert "padding for {video_name} appeared before observed EOS" in scan
+    assert "real prefix for {video_name} appeared after observed EOS" in scan
+    assert "event_padding_prefixes_ignored" in scan
+    assert "frozen MATR requires physical batch" in scan
+    assert "association scan changed the frozen physical batch schedule" in scan
     assert '"eos_semantics": "current_stream_termination_observation_only"' in scan
     assert '"status": "DIAGNOSTIC_COMPLETE"' in scan
     assert '"one_epoch_mechanism_gate_status": "FAIL_UNCHANGED"' in scan
