@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -35,6 +36,18 @@ POSITIVE_MECHANISM_METRICS = (
     "event_source_teacher_birth_row_count_unscaled",
     "event_association_predicted_associated_count_unscaled",
 )
+EFFECTIVE_DOSE_LEARNING_RATE = 3.34e-6
+EFFECTIVE_DOSE_METRICS = (
+    "d11_effective_dose_enabled",
+    "d11_optimizer_step_count",
+    "d11_initial_learning_rate",
+    "d11_learning_rate_first",
+    "d11_learning_rate_minimum",
+    "d11_learning_rate_maximum",
+    "d11_learning_rate_last",
+    "d11_scheduler_last_epoch_at_train_start",
+    "d11_scheduler_t_cur_at_train_start",
+)
 
 
 def validate_mechanism_metrics(metrics: dict) -> None:
@@ -56,6 +69,90 @@ def validate_mechanism_metrics(metrics: dict) -> None:
         )
 
 
+def validate_effective_dose_metrics(metrics: dict) -> None:
+    missing = sorted(set(EFFECTIVE_DOSE_METRICS).difference(metrics))
+    if missing:
+        raise ValueError(f"D1.1 effective-dose metrics are missing keys: {missing}")
+    exact_values = {
+        "d11_effective_dose_enabled": 1.0,
+        "d11_optimizer_step_count": 3270.0,
+        "d11_initial_learning_rate": 1e-8,
+        "d11_scheduler_last_epoch_at_train_start": 1.0,
+        "d11_scheduler_t_cur_at_train_start": 1.0,
+    }
+    for name, expected in exact_values.items():
+        value = float(metrics[name])
+        if not math.isfinite(value) or not math.isclose(
+            value,
+            expected,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        ):
+            raise ValueError(
+                f"D1.1 effective-dose metric drifted: {name}={value} != {expected}"
+            )
+    for name in (
+        "d11_learning_rate_first",
+        "d11_learning_rate_minimum",
+        "d11_learning_rate_maximum",
+        "d11_learning_rate_last",
+    ):
+        value = float(metrics[name])
+        if not math.isfinite(value) or not math.isclose(
+            value,
+            EFFECTIVE_DOSE_LEARNING_RATE,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        ):
+            raise ValueError(
+                "D1.1 did not use the fixed first-warmup learning rate: "
+                f"{name}={value}"
+            )
+
+
+def validate_effective_dose_trace(path: Path) -> dict:
+    if not path.is_file():
+        raise ValueError(f"D1.1 effective-dose update trace is absent: {path}")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    rows = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    if len(rows) != 3270:
+        raise ValueError(
+            f"D1.1 effective-dose trace has {len(rows)} rows instead of 3270"
+        )
+    for expected_step, row in enumerate(rows, start=1):
+        if set(row) != {"optimizer_step", "learning_rate"}:
+            raise ValueError("D1.1 effective-dose trace row schema drifted")
+        if int(row["optimizer_step"]) != expected_step:
+            raise ValueError(
+                "D1.1 effective-dose trace step sequence drifted: "
+                f"{row['optimizer_step']} != {expected_step}"
+            )
+        learning_rate = float(row["learning_rate"])
+        if not math.isfinite(learning_rate) or not math.isclose(
+            learning_rate,
+            EFFECTIVE_DOSE_LEARNING_RATE,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        ):
+            raise ValueError(
+                "D1.1 effective-dose trace learning rate drifted at "
+                f"step {expected_step}: {learning_rate}"
+            )
+    return {
+        "path": str(path),
+        "bytes": path.stat().st_size,
+        "sha256": digest,
+        "row_count": len(rows),
+        "first_optimizer_step": int(rows[0]["optimizer_step"]),
+        "last_optimizer_step": int(rows[-1]["optimizer_step"]),
+        "learning_rate": float(rows[0]["learning_rate"]),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", required=True, type=Path)
@@ -70,6 +167,7 @@ def main() -> None:
         raise SystemExit(f"expected exactly one TH result directory, got {result_dirs}")
     result_dir = result_dirs[0]
     options = json.loads((result_dir / "opts.json").read_text(encoding="utf-8"))
+    effective_dose_trace = result_dir / "effective_dose_update_trace.jsonl"
     metric_lines = [
         json.loads(line)
         for line in (result_dir / "mechanism_epoch_metrics.jsonl")
@@ -81,6 +179,10 @@ def main() -> None:
         validate_metric_lines(metric_lines, "TH", 1)
         if metric_lines[0].get("study_protocol") != "d11_mechanism":
             raise ValueError("D1.1 mechanism metric protocol drifted")
+        validate_effective_dose_metrics(metric_lines[0]["metrics"])
+        effective_dose_trace_receipt = validate_effective_dose_trace(
+            effective_dose_trace
+        )
         validate_mechanism_metrics(metric_lines[0]["metrics"])
     except ValueError as error:
         raise SystemExit(str(error)) from error
@@ -124,6 +226,7 @@ def main() -> None:
         "ownership_mode": "sticky_owner",
         "event_arm": "b1o1",
         "event_teacher_forcing_ratio": 0.5,
+        "d11_effective_dose": True,
         "event_resource_limit": 0,
         "reduce": 1,
         "make_output": True,
@@ -176,7 +279,7 @@ def main() -> None:
     }
     receipt = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_seed52_one_epoch_mechanism_v1",
+        "protocol": "eventmatr_d11_seed52_effective_dose_mechanism_v2",
         "lane": "TH",
         "epochs": 1,
         "seed": 52,
@@ -193,11 +296,16 @@ def main() -> None:
         "checkpoint": {
             "path": str(checkpoint),
             "bytes": checkpoint.stat().st_size,
+            "sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
             **expected_checkpoint,
         },
         "mechanism_liveness": {
             name: final_metrics[name] for name in POSITIVE_MECHANISM_METRICS
         },
+        "effective_dose": {
+            name: final_metrics[name] for name in EFFECTIVE_DOSE_METRICS
+        },
+        "effective_dose_update_trace": effective_dose_trace_receipt,
         "runtime_metrics": runtime_metrics,
         "source_metrics": source_metrics,
         "final_epoch_metrics": final_metrics,

@@ -172,6 +172,64 @@ def d1_gradient_metrics(model, args):
     return metrics
 
 
+def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
+    enabled = bool(getattr(args, 'd11_effective_dose', False))
+    if not enabled:
+        return None
+    if getattr(args, 'study_protocol', None) != 'd11_mechanism':
+        raise ValueError('d11_effective_dose is restricted to d11_mechanism')
+    expected_schedule = {
+        'epochs': 1,
+        'min_lr': 1e-8,
+        'max_lr': 1e-5,
+        'lr_Tup': 3,
+        'lr_Tcycle': 10,
+        'lr_gamma': 0.9,
+    }
+    mismatches = {
+        field: {'expected': expected, 'actual': getattr(args, field, None)}
+        for field, expected in expected_schedule.items()
+        if getattr(args, field, None) != expected
+    }
+    if mismatches:
+        raise ValueError(
+            'D1.1 effective-dose schedule drifted:\n'
+            + json.dumps(mismatches, indent=2, sort_keys=True)
+        )
+    if int(loader_batches) != 3270:
+        raise ValueError(
+            f'D1.1 effective dose requires 3270 loader batches, got {loader_batches}'
+        )
+    initial_lr = float(optimizer.param_groups[0]['lr'])
+    if not math.isclose(initial_lr, args.min_lr, rel_tol=0.0, abs_tol=1e-15):
+        raise ValueError(
+            f'D1.1 optimizer did not start at min_lr: {initial_lr} != {args.min_lr}'
+        )
+    expected_training_lr = (
+        args.min_lr + (args.max_lr - args.min_lr) / args.lr_Tup
+    )
+    scheduler.step(1)
+    training_lr = float(optimizer.param_groups[0]['lr'])
+    if not math.isclose(
+        training_lr,
+        expected_training_lr,
+        rel_tol=0.0,
+        abs_tol=1e-15,
+    ):
+        raise ValueError(
+            'D1.1 first warmup learning rate mismatch: '
+            f'{training_lr} != {expected_training_lr}'
+        )
+    return {
+        'enabled': True,
+        'initial_learning_rate': initial_lr,
+        'training_learning_rate': training_lr,
+        'expected_optimizer_steps': int(loader_batches),
+        'scheduler_last_epoch_at_train_start': int(scheduler.last_epoch),
+        'scheduler_t_cur_at_train_start': int(scheduler.T_cur),
+    }
+
+
 def training_state(model, criterion, optimizer, scheduler, epoch, args):
     state = {
         'epoch': epoch,
@@ -252,6 +310,12 @@ def train(args):
         start_epoch = checkpoint['epoch'] + 1
     else:
         start_epoch = 1
+    d11_schedule_audit = prepare_d11_effective_dose(
+        args,
+        optimizer,
+        scheduler,
+        len(train_loader),
+    )
     
     if args.wandb:
         wandb.watch(model)
@@ -259,7 +323,17 @@ def train(args):
     # training
     for epoch in range(start_epoch, args.epochs + 1):
         print_log(save_path, '----- %s at epoch #%d' % ('Train', epoch))
-        train_log = train_one_epoch(args, train_dataset, train_loader, model, criterion, optimizer, epoch, device)
+        train_log = train_one_epoch(
+            args,
+            train_dataset,
+            train_loader,
+            model,
+            criterion,
+            optimizer,
+            epoch,
+            device,
+            schedule_audit=d11_schedule_audit,
+        )
         if d1_train_only:
             metrics_filename = (
                 'pilot_epoch_metrics.jsonl'
@@ -438,7 +512,17 @@ def eval(args):
     print_log(save_path, 'mAP@.6: %.2f' % (eval_log['mAP_06']))
     print_log(save_path, 'mAP@.7: %.2f' % (eval_log['mAP_07']))
 
-def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimizer, epoch, device):
+def train_one_epoch(
+    args,
+    train_dataset,
+    train_loader,
+    model,
+    criterion,
+    optimizer,
+    epoch,
+    device,
+    schedule_audit=None,
+):
     model.train()
     criterion.train()
     
@@ -458,6 +542,8 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
     proposal_file = args.proposal_path.format({},'train', str(epoch))
     proposal_txt_path = os.path.join(args.save_path, (proposal_file+'.txt'))
     Path(proposal_txt_path.format("pred")).write_text("", encoding="utf-8")
+    optimizer_step_count = 0
+    learning_rates = []
 
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(train_loader, print_freq, header)):
         inputs, targets, infos = parrallel_collate_fn(inputs, targets, infos, args.p_videos)
@@ -494,7 +580,9 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
         optimizer.zero_grad()
         loss.backward()
         gradient_metrics = d1_gradient_metrics(model, args)
+        learning_rates.append(float(optimizer.param_groups[0]["lr"]))
         optimizer.step()
+        optimizer_step_count += 1
 
         metric_logger.update(
             loss=loss_value,
@@ -542,7 +630,61 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
     
     print("Averaged stats:", metric_logger)
     
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    result = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    if schedule_audit is not None:
+        expected_steps = int(schedule_audit['expected_optimizer_steps'])
+        expected_lr = float(schedule_audit['training_learning_rate'])
+        if optimizer_step_count != expected_steps:
+            raise RuntimeError(
+                'D1.1 effective-dose optimizer steps did not close: '
+                f'{optimizer_step_count} != {expected_steps}'
+            )
+        if (
+            not learning_rates
+            or any(
+                not math.isclose(
+                    learning_rate,
+                    expected_lr,
+                    rel_tol=0.0,
+                    abs_tol=1e-15,
+                )
+                for learning_rate in learning_rates
+            )
+        ):
+            raise RuntimeError('D1.1 effective-dose learning rate drifted within epoch')
+        result.update(
+            {
+                'd11_effective_dose_enabled': 1.0,
+                'd11_optimizer_step_count': float(optimizer_step_count),
+                'd11_initial_learning_rate': float(
+                    schedule_audit['initial_learning_rate']
+                ),
+                'd11_learning_rate_first': learning_rates[0],
+                'd11_learning_rate_minimum': min(learning_rates),
+                'd11_learning_rate_maximum': max(learning_rates),
+                'd11_learning_rate_last': learning_rates[-1],
+                'd11_scheduler_last_epoch_at_train_start': float(
+                    schedule_audit['scheduler_last_epoch_at_train_start']
+                ),
+                'd11_scheduler_t_cur_at_train_start': float(
+                    schedule_audit['scheduler_t_cur_at_train_start']
+                ),
+            }
+        )
+        trace_path = Path(args.save_path) / 'effective_dose_update_trace.jsonl'
+        with trace_path.open('w', encoding='utf-8') as trace_file:
+            for optimizer_step, learning_rate in enumerate(learning_rates, start=1):
+                trace_file.write(
+                    json.dumps(
+                        {
+                            'optimizer_step': optimizer_step,
+                            'learning_rate': learning_rate,
+                        },
+                        sort_keys=True,
+                    )
+                    + '\n'
+                )
+    return result
 
 
 @torch.no_grad()

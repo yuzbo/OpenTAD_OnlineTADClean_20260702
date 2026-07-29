@@ -31,7 +31,6 @@ from scripts.run_eventmatr_d11_association_scan import (  # noqa: E402
 )
 
 
-TRAINING_COMMIT = "de0837cf38e05d65a40f0744b863056edc2f433a"
 INITIALIZATION_HELPER = r"""
 import hashlib
 import json
@@ -109,6 +108,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--source-identity", required=True, type=Path)
     parser.add_argument("--expected-checkpoint-sha256", required=True)
     parser.add_argument("--expected-options-sha256", required=True)
+    parser.add_argument("--initialization-source-commit", required=True)
+    parser.add_argument("--expected-training-source-commit", required=True)
+    parser.add_argument("--expected-training-source-tree", required=True)
+    parser.add_argument(
+        "--one-epoch-mechanism-gate-status",
+        required=True,
+        choices=("FAIL_UNCHANGED", "PASS_TRAIN_ONLY"),
+    )
     parser.add_argument("--expected-optimizer-steps", required=True, type=int)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -138,7 +145,11 @@ def _git(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def _reconstruct_initial_state(options: Path, work_root: Path) -> dict:
+def _reconstruct_initial_state(
+    options: Path,
+    work_root: Path,
+    training_commit: str,
+) -> dict:
     with tempfile.TemporaryDirectory(
         prefix="eventmatr_d11_initial_",
         dir=str(work_root),
@@ -147,7 +158,7 @@ def _reconstruct_initial_state(options: Path, work_root: Path) -> dict:
         source_root = temporary_root / "source"
         source_root.mkdir()
         archive_process = subprocess.run(
-            ["git", "archive", "--format=tar", TRAINING_COMMIT],
+            ["git", "archive", "--format=tar", training_commit],
             cwd=ROOT,
             check=False,
             stdout=subprocess.PIPE,
@@ -433,6 +444,14 @@ def main() -> None:
         )
     if int(options.get("random_seed", -1)) != 52:
         raise RuntimeError("parameter-delta audit requires frozen random_seed=52")
+    if identity.get("commit") != cli.initialization_source_commit:
+        raise RuntimeError(
+            "parameter-delta initialization source does not match training identity"
+        )
+    if cli.initialization_source_commit != cli.expected_training_source_commit:
+        raise RuntimeError(
+            "parameter-delta initialization and expected training commits differ"
+        )
 
     metric_lines = [
         json.loads(line)
@@ -485,7 +504,11 @@ def main() -> None:
         for name, path in dataset_cache_paths.items()
     }
 
-    initial_payload = _reconstruct_initial_state(cli.options, cli.output.parent)
+    initial_payload = _reconstruct_initial_state(
+        cli.options,
+        cli.output.parent,
+        cli.initialization_source_commit,
+    )
     if int(initial_payload.get("loader_batch_count", -1)) != (
         cli.expected_optimizer_steps
     ):
@@ -495,7 +518,14 @@ def main() -> None:
             f"{cli.expected_optimizer_steps}"
         )
     checkpoint = torch.load(cli.checkpoint, map_location="cpu")
-    _validate_inputs(options, checkpoint, identity)
+    _validate_inputs(
+        options,
+        checkpoint,
+        identity,
+        expected_training_source_commit=cli.expected_training_source_commit,
+        expected_training_source_tree=cli.expected_training_source_tree,
+        one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
+    )
     if int(checkpoint.get("epoch", -1)) != 1:
         raise RuntimeError("parameter-delta audit requires an epoch-one checkpoint")
     terminal_state = checkpoint.get("state_dict")
@@ -574,7 +604,7 @@ def main() -> None:
             "tree": _git("rev-parse", "HEAD^{tree}"),
         },
         "initialization_reconstructed_from_exact_training_commit": True,
-        "initialization_source_commit": TRAINING_COMMIT,
+        "initialization_source_commit": cli.initialization_source_commit,
         "seed": int(options["random_seed"]),
         "construction_order": "seed_then_train_dataset_then_model",
         "dataset_consumed_torch_rng": bool(

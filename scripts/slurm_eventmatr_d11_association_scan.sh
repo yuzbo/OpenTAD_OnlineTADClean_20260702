@@ -14,6 +14,9 @@ set -euo pipefail
 : "${MATR_OPTIONS:?MATR_OPTIONS is required}"
 : "${MATR_OPTIONS_SHA256:?MATR_OPTIONS_SHA256 is required}"
 : "${MATR_TRAIN_SOURCE_IDENTITY:?MATR_TRAIN_SOURCE_IDENTITY is required}"
+: "${MATR_TRAIN_SOURCE_COMMIT:?MATR_TRAIN_SOURCE_COMMIT is required}"
+: "${MATR_TRAIN_SOURCE_TREE:?MATR_TRAIN_SOURCE_TREE is required}"
+: "${MATR_MECHANISM_GATE_STATUS:?MATR_MECHANISM_GATE_STATUS is required}"
 : "${MATR_SCAN_SOURCE_COMMIT:?MATR_SCAN_SOURCE_COMMIT is required}"
 : "${MATR_SCAN_SOURCE_TREE:?MATR_SCAN_SOURCE_TREE is required}"
 : "${MATR_SCAN_MANIFEST_SHA256:?MATR_SCAN_MANIFEST_SHA256 is required}"
@@ -37,6 +40,9 @@ python3 scripts/run_eventmatr_d11_association_scan.py \
   --checkpoint "${MATR_CHECKPOINT}" \
   --options "${MATR_OPTIONS}" \
   --source-identity "${MATR_TRAIN_SOURCE_IDENTITY}" \
+  --expected-training-source-commit "${MATR_TRAIN_SOURCE_COMMIT}" \
+  --expected-training-source-tree "${MATR_TRAIN_SOURCE_TREE}" \
+  --one-epoch-mechanism-gate-status "${MATR_MECHANISM_GATE_STATUS}" \
   --expected-checkpoint-sha256 "${MATR_CHECKPOINT_SHA256}" \
   --expected-options-sha256 "${MATR_OPTIONS_SHA256}" \
   --output "${MATR_SCAN_ROOT}/association_scan.json"

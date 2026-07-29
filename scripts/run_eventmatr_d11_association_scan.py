@@ -73,6 +73,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--options", required=True, type=Path)
     parser.add_argument("--source-identity", required=True, type=Path)
+    parser.add_argument("--expected-training-source-commit", required=True)
+    parser.add_argument("--expected-training-source-tree", required=True)
+    parser.add_argument(
+        "--one-epoch-mechanism-gate-status",
+        required=True,
+        choices=("FAIL_UNCHANGED", "PASS_TRAIN_ONLY"),
+    )
     parser.add_argument("--expected-checkpoint-sha256", required=True)
     parser.add_argument("--expected-options-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
@@ -113,7 +120,15 @@ def _git(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def _validate_inputs(options: dict, checkpoint: dict, identity: dict) -> None:
+def _validate_inputs(
+    options: dict,
+    checkpoint: dict,
+    identity: dict,
+    *,
+    expected_training_source_commit: str,
+    expected_training_source_tree: str,
+    one_epoch_mechanism_gate_status: str,
+) -> None:
     expected_options = {
         "study_protocol": "d11_mechanism",
         "model_variant": "eventmatr",
@@ -153,10 +168,18 @@ def _validate_inputs(options: dict, checkpoint: dict, identity: dict) -> None:
             )
     if identity.get("status") != "PASS" or identity.get("clean") is not True:
         raise RuntimeError("training start source identity is not PASS/clean")
-    if identity.get("commit") != "de0837cf38e05d65a40f0744b863056edc2f433a":
+    if identity.get("commit") != expected_training_source_commit:
         raise RuntimeError("unexpected D1.1 training commit")
-    if identity.get("tree") != "91d998e787c42895b08571ef0ed5ab5af5458a47":
+    if identity.get("tree") != expected_training_source_tree:
         raise RuntimeError("unexpected D1.1 training tree")
+    effective_dose = bool(options.get("d11_effective_dose", False))
+    if (
+        one_epoch_mechanism_gate_status == "PASS_TRAIN_ONLY"
+        and not effective_dose
+    ):
+        raise RuntimeError("passing D1.1 training receipt lacks effective dose")
+    if one_epoch_mechanism_gate_status == "FAIL_UNCHANGED" and effective_dose:
+        raise RuntimeError("failed legacy D1.1 scan unexpectedly used effective dose")
     smoke = identity.get("smoke")
     if (
         not isinstance(smoke, dict)
@@ -308,7 +331,14 @@ def main() -> None:
     if options_sha256 != cli.expected_options_sha256:
         raise RuntimeError("association scan options SHA-256 mismatch")
     checkpoint = torch.load(cli.checkpoint, map_location="cpu")
-    _validate_inputs(options, checkpoint, identity)
+    _validate_inputs(
+        options,
+        checkpoint,
+        identity,
+        expected_training_source_commit=cli.expected_training_source_commit,
+        expected_training_source_tree=cli.expected_training_source_tree,
+        one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
+    )
 
     random.seed(52)
     np.random.seed(52)
@@ -1083,7 +1113,7 @@ def main() -> None:
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
-        "protocol": "eventmatr_d11_failed_one_epoch_association_scan_v3",
+        "protocol": "eventmatr_d11_terminal_association_scan_v4",
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,
@@ -1114,7 +1144,9 @@ def main() -> None:
             "necessary_condition_opportunity_scan_not_teacher_ownership_reconstruction"
         ),
         "performance_gate_release": False,
-        "one_epoch_mechanism_gate_status": "FAIL_UNCHANGED",
+        "one_epoch_mechanism_gate_status": (
+            cli.one_epoch_mechanism_gate_status
+        ),
         "threshold_search": False,
         "source_identity": {
             "commit": _git("rev-parse", "HEAD"),

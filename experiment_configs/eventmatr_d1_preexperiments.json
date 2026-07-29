@@ -128,6 +128,27 @@
       "release_condition": "diagnostic only; quantifies optimization exposure and never releases a performance pilot"
     },
     {
+      "stage": "d11_seed52_effective_dose_recheck",
+      "trigger": "the failed one-epoch run used the scheduler floor for all 3270 updates",
+      "epochs": [
+        1
+      ],
+      "lanes": [
+        "TH"
+      ],
+      "fixed_training_learning_rate": 3.34e-06,
+      "requires": [
+        "one explicit advance to the first registered warmup learning rate before training",
+        "exactly 3270 optimizer updates at the unchanged fixed learning rate",
+        "same seed, data order, architecture, losses and association decisions",
+        "finite non-zero transition and owner parameter deltas",
+        "unchanged learned-path liveness and zero-capacity-exhaustion conditions",
+        "deterministic terminal evaluation-mode predicted-only lifecycle scan",
+        "absent locked-test sentinel"
+      ],
+      "release_condition": "the new training receipt, parameter-delta audit, and deterministic terminal lifecycle scan all pass; this is a mechanism recheck, not a performance result"
+    },
+    {
       "stage": "seed52_short_pilots",
       "epochs": [
         5,
@@ -141,7 +162,7 @@
         "H",
         "TH"
       ],
-      "release_condition": "the D1.1 one-epoch training mechanism receipt, never the diagnostic scan status, is PASS and the full five-epoch science contract is prospectively frozen"
+      "release_condition": "the D1.1 effective-dose training receipt and terminal lifecycle scan, never a diagnostic scan alone, are PASS and the full five-epoch science contract is prospectively frozen"
     }
   ],
   "metrics": {

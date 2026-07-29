@@ -106,6 +106,11 @@ def make_parser():
         help='Pilot candidate for deterministic oracle/predicted track mixing; not a frozen paper hyperparameter.',
     )
     parser.add_argument(
+        '--d11_effective_dose',
+        action='store_true',
+        help='D1.1-only control: train one epoch at the first registered warmup learning rate.',
+    )
+    parser.add_argument(
         '--study_protocol',
         default='upstream_native',
         choices=(

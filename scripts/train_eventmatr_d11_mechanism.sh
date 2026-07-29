@@ -52,6 +52,7 @@ ARGS=(
   --event_lifecycle_version d1_censored
   --event_d1_lane th
   --event_teacher_forcing_ratio 0.5
+  --d11_effective_dose
   --birth_mode instant_transition
   --ownership_mode sticky_owner
   --event_arm b1o1

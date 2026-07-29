@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -20,7 +21,14 @@ from scripts.run_eventmatr_d11_parameter_delta_audit import (
     _optimizer_step_summary,
 )
 from scripts.finalize_eventmatr_d1_pilot import validate_metric_lines
-from scripts.finalize_eventmatr_d11_mechanism import validate_mechanism_metrics
+from scripts.finalize_eventmatr_d11_mechanism import (
+    validate_effective_dose_metrics,
+    validate_effective_dose_trace,
+    validate_mechanism_metrics,
+)
+from scripts.finalize_eventmatr_d11_effective_dose_gate import (
+    validate_effective_dose_gate,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,11 +71,11 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "never releases a performance pilot" in (
         protocol["gates"][3]["release_condition"]
     )
-    assert "one-epoch training mechanism receipt" in (
-        protocol["gates"][5]["release_condition"]
+    assert "effective-dose training receipt" in (
+        protocol["gates"][6]["release_condition"]
     )
-    assert "never the diagnostic scan status" in (
-        protocol["gates"][5]["release_condition"]
+    assert "never a diagnostic scan alone" in (
+        protocol["gates"][6]["release_condition"]
     )
     assert protocol["gates"][4]["stage"] == (
         "d11_failed_one_epoch_parameter_delta_audit"
@@ -75,6 +83,10 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "never releases a performance pilot" in (
         protocol["gates"][4]["release_condition"]
     )
+    assert protocol["gates"][5]["stage"] == "d11_seed52_effective_dose_recheck"
+    assert protocol["gates"][5]["fixed_training_learning_rate"] == 3.34e-6
+    assert "terminal lifecycle scan" in protocol["gates"][5]["release_condition"]
+    assert "parameter-delta audit" in protocol["gates"][5]["release_condition"]
 
 
 def test_d1_microexperiment_receipt_is_diagnostic_only() -> None:
@@ -179,18 +191,25 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
     assert "--study_protocol d11_mechanism" in launcher
     assert "--event_d1_lane th" in launcher
     assert "--random_seed 52" in launcher
+    assert "--d11_effective_dose" in launcher
     assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
     assert "--load_model" not in launcher
     assert '"performance_gate_applied": False' in finalizer
     assert '"five_epoch_contract_revision_only": True' in finalizer
     assert '"existing_five_epoch_matrix_release": False' in finalizer
     assert "eventmatr_d11_ternary_owner_v1" in finalizer
+    assert "eventmatr_d11_seed52_effective_dose_mechanism_v2" in finalizer
+    assert "validate_effective_dose_metrics" in finalizer
+    assert "prepare_d11_effective_dose" in task
+    assert "d11_optimizer_step_count" in task
     assert "validate_d1_checkpoint_compatibility" in task
     assert "D11_CHECKPOINT_SCHEMA" in task
     assert "'d11_mechanism'" in config
 
 
-def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds() -> None:
+def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds(
+    tmp_path: Path,
+) -> None:
     metrics = {
         "event_transition_gradient_norm": 1.0,
         "event_owner_gradient_norm": 1.0,
@@ -211,6 +230,192 @@ def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds() -> Non
     with pytest.raises(ValueError, match="exhausted"):
         validate_mechanism_metrics(
             {**metrics, "event_runtime_capacity_exhaustions_unscaled": 1.0}
+        )
+    effective_dose = {
+        "d11_effective_dose_enabled": 1.0,
+        "d11_optimizer_step_count": 3270.0,
+        "d11_initial_learning_rate": 1e-8,
+        "d11_learning_rate_first": 3.34e-6,
+        "d11_learning_rate_minimum": 3.34e-6,
+        "d11_learning_rate_maximum": 3.34e-6,
+        "d11_learning_rate_last": 3.34e-6,
+        "d11_scheduler_last_epoch_at_train_start": 1.0,
+        "d11_scheduler_t_cur_at_train_start": 1.0,
+    }
+    validate_effective_dose_metrics(effective_dose)
+    with pytest.raises(ValueError, match="3270.0"):
+        validate_effective_dose_metrics(
+            {**effective_dose, "d11_optimizer_step_count": 3269.0}
+        )
+    trace = tmp_path / "effective_dose_update_trace.jsonl"
+    trace.write_text(
+        "".join(
+            json.dumps(
+                {"optimizer_step": step, "learning_rate": 3.34e-6},
+                sort_keys=True,
+            )
+            + "\n"
+            for step in range(1, 3271)
+        ),
+        encoding="utf-8",
+    )
+    trace_receipt = validate_effective_dose_trace(trace)
+    assert trace_receipt["row_count"] == 3270
+    assert trace_receipt["last_optimizer_step"] == 3270
+
+
+def test_d11_effective_dose_complete_gate_requires_terminal_and_delta(
+    tmp_path: Path,
+) -> None:
+    commit = "a" * 40
+    tree = "b" * 40
+    checkpoint_sha256 = "c" * 64
+    trace_path = tmp_path / "effective_dose_update_trace.jsonl"
+    trace_path.write_text("bound effective-dose trace\n", encoding="utf-8")
+    trace_sha256 = hashlib.sha256(trace_path.read_bytes()).hexdigest()
+    mechanism = {
+        "status": "PASS",
+        "protocol": "eventmatr_d11_seed52_effective_dose_mechanism_v2",
+        "test_access": False,
+        "checkpoint_updated": True,
+        "strict_causal_paper_result_valid": False,
+        "performance_gate_applied": False,
+        "existing_five_epoch_matrix_release": False,
+        "source_identity": {"commit": commit, "tree": tree},
+        "checkpoint": {"sha256": checkpoint_sha256},
+        "effective_dose": {
+            "d11_effective_dose_enabled": 1.0,
+            "d11_optimizer_step_count": 3270.0,
+            "d11_initial_learning_rate": 1e-8,
+            "d11_learning_rate_first": 3.34e-6,
+            "d11_learning_rate_minimum": 3.34e-6,
+            "d11_learning_rate_maximum": 3.34e-6,
+            "d11_learning_rate_last": 3.34e-6,
+            "d11_scheduler_last_epoch_at_train_start": 1.0,
+            "d11_scheduler_t_cur_at_train_start": 1.0,
+        },
+        "effective_dose_update_trace": {
+            "path": str(trace_path),
+            "bytes": trace_path.stat().st_size,
+            "row_count": 3270,
+            "first_optimizer_step": 1,
+            "last_optimizer_step": 3270,
+            "learning_rate": 3.34e-6,
+            "sha256": trace_sha256,
+        },
+    }
+    scan = {
+        "status": "DIAGNOSTIC_COMPLETE",
+        "execution_status": "PASS",
+        "protocol": "eventmatr_d11_terminal_association_scan_v4",
+        "complete_scan": True,
+        "test_access": False,
+        "checkpoint_updated": False,
+        "strict_causal_paper_result_valid": False,
+        "performance_gate_release": False,
+        "threshold_search": False,
+        "one_epoch_mechanism_gate_status": "PASS_TRAIN_ONLY",
+        "source_identity": {"commit": commit, "tree": tree},
+        "training_source_identity": {"commit": commit, "tree": tree},
+        "checkpoint": {"sha256": checkpoint_sha256},
+        "barrier_counts": {
+            "predicted_start_active_query_count": 2,
+            "predicted_birth_query_count": 1,
+            "assignment_count": 1,
+            "runtime_birth_count": 1,
+            "runtime_cancel_count": 1,
+            "runtime_end_count": 1,
+            "runtime_emit_count": 1,
+            "runtime_capacity_exhaustion_count": 0,
+        },
+    }
+    delta = {
+        "status": "PASS",
+        "protocol": "eventmatr_d11_epoch1_parameter_delta_audit_v1",
+        "test_access": False,
+        "checkpoint_updated": False,
+        "model_forward_executed": False,
+        "optimizer_step_executed": False,
+        "strict_causal_paper_result_valid": False,
+        "training_source_identity": {"commit": commit, "tree": tree},
+        "audit_source_identity": {"commit": commit, "tree": tree},
+        "initialization_reconstructed_from_exact_training_commit": True,
+        "initialization_source_commit": commit,
+        "seed": 52,
+        "construction_order": "seed_then_train_dataset_then_model",
+        "checkpoint": {"sha256": checkpoint_sha256},
+        "metrics": {"recorded_epoch_average_learning_rate": 3.34e-6},
+        "optimizer": {
+            "step_count_closed": True,
+            "expected_step": 3270,
+            "maximum_step": 3270,
+        },
+        "parameter_delta_by_group": {
+            "all_parameters": {
+                "parameter_tensor_count": 4,
+                "element_count": 4,
+                "changed_element_count": 2,
+                "delta_l2": 5.000005 ** 0.5,
+                "initial_l2": 30 ** 0.5,
+            },
+            "event_transition_head": {
+                "parameter_tensor_count": 1,
+                "element_count": 1,
+                "changed_element_count": 1,
+                "delta_l2": 1e-3,
+                "relative_l2_delta": 1e-4,
+                "initial_l2": 1.0,
+            },
+            "event_owner_decoder": {
+                "parameter_tensor_count": 1,
+                "element_count": 1,
+                "changed_element_count": 1,
+                "delta_l2": 2e-3,
+                "relative_l2_delta": 2e-4,
+                "initial_l2": 2.0,
+            },
+            "other_event_parameters": {
+                "parameter_tensor_count": 1,
+                "element_count": 1,
+                "changed_element_count": 0,
+                "delta_l2": 1.0,
+                "relative_l2_delta": 0.5,
+                "initial_l2": 3.0,
+            },
+            "inherited_parent_parameters": {
+                "parameter_tensor_count": 1,
+                "element_count": 1,
+                "changed_element_count": 0,
+                "delta_l2": 2.0,
+                "relative_l2_delta": 0.5,
+                "initial_l2": 4.0,
+            },
+        },
+    }
+    evidence = validate_effective_dose_gate(
+        mechanism,
+        scan,
+        delta,
+        checkpoint_sha256=checkpoint_sha256,
+        training_source_commit=commit,
+        training_source_tree=tree,
+    )
+    assert evidence["terminal_lifecycle"]["assignment_count"] == 1
+    assert evidence["parameter_delta"]["event_transition_head"]["delta_l2"] > 0
+    with pytest.raises(ValueError, match="assignment_count=0"):
+        validate_effective_dose_gate(
+            mechanism,
+            {
+                **scan,
+                "barrier_counts": {
+                    **scan["barrier_counts"],
+                    "assignment_count": 0,
+                },
+            },
+            delta,
+            checkpoint_sha256=checkpoint_sha256,
+            training_source_commit=commit,
+            training_source_tree=tree,
         )
 
 
@@ -246,7 +451,8 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "legacy_field_name_means_alive_opportunity_without_target_ownership_" in scan
     assert '"eos_semantics": "current_stream_termination_observation_only"' in scan
     assert '"status": "DIAGNOSTIC_COMPLETE"' in scan
-    assert '"one_epoch_mechanism_gate_status": "FAIL_UNCHANGED"' in scan
+    assert '"FAIL_UNCHANGED", "PASS_TRAIN_ONLY"' in scan
+    assert "cli.one_epoch_mechanism_gate_status" in scan
     assert "expected_model_info_keys" in scan
     assert "post_forward_opportunity_scan_without_target_ownership_exclusion" in scan
     assert "necessary_condition_opportunity_scan_not_teacher_ownership_reconstruction" in scan
@@ -262,8 +468,36 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "--max-batches" not in slurm
     assert "MATR_CHECKPOINT_SHA256" in slurm
     assert "MATR_OPTIONS_SHA256" in slurm
+    assert "MATR_TRAIN_SOURCE_COMMIT" in slurm
+    assert "MATR_TRAIN_SOURCE_TREE" in slurm
+    assert "MATR_MECHANISM_GATE_STATUS" in slurm
     assert "--expected-checkpoint-sha256" in slurm
     assert "--expected-options-sha256" in slurm
+
+
+def test_d11_effective_dose_complete_gate_is_three_artifact_fail_closed() -> None:
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d11_effective_dose_gate.py"
+    ).read_text(encoding="utf-8")
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d11_effective_dose_gate.sh"
+    ).read_text(encoding="utf-8")
+    for field in (
+        "--mechanism-receipt",
+        "--association-scan",
+        "--parameter-delta-audit",
+        "--expected-checkpoint-sha256",
+        "--training-source-commit",
+        "--training-source-tree",
+    ):
+        assert field in finalizer
+    assert "five_epoch_science_contract_eligible_for_freeze" in finalizer
+    assert '"existing_five_epoch_matrix_release": False' in finalizer
+    assert '"performance_gate_release": False' in finalizer
+    assert "verify_source_identity.py" in slurm
+    assert "MATR_MECHANISM_RECEIPT" in slurm
+    assert "MATR_ASSOCIATION_SCAN" in slurm
+    assert "MATR_PARAMETER_DELTA_AUDIT" in slurm
 
 
 def test_d11_score_diagnostics_are_exact_and_fail_closed() -> None:
@@ -299,7 +533,7 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert '"strict_causal_paper_result_valid": False' in audit
     assert "construction_order" in audit
     assert "dataset_consumed_torch_rng" in audit
-    assert '["git", "archive", "--format=tar", TRAINING_COMMIT]' in audit
+    assert '["git", "archive", "--format=tar", training_commit]' in audit
     assert "unsupported non-regular " in audit
     assert "member: {member.name}" in audit
     assert "initialization_reconstructed_from_exact_training_commit" in audit
@@ -317,6 +551,10 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert "verify_source_identity.py" in slurm
     assert "MATR_CHECKPOINT_SHA256" in slurm
     assert "MATR_OPTIONS_SHA256" in slurm
+    assert "MATR_INITIALIZATION_SOURCE_COMMIT" in slurm
+    assert "MATR_TRAIN_SOURCE_COMMIT" in slurm
+    assert "MATR_TRAIN_SOURCE_TREE" in slurm
+    assert "MATR_MECHANISM_GATE_STATUS" in slurm
 
     stats = _new_delta_stats()
     _accumulate_delta(
