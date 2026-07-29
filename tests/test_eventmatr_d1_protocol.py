@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.finalize_eventmatr_d1_pilot import validate_metric_lines
+from scripts.finalize_eventmatr_d11_mechanism import validate_mechanism_metrics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,8 +35,14 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert protocol["test_access"] is False
     assert protocol["strict_causal_paper_result_valid"] is False
     assert all(protocol["forbidden"].values())
+    assert protocol["gates"][2]["stage"] == "d11_seed52_one_epoch_mechanism"
+    assert protocol["gates"][2]["epochs"] == [1]
+    assert protocol["gates"][2]["lanes"] == ["TH"]
     assert protocol["gates"][2]["release_condition"] == (
         "all prior hard contracts pass"
+    )
+    assert protocol["gates"][3]["release_condition"] == (
+        "D1.1 one-epoch mechanism receipt is PASS"
     )
 
 
@@ -117,6 +124,60 @@ def test_d1_seed52_pilot_array_is_registered_and_train_only() -> None:
     assert '"test_access": False' in finalizer
     assert '"strict_causal_paper_result_valid": False' in finalizer
     assert '"train_prefix_metrics_diagnostic_only": True' in finalizer
+
+
+def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d11_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "scripts" / "train_eventmatr_d11_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d11_mechanism.py"
+    ).read_text(encoding="utf-8")
+    task = (ROOT / "on_tal_task.py").read_text(encoding="utf-8")
+
+    assert "#SBATCH --gpus=1" in slurm
+    assert "SLURM_ARRAY_TASK_ID" not in slurm
+    assert "MATR_LANE=TH" in slurm
+    assert "--smoke-receipt" in slurm
+    assert "--epochs 1" in launcher
+    assert "--train_eval_step 1" in launcher
+    assert "--study_protocol d11_mechanism" in launcher
+    assert "--event_d1_lane th" in launcher
+    assert "--random_seed 52" in launcher
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
+    assert "--load_model" not in launcher
+    assert '"performance_gate_applied": False' in finalizer
+    assert '"five_epoch_matrix_release": True' in finalizer
+    assert "eventmatr_d11_ternary_owner_v1" in finalizer
+    assert "validate_d1_checkpoint_compatibility" in task
+    assert "D11_CHECKPOINT_SCHEMA" in task
+
+
+def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds() -> None:
+    metrics = {
+        "event_transition_gradient_norm": 1.0,
+        "event_owner_gradient_norm": 1.0,
+        "event_birth_positive_count_unscaled": 1.0,
+        "event_end_positive_count_unscaled": 1.0,
+        "event_owner_assignment_count_unscaled": 1.0,
+        "event_ragged_track_count_unscaled": 1.0,
+        "event_false_track_cancel_group_count_unscaled": 1.0,
+        "event_source_predicted_associated_row_count_unscaled": 1.0,
+        "event_source_predicted_unmatched_row_count_unscaled": 1.0,
+        "event_source_teacher_birth_row_count_unscaled": 1.0,
+        "event_association_predicted_associated_count_unscaled": 1.0,
+        "event_runtime_capacity_exhaustions_unscaled": 0.0,
+    }
+    validate_mechanism_metrics(metrics)
+    with pytest.raises(ValueError, match="not live"):
+        validate_mechanism_metrics({**metrics, "event_owner_gradient_norm": 0.0})
+    with pytest.raises(ValueError, match="exhausted"):
+        validate_mechanism_metrics(
+            {**metrics, "event_runtime_capacity_exhaustions_unscaled": 1.0}
+        )
 
 
 def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:

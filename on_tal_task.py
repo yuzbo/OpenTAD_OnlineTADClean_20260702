@@ -39,6 +39,7 @@ D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
     # the learned flag head and must not even expose the label at the boundary.
     "segment_flag",
 }
+D11_CHECKPOINT_SCHEMA = "eventmatr_d11_ternary_owner_v1"
 
 
 def censor_d1_event_targets_for_model(event_targets, event_valid_mask):
@@ -100,8 +101,79 @@ def on_tal(args):
         eval(args)
 
 
-def training_state(model, criterion, optimizer, scheduler, epoch, args):
+def d1_checkpoint_contract(model, args):
+    lifecycle = getattr(args, 'event_lifecycle_version', 'v1_dense')
+    raw_model = model.module if hasattr(model, 'module') else model
+    event_memory = getattr(raw_model, 'event_memory', None)
+    owner_state_count = getattr(event_memory, 'owner_state_count', None)
+    if lifecycle == 'd1_censored':
+        if owner_state_count != 3:
+            raise RuntimeError(
+                'D1.1 checkpoint contract requires a three-state owner head'
+            )
+        return {
+            'checkpoint_schema': D11_CHECKPOINT_SCHEMA,
+            'event_lifecycle_version': lifecycle,
+            'event_d1_lane': getattr(args, 'event_d1_lane', None),
+            'owner_state_count': owner_state_count,
+        }
     return {
+        'checkpoint_schema': 'matr_v1_dense_v1',
+        'event_lifecycle_version': lifecycle,
+        'event_d1_lane': None,
+        'owner_state_count': owner_state_count,
+    }
+
+
+def validate_d1_checkpoint_compatibility(checkpoint, model, args):
+    lifecycle = getattr(args, 'event_lifecycle_version', 'v1_dense')
+    checkpoint_lifecycle = checkpoint.get('event_lifecycle_version')
+    if lifecycle != 'd1_censored':
+        if (
+            checkpoint_lifecycle is not None
+            and checkpoint_lifecycle != lifecycle
+        ):
+            raise RuntimeError(
+                'checkpoint lifecycle mismatch: '
+                f'{checkpoint_lifecycle!r} != {lifecycle!r}'
+            )
+        return
+    expected = d1_checkpoint_contract(model, args)
+    mismatches = {
+        field: {'expected': value, 'actual': checkpoint.get(field)}
+        for field, value in expected.items()
+        if checkpoint.get(field) != value
+    }
+    if mismatches:
+        raise RuntimeError(
+            'D1.1 checkpoint is incompatible; start fresh instead of mapping '
+            'four-state owner semantics:\n'
+            + json.dumps(mismatches, indent=2, sort_keys=True)
+        )
+
+
+def d1_gradient_metrics(model, args):
+    if getattr(args, 'event_lifecycle_version', 'v1_dense') != 'd1_censored':
+        return {}
+    raw_model = model.module if hasattr(model, 'module') else model
+    parameters = {
+        'event_transition_gradient_norm': (
+            raw_model.event_transition_head.state.weight
+        ),
+        'event_owner_gradient_norm': raw_model.event_owner_decoder.state.weight,
+    }
+    metrics = {}
+    for name, parameter in parameters.items():
+        gradient = parameter.grad
+        value = 0.0 if gradient is None else float(gradient.norm().item())
+        if not math.isfinite(value):
+            raise RuntimeError(f'non-finite D1.1 gradient: {name}={value}')
+        metrics[name] = value
+    return metrics
+
+
+def training_state(model, criterion, optimizer, scheduler, epoch, args):
+    state = {
         'epoch': epoch,
         'state_dict': model.state_dict(),
         'criterion_dict': criterion.state_dict(),
@@ -110,16 +182,24 @@ def training_state(model, criterion, optimizer, scheduler, epoch, args):
         'study_protocol': getattr(args, 'study_protocol', 'upstream_native'),
         'model_variant': getattr(args, 'model_variant', 'native_matr'),
     }
+    state.update(d1_checkpoint_contract(model, args))
+    return state
         
 def train(args):
     save_path = args.save_path
     study_protocol = getattr(args, 'study_protocol', 'upstream_native')
     matched_study = study_protocol == 'matched_study'
     d1_preexperiment = study_protocol == 'd1_preexperiment'
+    d11_mechanism = study_protocol == 'd11_mechanism'
+    d1_train_only = d1_preexperiment or d11_mechanism
     if matched_study and args.epochs != 100:
         raise ValueError('matched_study requires the preregistered terminal epoch 100')
     if d1_preexperiment and args.epochs not in {5, 10, 20}:
         raise ValueError('d1_preexperiment epochs must be one of 5, 10, or 20')
+    if d11_mechanism and args.epochs != 1:
+        raise ValueError('d11_mechanism requires exactly one epoch')
+    if d11_mechanism and args.load_model:
+        raise ValueError('d11_mechanism forbids checkpoint resume')
 
     train_dataset = THUMOS14Dataset(args, subset='train')
     train_loader = torch.utils.data.DataLoader(train_dataset, 
@@ -132,7 +212,7 @@ def train(args):
     if matched_study:
         test_dataset = None
         test_loader = None
-    elif d1_preexperiment:
+    elif d1_train_only:
         test_dataset = None
         test_loader = None
     else:
@@ -162,6 +242,7 @@ def train(args):
     
     if args.load_model:
         checkpoint = torch.load(args.model_path)
+        validate_d1_checkpoint_compatibility(checkpoint, model, args)
         pretrained_dict = checkpoint['state_dict']
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model.state_dict()}
         model.load_state_dict(pretrained_dict)
@@ -179,14 +260,20 @@ def train(args):
     for epoch in range(start_epoch, args.epochs + 1):
         print_log(save_path, '----- %s at epoch #%d' % ('Train', epoch))
         train_log = train_one_epoch(args, train_dataset, train_loader, model, criterion, optimizer, epoch, device)
-        if d1_preexperiment:
-            metrics_path = os.path.join(save_path, 'pilot_epoch_metrics.jsonl')
+        if d1_train_only:
+            metrics_filename = (
+                'pilot_epoch_metrics.jsonl'
+                if d1_preexperiment
+                else 'mechanism_epoch_metrics.jsonl'
+            )
+            metrics_path = os.path.join(save_path, metrics_filename)
             with open(metrics_path, 'a', encoding='utf-8') as metrics_file:
                 metrics_file.write(
                     json.dumps(
                         {
                             'epoch': epoch,
                             'metrics': train_log,
+                            'study_protocol': study_protocol,
                             'strict_causal_paper_result_valid': False,
                             'test_access': False,
                         },
@@ -216,7 +303,7 @@ def train(args):
                     result_path,
                 )
             continue
-        if d1_preexperiment:
+        if d1_train_only:
             if epoch == args.epochs:
                 result_path = os.path.join(
                     save_path, 'terminal_epoch{}.pth'.format(args.epochs)
@@ -270,6 +357,7 @@ def eval(args):
     criterion = build_criterion(args, device)
     
     checkpoint = torch.load(args.model_path)
+    validate_d1_checkpoint_compatibility(checkpoint, model, args)
 
     pretrained_dict = checkpoint['state_dict']
     pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model.state_dict()}
@@ -405,9 +493,15 @@ def train_one_epoch(args, train_dataset, train_loader, model, criterion, optimiz
         # compute gradient and optimization step
         optimizer.zero_grad()
         loss.backward()
+        gradient_metrics = d1_gradient_metrics(model, args)
         optimizer.step()
 
-        metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
+        metric_logger.update(
+            loss=loss_value,
+            **loss_dict_reduced_scaled,
+            **loss_dict_reduced_unscaled,
+            **gradient_metrics,
+        )
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         
         if args.make_output:

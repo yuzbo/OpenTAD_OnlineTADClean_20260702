@@ -809,6 +809,23 @@ class CriterionMATR(nn.Module):
                 float(false_track_groups), device=device
             ),
         }
+        runtime_metrics = {
+            "event_runtime_birth_count": "event_birth_count",
+            "event_runtime_end_count": "event_end_count",
+            "event_runtime_emit_count": "event_emit_count",
+            "event_runtime_cancellation_count": "event_cancellation_count",
+            "event_runtime_reacquisition_count": "event_reacquisition_count",
+            "event_runtime_capacity_exhaustions": (
+                "event_runtime_capacity_exhaustions"
+            ),
+        }
+        for metric_name, output_name in runtime_metrics.items():
+            value = outputs.get(output_name)
+            losses[metric_name] = (
+                zero.detach()
+                if value is None
+                else value.to(device=device).sum().detach()
+            )
         association_counts = {}
         for row in outputs["event_association_rows"]:
             source = str(row["source"])

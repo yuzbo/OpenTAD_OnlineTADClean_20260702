@@ -773,6 +773,12 @@ def test_right_censored_end_hazard_has_survival_gradient() -> None:
                 {"source": "teacher_birth", "transition": "birth"},
                 {"source": "teacher_birth", "transition": "end"},
             ],
+            "event_birth_count": torch.tensor([2]),
+            "event_end_count": torch.tensor([1]),
+            "event_emit_count": torch.tensor([1]),
+            "event_cancellation_count": torch.tensor([0]),
+            "event_reacquisition_count": torch.tensor([0]),
+            "event_runtime_capacity_exhaustions": torch.tensor([0]),
         }
     )
     targets = {
@@ -798,6 +804,10 @@ def test_right_censored_end_hazard_has_survival_gradient() -> None:
     assert losses["event_association_teacher_birth_count"] == 1
     assert losses["event_source_teacher_birth_birth_count"] == 1
     assert losses["event_source_teacher_birth_end_count"] == 1
+    assert losses["event_runtime_birth_count"] == 2
+    assert losses["event_runtime_end_count"] == 1
+    assert losses["event_runtime_emit_count"] == 1
+    assert losses["event_runtime_capacity_exhaustions"] == 0
 
 
 def test_same_class_overlap_contributes_identity_repulsion() -> None:

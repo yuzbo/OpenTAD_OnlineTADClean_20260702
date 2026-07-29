@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v1",
+  "protocol_id": "eventmatr_d1_preexperiments_v2",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -66,6 +66,25 @@
       ]
     },
     {
+      "stage": "d11_seed52_one_epoch_mechanism",
+      "epochs": [
+        1
+      ],
+      "lanes": [
+        "TH"
+      ],
+      "fresh_start": true,
+      "checkpoint_schema": "eventmatr_d11_ternary_owner_v1",
+      "requires": [
+        "finite transition and owner gradients",
+        "non-empty birth, end, owner and ragged supervision",
+        "predicted-associated, predicted-unmatched and teacher-birth sources",
+        "zero capacity exhaustion",
+        "absent locked-test sentinel"
+      ],
+      "release_condition": "all prior hard contracts pass"
+    },
+    {
       "stage": "seed52_short_pilots",
       "epochs": [
         5,
@@ -79,7 +98,7 @@
         "H",
         "TH"
       ],
-      "release_condition": "all prior hard contracts pass"
+      "release_condition": "D1.1 one-epoch mechanism receipt is PASS"
     }
   ],
   "metrics": {

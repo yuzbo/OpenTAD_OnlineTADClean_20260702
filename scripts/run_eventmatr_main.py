@@ -54,13 +54,25 @@ OFFICIAL_SETTING = {
 def _validate(args) -> str:
     lane = os.environ.get("MATR_LANE", "")
     d1_preexperiment = args.study_protocol == "d1_preexperiment"
-    if d1_preexperiment:
+    d11_mechanism = args.study_protocol == "d11_mechanism"
+    d1_train_only = d1_preexperiment or d11_mechanism
+    if d1_train_only:
         if args.mode != "train":
-            raise RuntimeError("d1_preexperiment is a train-only protocol")
-        if args.epochs not in {5, 10, 20}:
+            raise RuntimeError(f"{args.study_protocol} is a train-only protocol")
+        if d1_preexperiment and args.epochs not in {5, 10, 20}:
             raise RuntimeError("D1 pilot epochs must be one of 5, 10, or 20")
+        if d11_mechanism and args.epochs != 1:
+            raise RuntimeError("D1.1 mechanism protocol requires exactly one epoch")
         if args.train_eval_step != args.epochs:
-            raise RuntimeError("D1 pilots evaluate the train prefix only at terminal epoch")
+            raise RuntimeError(
+                "D1 train-only protocols evaluate the train prefix only at terminal epoch"
+            )
+        if d11_mechanism and lane != "TH":
+            raise RuntimeError("D1.1 mechanism protocol is restricted to lane TH")
+        if d11_mechanism and args.load_model:
+            raise RuntimeError(
+                "D1.1 mechanism protocol must start fresh and forbids checkpoint resume"
+            )
         if lane == "N":
             if args.model_variant != "native_matr":
                 raise RuntimeError("D1 lane N requires --model_variant native_matr")
@@ -127,7 +139,7 @@ def _validate(args) -> str:
         raise RuntimeError("locked_test is an eval-only protocol")
 
     official_setting = dict(OFFICIAL_SETTING)
-    if d1_preexperiment:
+    if d1_train_only:
         official_setting.pop("epochs")
     mismatches = {
         name: {"expected": expected, "actual": getattr(args, name)}
