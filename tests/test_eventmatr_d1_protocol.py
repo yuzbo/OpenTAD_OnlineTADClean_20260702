@@ -7,10 +7,17 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 from scripts.run_eventmatr_d11_association_scan import (
     _rank_summary,
     _score_summary,
+)
+from scripts.run_eventmatr_d11_parameter_delta_audit import (
+    _accumulate_delta,
+    _finalize_delta_stats,
+    _new_delta_stats,
+    _optimizer_step_summary,
 )
 from scripts.finalize_eventmatr_d1_pilot import validate_metric_lines
 from scripts.finalize_eventmatr_d11_mechanism import validate_mechanism_metrics
@@ -57,9 +64,15 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
         protocol["gates"][3]["release_condition"]
     )
     assert "one-epoch training mechanism receipt" in (
-        protocol["gates"][4]["release_condition"]
+        protocol["gates"][5]["release_condition"]
     )
     assert "never the diagnostic scan status" in (
+        protocol["gates"][5]["release_condition"]
+    )
+    assert protocol["gates"][4]["stage"] == (
+        "d11_failed_one_epoch_parameter_delta_audit"
+    )
+    assert "never releases a performance pilot" in (
         protocol["gates"][4]["release_condition"]
     )
 
@@ -270,6 +283,66 @@ def test_d11_score_diagnostics_are_exact_and_fail_closed() -> None:
         _score_summary([float("nan")], label="bad")
     with pytest.raises(RuntimeError, match="outside query bandwidth"):
         _rank_summary([0], query_count=4)
+
+
+def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
+    audit = (
+        ROOT / "scripts" / "run_eventmatr_d11_parameter_delta_audit.py"
+    ).read_text(encoding="utf-8")
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d11_parameter_delta_audit.sh"
+    ).read_text(encoding="utf-8")
+    assert '"test_access": False' in audit
+    assert '"checkpoint_updated": False' in audit
+    assert '"model_forward_executed": False' in audit
+    assert '"optimizer_step_executed": False' in audit
+    assert '"strict_causal_paper_result_valid": False' in audit
+    assert "construction_order" in audit
+    assert "dataset_consumed_torch_rng" in audit
+    assert '["git", "archive", "--format=tar", TRAINING_COMMIT]' in audit
+    assert "unsupported non-regular member" in audit
+    assert "initialization_reconstructed_from_exact_training_commit" in audit
+    assert "requires frozen random_seed=52" in audit
+    assert "step-count closure failed" in audit
+    assert "formal D1.1 parameter-delta audit requires one visible CUDA device" in audit
+    assert '"train_features"' in audit
+    assert '"annotation"' in audit
+    assert '"sha256": _sha256(path)' in audit
+    assert "fresh and terminal model state keys differ" in audit
+    assert "checkpoint changed during parameter-delta audit" in audit
+    assert "optimizer_step_executed" in audit
+    assert "fresh_model(" not in audit
+    assert "#SBATCH --gpus=1" in slurm
+    assert "verify_source_identity.py" in slurm
+    assert "MATR_CHECKPOINT_SHA256" in slurm
+    assert "MATR_OPTIONS_SHA256" in slurm
+
+    stats = _new_delta_stats()
+    _accumulate_delta(
+        stats,
+        np.asarray([1.0, 2.0]),
+        np.asarray([1.5, 1.0]),
+    )
+    summary = _finalize_delta_stats(stats)
+    assert summary["element_count"] == 2
+    assert summary["changed_element_count"] == 2
+    assert summary["mean_absolute_delta"] == pytest.approx(0.75)
+    assert summary["max_absolute_delta"] == pytest.approx(1.0)
+
+    checkpoint = {
+        "optimizer": {
+            "state": {
+                0: {"step": torch.tensor(3270)},
+                1: {"step": 3270},
+            },
+            "param_groups": [{"lr": 1.0e-8}],
+        }
+    }
+    optimizer = _optimizer_step_summary(checkpoint, expected_steps=3270)
+    assert optimizer["step_count_closed"] is True
+    assert optimizer["unique_steps"] == [3270]
+    with pytest.raises(RuntimeError, match="step-count closure failed"):
+        _optimizer_step_summary(checkpoint, expected_steps=3269)
 
 
 def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:

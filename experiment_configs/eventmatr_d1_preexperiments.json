@@ -110,6 +110,24 @@
       "release_condition": "diagnostic execution is recorded with the one-epoch mechanism gate still failed; this stage never releases a performance pilot"
     },
     {
+      "stage": "d11_failed_one_epoch_parameter_delta_audit",
+      "trigger": "the one-epoch mechanism run used only the scheduler minimum learning rate",
+      "checkpoint_epoch": 1,
+      "lanes": [
+        "TH"
+      ],
+      "requires": [
+        "same seed and train-dataset-then-model construction order",
+        "unchanged model and dataset initialization source since training",
+        "all-parameter initial-to-terminal absolute and relative deltas",
+        "optimizer step-count closure",
+        "no model forward or optimizer step",
+        "unchanged checkpoint hash",
+        "absent locked-test sentinel"
+      ],
+      "release_condition": "diagnostic only; quantifies optimization exposure and never releases a performance pilot"
+    },
+    {
       "stage": "seed52_short_pilots",
       "epochs": [
         5,
