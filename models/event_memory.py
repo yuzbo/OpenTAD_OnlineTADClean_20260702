@@ -25,13 +25,16 @@ def temporal_viterbi_assignment(
     class_logits: torch.Tensor,
     query_features: torch.Tensor,
     class_id: int,
+    *,
+    birth_logits: Optional[torch.Tensor] = None,
 ) -> List[int]:
     """Return one stable, causal query path for a pre-birth event window.
 
     The matcher is deliberately stop-gradient: it constructs a temporally
     consistent supervision path, while gradients flow through the logits and
-    features selected by that path.  Emissions prefer START/class evidence and
-    transitions prefer feature continuity.  No future prefix outside the
+    features selected by that path.  D1 supplies its independently trained
+    binary birth risk; legacy callers fall back to the four-state START score.
+    Transitions prefer feature continuity.  No future prefix outside the
     supplied chronological window is inspected.
     """
 
@@ -41,6 +44,8 @@ def temporal_viterbi_assignment(
         raise ValueError("class_logits must start with [T,Q]")
     if query_features.shape[:2] != state_logits.shape[:2]:
         raise ValueError("query_features must start with [T,Q]")
+    if birth_logits is not None and birth_logits.shape != state_logits.shape[:2]:
+        raise ValueError("birth_logits must be [T,Q]")
     time_steps, query_count, _ = state_logits.shape
     if time_steps == 0 or query_count == 0:
         return []
@@ -48,10 +53,12 @@ def temporal_viterbi_assignment(
     foreground_classes = max(1, class_logits.size(-1) - 1)
     class_id = min(max(0, int(class_id)), foreground_classes - 1)
     with torch.no_grad():
-        emission = (
+        birth_evidence = (
             state_logits.log_softmax(dim=-1)[..., 1]
-            + class_logits.log_softmax(dim=-1)[..., class_id]
+            if birth_logits is None
+            else F.logsigmoid(birth_logits)
         )
+        emission = birth_evidence + class_logits.log_softmax(dim=-1)[..., class_id]
         normalized = F.normalize(query_features, dim=-1)
         score = emission[0]
         backpointers = []
@@ -495,16 +502,17 @@ def resolve_event_modes(args) -> Tuple[str, str, str]:
 
 
 class EventTransitionHead(nn.Module):
-    """Competitive background/start/alive/end state prediction.
+    """Candidate lifecycle features with a D1-independent birth hazard.
 
-    Runtime transitions use the winning-state margin.  Consequently the
-    scientific rule is learned competition among four states, not a universal
-    sigmoid probability threshold of 0.5.  Optional logit-margin thresholds in
-    ``DynamicEventMemory`` are only calibration/test injection points.
+    Legacy ``v1_dense`` keeps its competitive background/START/alive/end
+    margin exactly.  D1 uses a separate binary logit so event-normalized
+    censored birth learning is not forced to win the dense four-state
+    background competition.
     """
 
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int, *, independent_birth: bool = False):
         super().__init__()
+        self.independent_birth = bool(independent_birth)
         fused_dim = hidden_dim * 2
         self.fuse = nn.Sequential(
             nn.Linear(fused_dim, hidden_dim),
@@ -512,6 +520,9 @@ class EventTransitionHead(nn.Module):
             nn.LayerNorm(hidden_dim),
         )
         self.state = nn.Linear(hidden_dim, 4)
+        self.birth = (
+            nn.Linear(hidden_dim, 1) if self.independent_birth else None
+        )
 
     def forward(
         self, class_query: torch.Tensor, regression_query: torch.Tensor
@@ -532,9 +543,14 @@ class EventTransitionHead(nn.Module):
             margins.append(
                 state_logits[..., state_index] - competing.max(dim=-1).values
             )
+        birth_logits = (
+            self.birth(state).squeeze(-1)
+            if self.birth is not None
+            else margins[0]
+        )
         return (
             state_logits,
-            margins[0],
+            birth_logits,
             margins[1],
             margins[2],
             state,
@@ -801,23 +817,37 @@ class DynamicEventMemory:
         self,
         video_name: str,
         *,
-        candidate_state_logits: torch.Tensor,
+        candidate_state_logits: Optional[torch.Tensor] = None,
         birth_logits: Optional[torch.Tensor] = None,
     ) -> Tuple[int, ...]:
         """Preview current learned START rising edges without mutating state."""
 
-        if candidate_state_logits.ndim != 2 or candidate_state_logits.size(-1) != 4:
-            raise ValueError("candidate_state_logits must be [Q,4]")
-        if birth_logits is None or tuple(birth_logits.shape) != (
-            candidate_state_logits.size(0),
+        if (
+            candidate_state_logits is not None
+            and (
+                candidate_state_logits.ndim != 2
+                or candidate_state_logits.size(-1) != 4
+            )
         ):
+            raise ValueError("candidate_state_logits must be [Q,4]")
+        query_count = (
+            candidate_state_logits.size(0)
+            if candidate_state_logits is not None
+            else None
+        )
+        if birth_logits is None or birth_logits.ndim != 1:
+            raise ValueError("birth_logits must be [Q] for learned START preview")
+        if query_count is not None and birth_logits.size(0) != query_count:
             raise ValueError("birth_logits must be [Q] for learned START preview")
         if self.birth_logit_threshold is None:
-            current_start = (
-                birth_logits > 0.0
-                if self.strict_causal_boundary
-                else candidate_state_logits.argmax(dim=-1) == 1
-            )
+            if self.strict_causal_boundary:
+                current_start = birth_logits > 0.0
+            else:
+                if candidate_state_logits is None:
+                    raise ValueError(
+                        "legacy learned START preview requires candidate_state_logits"
+                    )
+                current_start = candidate_state_logits.argmax(dim=-1) == 1
         else:
             current_start = birth_logits >= self.birth_logit_threshold
         previous_start = self._previous_start_active.get(str(video_name))
@@ -1103,9 +1133,13 @@ class DynamicEventMemory:
                         self.owner_state_count
                     )
                 )
-        if self.birth_logit_threshold is None and candidate_state_logits is None:
+        if (
+            self.birth_logit_threshold is None
+            and not self.strict_causal_boundary
+            and candidate_state_logits is None
+        ):
             raise ValueError(
-                "formal learned START decisions require candidate_state_logits"
+                "legacy learned START decisions require candidate_state_logits"
             )
         if (
             self.end_logit_threshold is None

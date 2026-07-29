@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v3",
+  "protocol_id": "eventmatr_d1_preexperiments_v4",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -67,6 +67,7 @@
     },
     {
       "stage": "d11_seed52_one_epoch_mechanism",
+      "status": "completed_failed_scheduler_floor",
       "epochs": [
         1
       ],
@@ -129,6 +130,7 @@
     },
     {
       "stage": "d11_seed52_effective_dose_recheck",
+      "status": "completed_failed_absolute_start_liveness",
       "trigger": "the failed one-epoch run used the scheduler floor for all 3270 updates",
       "epochs": [
         1
@@ -149,7 +151,40 @@
       "release_condition": "the new training receipt, parameter-delta audit, and deterministic terminal lifecycle scan all pass; this is a mechanism recheck, not a performance result"
     },
     {
+      "stage": "d12_independent_birth_seed52_one_epoch_mechanism",
+      "status": "prospectively_frozen_not_run",
+      "trigger": "the effective-dose recheck moved parameters but terminal four-state START remained inactive while class-conditioned temporal structure remained learnable",
+      "epochs": [
+        1
+      ],
+      "lanes": [
+        "TH"
+      ],
+      "fresh_start": true,
+      "fixed_training_learning_rate": 3.34e-06,
+      "checkpoint_schema": "eventmatr_d12_independent_birth_v1",
+      "birth_decision": "independent binary birth log-odds strictly above zero on a causal rising edge",
+      "shared_birth_signal": [
+        "event-normalized interval-censored birth loss",
+        "causal temporal assignment",
+        "runtime birth decision"
+      ],
+      "requires": [
+        "deterministic contract where independent birth is live while the legacy four-state background remains the winner",
+        "finite non-zero shared-transition, independent-birth and owner gradients",
+        "non-empty predicted-associated, predicted-unmatched and teacher-birth supervision",
+        "positive predicted birth, assignment, runtime birth, cancellation and end counts",
+        "exactly 3270 optimizer updates at the frozen effective learning rate",
+        "non-zero transition and owner parameter deltas",
+        "zero capacity exhaustion",
+        "unchanged checkpoint hash during terminal scan and parameter audit",
+        "absent locked-test sentinel"
+      ],
+      "release_condition": "mechanism receipt, complete terminal lifecycle scan, and parameter-delta audit all pass; this may release only prospectively frozen development pilots, never a paper claim or locked-test access"
+    },
+    {
       "stage": "seed52_short_pilots",
+      "status": "blocked_until_d12_mechanism_pass",
       "epochs": [
         5,
         10,
@@ -162,9 +197,32 @@
         "H",
         "TH"
       ],
-      "release_condition": "the D1.1 effective-dose training receipt and terminal lifecycle scan, never a diagnostic scan alone, are PASS and the full five-epoch science contract is prospectively frozen"
+      "release_condition": "the D1.2 independent-birth complete mechanism gate, never a diagnostic scan alone, is PASS and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
     }
   ],
+  "paper_result_boundary": {
+    "status": "blocked_until_structure_gate_and_prospective_freeze",
+    "official_parent_anchor": "native MATR",
+    "dataset": "official THUMOS14 train-validation split and locked test split",
+    "input_features": "official extracted RGB+flow features with feat_dim 4096",
+    "matched_training_budget": {
+      "epochs": 100,
+      "batch": 64,
+      "num_frame": 64,
+      "num_queries": 10,
+      "random_seed": 52,
+      "optimizer_and_scheduler": "identical to the official parent protocol"
+    },
+    "matched_evaluation": "same official evaluator at temporal IoU 0.3 through 0.7",
+    "strict_causal_requirements": [
+      "no true duration or complete-video timing at the model boundary",
+      "end-of-stream only when observed at the current time",
+      "no future frame, future metadata, or ground-truth inference input",
+      "immutable positive-length no-duplicate ledger with zero capacity exhaustion"
+    ],
+    "paper_validity": "only a prospectively frozen native-parent versus EventMATR full-budget evaluation is paper-comparable; one-epoch mechanisms, train-prefix scores, and 5/10/20-epoch pilots are not paper performance results",
+    "locked_test_release_condition": "D1.2 structure gate PASS, development analysis closed, full-budget comparison contract frozen before any locked-test access"
+  },
   "metrics": {
     "detection": [
       "mAP@0.3:0.7",

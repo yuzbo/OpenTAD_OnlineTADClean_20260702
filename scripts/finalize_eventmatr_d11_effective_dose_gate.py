@@ -1,4 +1,4 @@
-"""Close the D1.1 effective-dose training, terminal, and delta evidence."""
+"""Close the D1.2 independent-birth mechanism, terminal, and delta evidence."""
 
 from __future__ import annotations
 
@@ -19,10 +19,10 @@ def _sha256(path: Path) -> str:
 
 def _load(path: Path) -> dict:
     if not path.is_file():
-        raise ValueError(f"required D1.1 gate artifact is absent: {path}")
+        raise ValueError(f"required D1.2 gate artifact is absent: {path}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"D1.1 gate artifact is not an object: {path}")
+        raise ValueError(f"D1.2 gate artifact is not an object: {path}")
     return payload
 
 
@@ -36,16 +36,16 @@ def _require_identity(identity: dict, commit: str, tree: str, label: str) -> Non
 def _nonnegative_integer_count(counts: dict, field: str) -> int:
     value = counts.get(field)
     if isinstance(value, bool):
-        raise ValueError(f"D1.1 terminal lifecycle count is invalid: {field}={value!r}")
+        raise ValueError(f"D1.2 terminal lifecycle count is invalid: {field}={value!r}")
     try:
         numeric = float(value)
     except (TypeError, ValueError) as error:
         raise ValueError(
-            f"D1.1 terminal lifecycle count is invalid: {field}={value!r}"
+            f"D1.2 terminal lifecycle count is invalid: {field}={value!r}"
         ) from error
     if not math.isfinite(numeric) or numeric < 0.0 or not numeric.is_integer():
         raise ValueError(
-            f"D1.1 terminal lifecycle count is invalid: {field}={value!r}"
+            f"D1.2 terminal lifecycle count is invalid: {field}={value!r}"
         )
     return int(numeric)
 
@@ -60,9 +60,9 @@ def validate_effective_dose_gate(
     training_source_tree: str,
 ) -> dict:
     if mechanism.get("status") != "PASS" or mechanism.get("protocol") != (
-        "eventmatr_d11_seed52_effective_dose_mechanism_v2"
+        "eventmatr_d12_seed52_effective_dose_mechanism_v1"
     ):
-        raise ValueError("D1.1 effective-dose training receipt is not PASS/v2")
+        raise ValueError("D1.2 effective-dose training receipt is not PASS/v1")
     if (
         mechanism.get("test_access") is not False
         or mechanism.get("checkpoint_updated") is not True
@@ -70,7 +70,7 @@ def validate_effective_dose_gate(
         or mechanism.get("performance_gate_applied") is not False
         or mechanism.get("existing_five_epoch_matrix_release") is not False
     ):
-        raise ValueError("D1.1 training receipt crossed its evidence boundary")
+        raise ValueError("D1.2 training receipt crossed its evidence boundary")
     _require_identity(
         mechanism.get("source_identity"),
         training_source_commit,
@@ -78,7 +78,7 @@ def validate_effective_dose_gate(
         "training receipt",
     )
     if mechanism.get("checkpoint", {}).get("sha256") != checkpoint_sha256:
-        raise ValueError("D1.1 training receipt checkpoint hash mismatch")
+        raise ValueError("D1.2 training receipt checkpoint hash mismatch")
     effective_dose = mechanism.get("effective_dose", {})
     effective_dose_expected = {
         "d11_effective_dose_enabled": 1.0,
@@ -100,7 +100,7 @@ def validate_effective_dose_gate(
             abs_tol=1e-15,
         ):
             raise ValueError(
-                f"D1.1 training receipt effective dose drifted: "
+                f"D1.2 training receipt effective dose drifted: "
                 f"{field}={value} != {expected}"
             )
     trace = mechanism.get("effective_dose_update_trace", {})
@@ -112,7 +112,7 @@ def validate_effective_dose_gate(
     for field, expected in trace_expected.items():
         if int(trace.get(field, -1)) != expected:
             raise ValueError(
-                f"D1.1 training receipt update trace drifted: "
+                f"D1.2 training receipt update trace drifted: "
                 f"{field}={trace.get(field)!r} != {expected}"
             )
     trace_learning_rate = float(trace.get("learning_rate", float("nan")))
@@ -122,29 +122,29 @@ def validate_effective_dose_gate(
         rel_tol=0.0,
         abs_tol=1e-15,
     ):
-        raise ValueError("D1.1 training receipt update-trace learning rate drifted")
+        raise ValueError("D1.2 training receipt update-trace learning rate drifted")
     trace_sha256 = trace.get("sha256")
     if (
         not isinstance(trace_sha256, str)
         or len(trace_sha256) != 64
         or any(character not in "0123456789abcdef" for character in trace_sha256)
     ):
-        raise ValueError("D1.1 training receipt update-trace hash is invalid")
+        raise ValueError("D1.2 training receipt update-trace hash is invalid")
     trace_path_value = trace.get("path")
     if not isinstance(trace_path_value, str) or not trace_path_value:
-        raise ValueError("D1.1 training receipt update-trace path is absent")
+        raise ValueError("D1.2 training receipt update-trace path is absent")
     trace_path = Path(trace_path_value).expanduser().resolve()
     if not trace_path.is_file():
-        raise ValueError("D1.1 training receipt update-trace artifact is absent")
+        raise ValueError("D1.2 training receipt update-trace artifact is absent")
     if trace_path.stat().st_size != int(trace.get("bytes", -1)):
-        raise ValueError("D1.1 training receipt update-trace size mismatch")
+        raise ValueError("D1.2 training receipt update-trace size mismatch")
     if _sha256(trace_path) != trace_sha256:
-        raise ValueError("D1.1 training receipt update-trace hash mismatch")
+        raise ValueError("D1.2 training receipt update-trace hash mismatch")
 
     scan_expected = {
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
-        "protocol": "eventmatr_d11_terminal_association_scan_v4",
+        "protocol": "eventmatr_d12_terminal_association_scan_v1",
         "complete_scan": True,
         "test_access": False,
         "checkpoint_updated": False,
@@ -156,11 +156,11 @@ def validate_effective_dose_gate(
     for field, expected in scan_expected.items():
         if scan.get(field) != expected:
             raise ValueError(
-                f"D1.1 terminal scan {field} mismatch: "
+                f"D1.2 terminal scan {field} mismatch: "
                 f"{scan.get(field)!r} != {expected!r}"
             )
     if scan.get("checkpoint", {}).get("sha256") != checkpoint_sha256:
-        raise ValueError("D1.1 terminal scan checkpoint hash mismatch")
+        raise ValueError("D1.2 terminal scan checkpoint hash mismatch")
     _require_identity(
         scan.get("training_source_identity"),
         training_source_commit,
@@ -175,7 +175,7 @@ def validate_effective_dose_gate(
     )
     counts = scan.get("barrier_counts")
     if not isinstance(counts, dict):
-        raise ValueError("D1.1 terminal scan has no barrier counts")
+        raise ValueError("D1.2 terminal scan has no barrier counts")
     lifecycle_fields = (
         "predicted_start_active_query_count",
         "predicted_birth_query_count",
@@ -201,17 +201,17 @@ def validate_effective_dose_gate(
     for field in required_positive:
         value = lifecycle_counts[field]
         if value <= 0:
-            raise ValueError(f"D1.1 terminal lifecycle is not live: {field}={value}")
+            raise ValueError(f"D1.2 terminal lifecycle is not live: {field}={value}")
     if lifecycle_counts["runtime_capacity_exhaustion_count"] != 0:
-        raise ValueError("D1.1 terminal lifecycle exhausted dynamic capacity")
+        raise ValueError("D1.2 terminal lifecycle exhausted dynamic capacity")
     runtime_end = lifecycle_counts["runtime_end_count"]
     runtime_emit = lifecycle_counts["runtime_emit_count"]
     if runtime_emit != runtime_end:
-        raise ValueError("D1.1 terminal END and immutable emission counts differ")
+        raise ValueError("D1.2 terminal END and immutable emission counts differ")
 
     delta_expected = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_epoch1_parameter_delta_audit_v1",
+        "protocol": "eventmatr_d12_epoch1_parameter_delta_audit_v1",
         "test_access": False,
         "checkpoint_updated": False,
         "model_forward_executed": False,
@@ -224,11 +224,11 @@ def validate_effective_dose_gate(
     for field, expected in delta_expected.items():
         if delta.get(field) != expected:
             raise ValueError(
-                f"D1.1 parameter audit {field} mismatch: "
+                f"D1.2 parameter audit {field} mismatch: "
                 f"{delta.get(field)!r} != {expected!r}"
             )
     if delta.get("checkpoint", {}).get("sha256") != checkpoint_sha256:
-        raise ValueError("D1.1 parameter audit checkpoint hash mismatch")
+        raise ValueError("D1.2 parameter audit checkpoint hash mismatch")
     _require_identity(
         delta.get("training_source_identity"),
         training_source_commit,
@@ -242,7 +242,7 @@ def validate_effective_dose_gate(
         "parameter audit execution",
     )
     if delta.get("initialization_source_commit") != training_source_commit:
-        raise ValueError("D1.1 parameter audit initialization source mismatch")
+        raise ValueError("D1.2 parameter audit initialization source mismatch")
     recorded_learning_rate = float(
         delta.get("metrics", {}).get(
             "recorded_epoch_average_learning_rate",
@@ -255,14 +255,14 @@ def validate_effective_dose_gate(
         rel_tol=0.0,
         abs_tol=1e-15,
     ):
-        raise ValueError("D1.1 parameter audit learning-rate record drifted")
+        raise ValueError("D1.2 parameter audit learning-rate record drifted")
     optimizer = delta.get("optimizer", {})
     if (
         optimizer.get("step_count_closed") is not True
         or int(optimizer.get("expected_step", -1)) != 3270
         or int(optimizer.get("maximum_step", -1)) != 3270
     ):
-        raise ValueError("D1.1 parameter audit optimizer steps did not close")
+        raise ValueError("D1.2 parameter audit optimizer steps did not close")
     delta_groups = delta.get("parameter_delta_by_group", {})
     component_groups = (
         "event_transition_head",
@@ -279,7 +279,7 @@ def validate_effective_dose_gate(
         or all_element_count <= 0
         or all_changed_count <= 0
     ):
-        raise ValueError("D1.1 parameter audit has no complete all-parameter delta")
+        raise ValueError("D1.2 parameter audit has no complete all-parameter delta")
     component_tensor_count = 0
     component_element_count = 0
     component_changed_count = 0
@@ -302,7 +302,7 @@ def validate_effective_dose_gate(
             or not math.isfinite(initial_l2)
             or initial_l2 < 0.0
         ):
-            raise ValueError(f"D1.1 parameter audit group is invalid: {group}")
+            raise ValueError(f"D1.2 parameter audit group is invalid: {group}")
         component_tensor_count += tensor_count
         component_element_count += element_count
         component_changed_count += changed_count
@@ -313,7 +313,7 @@ def validate_effective_dose_gate(
         or component_element_count != all_element_count
         or component_changed_count != all_changed_count
     ):
-        raise ValueError("D1.1 parameter audit group counts did not close")
+        raise ValueError("D1.2 parameter audit group counts did not close")
     all_delta_l2 = float(all_parameters.get("delta_l2", float("nan")))
     all_initial_l2 = float(all_parameters.get("initial_l2", float("nan")))
     if (
@@ -334,7 +334,7 @@ def validate_effective_dose_gate(
             abs_tol=1e-20,
         )
     ):
-        raise ValueError("D1.1 all-parameter delta norms did not close")
+        raise ValueError("D1.2 all-parameter delta norms did not close")
     for group in ("event_transition_head", "event_owner_decoder"):
         group_delta = delta_groups.get(group, {})
         value = float(group_delta.get("delta_l2", float("nan")))
@@ -345,7 +345,7 @@ def validate_effective_dose_gate(
             or value <= 0.0
             or relative <= 0.0
         ):
-            raise ValueError(f"D1.1 parameter group did not update: {group}")
+            raise ValueError(f"D1.2 parameter group did not update: {group}")
 
     return {
         "terminal_lifecycle": {
@@ -392,14 +392,16 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     receipt = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_effective_dose_complete_gate_v1",
+        "protocol": "eventmatr_d12_effective_dose_complete_gate_v1",
         "test_access": False,
         "strict_causal_paper_result_valid": False,
         "performance_gate_release": False,
         "threshold_search": False,
         "training_mechanism_gate_pass": True,
-        "five_epoch_science_contract_eligible_for_freeze": True,
+        "development_pilot_contract_eligible_for_freeze": True,
         "existing_five_epoch_matrix_release": False,
+        "official_comparison_release": False,
+        "locked_test_release": False,
         "checkpoint_sha256": args.expected_checkpoint_sha256,
         "training_source": {
             "commit": args.training_source_commit,

@@ -1,4 +1,4 @@
-"""Validate the single registered D1.1 train-only mechanism run."""
+"""Validate the single registered D1.2 train-only mechanism run."""
 
 from __future__ import annotations
 
@@ -22,9 +22,10 @@ except ModuleNotFoundError:
     )
 
 
-CHECKPOINT_SCHEMA = "eventmatr_d11_ternary_owner_v1"
+CHECKPOINT_SCHEMA = "eventmatr_d12_independent_birth_v1"
 POSITIVE_MECHANISM_METRICS = (
     "event_transition_gradient_norm",
+    "event_birth_gradient_norm",
     "event_owner_gradient_norm",
     "event_birth_positive_count_unscaled",
     "event_end_positive_count_unscaled",
@@ -56,15 +57,15 @@ def validate_mechanism_metrics(metrics: dict) -> None:
         | {"event_runtime_capacity_exhaustions_unscaled"}.difference(metrics)
     )
     if missing:
-        raise ValueError(f"D1.1 mechanism metrics are missing keys: {missing}")
+        raise ValueError(f"D1.2 mechanism metrics are missing keys: {missing}")
     for name in POSITIVE_MECHANISM_METRICS:
         value = float(metrics[name])
         if not math.isfinite(value) or value <= 0:
-            raise ValueError(f"D1.1 mechanism metric is not live: {name}={value}")
+            raise ValueError(f"D1.2 mechanism metric is not live: {name}={value}")
     capacity = float(metrics["event_runtime_capacity_exhaustions_unscaled"])
     if not math.isfinite(capacity) or capacity != 0:
         raise ValueError(
-            "D1.1 mechanism exhausted dynamic capacity: "
+            "D1.2 mechanism exhausted dynamic capacity: "
             f"event_runtime_capacity_exhaustions_unscaled={capacity}"
         )
 
@@ -72,7 +73,7 @@ def validate_mechanism_metrics(metrics: dict) -> None:
 def validate_effective_dose_metrics(metrics: dict) -> None:
     missing = sorted(set(EFFECTIVE_DOSE_METRICS).difference(metrics))
     if missing:
-        raise ValueError(f"D1.1 effective-dose metrics are missing keys: {missing}")
+        raise ValueError(f"D1.2 effective-dose metrics are missing keys: {missing}")
     exact_values = {
         "d11_effective_dose_enabled": 1.0,
         "d11_optimizer_step_count": 3270.0,
@@ -89,7 +90,7 @@ def validate_effective_dose_metrics(metrics: dict) -> None:
             abs_tol=1e-15,
         ):
             raise ValueError(
-                f"D1.1 effective-dose metric drifted: {name}={value} != {expected}"
+                f"D1.2 effective-dose metric drifted: {name}={value} != {expected}"
             )
     for name in (
         "d11_learning_rate_first",
@@ -105,14 +106,14 @@ def validate_effective_dose_metrics(metrics: dict) -> None:
             abs_tol=1e-15,
         ):
             raise ValueError(
-                "D1.1 did not use the fixed first-warmup learning rate: "
+                "D1.2 did not use the fixed first-warmup learning rate: "
                 f"{name}={value}"
             )
 
 
 def validate_effective_dose_trace(path: Path) -> dict:
     if not path.is_file():
-        raise ValueError(f"D1.1 effective-dose update trace is absent: {path}")
+        raise ValueError(f"D1.2 effective-dose update trace is absent: {path}")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     rows = [
         json.loads(line)
@@ -121,14 +122,14 @@ def validate_effective_dose_trace(path: Path) -> dict:
     ]
     if len(rows) != 3270:
         raise ValueError(
-            f"D1.1 effective-dose trace has {len(rows)} rows instead of 3270"
+            f"D1.2 effective-dose trace has {len(rows)} rows instead of 3270"
         )
     for expected_step, row in enumerate(rows, start=1):
         if set(row) != {"optimizer_step", "learning_rate"}:
-            raise ValueError("D1.1 effective-dose trace row schema drifted")
+            raise ValueError("D1.2 effective-dose trace row schema drifted")
         if int(row["optimizer_step"]) != expected_step:
             raise ValueError(
-                "D1.1 effective-dose trace step sequence drifted: "
+                "D1.2 effective-dose trace step sequence drifted: "
                 f"{row['optimizer_step']} != {expected_step}"
             )
         learning_rate = float(row["learning_rate"])
@@ -139,7 +140,7 @@ def validate_effective_dose_trace(path: Path) -> dict:
             abs_tol=1e-15,
         ):
             raise ValueError(
-                "D1.1 effective-dose trace learning rate drifted at "
+                "D1.2 effective-dose trace learning rate drifted at "
                 f"step {expected_step}: {learning_rate}"
             )
     return {
@@ -178,7 +179,7 @@ def main() -> None:
     try:
         validate_metric_lines(metric_lines, "TH", 1)
         if metric_lines[0].get("study_protocol") != "d11_mechanism":
-            raise ValueError("D1.1 mechanism metric protocol drifted")
+            raise ValueError("D1.2 mechanism metric protocol drifted")
         validate_effective_dose_metrics(metric_lines[0]["metrics"])
         effective_dose_trace_receipt = validate_effective_dose_trace(
             effective_dose_trace
@@ -199,6 +200,7 @@ def main() -> None:
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
         "owner_state_count": 3,
+        "birth_head": "independent_binary_hazard",
     }
     for field, value in expected_checkpoint.items():
         if checkpoint_payload.get(field) != value:
@@ -279,7 +281,7 @@ def main() -> None:
     }
     receipt = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_seed52_effective_dose_mechanism_v2",
+        "protocol": "eventmatr_d12_seed52_effective_dose_mechanism_v1",
         "lane": "TH",
         "epochs": 1,
         "seed": 52,

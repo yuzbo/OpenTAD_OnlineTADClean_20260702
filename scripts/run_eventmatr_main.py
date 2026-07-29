@@ -62,16 +62,16 @@ def _validate(args) -> str:
         if d1_preexperiment and args.epochs not in {5, 10, 20}:
             raise RuntimeError("D1 pilot epochs must be one of 5, 10, or 20")
         if d11_mechanism and args.epochs != 1:
-            raise RuntimeError("D1.1 mechanism protocol requires exactly one epoch")
+            raise RuntimeError("D1.2 mechanism protocol requires exactly one epoch")
         if args.train_eval_step != args.epochs:
             raise RuntimeError(
                 "D1 train-only protocols evaluate the train prefix only at terminal epoch"
             )
         if d11_mechanism and lane != "TH":
-            raise RuntimeError("D1.1 mechanism protocol is restricted to lane TH")
+            raise RuntimeError("D1.2 mechanism protocol is restricted to lane TH")
         if d11_mechanism and args.load_model:
             raise RuntimeError(
-                "D1.1 mechanism protocol must start fresh and forbids checkpoint resume"
+                "D1.2 mechanism protocol must start fresh and forbids checkpoint resume"
             )
         if lane == "N":
             if args.model_variant != "native_matr":

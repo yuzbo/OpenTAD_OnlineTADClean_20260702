@@ -39,7 +39,7 @@ D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
     # the learned flag head and must not even expose the label at the boundary.
     "segment_flag",
 }
-D11_CHECKPOINT_SCHEMA = "eventmatr_d11_ternary_owner_v1"
+D12_CHECKPOINT_SCHEMA = "eventmatr_d12_independent_birth_v1"
 
 
 def censor_d1_event_targets_for_model(event_targets, event_valid_mask):
@@ -109,19 +109,30 @@ def d1_checkpoint_contract(model, args):
     if lifecycle == 'd1_censored':
         if owner_state_count != 3:
             raise RuntimeError(
-                'D1.1 checkpoint contract requires a three-state owner head'
+                'D1.2 checkpoint contract requires a three-state owner head'
+            )
+        birth_head = getattr(
+            getattr(raw_model, 'event_transition_head', None),
+            'birth',
+            None,
+        )
+        if birth_head is None:
+            raise RuntimeError(
+                'D1.2 checkpoint contract requires an independent birth head'
             )
         return {
-            'checkpoint_schema': D11_CHECKPOINT_SCHEMA,
+            'checkpoint_schema': D12_CHECKPOINT_SCHEMA,
             'event_lifecycle_version': lifecycle,
             'event_d1_lane': getattr(args, 'event_d1_lane', None),
             'owner_state_count': owner_state_count,
+            'birth_head': 'independent_binary_hazard',
         }
     return {
         'checkpoint_schema': 'matr_v1_dense_v1',
         'event_lifecycle_version': lifecycle,
         'event_d1_lane': None,
         'owner_state_count': owner_state_count,
+        'birth_head': None,
     }
 
 
@@ -146,8 +157,8 @@ def validate_d1_checkpoint_compatibility(checkpoint, model, args):
     }
     if mismatches:
         raise RuntimeError(
-            'D1.1 checkpoint is incompatible; start fresh instead of mapping '
-            'four-state owner semantics:\n'
+            'D1.2 checkpoint is incompatible; start fresh instead of mapping '
+            'an older lifecycle architecture:\n'
             + json.dumps(mismatches, indent=2, sort_keys=True)
         )
 
@@ -158,8 +169,9 @@ def d1_gradient_metrics(model, args):
     raw_model = model.module if hasattr(model, 'module') else model
     parameters = {
         'event_transition_gradient_norm': (
-            raw_model.event_transition_head.state.weight
+            raw_model.event_transition_head.fuse[0].weight
         ),
+        'event_birth_gradient_norm': raw_model.event_transition_head.birth.weight,
         'event_owner_gradient_norm': raw_model.event_owner_decoder.state.weight,
     }
     metrics = {}
@@ -167,7 +179,7 @@ def d1_gradient_metrics(model, args):
         gradient = parameter.grad
         value = 0.0 if gradient is None else float(gradient.norm().item())
         if not math.isfinite(value):
-            raise RuntimeError(f'non-finite D1.1 gradient: {name}={value}')
+            raise RuntimeError(f'non-finite D1.2 gradient: {name}={value}')
         metrics[name] = value
     return metrics
 
@@ -193,17 +205,17 @@ def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
     }
     if mismatches:
         raise ValueError(
-            'D1.1 effective-dose schedule drifted:\n'
+            'D1.2 effective-dose schedule drifted:\n'
             + json.dumps(mismatches, indent=2, sort_keys=True)
         )
     if int(loader_batches) != 3270:
         raise ValueError(
-            f'D1.1 effective dose requires 3270 loader batches, got {loader_batches}'
+            f'D1.2 effective dose requires 3270 loader batches, got {loader_batches}'
         )
     initial_lr = float(optimizer.param_groups[0]['lr'])
     if not math.isclose(initial_lr, args.min_lr, rel_tol=0.0, abs_tol=1e-15):
         raise ValueError(
-            f'D1.1 optimizer did not start at min_lr: {initial_lr} != {args.min_lr}'
+            f'D1.2 optimizer did not start at min_lr: {initial_lr} != {args.min_lr}'
         )
     expected_training_lr = (
         args.min_lr + (args.max_lr - args.min_lr) / args.lr_Tup
@@ -217,7 +229,7 @@ def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
         abs_tol=1e-15,
     ):
         raise ValueError(
-            'D1.1 first warmup learning rate mismatch: '
+            'D1.2 first warmup learning rate mismatch: '
             f'{training_lr} != {expected_training_lr}'
         )
     return {
@@ -636,7 +648,7 @@ def train_one_epoch(
         expected_lr = float(schedule_audit['training_learning_rate'])
         if optimizer_step_count != expected_steps:
             raise RuntimeError(
-                'D1.1 effective-dose optimizer steps did not close: '
+                'D1.2 effective-dose optimizer steps did not close: '
                 f'{optimizer_step_count} != {expected_steps}'
             )
         if (
@@ -651,7 +663,7 @@ def train_one_epoch(
                 for learning_rate in learning_rates
             )
         ):
-            raise RuntimeError('D1.1 effective-dose learning rate drifted within epoch')
+            raise RuntimeError('D1.2 effective-dose learning rate drifted within epoch')
         result.update(
             {
                 'd11_effective_dose_enabled': 1.0,

@@ -9,7 +9,7 @@ set -euo pipefail
 : "${MATR_LABEL_PATTERN:?MATR_LABEL_PATTERN is required}"
 
 if [[ "${MATR_LANE:-}" != "TH" ]]; then
-  echo "D1.1 mechanism run is restricted to MATR_LANE=TH" >&2
+  echo "D1.2 mechanism run is restricted to MATR_LANE=TH" >&2
   exit 2
 fi
 

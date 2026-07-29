@@ -110,7 +110,10 @@ class MATR(nn.Module):
                     "EventMATR streaming state requires exactly one visible GPU "
                     "per process"
                 )
-            self.event_transition_head = EventTransitionHead(n_embedding_dim)
+            self.event_transition_head = EventTransitionHead(
+                n_embedding_dim,
+                independent_birth=self.event_d1_enabled,
+            )
             # Keep decoder capacity identical across the 2x2 study.  O0/O1
             # changes only how a persistent record obtains its owner state:
             # O0 refreshes it from current queries, whereas O1 carries it
@@ -284,9 +287,9 @@ class MATR(nn.Module):
                 event_class_query, event_regression_query
             )
 
-            # All four EventMATR cells use the same learned competitive START
-            # state.  B0/B1 differ in the prefix at which START is supervised,
-            # not in head capacity or a fixed probability gate.
+            # D1 uses an independently learned binary birth hazard.  Legacy
+            # v1_dense keeps the original four-state START margin.  Neither path
+            # introduces a tuned scalar threshold.
             event_birth_logits = learned_birth_logits
 
             start_bin = torch.argmax(anc_stcls, dim=-1)
@@ -426,13 +429,17 @@ class MATR(nn.Module):
                                 [item["class_logits"] for item in window],
                                 dim=0,
                             )
+                            window_birth = torch.stack(
+                                [item["birth_logits"] for item in window],
+                                dim=0,
+                            )
                             if self.event_d1_lane == "r":
                                 class_id = min(
                                     max(0, int(row[1].item())),
                                     window_class.size(-1) - 2,
                                 )
                                 score = (
-                                    window_state[-1].log_softmax(dim=-1)[:, 1]
+                                    F.logsigmoid(window_birth[-1])
                                     + window_class[-1].log_softmax(dim=-1)[
                                         :, class_id
                                     ]
@@ -450,6 +457,7 @@ class MATR(nn.Module):
                                         dim=0,
                                     ),
                                     int(row[1].item()),
+                                    birth_logits=window_birth,
                                 )
                             if not path:
                                 continue
@@ -638,9 +646,9 @@ class MATR(nn.Module):
                                 ]
                                 if available:
                                     with torch.no_grad():
-                                        start_evidence = event_state_logits[
-                                            batch_index
-                                        ].log_softmax(dim=-1)[:, 1]
+                                        start_evidence = F.logsigmoid(
+                                            event_birth_logits[batch_index]
+                                        )
                                         class_evidence = anc_cls[
                                             batch_index
                                         ].log_softmax(dim=-1)[:, class_id]

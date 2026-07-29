@@ -36,7 +36,7 @@ from models.event_memory import (  # noqa: E402
 )
 from on_tal_task import (  # noqa: E402
     D1_RUNTIME_FORBIDDEN_MODEL_INFO,
-    D11_CHECKPOINT_SCHEMA,
+    D12_CHECKPOINT_SCHEMA,
     make_model_inputs,
     validate_d1_checkpoint_compatibility,
 )
@@ -159,7 +159,7 @@ def _validate_inputs(
         "epoch": 1,
         "study_protocol": "d11_mechanism",
         "model_variant": "eventmatr",
-        "checkpoint_schema": D11_CHECKPOINT_SCHEMA,
+        "checkpoint_schema": D12_CHECKPOINT_SCHEMA,
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
         "owner_state_count": 3,
@@ -710,6 +710,9 @@ def main() -> None:
                             [entry["query_features"] for entry in window], dim=0
                         ),
                         int(row[1].item()),
+                        birth_logits=torch.stack(
+                            [entry["birth_logits"] for entry in window], dim=0
+                        ),
                     )
                     if not path:
                         continue
@@ -1063,7 +1066,7 @@ def main() -> None:
     birth_score_diagnostics = {
         "scope": "terminal_checkpoint_eval_mode_train_only_post_forward_gt",
         "decision_boundary_semantics": (
-            "zero_is_start_equal_to_strongest_competitor_not_a_tuned_threshold"
+            "zero_is_independent_binary_birth_log_odds_not_a_tuned_threshold"
         ),
         "oracle_path_diagnostic_semantics": (
             "post_forward_ground_truth_class_conditioned_temporal_viterbi"
@@ -1117,7 +1120,7 @@ def main() -> None:
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
-        "protocol": "eventmatr_d11_terminal_association_scan_v4",
+        "protocol": "eventmatr_d12_terminal_association_scan_v1",
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,

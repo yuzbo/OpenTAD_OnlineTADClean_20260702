@@ -1,4 +1,4 @@
-"""Reconstruct the D1.1 initialization and measure the epoch-one parameter delta.
+"""Reconstruct the D1.2 initialization and measure the epoch-one parameter delta.
 
 The audit performs no model forward, optimizer step, or checkpoint write.  It
 replays the training seed and construction order on the official train-only
@@ -424,7 +424,7 @@ def main() -> None:
     cli = _parse_args()
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise SystemExit(
-            "formal D1.1 parameter-delta audit requires one visible CUDA device"
+            "formal D1.2 parameter-delta audit requires one visible CUDA device"
         )
     status = _git("status", "--porcelain=v1", "--untracked-files=all")
     if status:
@@ -596,7 +596,7 @@ def main() -> None:
 
     result = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_epoch1_parameter_delta_audit_v1",
+        "protocol": "eventmatr_d12_epoch1_parameter_delta_audit_v1",
         "test_access": False,
         "checkpoint_updated": False,
         "model_forward_executed": False,

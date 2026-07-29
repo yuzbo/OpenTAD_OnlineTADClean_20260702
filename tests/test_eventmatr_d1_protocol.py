@@ -42,7 +42,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v3"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v4"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -56,37 +56,48 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert protocol["test_access"] is False
     assert protocol["strict_causal_paper_result_valid"] is False
     assert all(protocol["forbidden"].values())
-    assert protocol["gates"][2]["stage"] == "d11_seed52_one_epoch_mechanism"
-    assert protocol["gates"][2]["epochs"] == [1]
-    assert protocol["gates"][2]["lanes"] == ["TH"]
-    assert protocol["gates"][2]["release_condition"] == (
+    gates = {gate["stage"]: gate for gate in protocol["gates"]}
+    assert gates["d11_seed52_one_epoch_mechanism"]["epochs"] == [1]
+    assert gates["d11_seed52_one_epoch_mechanism"]["lanes"] == ["TH"]
+    assert gates["d11_seed52_one_epoch_mechanism"]["release_condition"] == (
         "all prior hard contracts pass"
     )
-    assert protocol["gates"][3]["stage"] == (
-        "d11_failed_one_epoch_association_scan"
-    )
-    assert protocol["gates"][3]["checkpoint_training_source"]["commit"] == (
+    assert gates["d11_failed_one_epoch_association_scan"][
+        "checkpoint_training_source"
+    ]["commit"] == (
         "de0837cf38e05d65a40f0744b863056edc2f433a"
     )
     assert "never releases a performance pilot" in (
-        protocol["gates"][3]["release_condition"]
+        gates["d11_failed_one_epoch_association_scan"]["release_condition"]
     )
-    assert "effective-dose training receipt" in (
-        protocol["gates"][6]["release_condition"]
+    assert "independent-birth complete mechanism gate" in (
+        gates["seed52_short_pilots"]["release_condition"]
     )
     assert "never a diagnostic scan alone" in (
-        protocol["gates"][6]["release_condition"]
-    )
-    assert protocol["gates"][4]["stage"] == (
-        "d11_failed_one_epoch_parameter_delta_audit"
+        gates["seed52_short_pilots"]["release_condition"]
     )
     assert "never releases a performance pilot" in (
-        protocol["gates"][4]["release_condition"]
+        gates["d11_failed_one_epoch_parameter_delta_audit"]["release_condition"]
     )
-    assert protocol["gates"][5]["stage"] == "d11_seed52_effective_dose_recheck"
-    assert protocol["gates"][5]["fixed_training_learning_rate"] == 3.34e-6
-    assert "terminal lifecycle scan" in protocol["gates"][5]["release_condition"]
-    assert "parameter-delta audit" in protocol["gates"][5]["release_condition"]
+    assert gates["d11_seed52_effective_dose_recheck"][
+        "fixed_training_learning_rate"
+    ] == 3.34e-6
+    assert "terminal lifecycle scan" in gates[
+        "d11_seed52_effective_dose_recheck"
+    ]["release_condition"]
+    assert "parameter-delta audit" in gates[
+        "d11_seed52_effective_dose_recheck"
+    ]["release_condition"]
+    d12 = gates["d12_independent_birth_seed52_one_epoch_mechanism"]
+    assert d12["checkpoint_schema"] == "eventmatr_d12_independent_birth_v1"
+    assert d12["birth_decision"].startswith("independent binary birth log-odds")
+    assert "never a paper claim" in d12["release_condition"]
+    paper = protocol["paper_result_boundary"]
+    assert paper["matched_training_budget"]["epochs"] == 100
+    assert "one-epoch mechanisms" in paper["paper_validity"]
+    assert "5/10/20-epoch pilots are not paper performance results" in (
+        paper["paper_validity"]
+    )
 
 
 def test_d1_microexperiment_receipt_is_diagnostic_only() -> None:
@@ -197,13 +208,13 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
     assert '"performance_gate_applied": False' in finalizer
     assert '"five_epoch_contract_revision_only": True' in finalizer
     assert '"existing_five_epoch_matrix_release": False' in finalizer
-    assert "eventmatr_d11_ternary_owner_v1" in finalizer
-    assert "eventmatr_d11_seed52_effective_dose_mechanism_v2" in finalizer
+    assert "eventmatr_d12_independent_birth_v1" in finalizer
+    assert "eventmatr_d12_seed52_effective_dose_mechanism_v1" in finalizer
     assert "validate_effective_dose_metrics" in finalizer
     assert "prepare_d11_effective_dose" in task
     assert "d11_optimizer_step_count" in task
     assert "validate_d1_checkpoint_compatibility" in task
-    assert "D11_CHECKPOINT_SCHEMA" in task
+    assert "D12_CHECKPOINT_SCHEMA" in task
     assert "'d11_mechanism'" in config
 
 
@@ -212,6 +223,7 @@ def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds(
 ) -> None:
     metrics = {
         "event_transition_gradient_norm": 1.0,
+        "event_birth_gradient_norm": 1.0,
         "event_owner_gradient_norm": 1.0,
         "event_birth_positive_count_unscaled": 1.0,
         "event_end_positive_count_unscaled": 1.0,
@@ -275,7 +287,7 @@ def test_d11_effective_dose_complete_gate_requires_terminal_and_delta(
     trace_sha256 = hashlib.sha256(trace_path.read_bytes()).hexdigest()
     mechanism = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_seed52_effective_dose_mechanism_v2",
+        "protocol": "eventmatr_d12_seed52_effective_dose_mechanism_v1",
         "test_access": False,
         "checkpoint_updated": True,
         "strict_causal_paper_result_valid": False,
@@ -307,7 +319,7 @@ def test_d11_effective_dose_complete_gate_requires_terminal_and_delta(
     scan = {
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
-        "protocol": "eventmatr_d11_terminal_association_scan_v4",
+        "protocol": "eventmatr_d12_terminal_association_scan_v1",
         "complete_scan": True,
         "test_access": False,
         "checkpoint_updated": False,
@@ -331,7 +343,7 @@ def test_d11_effective_dose_complete_gate_requires_terminal_and_delta(
     }
     delta = {
         "status": "PASS",
-        "protocol": "eventmatr_d11_epoch1_parameter_delta_audit_v1",
+        "protocol": "eventmatr_d12_epoch1_parameter_delta_audit_v1",
         "test_access": False,
         "checkpoint_updated": False,
         "model_forward_executed": False,
@@ -443,7 +455,7 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "birth_oracle_pairwise_preference_rate" in scan
     assert "alive_opportunity_oracle_pairwise_preference_rate" in scan
     assert "birth_interval_probability_clamp_count" in scan
-    assert "zero_is_start_equal_to_strongest_competitor_not_a_tuned_threshold" in scan
+    assert "zero_is_independent_binary_birth_log_odds_not_a_tuned_threshold" in scan
     assert "post_forward_ground_truth_class_conditioned_temporal_viterbi" in scan
     assert '"counterfactual_intervention_performed": False' in scan
     assert '"risk_calibration_valid": False' in scan
@@ -492,9 +504,11 @@ def test_d11_effective_dose_complete_gate_is_three_artifact_fail_closed() -> Non
         "--training-source-tree",
     ):
         assert field in finalizer
-    assert "five_epoch_science_contract_eligible_for_freeze" in finalizer
+    assert "development_pilot_contract_eligible_for_freeze" in finalizer
     assert '"existing_five_epoch_matrix_release": False' in finalizer
     assert '"performance_gate_release": False' in finalizer
+    assert '"official_comparison_release": False' in finalizer
+    assert '"locked_test_release": False' in finalizer
     assert "verify_source_identity.py" in slurm
     assert "MATR_MECHANISM_RECEIPT" in slurm
     assert "MATR_ASSOCIATION_SCAN" in slurm
@@ -540,7 +554,7 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert "initialization_reconstructed_from_exact_training_commit" in audit
     assert "requires frozen random_seed=52" in audit
     assert "step-count closure failed" in audit
-    assert "formal D1.1 parameter-delta audit requires one visible CUDA device" in audit
+    assert "formal D1.2 parameter-delta audit requires one visible CUDA device" in audit
     assert '"train_features"' in audit
     assert '"annotation"' in audit
     assert '"sha256": _sha256(path)' in audit

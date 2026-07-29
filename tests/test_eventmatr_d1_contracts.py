@@ -205,6 +205,55 @@ def test_temporal_viterbi_assignment_is_stable_across_query_ambiguity() -> None:
     assert temporal_viterbi_assignment(state, classes, features, 0) == [0, 0, 0]
 
 
+def test_d12_temporal_assignment_uses_independent_birth_under_bg_dominance() -> None:
+    state = torch.full((3, 2, 4), -8.0)
+    state[:, :, 0] = 8.0
+    birth = torch.tensor([[3.0, -3.0], [3.0, 3.2], [3.0, -3.0]])
+    classes = torch.zeros((3, 2, 3))
+    classes[:, :, 0] = 2.0
+    features = torch.tensor(
+        [
+            [[1.0, 0.0], [0.0, 1.0]],
+            [[0.9, 0.1], [0.1, 0.9]],
+            [[1.0, 0.0], [0.0, 1.0]],
+        ]
+    )
+
+    assert bool((state.argmax(dim=-1) == 0).all().item())
+    assert temporal_viterbi_assignment(
+        state,
+        classes,
+        features,
+        0,
+        birth_logits=birth,
+    ) == [0, 0, 0]
+
+
+def test_d12_runtime_birth_is_independent_of_four_state_bg_winner() -> None:
+    args = _args()
+    model = MATR(args)
+    head = model.event_transition_head
+    assert head.independent_birth is True
+    assert head.birth is not None
+    with torch.no_grad():
+        head.state.weight.zero_()
+        head.state.bias.copy_(torch.tensor([8.0, -8.0, -8.0, -8.0]))
+        head.birth.weight.zero_()
+        head.birth.bias.fill_(2.0)
+    state, birth, _, _, _ = head(
+        torch.zeros((1, 2, args.hidden_dim)),
+        torch.zeros((1, 2, args.hidden_dim)),
+    )
+
+    assert state.argmax(dim=-1).tolist() == [[0, 0]]
+    assert bool((birth > 0.0).all().item())
+    assert model.event_memory.preview_birth_queries(
+        "v",
+        candidate_state_logits=state[0],
+        birth_logits=birth[0],
+    ) == (0, 1)
+
+
 def test_causal_single_assignment_ignores_teacher_query_identity() -> None:
     result = causal_single_assignment(
         predicted_query_indices=[1],
@@ -969,7 +1018,9 @@ def test_full_d1_model_uses_one_differentiable_ragged_unroll() -> None:
     )
     total.backward()
     assert model.event_owner_decoder.state.weight.grad is not None
-    assert model.event_transition_head.state.weight.grad is not None
+    assert model.event_transition_head.birth.weight.grad is not None
+    assert model.event_transition_head.birth.weight.grad.norm() > 0
+    assert model.event_transition_head.fuse[0].weight.grad is not None
 
 
 def test_d1_model_boundary_rejects_future_gt_endpoint() -> None:

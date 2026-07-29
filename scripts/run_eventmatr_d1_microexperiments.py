@@ -142,11 +142,11 @@ def censoring_experiment() -> dict:
 
 def assignment_experiment() -> dict:
     state = torch.zeros((4, 2, 4))
+    state[:, :, 0] = 8.0
     classes = torch.zeros((4, 2, 3))
-    state[:, 0, 1] = 3.0
-    state[:, 1, 1] = 2.8
-    state[1, 1, 1] = 3.2
-    state[2, 1, 1] = 3.1
+    birth = torch.tensor(
+        [[3.0, -3.0], [3.0, 3.2], [3.0, 3.1], [3.0, -3.0]]
+    )
     classes[:, :, 0] = 2.0
     features = torch.tensor(
         [
@@ -156,10 +156,22 @@ def assignment_experiment() -> dict:
             [[1.0, 0.0], [0.0, 1.0]],
         ]
     )
-    path = temporal_viterbi_assignment(state, classes, features, 0)
+    path = temporal_viterbi_assignment(
+        state,
+        classes,
+        features,
+        0,
+        birth_logits=birth,
+    )
     if path != [0, 0, 0, 0]:
         raise RuntimeError("temporal assignment switched identity under ambiguity")
-    return {"path": path, "switches": 0}
+    if not bool((state.argmax(dim=-1) == 0).all().item()):
+        raise RuntimeError("independent-birth assignment fixture lost BG dominance")
+    return {
+        "path": path,
+        "switches": 0,
+        "legacy_background_wins_all_queries": True,
+    }
 
 
 def _memory_step(
@@ -319,10 +331,10 @@ def integrated_lane_experiment(lane: str) -> dict:
     model = MATR(args).train()
     model.memory_queue = model.memory_queue_index = None
     with torch.no_grad():
-        model.event_transition_head.state.weight.zero_()
         model.event_transition_head.state.bias.copy_(
-            torch.tensor([0.0, 3.0, 0.0, 0.0])
+            torch.tensor([3.0, -3.0, -3.0, -3.0])
         )
+        model.event_transition_head.birth.bias.fill_(3.0)
         model.event_owner_decoder.state.weight.zero_()
         model.event_owner_decoder.state.bias.copy_(
             torch.tensor([0.0, 3.0, 0.0])
@@ -369,11 +381,10 @@ def integrated_lane_experiment(lane: str) -> dict:
         if key.startswith("loss_event") and key in criterion.weight_dict
     )
     total.backward()
-    transition_grad = float(
-        model.event_transition_head.state.weight.grad.norm().item()
-    )
+    transition_grad = float(model.event_transition_head.fuse[0].weight.grad.norm().item())
+    birth_grad = float(model.event_transition_head.birth.weight.grad.norm().item())
     owner_grad = float(model.event_owner_decoder.state.weight.grad.norm().item())
-    if transition_grad <= 0 or owner_grad <= 0:
+    if transition_grad <= 0 or birth_grad <= 0 or owner_grad <= 0:
         raise RuntimeError("{} lane has a dead D1 gradient path".format(lane))
     return {
         "loss": float(total.item()),
@@ -383,6 +394,7 @@ def integrated_lane_experiment(lane: str) -> dict:
             losses["event_false_track_cancel_group_count"].item()
         ),
         "transition_gradient_norm": transition_grad,
+        "birth_gradient_norm": birth_grad,
         "owner_gradient_norm": owner_grad,
         "uses_identity": bool(model.event_d1_use_identity),
         "uses_censored_hazard": bool(model.event_d1_use_hazard),
@@ -391,7 +403,7 @@ def integrated_lane_experiment(lane: str) -> dict:
 
 def run() -> dict:
     receipt = {
-        "protocol": "eventmatr_d11_local_microexperiments_v2",
+        "protocol": "eventmatr_d12_local_microexperiments_v1",
         "scope": "synthetic problem-reality and differentiability evidence only",
         "strict_causal_paper_result_valid": False,
         "test_access": False,
