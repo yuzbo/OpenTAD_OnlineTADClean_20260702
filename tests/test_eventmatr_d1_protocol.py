@@ -130,6 +130,9 @@ def test_d1_real_smoke_covers_registered_lanes_without_test_access() -> None:
     source = (
         ROOT / "scripts" / "run_eventmatr_d1_real_smoke.py"
     ).read_text(encoding="utf-8")
+    common = (
+        ROOT / "scripts" / "run_eventmatr_real_smoke.py"
+    ).read_text(encoding="utf-8")
     assert 'REGISTERED_LANES = ("N", "R", "T", "H", "TH")' in source
     assert "THUMOS14Dataset" in source
     assert "_load_real_batch" in source
@@ -138,6 +141,10 @@ def test_d1_real_smoke_covers_registered_lanes_without_test_access() -> None:
     assert '"checkpoint_updated": False' in source
     assert '"strict_causal_paper_result_valid": False' in source
     assert "torch.randn" not in source
+    assert "event_transition_head.birth.weight" in common
+    assert "event_transition_head.fuse[0].weight" in common
+    assert 'args.event_lifecycle_version == "d1_censored"' in common
+    assert "event_transition_head.state.weight" in common
 
 
 def test_d1_slurm_smoke_is_identity_gated_and_runs_real_batch_last() -> None:

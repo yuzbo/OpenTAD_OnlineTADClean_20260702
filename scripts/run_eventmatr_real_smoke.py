@@ -274,20 +274,40 @@ def _run_lane(
     module = model.module
     gradient_norms = {}
     if lane != "native_matr":
-        gradient_norms = {
-            "event_transition_state": _gradient_norm(
-                module.event_transition_head.state.weight,
-                "event_transition_head.state.weight",
-            ),
-            "owner_state": _gradient_norm(
-                module.event_owner_decoder.state.weight,
-                "event_owner_decoder.state.weight",
-            ),
-            "owner_cross_attention": _gradient_norm(
-                module.event_owner_decoder.cross_attention.in_proj_weight,
-                "event_owner_decoder.cross_attention.in_proj_weight",
-            ),
-        }
+        if args.event_lifecycle_version == "d1_censored":
+            if module.event_transition_head.birth is None:
+                raise RuntimeError(
+                    "D1.2 real smoke requires an independent birth head"
+                )
+            gradient_norms = {
+                "event_transition_shared": _gradient_norm(
+                    module.event_transition_head.fuse[0].weight,
+                    "event_transition_head.fuse.0.weight",
+                ),
+                "event_birth": _gradient_norm(
+                    module.event_transition_head.birth.weight,
+                    "event_transition_head.birth.weight",
+                ),
+            }
+        else:
+            gradient_norms = {
+                "event_transition_state": _gradient_norm(
+                    module.event_transition_head.state.weight,
+                    "event_transition_head.state.weight",
+                ),
+            }
+        gradient_norms.update(
+            {
+                "owner_state": _gradient_norm(
+                    module.event_owner_decoder.state.weight,
+                    "event_owner_decoder.state.weight",
+                ),
+                "owner_cross_attention": _gradient_norm(
+                    module.event_owner_decoder.cross_attention.in_proj_weight,
+                    "event_owner_decoder.cross_attention.in_proj_weight",
+                ),
+            }
+        )
     finite_gradient_count = 0
     for name, parameter in model.named_parameters():
         if parameter.grad is None:
