@@ -169,6 +169,7 @@ def _memory_step(
     starts,
     *,
     ends=None,
+    oracle_births=None,
 ):
     query_count = len(births)
     ends = [-20.0] * query_count if ends is None else ends
@@ -186,6 +187,7 @@ def _memory_step(
         query_features=eye.unsqueeze(0),
         candidate_start_frames=torch.tensor([starts], dtype=torch.float32),
         is_real_prefix=[True],
+        oracle_births=[oracle_births or ()],
     )
 
 
@@ -201,13 +203,24 @@ def runtime_stress_experiment() -> dict:
         segment_size=1,
         enable_reacquisition=True,
         strict_causal_boundary=True,
+        owner_state_count=3,
     )
     query_count = 10
+    known_target = {
+        "query_index": 0,
+        "target_event_id": 77,
+        "start_frame": 0.0,
+        "source": "predicted_associated",
+        "association_status": "associated",
+        "force_create": False,
+        "merge_predicted": True,
+    }
     _memory_step(
         memory,
         10,
         [20.0] * query_count,
         [-9.0] + list(range(1, query_count)),
+        oracle_births=[known_target],
     )
     _memory_step(
         memory,
@@ -228,8 +241,13 @@ def runtime_stress_experiment() -> dict:
     if min(record.start_frame for record in records) < 0:
         raise RuntimeError("negative start survived D1 clamp")
 
-    cancelled_id = records[0].event_id
-    memory.cancel("stress", cancelled_id, reason="microexperiment")
+    targetless_record = next(
+        record for record in records if record.target_event_id is None
+    )
+    targetless_cancelled_id = targetless_record.event_id
+    memory.cancel(
+        "stress", targetless_cancelled_id, reason="targetless_microexperiment"
+    )
     _memory_step(
         memory,
         13,
@@ -239,19 +257,56 @@ def runtime_stress_experiment() -> dict:
     _memory_step(
         memory,
         14,
+        [-20.0, 20.0] + [-20.0] * 8,
+        [14.0] * query_count,
+    )
+    after_targetless_birth = memory.records("stress")
+    if any(
+        record.event_id == targetless_cancelled_id
+        for record in after_targetless_birth
+    ):
+        raise RuntimeError("targetless cancellation was incorrectly reacquired")
+    targetless_rebirth = [
+        record
+        for record in after_targetless_birth
+        if record.event_id not in before_ids and record.target_event_id is None
+    ]
+    if len(targetless_rebirth) != 1:
+        raise RuntimeError("targetless rebirth did not allocate one new identity")
+
+    known_record = next(
+        record for record in after_targetless_birth if record.target_event_id == 77
+    )
+    known_cancelled_id = known_record.event_id
+    memory.cancel("stress", known_cancelled_id, reason="known_target_microexperiment")
+    recovery_result = _memory_step(
+        memory,
+        15,
         [20.0] + [-20.0] * 9,
-        [14.0] + list(range(1, query_count)),
+        [15.0] * query_count,
+        oracle_births=[known_target],
     )
     after = memory.records("stress")
-    reacquired = [record for record in after if record.event_id == cancelled_id]
-    if len(reacquired) != 1 or reacquired[0].reacquisition_count != 1:
-        raise RuntimeError("cancelled identity was not explicitly reacquired")
+    reacquired = [
+        record for record in after if record.event_id == known_cancelled_id
+    ]
+    if (
+        len(reacquired) != 1
+        or reacquired[0].reacquisition_count != 1
+        or reacquired[0].last_reacquisition_mode != "exact_target_id"
+        or reacquired[0].source != "associated_error_recovery"
+        or int(recovery_result["reacquisition_count"].item()) != 1
+    ):
+        raise RuntimeError("known target was not recovered by exact identity")
     return {
         "active_records_over_query_bandwidth": len(after),
         "unique_event_ids": len({record.event_id for record in after}),
         "minimum_start": min(record.start_frame for record in after),
-        "reacquired_event_id": cancelled_id,
+        "targetless_cancelled_event_id": targetless_cancelled_id,
+        "targetless_rebirth_event_id": targetless_rebirth[0].event_id,
+        "known_target_recovered_event_id": known_cancelled_id,
         "reacquisition_count": reacquired[0].reacquisition_count,
+        "reacquisition_mode": reacquired[0].last_reacquisition_mode,
         "capacity_exhaustions": memory.last_audit[
             "runtime_capacity_exhaustions"
         ],
@@ -270,7 +325,7 @@ def integrated_lane_experiment(lane: str) -> dict:
         )
         model.event_owner_decoder.state.weight.zero_()
         model.event_owner_decoder.state.bias.copy_(
-            torch.tensor([0.0, 0.0, 3.0, 0.0])
+            torch.tensor([0.0, 3.0, 0.0])
         )
 
     event_targets = torch.zeros((3, 2, 8))
@@ -336,7 +391,7 @@ def integrated_lane_experiment(lane: str) -> dict:
 
 def run() -> dict:
     receipt = {
-        "protocol": "eventmatr_d1_local_microexperiments_v1",
+        "protocol": "eventmatr_d11_local_microexperiments_v2",
         "scope": "synthetic problem-reality and differentiability evidence only",
         "strict_causal_paper_result_valid": False,
         "test_access": False,
