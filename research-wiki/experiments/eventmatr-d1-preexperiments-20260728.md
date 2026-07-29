@@ -205,3 +205,106 @@ Release order:
 4. only after the D1 mechanism gate may locked-test evaluation and multiple
    seeds be proposed; raw RGB, teacher distillation and threshold search remain
    separate later decisions.
+
+## Five-epoch gate completed — 2026-07-29
+
+All five tasks in array `1200955` completed `0:0` and wrote `PASS` pilot and
+final source-identity receipts. Each run has exactly five finite metric rows, a
+loadable terminal checkpoint, exact source
+`1f4bb29ad58dddcc33f6ff2bdc57a5934ee5c53d` / tree
+`aad757531cfcbfb79b616756466251f946574035`, `test_access=false`, and
+`strict_causal_paper_result_valid=false`.
+
+| Lane | Train-prefix average mAP (%) | mAP@0.3 | mAP@0.5 | mAP@0.7 | Terminal proposals | Videos with proposals |
+|---|---:|---:|---:|---:|---:|---:|
+| N | 7.0957 | 12.1895 | 7.3023 | 2.0648 | 21,256 | 176 / 200 |
+| R | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0 | 0 / 200 |
+| T | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0 | 0 / 200 |
+| H | 4.5066 | 5.7738 | 4.4795 | 2.9937 | 333 | 47 / 200 |
+| TH | 3.9445 | 4.4919 | 4.0751 | 3.1464 | 271 | 42 / 200 |
+
+These values are diagnostic train-prefix results only. R and T produced some
+text output in epochs 1–2, then zero-byte proposal files in epochs 3–5. Their
+logged `nan` average-time values are consequences of an empty prediction set,
+not non-finite model loss or gradient. H and TH retain only `1.57%` and `1.27%`
+of N's terminal proposal count and cover only `23.5%` and `21.0%` of train
+videos.
+
+Optimization itself is not dead:
+
+- N total loss falls `2.2854 -> 0.5914`;
+- R birth risk falls `0.5155 -> 0.3889`, owner-class
+  `1.9097 -> 0.1661`, and owner-state `1.1470 -> 0.4502`;
+- T identity loss falls `0.1132 -> 0.0278`;
+- H birth/end risk changes `4.5401 -> 1.7105` /
+  `0.8788 -> 0.8482`;
+- TH birth/end/identity changes `4.6506 -> 1.7776` /
+  `2.1849 -> 1.1343` / `0.0524 -> 0.0197`.
+
+The data therefore separates optimization success from detector success.
+R/T learn their supervised terms but collapse terminal emission. H/TH avoid
+complete collapse and improve the strictest `0.7` overlap diagnostic over N,
+but average mAP and coverage remain substantially worse because emission is
+overly sparse. Falling cancel-group and ragged-track counts cannot yet be called
+better lifecycle behavior: they may simply reflect record suppression.
+
+### Threshold and gate audit
+
+The fixed `flag=0.5`, class-score `0.1`, and suppression-overlap `0.3` values are
+the official native-MATR controls. The class-score threshold applies only to
+the native writer. The flag threshold controls the native segment-memory flag
+at inference, not EventMATR birth/end. EventMATR writes completed immutable
+ledger rows without a class-score cutoff; the common online postprocessor still
+uses suppression overlap `0.3`.
+
+Formal D1 did **not** set numeric birth/end logit thresholds. Both options remain
+`None`: birth is a rising transition into the argmax START state, owner
+background cancels a record, and end is the argmax END state subject to one
+positive frame of minimum duration. Therefore R/T's zero-byte terminal writer
+output is upstream lifecycle starvation, not a consequence of lowering or
+raising the native class-score threshold. No threshold was searched or changed.
+
+The audit also corrects the earlier gate wording:
+
+- the preregistered **execution/integrity gate** is precise and passes: causal
+  contracts, exact source, finite metrics/gradients, complete epoch sequence,
+  loadable checkpoint, absent locked test, and no ledger hard violation;
+- the manifest lists detection, lifecycle, identity, calibration, and systems
+  metrics, but the five-epoch finalizer enforces only core losses/counts and
+  train-prefix mAP; it does not operationalize most listed scientific metrics;
+- the preregistration contains qualitative phrases such as “smaller gap”,
+  “fewer switches,” and “scientifically interpretable,” but no prospective
+  effect-size, coverage, confidence, or sample-size cutoffs;
+- zero R/T output and severe H/TH coverage loss are observations, not
+  preregistered numeric failure thresholds.
+
+Consequently it is too strong to say that a pre-existing quantitative
+“scientific gate failed.” The accurate verdict is: the five-epoch execution
+gate passes, while scientific sufficiency is **not yet adjudicable** because
+required lifecycle evidence is absent and an unexpected emission pathology
+appeared. Holding 10/20 epochs is a reversible diagnostic/resource decision,
+not a retroactive claim that the method is disproved.
+
+Before any replay, register a prospective no-threshold-search gate:
+
+1. retain the exact argmax lifecycle decisions and fixed native controls;
+2. require finite, zero-violation stage counts for candidate, birth,
+   assignment, cancel, end, ledger and emission, with zero terminal emission
+   treated only as a functional-liveness hold;
+3. require every metric already named in the manifest to be produced, including
+   recall/coverage, calibration, latency, closure, unresolved tracks,
+   duplicates, reacquisition, owner switches, fragmentation, and nearby-repeat
+   strata;
+4. derive and freeze effect-size/sample-size tolerances before observing replay
+   results; do not invent coverage cutoffs from the current `333/271/0` counts;
+5. compare H to R at matched coverage for calibration/closure, T to R for
+   identity behavior at a frozen recall tolerance, and TH to the stronger of T
+   and H for both detection and lifecycle quality;
+6. permit threshold-free score distributions and precision-recall curves for
+   diagnosis, but do not choose a new operating threshold from them.
+
+Do not release 10/20 epochs yet. First run a strict-causal train-only
+chronological checkpoint replay and instrument the full path from candidate
+logits through birth, assignment, cancellation, end, gating and final emission.
+Threshold lowering/search remains forbidden; the purpose is to locate the
+collapse before changing the model.

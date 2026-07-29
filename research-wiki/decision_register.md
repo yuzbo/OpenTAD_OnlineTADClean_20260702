@@ -1466,3 +1466,69 @@ Reversibility:
 - Candidate ranking and architecture details remain reversible after direct
   counterfactuals. The causal boundary, source/receipt audit, and prohibition
   against promoting train-prefix diagnostics to paper evidence are not relaxed.
+
+## DR-038: Pass Execution, Mark Scientific Sufficiency Unresolved, and Hold Longer D1 Training
+
+Status: active diagnostic hold.
+
+Decision:
+
+> Accept array `1200955` as an exact-source execution PASS, but do not release
+> the registered 10/20-epoch jobs. R and T collapse terminal emission to zero;
+> H and TH preserve only a very small proposal subset. Diagnose the causal
+> lifecycle and emission path before spending a longer training budget. This is
+> a reversible diagnostic hold, not a retroactive failure under a quantitative
+> scientific threshold: no such effect-size/coverage threshold was registered.
+
+Reason:
+
+- all five jobs complete `0:0`, pass source/receipt/checkpoint validation, and
+  retain `test_access=false`;
+- every trained D1 objective has finite decreasing loss, so the result is not a
+  dead gradient or numerical divergence;
+- N emits `21,256` terminal proposals over `176/200` videos with diagnostic
+  train-prefix average mAP `7.0957`;
+- R and T emit no terminal proposal and score zero after their output files
+  become empty from epoch 3 onward;
+- H and TH emit only `333/271` proposals over `47/42` videos, with average mAP
+  `4.5066/3.9445`;
+- H and TH improve the strict `0.7` overlap diagnostic to `2.9937/3.1464`
+  versus N's `2.0648`, which is a useful boundary-precision hint but cannot
+  compensate for the severe coverage loss;
+- fewer false-cancel groups or active ragged records are ambiguous while the
+  method suppresses nearly all output.
+- the manifest names recall, lifecycle, identity, calibration and systems
+  metrics, but the pilot finalizer does not require most of them; the original
+  science language is qualitatively sensible but not quantitatively
+  operationalized.
+
+Resolution:
+
+1. preserve all five terminal checkpoints and receipts as immutable evidence;
+2. run a strict-causal train-only chronological replay with stage-by-stage
+   candidate, birth, assignment, cancel, end, gate and emission counts;
+3. add score distributions, calibration, latency, closure, duplicate,
+   reacquisition, owner-switch, fragmentation and nearby-repeat metrics;
+4. distinguish loss-weight competition, gate calibration, state-machine
+   starvation and writer/runtime mismatch without threshold search;
+5. before replay, prospectively register complete metric availability,
+   functional-liveness handling, matched-coverage comparisons and
+   effect-size/sample-size tolerances; do not derive pass cutoffs from the
+   observed proposal counts;
+6. reconsider the 10-epoch release only after R/T's empty output is explained
+   and H/TH lifecycle evidence is complete;
+7. keep locked test, multiple seeds, raw RGB and threshold changes blocked.
+
+Sources:
+
+- [experiments/eventmatr-d1-preexperiments-20260728.md](experiments/eventmatr-d1-preexperiments-20260728.md);
+- five pilot receipts under
+  `pilots_seed52_20260728_1f4bb29/e5/{N,R,T,H,TH}`;
+- Slurm array `1200955`.
+
+Reversibility:
+
+- The hold can be lifted by a source-exact diagnostic receipt that explains the
+  emission collapse and satisfies a prospectively frozen lifecycle gate. The
+  current five-epoch values remain diagnostic and cannot be promoted to paper
+  evidence.

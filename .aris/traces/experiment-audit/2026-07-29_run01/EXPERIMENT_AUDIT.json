@@ -1,0 +1,53 @@
+{
+  "date": "2026-07-29",
+  "auditor": "independent-zero-history-reviewer",
+  "cross_model_status": "unavailable_claude_non_json_gemini_invalid_key",
+  "overall_verdict": "warn",
+  "integrity_status": "warn",
+  "checks": {
+    "ground_truth_provenance": {
+      "status": "pass",
+      "details": "Official train annotation JSON is passed to the evaluator; model output is not ground truth."
+    },
+    "score_normalization": {
+      "status": "pass",
+      "details": "No normalization by the model's own prediction statistics was found."
+    },
+    "result_existence": {
+      "status": "pass",
+      "details": "Five completed jobs have matching receipts, checkpoints, metrics, and source identities."
+    },
+    "metric_operationalization": {
+      "status": "warn",
+      "details": "The manifest lists lifecycle, identity, calibration, and systems metrics that the pilot finalizer does not require."
+    },
+    "scope": {
+      "status": "warn",
+      "details": "One seed and train-prefix diagnostics cannot establish generalization or paper-level superiority."
+    },
+    "evaluation_type": "real_gt_train_only_diagnostic",
+    "threshold_integrity": {
+      "status": "pass",
+      "details": "Native thresholds stayed fixed; D1 birth/end used argmax with no numeric logit threshold; no search or lowering occurred."
+    },
+    "scientific_gate": {
+      "status": "warn",
+      "details": "Qualitative criteria exist, but quantitative effect-size, coverage, confidence, and sample-size cutoffs were not preregistered."
+    }
+  },
+  "decision": "hold_longer_training_pending_prospective_replay_gate",
+  "claim_impact": [
+    {
+      "claim": "five_epoch_execution_completed",
+      "impact": "supported"
+    },
+    {
+      "claim": "scientific_gate_failed",
+      "impact": "replace_with_scientific_sufficiency_unresolved"
+    },
+    {
+      "claim": "method_effective",
+      "impact": "unsupported"
+    }
+  ]
+}
