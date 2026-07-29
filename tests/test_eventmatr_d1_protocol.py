@@ -73,10 +73,10 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "never releases a performance pilot" in (
         gates["d11_failed_one_epoch_association_scan"]["release_condition"]
     )
-    assert "independent-birth complete mechanism gate" in (
+    assert "D1.3 factorial mechanism" in (
         gates["seed52_short_pilots"]["release_condition"]
     )
-    assert "never a diagnostic scan alone" in (
+    assert "live combined structure" in (
         gates["seed52_short_pilots"]["release_condition"]
     )
     assert "never releases a performance pilot" in (
@@ -709,7 +709,7 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert "initialization_reconstructed_from_exact_training_commit" in audit
     assert "requires frozen random_seed=52" in audit
     assert "step-count closure failed" in audit
-    assert "formal D1.2 parameter-delta audit requires one visible CUDA device" in audit
+    assert "formal D1 parameter-delta audit requires one visible CUDA device" in audit
     assert '"train_features"' in audit
     assert '"annotation"' in audit
     assert '"sha256": _sha256(path)' in audit
