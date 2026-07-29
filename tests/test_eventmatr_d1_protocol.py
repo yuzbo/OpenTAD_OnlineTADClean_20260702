@@ -300,7 +300,8 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert "construction_order" in audit
     assert "dataset_consumed_torch_rng" in audit
     assert '["git", "archive", "--format=tar", TRAINING_COMMIT]' in audit
-    assert "unsupported non-regular member" in audit
+    assert "unsupported non-regular " in audit
+    assert "member: {member.name}" in audit
     assert "initialization_reconstructed_from_exact_training_commit" in audit
     assert "requires frozen random_seed=52" in audit
     assert "step-count closure failed" in audit
