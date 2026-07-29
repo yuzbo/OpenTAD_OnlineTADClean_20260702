@@ -1,0 +1,179 @@
+{
+  "protocol": "eventmatr_d1_strict_causal_checkpoint_replay_v1",
+  "registered_at": "2026-07-29",
+  "purpose": [
+    "locate the first lifecycle stage responsible for zero or sparse terminal emission",
+    "separate candidate START starvation, owner cancellation, END starvation, and writer failure",
+    "measure lifecycle quality without changing any inference decision"
+  ],
+  "checkpoint_training_source": {
+    "commit": "1f4bb29ad58dddcc33f6ff2bdc57a5934ee5c53d",
+    "tree": "aad757531cfcbfb79b616756466251f946574035",
+    "pilot_array": "1200955",
+    "seed": 52,
+    "epochs": 5
+  },
+  "lanes": [
+    "R",
+    "T",
+    "H",
+    "TH"
+  ],
+  "scope": {
+    "dataset_subset": "official_train_validation_only",
+    "expected_video_count": 200,
+    "chronological_prefix_replay": true,
+    "model_mode": "evaluation",
+    "ground_truth_visible_to_model": false,
+    "ground_truth_use": "posthoc_metrics_only",
+    "locked_test_access": false,
+    "checkpoint_update": false
+  },
+  "fixed_decisions": {
+    "birth_rule": "START is the four-state argmax and must have a rising edge",
+    "end_rule": "END is the owner four-state argmax with positive minimum duration",
+    "birth_logit_threshold": null,
+    "end_logit_threshold": null,
+    "native_flag_threshold": 0.5,
+    "native_class_threshold": 0.1,
+    "nms_threshold": 0.3,
+    "threshold_search": false
+  },
+  "required_stage_counts": [
+    "real_prefixes",
+    "candidate_state_argmax_background",
+    "candidate_state_argmax_start",
+    "candidate_state_argmax_alive",
+    "candidate_state_argmax_end",
+    "candidate_start_prefixes",
+    "start_rising_births",
+    "gt_birth_prefixes",
+    "gt_birth_prefixes_with_candidate_start",
+    "gt_birth_prefixes_with_predicted_birth",
+    "owner_rows",
+    "owner_state_argmax_background",
+    "owner_state_argmax_start",
+    "owner_state_argmax_alive",
+    "owner_state_argmax_end",
+    "gt_end_prefixes",
+    "gt_end_prefixes_with_owner",
+    "gt_end_prefixes_with_owner_end",
+    "cancellations",
+    "ends",
+    "emissions",
+    "active_at_observed_eos",
+    "ledger_rows",
+    "native_gate_predicted_on",
+    "native_gate_gt_on",
+    "native_gate_true_positive",
+    "native_gate_false_positive",
+    "native_gate_false_negative"
+  ],
+  "required_metrics": {
+    "liveness": [
+      "births",
+      "cancellations",
+      "ends",
+      "emissions",
+      "closure_ratio",
+      "unresolved_at_observed_eos"
+    ],
+    "detection": [
+      "video_coverage",
+      "proposal_count",
+      "precision_recall_at_tiou_0.3",
+      "precision_recall_at_tiou_0.5",
+      "precision_recall_at_tiou_0.7"
+    ],
+    "timing": [
+      "birth_delay_within_64_frames",
+      "matched_start_error",
+      "matched_end_error",
+      "matched_emit_delay"
+    ],
+    "calibration": [
+      "candidate_birth_brier",
+      "candidate_birth_nll",
+      "candidate_birth_ece_15_bins",
+      "emission_brier",
+      "emission_nll",
+      "emission_ece_15_bins"
+    ],
+    "native_memory_gate": [
+      "predicted_on_rate_at_registered_0.5",
+      "ground_truth_on_rate",
+      "false_negative_rate",
+      "brier",
+      "nll",
+      "ece_15_bins"
+    ],
+    "identity": [
+      "reacquisition_count",
+      "duplicate_predictions",
+      "fragmented_ground_truth_events",
+      "nearby_same_class_recall"
+    ],
+    "systems": [
+      "elapsed_seconds",
+      "prefixes_per_second",
+      "peak_gpu_memory_bytes"
+    ]
+  },
+  "fixed_metric_settings": {
+    "temporal_iou_thresholds": [
+      0.3,
+      0.5,
+      0.7
+    ],
+    "birth_matching_delay_frames": [
+      0,
+      64
+    ],
+    "calibration_bins": 15,
+    "confidence_interval": "wilson_95_percent",
+    "nearby_same_class_gap_frames": 64
+  },
+  "root_cause_decision_order": [
+    {
+      "condition": "start_rising_births == 0",
+      "label": "candidate_start_starvation"
+    },
+    {
+      "condition": "start_rising_births > 0 and ends == 0 and cancellations > 0 and unresolved_at_observed_eos == 0",
+      "label": "owner_cancellation_before_end"
+    },
+    {
+      "condition": "start_rising_births > 0 and ends == 0 and unresolved_at_observed_eos > 0 and cancellations == 0",
+      "label": "end_state_starvation"
+    },
+    {
+      "condition": "start_rising_births > 0 and ends == 0 and unresolved_at_observed_eos > 0 and cancellations > 0",
+      "label": "mixed_owner_cancellation_and_end_state_starvation"
+    },
+    {
+      "condition": "ends > 0 and emissions == 0",
+      "label": "end_to_writer_failure"
+    },
+    {
+      "condition": "emissions > 0",
+      "label": "live_but_measure_stage_rates_without_posthoc_cutoffs"
+    }
+  ],
+  "hard_failures": [
+    "future frame or future metadata enters the model boundary",
+    "locked test path exists or is opened",
+    "checkpoint size, modification time, or SHA-256 changes",
+    "source, lane, epoch, or protocol identity mismatch",
+    "non-finite logits or metrics",
+    "non-monotonic real-prefix order",
+    "negative or non-positive emitted interval",
+    "duplicate immutable ledger identifier",
+    "runtime capacity exhaustion"
+  ],
+  "interpretation_policy": {
+    "zero_emission": "functional liveness hold, not a retroactive performance threshold",
+    "nonzero_sparse_emission": "report exact rates and confidence intervals; do not invent a pass cutoff",
+    "paper_result_valid": false,
+    "longer_training_release": "not authorized by this replay alone"
+  }
+}

@@ -483,3 +483,23 @@ def test_d1_model_boundary_rejects_full_video_metadata() -> None:
     }
     with pytest.raises(RuntimeError, match="future/full-video metadata"):
         model(payload, torch.device("cpu"))
+
+
+def test_d1_eval_boundary_rejects_ground_truth_segment_flag() -> None:
+    args = _args()
+    args.training = False
+    model = MATR(args).eval()
+    payload = {
+        "inputs": torch.randn((1, 4, 8)),
+        "infos": {
+            "st": torch.tensor([0]),
+            "ed": torch.tensor([4]),
+            "video_name": ["v"],
+            "current_frame": torch.tensor([3]),
+            "segment_flag": torch.tensor([1]),
+            "is_real_prefix": torch.tensor([True]),
+            "is_eos": torch.tensor([False]),
+        },
+    }
+    with pytest.raises(RuntimeError, match="segment_flag"):
+        model(payload, torch.device("cpu"))

@@ -54,7 +54,13 @@ def test_d1_microexperiment_receipt_is_diagnostic_only() -> None:
 
 def test_d1_model_boundary_lists_every_forbidden_future_field() -> None:
     source = (ROOT / "on_tal_task.py").read_text(encoding="utf-8")
-    for field in ("duration", "true_duration", "video_time", "frame_to_time"):
+    for field in (
+        "duration",
+        "true_duration",
+        "video_time",
+        "frame_to_time",
+        "segment_flag",
+    ):
         assert f'"{field}"' in source
     assert "make_model_inputs" in source
 
@@ -154,3 +160,53 @@ def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:
     ]
     with pytest.raises(ValueError, match="required keys"):
         validate_metric_lines(common_only, "TH", 5)
+
+
+def test_d1_checkpoint_replay_is_train_only_read_only_and_threshold_free() -> None:
+    manifest = json.loads(
+        (
+            ROOT
+            / "experiment_configs"
+            / "eventmatr_d1_checkpoint_replay.json"
+        ).read_text(encoding="utf-8")
+    )
+    runner = (
+        ROOT / "scripts" / "run_eventmatr_d1_checkpoint_replay.py"
+    ).read_text(encoding="utf-8")
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d1_checkpoint_replay.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d1_checkpoint_replay.py"
+    ).read_text(encoding="utf-8")
+
+    assert manifest["lanes"] == ["R", "T", "H", "TH"]
+    assert manifest["scope"]["dataset_subset"] == "official_train_validation_only"
+    assert manifest["scope"]["ground_truth_visible_to_model"] is False
+    assert manifest["scope"]["locked_test_access"] is False
+    assert manifest["scope"]["checkpoint_update"] is False
+    assert manifest["fixed_decisions"]["birth_logit_threshold"] is None
+    assert manifest["fixed_decisions"]["end_logit_threshold"] is None
+    assert manifest["fixed_decisions"]["threshold_search"] is False
+
+    assert 'THUMOS14Dataset(args, subset="train")' in runner
+    assert "make_model_inputs(args, features, infos)" in runner
+    assert "make_model_inputs(args, features, infos, target" not in runner
+    assert "D1_RUNTIME_FORBIDDEN_MODEL_INFO" in runner
+    assert '"test_access": False' in runner
+    assert '"checkpoint_updated": False' in runner
+    assert '"threshold_search": False' in runner
+    assert "model.load_state_dict" in runner and "strict=True" in runner
+    assert "optimizer" not in runner
+
+    assert "LANES=(R T H TH)" in slurm
+    assert "TASK_ID >= 4" in slurm
+    assert "#SBATCH --gpus=1" in slurm
+    assert "LOCKED_TEST" not in slurm
+    assert "--trace" in slurm
+    assert "verify_source_identity.py" in slurm
+
+    assert '"test_access": False' in finalizer
+    assert '"checkpoint_updated": False' in finalizer
+    assert '"threshold_search": False' in finalizer
+    assert "stage[\"ledger_rows\"] != stage[\"emissions\"]" in finalizer

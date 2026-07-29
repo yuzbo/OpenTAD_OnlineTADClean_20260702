@@ -676,6 +676,15 @@ class DynamicEventMemory:
         emitted_mask = torch.zeros(expected, dtype=torch.bool, device=device)
         cancelled_mask = torch.zeros(expected, dtype=torch.bool, device=device)
         active_count = torch.zeros(batch_size, dtype=torch.long, device=device)
+        birth_count = torch.zeros(batch_size, dtype=torch.long, device=device)
+        end_count = torch.zeros(batch_size, dtype=torch.long, device=device)
+        emit_count = torch.zeros(batch_size, dtype=torch.long, device=device)
+        cancellation_count = torch.zeros(
+            batch_size, dtype=torch.long, device=device
+        )
+        reacquisition_count = torch.zeros(
+            batch_size, dtype=torch.long, device=device
+        )
         capacity_exhaustions = torch.zeros(
             batch_size, dtype=torch.long, device=device
         )
@@ -810,6 +819,7 @@ class DynamicEventMemory:
                                 "frame": float(frame),
                             }
                         )
+                        cancellation_count[batch_index] += 1
                         continue
                     end_margin = owner_state_logits[
                         batch_index, owner_index, 3
@@ -856,6 +866,7 @@ class DynamicEventMemory:
                             batch_index, int(record.owner_query_id)
                         ] = True
                         step_audit["ends"] += 1
+                        end_count[batch_index] += 1
             else:
                 assignments = self._match_records(
                     active_records,
@@ -903,6 +914,7 @@ class DynamicEventMemory:
                         record.status = "ended"
                         ended_mask[batch_index, query_index] = True
                         step_audit["ends"] += 1
+                        end_count[batch_index] += 1
 
             # End and emit are separate state transitions, even when delay=0.
             for record in records:
@@ -918,6 +930,7 @@ class DynamicEventMemory:
                     self._emit_record(record, frame)
                     emitted_mask[batch_index, query_index] = True
                     step_audit["emits"] += 1
+                    emit_count[batch_index] += 1
             records[:] = [
                 record
                 for record in records
@@ -1081,6 +1094,8 @@ class DynamicEventMemory:
                         new_birth_mask[batch_index, query_index] = True
                         step_audit["births"] += 1
                         step_audit["reacquisitions"] += 1
+                        birth_count[batch_index] += 1
+                        reacquisition_count[batch_index] += 1
                         continue
                 record = EventRecord(
                     event_id=next_id,
@@ -1112,6 +1127,7 @@ class DynamicEventMemory:
                 new_birth_mask[batch_index, query_index] = True
                 next_id += 1
                 step_audit["births"] += 1
+                birth_count[batch_index] += 1
             self._next_event_id[video_name] = next_id
             active_count[batch_index] = len(records)
 
@@ -1122,6 +1138,11 @@ class DynamicEventMemory:
             "emitted_mask": emitted_mask,
             "cancelled_mask": cancelled_mask,
             "active_count": active_count,
+            "birth_count": birth_count,
+            "end_count": end_count,
+            "emit_count": emit_count,
+            "cancellation_count": cancellation_count,
+            "reacquisition_count": reacquisition_count,
             "runtime_capacity_exhaustions": capacity_exhaustions,
             "padding_prefixes_ignored": padding_ignored,
             "eos_observed": eos_observed,

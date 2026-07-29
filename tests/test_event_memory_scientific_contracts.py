@@ -846,6 +846,47 @@ def test_same_frame_emissions_have_strict_monotonic_sequence_ids() -> None:
     assert all(0.0 <= row["score"] <= 1.0 for row in ledger)
 
 
+def test_scalar_stage_counts_do_not_collapse_records_that_share_one_query() -> None:
+    memory = _memory(ownership_mode="sticky_owner", emit_delay_frames=0)
+    _step(memory, 10, births=[POS], ends=[NEG], starts=[8])
+    _step(memory, 11, births=[NEG], ends=[NEG], starts=[8])
+    second = _step(memory, 12, births=[POS], ends=[NEG], starts=[9])
+    assert second["birth_count"].tolist() == [1]
+    assert len(memory.records("video_1")) == 2
+
+    owner_embeddings, owner_padding, owner_ids = memory.owner_batch(
+        ["video_1"],
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        embedding_dim=1,
+    )
+    owner_runtime = {
+        "owner_state_logits": torch.tensor(
+            [[[NEG, NEG, NEG, POS], [NEG, NEG, NEG, POS]]],
+            dtype=torch.float32,
+        ),
+        "owner_end_offsets": torch.zeros((1, 2)),
+        "owner_updated_embeddings": owner_embeddings,
+        "owner_valid_mask": ~owner_padding,
+        "owner_record_ids": owner_ids,
+    }
+    closed = _step(
+        memory,
+        13,
+        births=[NEG],
+        ends=[NEG],
+        owner_runtime=owner_runtime,
+    )
+    # Boolean masks are query-indexed and therefore contain one True.  Scalar
+    # counters must preserve both dynamic records for scientific accounting.
+    assert closed["ended_mask"].sum().item() == 1
+    assert closed["emitted_mask"].sum().item() == 1
+    assert closed["end_count"].tolist() == [2]
+    assert closed["emit_count"].tolist() == [2]
+    assert closed["cancellation_count"].tolist() == [0]
+    assert len(memory.ledger("video_1")) == 2
+
+
 def test_ragged_owner_decoder_backpropagates_across_two_prefixes() -> None:
     decoder = OwnerEventDecoder(hidden_dim=8, num_classes=3, num_heads=2)
     owner0 = torch.randn((1, 12, 8), requires_grad=True)

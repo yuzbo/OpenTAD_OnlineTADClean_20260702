@@ -33,6 +33,12 @@ D1_FORBIDDEN_MODEL_INFO = {
     "video_time",
     "frame_to_time",
 }
+D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
+    # This is a ground-truth-derived supervision flag.  D1 training may use it
+    # for the inherited MATR memory teacher path, but inference/replay must use
+    # the learned flag head and must not even expose the label at the boundary.
+    "segment_flag",
+}
 
 
 def make_model_inputs(args, feature_inputs, infos, targets=None):
@@ -40,10 +46,15 @@ def make_model_inputs(args, feature_inputs, infos, targets=None):
 
     lifecycle = getattr(args, "event_lifecycle_version", "v1_dense")
     if lifecycle == "d1_censored":
+        forbidden = (
+            D1_FORBIDDEN_MODEL_INFO
+            if bool(getattr(args, "training", False))
+            else D1_RUNTIME_FORBIDDEN_MODEL_INFO
+        )
         model_infos = {
             key: value
             for key, value in infos.items()
-            if key not in D1_FORBIDDEN_MODEL_INFO
+            if key not in forbidden
         }
     else:
         model_infos = infos

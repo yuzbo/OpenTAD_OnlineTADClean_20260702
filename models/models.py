@@ -144,6 +144,8 @@ class MATR(nn.Module):
                 "video_time",
                 "frame_to_time",
             }.intersection(infos)
+            if not self.training and "segment_flag" in infos:
+                forbidden.add("segment_flag")
             if forbidden:
                 raise RuntimeError(
                     "D1 model boundary received future/full-video metadata: {}".format(
@@ -582,6 +584,21 @@ class MATR(nn.Module):
                     "active_count": torch.zeros(
                         shape[0], dtype=torch.long, device=anc_cls.device
                     ),
+                    "birth_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "end_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "emit_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "cancellation_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
+                    "reacquisition_count": torch.zeros(
+                        shape[0], dtype=torch.long, device=anc_cls.device
+                    ),
                     "runtime_capacity_exhaustions": torch.zeros(
                         shape[0], dtype=torch.long, device=anc_cls.device
                     ),
@@ -599,6 +616,15 @@ class MATR(nn.Module):
                     "event_emitted_mask": runtime["emitted_mask"],
                     "event_cancelled_mask": runtime["cancelled_mask"],
                     "event_active_count": runtime["active_count"],
+                    "event_birth_count": runtime["birth_count"],
+                    "event_end_count": runtime["end_count"],
+                    "event_emit_count": runtime["emit_count"],
+                    "event_cancellation_count": runtime[
+                        "cancellation_count"
+                    ],
+                    "event_reacquisition_count": runtime[
+                        "reacquisition_count"
+                    ],
                     "event_runtime_capacity_exhaustions": runtime[
                         "runtime_capacity_exhaustions"
                     ],
