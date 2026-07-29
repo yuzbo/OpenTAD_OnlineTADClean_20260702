@@ -29,6 +29,9 @@ from scripts.finalize_eventmatr_d11_mechanism import (
 from scripts.finalize_eventmatr_d11_effective_dose_gate import (
     validate_effective_dose_gate,
 )
+from scripts.finalize_eventmatr_d13_mechanism import (
+    validate_d13_mechanism_metrics,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +45,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v4"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v5"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -91,9 +94,22 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     d12 = gates["d12_independent_birth_seed52_one_epoch_mechanism"]
     assert d12["checkpoint_schema"] == "eventmatr_d12_independent_birth_v1"
     assert d12["birth_decision"].startswith("independent binary birth log-odds")
-    assert "never a paper claim" in d12["release_condition"]
+    assert d12["observed_evidence"]["training_predicted_associations"] == 0
+    assert d12["observed_evidence"]["terminal_positive_birth_logits"] == 0
+    assert d12["observed_evidence"]["official_train_birth_events"] == 3003
+    assert "failed" in d12["release_condition"]
+    d13 = gates["d13_seed52_factorial_mechanism"]
+    assert d13["checkpoint_schema"] == "eventmatr_d13_factorial_mechanism_v1"
+    assert list(d13["prospective_variants"]) == [
+        "soft_assignment_only",
+        "event_matched_birth_only",
+        "combined",
+    ]
+    assert "never report paper performance" in d13["release_condition"]
     paper = protocol["paper_result_boundary"]
     assert paper["matched_training_budget"]["epochs"] == 100
+    assert "no search" in paper["matched_postprocessing"]
+    assert "epoch-100 terminal checkpoints" in paper["terminal_checkpoint_policy"]
     assert "one-epoch mechanisms" in paper["paper_validity"]
     assert "5/10/20-epoch pilots are not paper performance results" in (
         paper["paper_validity"]
@@ -225,6 +241,136 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
     assert "validate_d1_checkpoint_compatibility" in task
     assert "D12_CHECKPOINT_SCHEMA" in task
     assert "'d11_mechanism'" in config
+
+
+def test_d13_factorial_is_train_only_hash_bound_and_never_paper_performance() -> None:
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d13_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "scripts" / "train_eventmatr_d13_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d13_mechanism.py"
+    ).read_text(encoding="utf-8")
+    task = (ROOT / "on_tal_task.py").read_text(encoding="utf-8")
+
+    assert "#SBATCH --gpus=1" in slurm
+    assert "SLURM_ARRAY_TASK_ID" not in slurm
+    assert "export MATR_D13_VARIANT" in slurm
+    for variable in (
+        "MATR_PROTOCOL_ANNO",
+        "MATR_TRAIN_FEATURE",
+        "MATR_VIDEO_LEN_PATTERN",
+        "MATR_LABEL_PATTERN",
+    ):
+        assert variable in slurm
+    assert slurm.count("verify_source_identity.py") == 2
+    assert "--smoke-receipt" in slurm
+    assert "--epochs 1" in launcher
+    assert "--study_protocol d13_mechanism" in launcher
+    assert '--event_d13_variant "${MATR_D13_VARIANT}"' in launcher
+    assert "--random_seed 52" in launcher
+    assert "--load_model" not in launcher
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
+    assert "eventmatr_d13_factorial_mechanism_v1" in finalizer
+    assert '"status": "PASS_TRAIN_MECHANISM_ONLY"' in finalizer
+    assert '"official_paper_performance_valid": False' in finalizer
+    assert '"train_prefix_metrics_diagnostic_only": True' in finalizer
+    assert '"threshold_search": False' in finalizer
+    assert '"official_comparison_release": False' in finalizer
+    assert '"locked_test_release": False' in finalizer
+    assert "eventmatr_d13_factorial_mechanism_v1" in task
+
+
+def _valid_d13_metrics(*, selected_negatives: int, soft: bool) -> dict:
+    metrics = {
+        name: 1.0
+        for name in (
+            "event_transition_gradient_norm",
+            "event_birth_gradient_norm",
+            "event_owner_gradient_norm",
+            "event_birth_positive_count_unscaled",
+            "event_end_positive_count_unscaled",
+            "event_owner_assignment_count_unscaled",
+            "event_ragged_track_count_unscaled",
+            "event_false_track_cancel_group_count_unscaled",
+            "event_source_predicted_unmatched_row_count_unscaled",
+            "event_source_teacher_birth_row_count_unscaled",
+        )
+    }
+    metrics.update(
+        {
+            "d13_epoch_physical_batch_count": 3270.0,
+            "d13_epoch_birth_positive_count_total": 3003.0,
+            "d13_epoch_birth_selected_negative_count_total": float(
+                selected_negatives
+            ),
+            "d13_epoch_birth_negative_candidate_count_total": 1000000.0,
+            "d13_epoch_birth_positive_batch_count_total": 1685.0,
+            "d13_epoch_birth_zero_positive_batch_count_total": 1585.0,
+            "d13_epoch_birth_interval_fallback_count_total": 0.0,
+            "d13_epoch_birth_prebirth_exposure_count_total": 5000.0,
+            "d13_epoch_birth_interval_exposure_count_total": 3003.0,
+            "d13_epoch_birth_selected_risk_logit_count_total": 8003.0,
+            "event_runtime_capacity_exhaustions_unscaled": 0.0,
+            "event_association_audit_class_argmax_reject_pair_count_unscaled": (
+                0.0 if soft else 1.0
+            ),
+            (
+                "event_association_audit_"
+                "admissible_class_argmax_mismatch_pair_count_unscaled"
+            ): 1.0 if soft else 0.0,
+            "event_association_predicted_associated_count_unscaled": (
+                1.0 if soft else 0.0
+            ),
+        }
+    )
+    return metrics
+
+
+def test_d13_finalizer_closes_factorial_census_without_effect_thresholds() -> None:
+    soft = _valid_d13_metrics(selected_negatives=203363, soft=True)
+    birth = _valid_d13_metrics(selected_negatives=3003, soft=False)
+    combined = _valid_d13_metrics(selected_negatives=3003, soft=True)
+
+    assert validate_d13_mechanism_metrics(
+        soft, "soft_assignment_only"
+    )["soft_assignment"]
+    assert validate_d13_mechanism_metrics(
+        birth, "event_matched_birth_only"
+    )["event_matched_birth"]
+    assert validate_d13_mechanism_metrics(
+        combined, "combined"
+    )["census"]["d13_epoch_birth_positive_count_total"] == 3003
+
+    with pytest.raises(ValueError, match="selected birth-negative count"):
+        validate_d13_mechanism_metrics(
+            {
+                **combined,
+                "d13_epoch_birth_selected_negative_count_total": 3002.0,
+            },
+            "combined",
+        )
+    with pytest.raises(ValueError, match="finite non-negative integer"):
+        validate_d13_mechanism_metrics(
+            {
+                **combined,
+                "d13_epoch_birth_interval_fallback_count_total": 0.5,
+            },
+            "combined",
+        )
+    with pytest.raises(ValueError, match="hard class gate"):
+        validate_d13_mechanism_metrics(
+            {
+                **combined,
+                (
+                    "event_association_audit_"
+                    "class_argmax_reject_pair_count_unscaled"
+                ): 1.0,
+            },
+            "combined",
+        )
 
 
 def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds(

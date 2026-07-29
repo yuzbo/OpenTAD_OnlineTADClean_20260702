@@ -88,6 +88,7 @@ def _args() -> SimpleNamespace:
         event_teacher_forcing_ratio=1.0,
         event_identity_coef=1.0,
         event_d1_lane="th",
+        event_d13_variant="d12_control",
     )
 
 
@@ -341,6 +342,33 @@ def test_causal_single_assignment_accounts_for_each_rejection_barrier() -> None:
     assert result.class_mismatch_pair_count == 1
     assert result.start_distance_reject_pair_count == 1
     assert result.admissible_pair_count == 0
+    assert result.class_argmax_reject_pair_count == 1
+    assert result.admissible_class_argmax_mismatch_pair_count == 0
+
+
+def test_d13_soft_assignment_uses_wrong_argmax_as_evidence_not_a_gate() -> None:
+    result = causal_single_assignment(
+        predicted_query_indices=[0],
+        candidate_start_frames=torch.tensor([10.0]),
+        class_logits=torch.tensor([[2.0, 3.0, -4.0]], dtype=torch.float32),
+        query_features=torch.tensor([[1.0, 0.0]], dtype=torch.float32),
+        target_specs=[
+            {
+                "target_event_id": 7,
+                "class_id": 0,
+                "start_frame": 10.0,
+                "anchor_feature": torch.tensor([1.0, 0.0]),
+            }
+        ],
+        max_start_distance=4.0,
+        association_contract="soft_target_class_log_probability_v1",
+    )
+    assert dict(result.assignments) == {0: 7}
+    assert result.class_mismatch_pair_count == 1
+    assert result.class_argmax_reject_pair_count == 0
+    assert result.start_distance_reject_pair_count == 0
+    assert result.admissible_pair_count == 1
+    assert result.admissible_class_argmax_mismatch_pair_count == 1
 
 
 def test_causal_single_assignment_rejects_nonfinite_or_invalid_semantics() -> None:
@@ -793,16 +821,24 @@ def test_fresh_rematch_refreshes_an_existing_owner_without_runtime_error() -> No
     assert int(record.class_distribution.argmax().item()) == 0
 
 
-def _birth_case(query_count: int):
-    criterion = _criterion()
+def _birth_case(
+    query_count: int,
+    *,
+    variant: str = "d12_control",
+    positive_count: int = 1,
+):
+    args = _args()
+    args.event_d13_variant = variant
+    criterion = _criterion(args)
     state = torch.full((1, query_count, 4), -4.0)
     state[:, :, 0] = 4.0
-    state[0, 0] = torch.tensor([-2.0, 2.0, -2.0, -2.0])
     birth = torch.full((1, query_count), -8.0, requires_grad=True)
-    birth.data[0, 0] = 1.25
     classes = torch.full((1, query_count, 3), -4.0)
     classes[:, :, 2] = 4.0
-    classes[0, 0] = torch.tensor([4.0, -4.0, -4.0])
+    for query_index in range(positive_count):
+        state[0, query_index] = torch.tensor([-2.0, 2.0, -2.0, -2.0])
+        birth.data[0, query_index] = 1.25
+        classes[0, query_index] = torch.tensor([4.0, -4.0, -4.0])
     features = torch.eye(query_count).unsqueeze(0)
     outputs = {
         "event_state_logits": state,
@@ -816,22 +852,29 @@ def _birth_case(query_count: int):
         {
             "batch_index": 0,
             "video_name": "v",
-            "target_event_id": 0,
+            "target_event_id": query_index,
             "class_id": 0,
             "start_frame": 0.0,
             "frames": torch.tensor([0.0]),
-            "selected_logits": birth[0, :1],
-            "terminal_query": 0,
+            "selected_logits": birth[0, query_index : query_index + 1],
+            "terminal_query": query_index,
         }
+        for query_index in range(positive_count)
     ]
     event_targets = torch.zeros((1, query_count, 8))
-    event_targets[0, 0] = torch.tensor([0, 0, 0, 5, 0, 1, 0, 0])
+    for query_index in range(positive_count):
+        event_targets[0, query_index] = torch.tensor(
+            [query_index, 0, 0, 5, 0, 1, 0, 0]
+        )
     losses = criterion.loss_event(
         outputs,
         {
             "event_targets": event_targets,
             "event_valid_mask": torch.tensor(
-                [[True] + [False] * (query_count - 1)]
+                [
+                    [True] * positive_count
+                    + [False] * (query_count - positive_count)
+                ]
             ),
         },
         {
@@ -857,6 +900,58 @@ def test_event_normalized_birth_hazard_is_not_diluted_by_background_queries() ->
     assert birth_two.grad[0, 1:].sum().item() == pytest.approx(
         birth_twenty.grad[0, 1:].sum().item()
     )
+
+
+def test_d13_event_matched_birth_selects_exactly_one_negative_per_event() -> None:
+    losses, birth = _birth_case(
+        6,
+        variant="event_matched_birth_only",
+        positive_count=2,
+    )
+    assert losses["event_birth_positive_count"] == 2
+    assert losses["event_birth_selected_negative_count"] == 2
+    assert losses["event_birth_negative_candidate_count"] == 4
+    assert losses["event_birth_positive_batch_count"] == 1
+    assert losses["event_birth_zero_positive_batch_count"] == 0
+    losses["loss_event_birth"].backward()
+    assert int((birth.grad != 0).sum().item()) == 4
+
+
+def test_d13_zero_birth_batch_has_no_birth_loss_or_birth_head_gradient() -> None:
+    args = _args()
+    args.event_d13_variant = "event_matched_birth_only"
+    criterion = _criterion(args)
+    state = torch.zeros((1, 4, 4), requires_grad=True)
+    birth = torch.tensor(
+        [[-1.0, 0.0, 1.0, 2.0]], requires_grad=True
+    )
+    outputs = {
+        "event_state_logits": state,
+        "event_birth_logits": birth,
+        "event_candidate_start_frames": torch.zeros((1, 4)),
+        "event_query_features": torch.zeros((1, 4, 4)),
+        "pred_cls": torch.zeros((1, 4, 3)),
+    }
+    _empty_ragged(outputs, hidden_dim=4)
+    losses = criterion.loss_event(
+        outputs,
+        {
+            "event_targets": torch.zeros((1, 4, 8)),
+            "event_valid_mask": torch.zeros((1, 4), dtype=torch.bool),
+        },
+        {
+            "video_name": ["v"],
+            "current_frame": torch.tensor([0]),
+            "is_real_prefix": torch.tensor([True]),
+        },
+    )
+    assert losses["loss_event_birth"].item() == 0.0
+    assert losses["event_birth_selected_negative_count"] == 0
+    assert losses["event_birth_negative_candidate_count"] == 4
+    assert losses["event_birth_positive_batch_count"] == 0
+    assert losses["event_birth_zero_positive_batch_count"] == 1
+    losses["loss_event_birth"].backward()
+    assert birth.grad is None
 
 
 def test_right_censored_end_hazard_has_survival_gradient() -> None:

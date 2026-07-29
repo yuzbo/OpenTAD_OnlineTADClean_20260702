@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v4",
+  "protocol_id": "eventmatr_d1_preexperiments_v5",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -152,7 +152,7 @@
     },
     {
       "stage": "d12_independent_birth_seed52_one_epoch_mechanism",
-      "status": "prospectively_frozen_not_run",
+      "status": "completed_failed_association_and_terminal_birth_liveness",
       "trigger": "the effective-dose recheck moved parameters but terminal four-state START remained inactive while class-conditioned temporal structure remained learnable",
       "epochs": [
         1
@@ -180,11 +180,66 @@
         "unchanged checkpoint hash during terminal scan and parameter audit",
         "absent locked-test sentinel"
       ],
-      "release_condition": "mechanism receipt, complete terminal lifecycle scan, and parameter-delta audit all pass; this may release only prospectively frozen development pilots, never a paper claim or locked-test access"
+      "observed_evidence": {
+        "optimizer_updates": 3270,
+        "training_predicted_birth_queries": 74,
+        "training_predicted_associations": 0,
+        "training_class_argmax_mismatch_pairs": 20,
+        "training_admissible_pairs": 0,
+        "terminal_birth_logit_count": 2033630,
+        "terminal_positive_birth_logits": 0,
+        "terminal_maximum_birth_logit": -2.385195,
+        "terminal_predicted_lifecycle_events": 0,
+        "official_train_birth_events": 3003,
+        "official_train_real_prefixes": 203363,
+        "official_train_positive_birth_batches": 1685,
+        "official_train_zero_birth_batches": 1585
+      },
+      "failure_diagnosis": "the independent head is trainable, but a hard foreground-class argmax gate rejects every learned birth candidate and the frozen one-hard-negative-per-real-prefix birth objective remains dominated by 203363 prefix negatives against 3003 birth events",
+      "release_condition": "failed; no development performance pilot, paper claim, threshold change, or locked-test access is released"
+    },
+    {
+      "stage": "d13_seed52_factorial_mechanism",
+      "status": "prospectively_frozen_not_run",
+      "epochs": [
+        1
+      ],
+      "lanes": [
+        "TH"
+      ],
+      "fresh_start": true,
+      "fixed_training_learning_rate": 3.34e-06,
+      "checkpoint_schema": "eventmatr_d13_factorial_mechanism_v1",
+      "external_control": "the completed D1.2 run with hard class-argmax assignment and one hardest birth negative per real prefix",
+      "prospective_variants": {
+        "soft_assignment_only": {
+          "association": "target-class log probability is a soft matching cost; no foreground-class argmax rejection",
+          "birth_risk": "one hardest negative per real prefix"
+        },
+        "event_matched_birth_only": {
+          "association": "frozen hard foreground-class argmax rejection",
+          "birth_risk": "exactly one hardest unassigned negative per observed birth event; a zero-birth physical batch gives the birth head no update"
+        },
+        "combined": {
+          "association": "target-class log probability is a soft matching cost; no foreground-class argmax rejection",
+          "birth_risk": "exactly one hardest unassigned negative per observed birth event; a zero-birth physical batch gives the birth head no update"
+        }
+      },
+      "requires": [
+        "same official train features, data order, seed, architecture, optimizer schedule and 3270 updates",
+        "exact official-train census of 3003 birth events in 1685 positive and 1585 zero-birth physical batches",
+        "soft-assignment arms admit real wrong-argmax causal pairs without weakening the registered start-distance or ambiguity rules",
+        "event-matched arms select exactly 3003 negatives and do not update the birth head in zero-birth batches",
+        "complete deterministic terminal predicted-only lifecycle scan",
+        "separate independent-birth, four-state, shared-fuse and owner parameter-delta audit",
+        "zero capacity exhaustion and absent locked-test sentinel",
+        "all interval fallback and causal exposure counts are recorded rather than hidden"
+      ],
+      "release_condition": "all three arms, terminal scans, parameter audits, and a cross-arm causal analysis complete; this stage may only establish mechanism truth and select a structure for prospective freeze, never report paper performance"
     },
     {
       "stage": "seed52_short_pilots",
-      "status": "blocked_until_d12_mechanism_pass",
+      "status": "blocked_until_d13_structure_analysis_and_prospective_freeze",
       "epochs": [
         5,
         10,
@@ -197,7 +252,7 @@
         "H",
         "TH"
       ],
-      "release_condition": "the D1.2 independent-birth complete mechanism gate, never a diagnostic scan alone, is PASS and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
+      "release_condition": "the D1.3 factorial mechanism and terminal lifecycle evidence identify a live combined structure and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
     }
   ],
   "paper_result_boundary": {
@@ -214,6 +269,8 @@
       "optimizer_and_scheduler": "identical to the official parent protocol"
     },
     "matched_evaluation": "same official evaluator at temporal IoU 0.3 through 0.7",
+    "matched_postprocessing": "same fixed class threshold 0.1, flag threshold 0.5, and non-maximum-suppression threshold 0.3 with no search",
+    "terminal_checkpoint_policy": "both models are evaluated only from their prospectively declared epoch-100 terminal checkpoints; no best-epoch selection",
     "strict_causal_requirements": [
       "no true duration or complete-video timing at the model boundary",
       "end-of-stream only when observed at the current time",
@@ -221,7 +278,7 @@
       "immutable positive-length no-duplicate ledger with zero capacity exhaustion"
     ],
     "paper_validity": "only a prospectively frozen native-parent versus EventMATR full-budget evaluation is paper-comparable; one-epoch mechanisms, train-prefix scores, and 5/10/20-epoch pilots are not paper performance results",
-    "locked_test_release_condition": "D1.2 structure gate PASS, development analysis closed, full-budget comparison contract frozen before any locked-test access"
+    "locked_test_release_condition": "D1.3 structure gate PASS, development analysis closed, and the native-parent versus combined EventMATR full-budget comparison contract frozen before any locked-test access"
   },
   "metrics": {
     "detection": [

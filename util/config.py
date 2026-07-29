@@ -100,6 +100,21 @@ def make_parser():
         help='Registered D1 ablation: repair, trajectory, hazard, or their full combination.',
     )
     parser.add_argument(
+        '--event_d13_variant',
+        default='d12_control',
+        choices=(
+            'd12_control',
+            'soft_assignment_only',
+            'event_matched_birth_only',
+            'combined',
+        ),
+        type=str,
+        help=(
+            'Prospective D1.3 mechanism factorial. The default exactly preserves '
+            'the frozen D1.2 association and birth-risk contracts.'
+        ),
+    )
+    parser.add_argument(
         '--event_teacher_forcing_ratio',
         default=0.5,
         type=float,
@@ -118,6 +133,7 @@ def make_parser():
             'matched_study',
             'd1_preexperiment',
             'd11_mechanism',
+            'd13_mechanism',
             'locked_test',
         ),
         type=str,

@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from .matcher import HungarianMatcher
+from models.event_memory import resolve_d13_mechanism_contracts
 
 class CrossEntropyLoss(nn.Module):
     def __init__(self, focal=False, weight=None, reduce=True):
@@ -142,6 +143,22 @@ class CriterionMATR(nn.Module):
             raise ValueError("invalid event_d1_lane")
         self.event_d1_use_identity = self.event_d1_lane in {"t", "th"}
         self.event_d1_use_hazard = self.event_d1_lane in {"h", "th"}
+        (
+            self.event_d13_variant,
+            self.event_association_contract,
+            self.event_birth_risk_contract,
+        ) = resolve_d13_mechanism_contracts(args)
+        if (
+            not self.event_d1_enabled
+            and self.event_d13_variant != "d12_control"
+        ):
+            raise ValueError(
+                "a D1.3 mechanism variant requires the d1_censored lifecycle"
+            )
+        self.event_d13_event_matched_birth = (
+            self.event_birth_risk_contract
+            == "event_matched_hard_negative_v1"
+        )
         if self.event_enabled:
             self.weight_dict['loss_event_birth'] = float(
                 getattr(args, "event_birth_coef", 1.0)
@@ -562,6 +579,10 @@ class CriterionMATR(nn.Module):
         balanced_background_losses = []
         start_losses = []
         assignment_count = 0
+        interval_fallback_count = 0
+        prebirth_exposure_count = 0
+        interval_exposure_count = 0
+        selected_risk_logit_count = 0
         positive_assignments = {}
         birth_risk_groups = list(outputs["event_birth_risk_groups"])
         for group in birth_risk_groups:
@@ -576,6 +597,7 @@ class CriterionMATR(nn.Module):
                 raise RuntimeError("birth risk logits/frames are inconsistent")
             if selected.numel() == 0:
                 raise RuntimeError("birth risk group cannot be empty")
+            selected_risk_logit_count += int(selected.numel())
             start_frame = float(group["start_frame"])
             terminal_query = int(group["terminal_query"])
             assignment_count += 1
@@ -594,6 +616,9 @@ class CriterionMATR(nn.Module):
                     # crossing after an explicit truncated-BPTT boundary.
                     in_interval[-1] = True
                     pre_birth[-1] = False
+                    interval_fallback_count += 1
+                prebirth_exposure_count += int(pre_birth.sum().item())
+                interval_exposure_count += int(in_interval.sum().item())
                 pre_survival_nll = F.softplus(selected[pre_birth]).sum()
                 log_interval_survival = F.logsigmoid(
                     -selected[in_interval]
@@ -621,9 +646,9 @@ class CriterionMATR(nn.Module):
                 )
             )
 
-        # One hardest currently-unassigned query per real prefix supplies
-        # right-censored no-birth supervision.  Query count therefore cannot
-        # dilute the event loss, but false births are not cost-free.
+        # Construct the same finite pool of currently-unassigned, prefix-visible
+        # query risks for both D1.2 and the prospective D1.3 intervention.
+        negative_candidate_logits = []
         for batch_index in range(batch_size):
             if not real_prefixes[batch_index]:
                 continue
@@ -633,9 +658,41 @@ class CriterionMATR(nn.Module):
             for query_index in positive_assignments.get(batch_index, ()):
                 available[int(query_index)] = False
             if available.any():
-                balanced_background_losses.append(
-                    F.softplus(birth_logits[batch_index][available].max())
+                available_logits = birth_logits[batch_index][available]
+                negative_candidate_logits.append(available_logits)
+                if not self.event_d13_event_matched_birth:
+                    # Frozen D1.2: one hardest negative per real prefix.  This
+                    # removes query-axis dilution but still weights zero-birth
+                    # physical batches as pure background.
+                    balanced_background_losses.append(
+                        F.softplus(available_logits.max())
+                    )
+
+        negative_candidate_count = sum(
+            int(values.numel()) for values in negative_candidate_logits
+        )
+        if self.event_d13_event_matched_birth and birth_event_losses:
+            if not negative_candidate_logits:
+                raise RuntimeError(
+                    "event-matched birth risk has positive events but no "
+                    "currently-unassigned negative candidates"
                 )
+            negative_pool = torch.cat(negative_candidate_logits)
+            positive_event_count = len(birth_event_losses)
+            if negative_pool.numel() < positive_event_count:
+                raise RuntimeError(
+                    "event-matched birth risk lacks one negative per positive "
+                    "event: {} < {}".format(
+                        negative_pool.numel(), positive_event_count
+                    )
+                )
+            hardest = torch.topk(
+                negative_pool,
+                k=positive_event_count,
+                largest=True,
+                sorted=True,
+            ).values
+            balanced_background_losses = list(F.softplus(hardest).unbind())
 
         ragged_logits = outputs["event_ragged_state_logits"]
         ragged_targets = outputs["event_ragged_state_targets"]
@@ -772,7 +829,21 @@ class CriterionMATR(nn.Module):
             return torch.stack(values).mean() if values else zero
 
         birth_loss = mean_or_zero(birth_event_losses)
-        if balanced_background_losses:
+        if self.event_d13_event_matched_birth:
+            if birth_event_losses:
+                if len(balanced_background_losses) != len(birth_event_losses):
+                    raise RuntimeError(
+                        "event-matched birth positive/negative counts drifted"
+                    )
+                birth_loss = 0.5 * (
+                    birth_loss + mean_or_zero(balanced_background_losses)
+                )
+            else:
+                # Deliberately independent of the birth head.  With no positive
+                # event in this physical batch, the birth head receives neither
+                # a background gradient nor an Adam weight-decay update.
+                birth_loss = zero
+        elif balanced_background_losses:
             background_loss = mean_or_zero(balanced_background_losses)
             birth_loss = (
                 0.5 * (birth_loss + background_loss)
@@ -794,6 +865,30 @@ class CriterionMATR(nn.Module):
             ),
             "event_birth_positive_count": torch.tensor(
                 float(len(birth_event_losses)), device=device
+            ),
+            "event_birth_selected_negative_count": torch.tensor(
+                float(len(balanced_background_losses)), device=device
+            ),
+            "event_birth_negative_candidate_count": torch.tensor(
+                float(negative_candidate_count), device=device
+            ),
+            "event_birth_positive_batch_count": torch.tensor(
+                float(bool(birth_event_losses)), device=device
+            ),
+            "event_birth_zero_positive_batch_count": torch.tensor(
+                float(not birth_event_losses), device=device
+            ),
+            "event_birth_interval_fallback_count": torch.tensor(
+                float(interval_fallback_count), device=device
+            ),
+            "event_birth_prebirth_exposure_count": torch.tensor(
+                float(prebirth_exposure_count), device=device
+            ),
+            "event_birth_interval_exposure_count": torch.tensor(
+                float(interval_exposure_count), device=device
+            ),
+            "event_birth_selected_risk_logit_count": torch.tensor(
+                float(selected_risk_logit_count), device=device
             ),
             "event_alive_positive_count": (ragged_targets == 1).sum().detach(),
             "event_end_positive_count": torch.tensor(
@@ -839,8 +934,10 @@ class CriterionMATR(nn.Module):
             "predicted_birth_query_count",
             "pair_count",
             "class_mismatch_pair_count",
+            "class_argmax_reject_pair_count",
             "start_distance_reject_pair_count",
             "admissible_pair_count",
+            "admissible_class_argmax_mismatch_pair_count",
             "ambiguous_query_count",
             "ambiguous_target_count",
             "assignment_count",

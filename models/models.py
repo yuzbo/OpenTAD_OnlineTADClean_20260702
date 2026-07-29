@@ -13,6 +13,7 @@ from .event_memory import (
     OwnerEventDecoder,
     causal_single_assignment,
     d1_owner_supervision,
+    resolve_d13_mechanism_contracts,
     resolve_event_modes,
     resolve_model_variant,
     select_disjoint_teacher_query,
@@ -104,6 +105,18 @@ class MATR(nn.Module):
             raise ValueError("event_d1_lane must be r, t, h, or th")
         self.event_d1_use_identity = self.event_d1_lane in {"t", "th"}
         self.event_d1_use_hazard = self.event_d1_lane in {"h", "th"}
+        (
+            self.event_d13_variant,
+            self.event_association_contract,
+            self.event_birth_risk_contract,
+        ) = resolve_d13_mechanism_contracts(args)
+        if (
+            not self.event_d1_enabled
+            and self.event_d13_variant != "d12_control"
+        ):
+            raise ValueError(
+                "a D1.3 mechanism variant requires the d1_censored lifecycle"
+            )
         if self.event_enabled:
             if torch.cuda.is_available() and torch.cuda.device_count() != 1:
                 raise RuntimeError(
@@ -534,6 +547,7 @@ class MATR(nn.Module):
                             query_features=event_query_features[batch_index],
                             target_specs=visible_target_specs,
                             max_start_distance=float(self.n_seglen),
+                            association_contract=self.event_association_contract,
                         )
                         association_audit_rows.append(
                             {
@@ -549,11 +563,17 @@ class MATR(nn.Module):
                                 "class_mismatch_pair_count": int(
                                     association.class_mismatch_pair_count
                                 ),
+                                "class_argmax_reject_pair_count": int(
+                                    association.class_argmax_reject_pair_count
+                                ),
                                 "start_distance_reject_pair_count": int(
                                     association.start_distance_reject_pair_count
                                 ),
                                 "admissible_pair_count": int(
                                     association.admissible_pair_count
+                                ),
+                                "admissible_class_argmax_mismatch_pair_count": int(
+                                    association.admissible_class_argmax_mismatch_pair_count
                                 ),
                                 "ambiguous_query_count": len(
                                     association.ambiguous_queries

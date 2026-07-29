@@ -37,6 +37,7 @@ from models.event_memory import (  # noqa: E402
 from on_tal_task import (  # noqa: E402
     D1_RUNTIME_FORBIDDEN_MODEL_INFO,
     D12_CHECKPOINT_SCHEMA,
+    D13_CHECKPOINT_SCHEMA,
     make_model_inputs,
     validate_d1_checkpoint_compatibility,
 )
@@ -48,8 +49,10 @@ AUDIT_FIELDS = (
     "target_count",
     "pair_count",
     "class_mismatch_pair_count",
+    "class_argmax_reject_pair_count",
     "start_distance_reject_pair_count",
     "admissible_pair_count",
+    "admissible_class_argmax_mismatch_pair_count",
 )
 SCORE_QUANTILES = (
     0.0,
@@ -82,6 +85,17 @@ def _parse_args() -> argparse.Namespace:
             "FAIL_UNCHANGED",
             "FAIL_EFFECTIVE_DOSE",
             "PASS_TRAIN_ONLY",
+            "PASS_TRAIN_MECHANISM_ONLY",
+        ),
+    )
+    parser.add_argument(
+        "--d13-variant",
+        default="d12_control",
+        choices=(
+            "d12_control",
+            "soft_assignment_only",
+            "event_matched_birth_only",
+            "combined",
         ),
     )
     parser.add_argument("--expected-checkpoint-sha256", required=True)
@@ -132,9 +146,29 @@ def _validate_inputs(
     expected_training_source_commit: str,
     expected_training_source_tree: str,
     one_epoch_mechanism_gate_status: str,
+    d13_variant: str,
 ) -> None:
+    is_d13 = d13_variant != "d12_control"
+    contracts = {
+        "d12_control": (
+            "hard_class_argmax_gate_v1",
+            "prefix_hard_negative_v1",
+        ),
+        "soft_assignment_only": (
+            "soft_target_class_log_probability_v1",
+            "prefix_hard_negative_v1",
+        ),
+        "event_matched_birth_only": (
+            "hard_class_argmax_gate_v1",
+            "event_matched_hard_negative_v1",
+        ),
+        "combined": (
+            "soft_target_class_log_probability_v1",
+            "event_matched_hard_negative_v1",
+        ),
+    }
     expected_options = {
-        "study_protocol": "d11_mechanism",
+        "study_protocol": "d13_mechanism" if is_d13 else "d11_mechanism",
         "model_variant": "eventmatr",
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
@@ -146,6 +180,8 @@ def _validate_inputs(
         "event_end_logit_threshold": None,
         "event_resource_limit": 0,
     }
+    if is_d13:
+        expected_options["event_d13_variant"] = d13_variant
     for field, expected in expected_options.items():
         if options.get(field) != expected:
             raise RuntimeError(
@@ -157,13 +193,24 @@ def _validate_inputs(
         raise RuntimeError("association scan requires the absent locked-test sentinel")
     expected_checkpoint = {
         "epoch": 1,
-        "study_protocol": "d11_mechanism",
+        "study_protocol": "d13_mechanism" if is_d13 else "d11_mechanism",
         "model_variant": "eventmatr",
-        "checkpoint_schema": D12_CHECKPOINT_SCHEMA,
+        "checkpoint_schema": (
+            D13_CHECKPOINT_SCHEMA if is_d13 else D12_CHECKPOINT_SCHEMA
+        ),
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
         "owner_state_count": 3,
     }
+    if is_d13:
+        association_contract, birth_risk_contract = contracts[d13_variant]
+        expected_checkpoint.update(
+            {
+                "event_d13_variant": d13_variant,
+                "association_contract": association_contract,
+                "birth_risk_contract": birth_risk_contract,
+            }
+        )
     for field, expected in expected_checkpoint.items():
         if checkpoint.get(field) != expected:
             raise RuntimeError(
@@ -180,6 +227,7 @@ def _validate_inputs(
     if one_epoch_mechanism_gate_status in {
         "FAIL_EFFECTIVE_DOSE",
         "PASS_TRAIN_ONLY",
+        "PASS_TRAIN_MECHANISM_ONLY",
     } and not effective_dose:
         raise RuntimeError("effective-dose D1.1 gate status lacks effective dose")
     if one_epoch_mechanism_gate_status == "FAIL_UNCHANGED" and effective_dose:
@@ -211,8 +259,10 @@ def _new_counts() -> dict:
         "predicted_start_active_query_count": 0,
         "pair_count": 0,
         "class_mismatch_pair_count": 0,
+        "class_argmax_reject_pair_count": 0,
         "start_distance_reject_pair_count": 0,
         "admissible_pair_count": 0,
+        "admissible_class_argmax_mismatch_pair_count": 0,
         "ambiguous_query_count": 0,
         "ambiguous_target_count": 0,
         "assignment_count": 0,
@@ -235,7 +285,7 @@ def _add_counts(total: dict, row: dict) -> None:
 def _validate_count_closure(counts: dict, label: str) -> None:
     if (
         counts["pair_count"]
-        != counts["class_mismatch_pair_count"]
+        != counts["class_argmax_reject_pair_count"]
         + counts["start_distance_reject_pair_count"]
         + counts["admissible_pair_count"]
     ):
@@ -342,6 +392,7 @@ def main() -> None:
         expected_training_source_commit=cli.expected_training_source_commit,
         expected_training_source_tree=cli.expected_training_source_tree,
         one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
+        d13_variant=cli.d13_variant,
     )
 
     random.seed(52)
@@ -903,6 +954,9 @@ def main() -> None:
                     query_features=query_features[row_index],
                     target_specs=target_specs,
                     max_start_distance=float(args.num_frame),
+                    association_contract=(
+                        model.module.event_association_contract
+                    ),
                 )
                 row_counts = _new_counts()
                 row_counts["real_prefix_count"] = 1
@@ -1120,7 +1174,14 @@ def main() -> None:
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
-        "protocol": "eventmatr_d12_terminal_association_scan_v1",
+        "protocol": (
+            "eventmatr_d12_terminal_association_scan_v1"
+            if cli.d13_variant == "d12_control"
+            else "eventmatr_d13_terminal_association_scan_v1"
+        ),
+        "event_d13_variant": cli.d13_variant,
+        "association_contract": model.module.event_association_contract,
+        "birth_risk_contract": model.module.event_birth_risk_contract,
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,

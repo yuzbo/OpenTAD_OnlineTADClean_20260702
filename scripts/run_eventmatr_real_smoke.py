@@ -97,6 +97,7 @@ def _base_args(cli: argparse.Namespace) -> SimpleNamespace:
         event_birth_logit_threshold=None,
         event_end_logit_threshold=None,
         event_resource_limit=0,
+        event_d13_variant="d12_control",
         event_runtime_during_training=False,
         study_protocol="matched_study",
         use_flag=True,
@@ -333,6 +334,11 @@ def _run_lane(
         "event_arm": args.event_arm,
         "birth_mode": args.birth_mode,
         "ownership_mode": args.ownership_mode,
+        "event_d13_variant": getattr(args, "event_d13_variant", "d12_control"),
+        "association_contract": getattr(
+            module, "event_association_contract", None
+        ),
+        "birth_risk_contract": getattr(module, "event_birth_risk_contract", None),
         "input_shape": list(inputs.shape),
         "video_names": [str(value) for value in infos["video_name"]],
         "current_frames": [

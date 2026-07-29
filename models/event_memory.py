@@ -18,6 +18,38 @@ import torch.nn.functional as F
 
 _BIRTH_MODES = {"matr_delayed", "instant_transition"}
 _OWNERSHIP_MODES = {"fresh_rematch", "sticky_owner"}
+_D13_MECHANISM_CONTRACTS = {
+    "d12_control": (
+        "hard_class_argmax_gate_v1",
+        "prefix_hard_negative_v1",
+    ),
+    "soft_assignment_only": (
+        "soft_target_class_log_probability_v1",
+        "prefix_hard_negative_v1",
+    ),
+    "event_matched_birth_only": (
+        "hard_class_argmax_gate_v1",
+        "event_matched_hard_negative_v1",
+    ),
+    "combined": (
+        "soft_target_class_log_probability_v1",
+        "event_matched_hard_negative_v1",
+    ),
+}
+
+
+def resolve_d13_mechanism_contracts(args) -> Tuple[str, str, str]:
+    """Resolve the prospective D1.3 factorial without changing D1.2 defaults."""
+
+    variant = str(getattr(args, "event_d13_variant", "d12_control"))
+    if variant not in _D13_MECHANISM_CONTRACTS:
+        raise ValueError(
+            "event_d13_variant must be one of {}, got {!r}".format(
+                sorted(_D13_MECHANISM_CONTRACTS), variant
+            )
+        )
+    association_contract, birth_risk_contract = _D13_MECHANISM_CONTRACTS[variant]
+    return variant, association_contract, birth_risk_contract
 
 
 def temporal_viterbi_assignment(
@@ -91,9 +123,13 @@ class CausalAssociationResult:
     predicted_query_count: int
     target_count: int
     pair_count: int
+    # Observational count.  Under the soft contract it overlaps admissible
+    # pairs and is not itself a rejection barrier.
     class_mismatch_pair_count: int
+    class_argmax_reject_pair_count: int
     start_distance_reject_pair_count: int
     admissible_pair_count: int
+    admissible_class_argmax_mismatch_pair_count: int
 
 
 def causal_single_assignment(
@@ -104,16 +140,18 @@ def causal_single_assignment(
     query_features: torch.Tensor,
     target_specs: Sequence[Mapping],
     max_start_distance: float,
+    association_contract: str = "hard_class_argmax_gate_v1",
     ambiguity_tolerance: float = 1e-8,
 ) -> CausalAssociationResult:
     """Associate learned births to visible events without future information.
 
     Each target spec must contain ``target_event_id``, ``class_id``,
-    ``start_frame`` and the current causal-path ``anchor_feature``.  A pair is
-    admissible only when its foreground top class agrees and its start estimate
-    is within the declared feature-prefix window.  Assignment is stop-gradient,
-    deterministic and one-to-one.  Exact score ties are reported as ambiguous
-    rather than being turned into arbitrary identity labels.
+    ``start_frame`` and the current causal-path ``anchor_feature``.  The frozen
+    D1.2 contract rejects a foreground-argmax mismatch.  The prospective D1.3
+    soft contract instead uses the target-class log probability as continuous
+    evidence while retaining the causal start window, feature continuity,
+    deterministic one-to-one matching, and exact-tie refusal.  Ground truth is
+    used here only by the training association path.
     """
 
     if candidate_start_frames.ndim != 1:
@@ -129,6 +167,15 @@ def causal_single_assignment(
         raise ValueError("max_start_distance must be non-negative")
     if not math.isfinite(float(ambiguity_tolerance)) or ambiguity_tolerance < 0:
         raise ValueError("ambiguity_tolerance must be non-negative")
+    if association_contract not in {
+        "hard_class_argmax_gate_v1",
+        "soft_target_class_log_probability_v1",
+    }:
+        raise ValueError(
+            "invalid causal association contract: {!r}".format(
+                association_contract
+            )
+        )
     if not torch.isfinite(candidate_start_frames).all():
         raise ValueError("candidate_start_frames must be finite")
     if not torch.isfinite(class_logits).all() or not torch.isfinite(
@@ -187,13 +234,19 @@ def causal_single_assignment(
             target_count=len(targets),
             pair_count=len(queries) * len(targets),
             class_mismatch_pair_count=0,
+            class_argmax_reject_pair_count=0,
             start_distance_reject_pair_count=0,
             admissible_pair_count=0,
+            admissible_class_argmax_mismatch_pair_count=0,
         )
 
     with torch.no_grad():
         foreground_logits = class_logits[:, :foreground_classes]
-        class_log_probability = foreground_logits.log_softmax(dim=-1)
+        class_log_probability = (
+            foreground_logits.log_softmax(dim=-1)
+            if association_contract == "hard_class_argmax_gate_v1"
+            else class_logits.log_softmax(dim=-1)
+        )
         predicted_classes = foreground_logits.argmax(dim=-1)
         normalized_queries = F.normalize(query_features, dim=-1)
 
@@ -205,7 +258,9 @@ def causal_single_assignment(
             target_event_id: [] for target_event_id in targets
         }
         class_mismatch_pair_count = 0
+        class_argmax_reject_pair_count = 0
         start_distance_reject_pair_count = 0
+        admissible_class_argmax_mismatch_pair_count = 0
         scale = max(1.0, float(max_start_distance))
         for query_index in queries:
             predicted_class = int(predicted_classes[query_index].item())
@@ -213,12 +268,17 @@ def causal_single_assignment(
             for target in normalized_targets:
                 class_id = int(target["class_id"])
                 start_distance = abs(predicted_start - target["start_frame"])
-                if predicted_class != class_id:
+                class_argmax_mismatch = predicted_class != class_id
+                if class_argmax_mismatch:
                     class_mismatch_pair_count += 1
-                    continue
+                    if association_contract == "hard_class_argmax_gate_v1":
+                        class_argmax_reject_pair_count += 1
+                        continue
                 if start_distance > max_start_distance:
                     start_distance_reject_pair_count += 1
                     continue
+                if class_argmax_mismatch:
+                    admissible_class_argmax_mismatch_pair_count += 1
                 anchor = F.normalize(
                     target["anchor_feature"].to(query_features), dim=0
                 )
@@ -233,6 +293,13 @@ def causal_single_assignment(
                 pair_scores[(query_index, target_event_id)] = score
                 by_query[query_index].append((target_event_id, score))
                 by_target[target_event_id].append((query_index, score))
+        if (
+            class_argmax_reject_pair_count
+            + start_distance_reject_pair_count
+            + len(pair_scores)
+            != len(queries) * len(targets)
+        ):
+            raise RuntimeError("causal association pair accounting did not close")
 
     def tied_best(values):
         ordered = sorted((score for _, score in values), reverse=True)
@@ -289,8 +356,12 @@ def causal_single_assignment(
         target_count=len(targets),
         pair_count=len(queries) * len(targets),
         class_mismatch_pair_count=class_mismatch_pair_count,
+        class_argmax_reject_pair_count=class_argmax_reject_pair_count,
         start_distance_reject_pair_count=start_distance_reject_pair_count,
         admissible_pair_count=len(pair_scores),
+        admissible_class_argmax_mismatch_pair_count=(
+            admissible_class_argmax_mismatch_pair_count
+        ),
     )
 
 

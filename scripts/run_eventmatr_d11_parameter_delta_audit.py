@@ -118,6 +118,17 @@ def _parse_args() -> argparse.Namespace:
             "FAIL_UNCHANGED",
             "FAIL_EFFECTIVE_DOSE",
             "PASS_TRAIN_ONLY",
+            "PASS_TRAIN_MECHANISM_ONLY",
+        ),
+    )
+    parser.add_argument(
+        "--d13-variant",
+        default="d12_control",
+        choices=(
+            "d12_control",
+            "soft_assignment_only",
+            "event_matched_birth_only",
+            "combined",
         ),
     )
     parser.add_argument("--expected-optimizer-steps", required=True, type=int)
@@ -286,6 +297,16 @@ def _parameter_group(name: str) -> str:
     return "inherited_parent_parameters"
 
 
+def _transition_component_group(name: str):
+    if ".event_transition_head.birth." in name:
+        return "event_transition_birth_head"
+    if ".event_transition_head.state." in name:
+        return "event_transition_four_state_head"
+    if ".event_transition_head.fuse." in name:
+        return "event_transition_shared_fuse"
+    return None
+
+
 def _optimizer_step_summary(
     checkpoint: dict,
     expected_steps: int,
@@ -424,7 +445,7 @@ def main() -> None:
     cli = _parse_args()
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
         raise SystemExit(
-            "formal D1.2 parameter-delta audit requires one visible CUDA device"
+            "formal D1 parameter-delta audit requires one visible CUDA device"
         )
     status = _git("status", "--porcelain=v1", "--untracked-files=all")
     if status:
@@ -529,6 +550,7 @@ def main() -> None:
         expected_training_source_commit=cli.expected_training_source_commit,
         expected_training_source_tree=cli.expected_training_source_tree,
         one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
+        d13_variant=cli.d13_variant,
     )
     if int(checkpoint.get("epoch", -1)) != 1:
         raise RuntimeError("parameter-delta audit requires an epoch-one checkpoint")
@@ -553,6 +575,9 @@ def main() -> None:
     group_stats = {
         "all_parameters": _new_delta_stats(),
         "event_transition_head": _new_delta_stats(),
+        "event_transition_birth_head": _new_delta_stats(),
+        "event_transition_four_state_head": _new_delta_stats(),
+        "event_transition_shared_fuse": _new_delta_stats(),
         "event_owner_decoder": _new_delta_stats(),
         "other_event_parameters": _new_delta_stats(),
         "inherited_parent_parameters": _new_delta_stats(),
@@ -570,6 +595,9 @@ def main() -> None:
         _accumulate_delta(local, initial, terminal)
         _accumulate_delta(group_stats["all_parameters"], initial, terminal)
         _accumulate_delta(group_stats[_parameter_group(name)], initial, terminal)
+        component_group = _transition_component_group(name)
+        if component_group is not None:
+            _accumulate_delta(group_stats[component_group], initial, terminal)
         summary = _finalize_delta_stats(local)
         per_parameter.append({"name": name, **summary})
 
@@ -596,7 +624,14 @@ def main() -> None:
 
     result = {
         "status": "PASS",
-        "protocol": "eventmatr_d12_epoch1_parameter_delta_audit_v1",
+        "protocol": (
+            "eventmatr_d12_epoch1_parameter_delta_audit_v1"
+            if cli.d13_variant == "d12_control"
+            else "eventmatr_d13_epoch1_parameter_delta_audit_v1"
+        ),
+        "event_d13_variant": cli.d13_variant,
+        "association_contract": checkpoint.get("association_contract"),
+        "birth_risk_contract": checkpoint.get("birth_risk_contract"),
         "test_access": False,
         "checkpoint_updated": False,
         "model_forward_executed": False,

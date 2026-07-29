@@ -22,6 +22,11 @@ import run_eventmatr_real_smoke as common
 
 
 REGISTERED_LANES = ("N", "R", "T", "H", "TH")
+D13_MECHANISM_VARIANTS = (
+    "soft_assignment_only",
+    "event_matched_birth_only",
+    "combined",
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -136,6 +141,7 @@ def main() -> None:
     )
 
     receipts = []
+    d13_receipts = []
     with tempfile.TemporaryDirectory(
         prefix="eventmatr-d1-real-batch-", dir=str(cli.output.parent)
     ) as directory:
@@ -162,6 +168,20 @@ def main() -> None:
                 None if lane == "N" else args.event_d1_lane
             )
             receipts.append(receipt)
+        for variant in D13_MECHANISM_VARIANTS:
+            args = _lane_args(base_args, "TH")
+            args.event_d13_variant = variant
+            receipt = common._run_lane(
+                f"d13_{variant}",
+                base_args,
+                event_batch,
+                device,
+                checkpoint_dir,
+                lane_args=args,
+            )
+            receipt["registered_lane"] = "TH"
+            receipt["mechanism_variant"] = variant
+            d13_receipts.append(receipt)
 
     payload = {
         "status": "PASS",
@@ -179,6 +199,7 @@ def main() -> None:
         "source_index": index,
         "official_batch_size": int(base_args.batch),
         "lanes": receipts,
+        "d13_mechanisms": d13_receipts,
     }
     cli.output.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",

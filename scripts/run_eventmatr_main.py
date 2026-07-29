@@ -31,8 +31,19 @@ D1_LANES = {
 
 OFFICIAL_SETTING = {
     "feat_dim": 4096,
+    "hidden_dim": 1024,
+    "ffn_dim": 2048,
+    "e_nheads": 8,
+    "enc_layers": 3,
+    "d_nheads": 4,
+    "dec_layers": 5,
+    "dropout": 0.3,
+    "activation": "gelu",
     "num_frame": 64,
     "num_queries": 10,
+    "p_videos": 1,
+    "detect_len": 16,
+    "anti_len": 16,
     "max_memory_len": 7,
     "memory_sampler": "gap2",
     "batch": 64,
@@ -46,8 +57,16 @@ OFFICIAL_SETTING = {
     "test_freq": 1,
     "save_freq": 1,
     "random_seed": 52,
+    "flag_threshold": 0.5,
     "cls_threshold": 0.1,
     "nms_threshold": 0.3,
+    "reduce": 1,
+    "cls_coef": 1,
+    "flag_coef": 1,
+    "reg_l1_coef": 1,
+    "reg_diou_coef": 1,
+    "reg_stcls_coef": 1,
+    "test_eval_step": 1,
 }
 
 
@@ -55,7 +74,8 @@ def _validate(args) -> str:
     lane = os.environ.get("MATR_LANE", "")
     d1_preexperiment = args.study_protocol == "d1_preexperiment"
     d11_mechanism = args.study_protocol == "d11_mechanism"
-    d1_train_only = d1_preexperiment or d11_mechanism
+    d13_mechanism = args.study_protocol == "d13_mechanism"
+    d1_train_only = d1_preexperiment or d11_mechanism or d13_mechanism
     if d1_train_only:
         if args.mode != "train":
             raise RuntimeError(f"{args.study_protocol} is a train-only protocol")
@@ -63,15 +83,17 @@ def _validate(args) -> str:
             raise RuntimeError("D1 pilot epochs must be one of 5, 10, or 20")
         if d11_mechanism and args.epochs != 1:
             raise RuntimeError("D1.2 mechanism protocol requires exactly one epoch")
+        if d13_mechanism and args.epochs != 1:
+            raise RuntimeError("D1.3 mechanism protocol requires exactly one epoch")
         if args.train_eval_step != args.epochs:
             raise RuntimeError(
                 "D1 train-only protocols evaluate the train prefix only at terminal epoch"
             )
-        if d11_mechanism and lane != "TH":
-            raise RuntimeError("D1.2 mechanism protocol is restricted to lane TH")
-        if d11_mechanism and args.load_model:
+        if (d11_mechanism or d13_mechanism) and lane != "TH":
+            raise RuntimeError("D1 mechanism protocols are restricted to lane TH")
+        if (d11_mechanism or d13_mechanism) and args.load_model:
             raise RuntimeError(
-                "D1.2 mechanism protocol must start fresh and forbids checkpoint resume"
+                "D1 mechanism protocols must start fresh and forbid checkpoint resume"
             )
         if lane == "N":
             if args.model_variant != "native_matr":
@@ -105,6 +127,18 @@ def _validate(args) -> str:
                 raise RuntimeError("D1 pilots forbid a fixed birth threshold")
             if args.event_end_logit_threshold is not None:
                 raise RuntimeError("D1 pilots forbid a fixed end threshold")
+            if d11_mechanism and args.event_d13_variant != "d12_control":
+                raise RuntimeError(
+                    "D1.2 mechanism protocol must preserve the d12_control contracts"
+                )
+            if d13_mechanism and args.event_d13_variant not in {
+                "soft_assignment_only",
+                "event_matched_birth_only",
+                "combined",
+            }:
+                raise RuntimeError(
+                    "D1.3 mechanism protocol requires one prospective factorial variant"
+                )
         else:
             raise RuntimeError(
                 f"D1 MATR_LANE must be one of {['N', *D1_LANES]}, got {lane!r}"
@@ -137,6 +171,15 @@ def _validate(args) -> str:
         raise RuntimeError("matched_study is a train-only terminal-epoch protocol")
     if args.study_protocol == "locked_test" and args.mode != "eval":
         raise RuntimeError("locked_test is an eval-only protocol")
+    if (
+        args.study_protocol in {"matched_study", "locked_test"}
+        and args.model_variant == "eventmatr"
+        and args.event_lifecycle_version == "d1_censored"
+        and args.event_d13_variant != "combined"
+    ):
+        raise RuntimeError(
+            "official D1 EventMATR comparison is frozen to the combined D1.3 contract"
+        )
 
     official_setting = dict(OFFICIAL_SETTING)
     if d1_train_only:
@@ -146,14 +189,28 @@ def _validate(args) -> str:
         for name, expected in official_setting.items()
         if getattr(args, name) != expected
     }
-    if not args.rgb or not args.flow or not args.use_focal or not args.use_flag:
+    if (
+        not args.rgb
+        or not args.flow
+        or not args.use_focal
+        or not args.use_flag
+        or not args.make_output
+        or args.pre_norm
+        or args.use_empty_weight
+    ):
         mismatches["official_boolean_flags"] = {
-            "expected": "rgb, flow, use_focal, use_flag all true",
+            "expected": (
+                "rgb, flow, use_focal, use_flag, make_output true; "
+                "pre_norm and use_empty_weight false"
+            ),
             "actual": {
                 "rgb": args.rgb,
                 "flow": args.flow,
                 "use_focal": args.use_focal,
                 "use_flag": args.use_flag,
+                "make_output": args.make_output,
+                "pre_norm": args.pre_norm,
+                "use_empty_weight": args.use_empty_weight,
             },
         }
     if mismatches:
