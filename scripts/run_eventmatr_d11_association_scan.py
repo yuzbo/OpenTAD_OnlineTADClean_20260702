@@ -78,7 +78,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--one-epoch-mechanism-gate-status",
         required=True,
-        choices=("FAIL_UNCHANGED", "PASS_TRAIN_ONLY"),
+        choices=(
+            "FAIL_UNCHANGED",
+            "FAIL_EFFECTIVE_DOSE",
+            "PASS_TRAIN_ONLY",
+        ),
     )
     parser.add_argument("--expected-checkpoint-sha256", required=True)
     parser.add_argument("--expected-options-sha256", required=True)
@@ -173,11 +177,11 @@ def _validate_inputs(
     if identity.get("tree") != expected_training_source_tree:
         raise RuntimeError("unexpected D1.1 training tree")
     effective_dose = bool(options.get("d11_effective_dose", False))
-    if (
-        one_epoch_mechanism_gate_status == "PASS_TRAIN_ONLY"
-        and not effective_dose
-    ):
-        raise RuntimeError("passing D1.1 training receipt lacks effective dose")
+    if one_epoch_mechanism_gate_status in {
+        "FAIL_EFFECTIVE_DOSE",
+        "PASS_TRAIN_ONLY",
+    } and not effective_dose:
+        raise RuntimeError("effective-dose D1.1 gate status lacks effective dose")
     if one_epoch_mechanism_gate_status == "FAIL_UNCHANGED" and effective_dose:
         raise RuntimeError("failed legacy D1.1 scan unexpectedly used effective dose")
     smoke = identity.get("smoke")

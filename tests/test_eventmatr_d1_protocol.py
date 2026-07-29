@@ -451,7 +451,8 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "legacy_field_name_means_alive_opportunity_without_target_ownership_" in scan
     assert '"eos_semantics": "current_stream_termination_observation_only"' in scan
     assert '"status": "DIAGNOSTIC_COMPLETE"' in scan
-    assert '"FAIL_UNCHANGED", "PASS_TRAIN_ONLY"' in scan
+    assert '"FAIL_EFFECTIVE_DOSE"' in scan
+    assert '"PASS_TRAIN_ONLY"' in scan
     assert "cli.one_epoch_mechanism_gate_status" in scan
     assert "expected_model_info_keys" in scan
     assert "post_forward_opportunity_scan_without_target_ownership_exclusion" in scan

@@ -114,7 +114,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--one-epoch-mechanism-gate-status",
         required=True,
-        choices=("FAIL_UNCHANGED", "PASS_TRAIN_ONLY"),
+        choices=(
+            "FAIL_UNCHANGED",
+            "FAIL_EFFECTIVE_DOSE",
+            "PASS_TRAIN_ONLY",
+        ),
     )
     parser.add_argument("--expected-optimizer-steps", required=True, type=int)
     parser.add_argument("--output", required=True, type=Path)
