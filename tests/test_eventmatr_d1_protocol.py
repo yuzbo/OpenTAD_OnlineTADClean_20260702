@@ -145,6 +145,8 @@ def test_d1_real_smoke_covers_registered_lanes_without_test_access() -> None:
     assert "event_transition_head.fuse[0].weight" in common
     assert 'args.event_lifecycle_version == "d1_censored"' in common
     assert "event_transition_head.state.weight" in common
+    assert "required_event_gradients" in common
+    assert '"birth_gradient"' in common
 
 
 def test_d1_slurm_smoke_is_identity_gated_and_runs_real_batch_last() -> None:

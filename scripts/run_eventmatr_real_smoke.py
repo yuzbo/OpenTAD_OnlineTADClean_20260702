@@ -322,6 +322,11 @@ def _run_lane(
     valid_events = int(targets.get(
         "event_valid_mask", torch.zeros((), device=device)
     ).sum().item())
+    required_event_gradients = {
+        name: value
+        for name, value in gradient_norms.items()
+        if name.startswith("event_")
+    }
     receipt = {
         "lane": lane,
         "model_variant": args.model_variant,
@@ -342,9 +347,16 @@ def _run_lane(
         },
         "finite_gradient_tensors": finite_gradient_count,
         "required_gradient_norms": gradient_norms,
-        "event_gradient": lane == "native_matr" or gradient_norms[
-            "event_transition_state"
-        ] > 0.0,
+        "event_gradient": lane == "native_matr"
+        or (
+            bool(required_event_gradients)
+            and all(value > 0.0 for value in required_event_gradients.values())
+        ),
+        "birth_gradient": (
+            gradient_norms["event_birth"] > 0.0
+            if args.event_lifecycle_version == "d1_censored"
+            else None
+        ),
         "owner_gradient": lane == "native_matr" or gradient_norms[
             "owner_state"
         ] > 0.0,
