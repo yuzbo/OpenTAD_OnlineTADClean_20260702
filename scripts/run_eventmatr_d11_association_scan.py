@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,21 @@ AUDIT_FIELDS = (
     "class_mismatch_pair_count",
     "start_distance_reject_pair_count",
     "admissible_pair_count",
+)
+SCORE_QUANTILES = (
+    0.0,
+    0.001,
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    0.9,
+    0.95,
+    0.99,
+    0.999,
+    1.0,
 )
 
 
@@ -224,6 +240,51 @@ def _metadata_values(value, *, batch_size: int, label: str) -> list:
     return values
 
 
+def _score_summary(values, *, label: str) -> dict:
+    if isinstance(values, list) and values and isinstance(values[0], np.ndarray):
+        array = np.concatenate(values)
+    else:
+        array = np.asarray(values, dtype=np.float64).reshape(-1)
+    array = np.asarray(array, dtype=np.float64).reshape(-1)
+    if array.size == 0:
+        return {"count": 0}
+    if not np.isfinite(array).all():
+        raise RuntimeError(f"non-finite score diagnostic: {label}")
+    quantiles = np.quantile(array, SCORE_QUANTILES)
+    return {
+        "count": int(array.size),
+        "mean": float(array.mean()),
+        "std": float(array.std()),
+        "min": float(array.min()),
+        "max": float(array.max()),
+        "positive_count": int((array > 0.0).sum()),
+        "zero_count": int((array == 0.0).sum()),
+        "quantiles": {
+            format(float(level), ".3g"): float(value)
+            for level, value in zip(SCORE_QUANTILES, quantiles)
+        },
+    }
+
+
+def _rank_summary(ranks: list[int], *, query_count: int) -> dict:
+    if not ranks:
+        return {"count": 0}
+    values = np.asarray(ranks, dtype=np.int64)
+    if (values < 1).any() or (values > int(query_count)).any():
+        raise RuntimeError("oracle-path query rank is outside query bandwidth")
+    return {
+        "count": int(values.size),
+        "mean_rank": float(values.mean()),
+        "mean_reciprocal_rank": float((1.0 / values).mean()),
+        "top1_count": int((values <= 1).sum()),
+        "top1_rate": float((values <= 1).mean()),
+        "top3_count": int((values <= min(3, query_count)).sum()),
+        "top3_rate": float((values <= min(3, query_count)).mean()),
+        "top5_count": int((values <= min(5, query_count)).sum()),
+        "top5_rate": float((values <= min(5, query_count)).mean()),
+    }
+
+
 def main() -> None:
     cli = _parse_args()
     if cli.device != "cuda" or not torch.cuda.is_available():
@@ -323,6 +384,42 @@ def main() -> None:
     last_real_frame: dict[str, float] = {}
     last_physical_frame: dict[str, float] = {}
     closed_streams: set[str] = set()
+    score_chunks: dict[str, list[np.ndarray]] = {
+        "all_query_margin": [],
+        "prefix_max_margin": [],
+    }
+    score_values: dict[str, list[float]] = {
+        "hardest_background_margin": [],
+        "birth_oracle_path_margin": [],
+        "birth_competing_query_margin": [],
+        "birth_oracle_path_start_distance": [],
+        "birth_oracle_path_interval_probability": [],
+        "birth_oracle_path_pre_survival_nll": [],
+        "birth_oracle_path_interval_event_nll": [],
+        "birth_oracle_path_pre_interval_margin": [],
+        "birth_oracle_path_in_interval_margin": [],
+        "alive_opportunity_oracle_path_margin": [],
+        "alive_opportunity_competing_query_margin": [],
+        "alive_opportunity_oracle_path_start_distance": [],
+    }
+    birth_oracle_ranks: list[int] = []
+    alive_opportunity_oracle_ranks: list[int] = []
+    birth_pairwise_preference_rates: list[float] = []
+    alive_opportunity_pairwise_preference_rates: list[float] = []
+    birth_oracle_state_winners = {str(index): 0 for index in range(4)}
+    alive_opportunity_oracle_state_winners = {
+        str(index): 0 for index in range(4)
+    }
+    compatibility_counts = {
+        "birth_class_match_count": 0,
+        "birth_start_distance_pass_count": 0,
+        "birth_joint_class_and_distance_pass_count": 0,
+        "alive_opportunity_class_match_count": 0,
+        "alive_opportunity_start_distance_pass_count": 0,
+        "alive_opportunity_joint_class_and_distance_pass_count": 0,
+        "birth_interval_fallback_count": 0,
+        "birth_interval_probability_clamp_count": 0,
+    }
     started_at = time.perf_counter()
     torch.cuda.reset_peak_memory_stats(device)
 
@@ -471,6 +568,34 @@ def main() -> None:
                 "emit": outputs["event_emitted_mask"],
                 "cancel": outputs["event_cancelled_mask"],
             }
+            birth_margin_rows = (
+                birth_logits.detach().cpu().to(torch.float64).numpy()
+            )
+            state_winner_rows = (
+                state_logits.detach().argmax(dim=-1).cpu().numpy()
+            )
+            foreground_class_winner_rows = (
+                class_logits.detach()[..., :-1].argmax(dim=-1).cpu().numpy()
+            )
+            candidate_start_rows = (
+                start_frames.detach().cpu().to(torch.float64).numpy()
+            )
+            real_row_indices = np.asarray(
+                [
+                    row_index
+                    for row_index, is_real in enumerate(real_flags)
+                    if is_real
+                ],
+                dtype=np.int64,
+            )
+            if real_row_indices.size:
+                real_birth_margins = birth_margin_rows[real_row_indices]
+                score_chunks["all_query_margin"].append(
+                    real_birth_margins.reshape(-1)
+                )
+                score_chunks["prefix_max_margin"].append(
+                    real_birth_margins.max(axis=1)
+                )
 
             for row_index, video_name in enumerate(names):
                 if not real_flags[row_index]:
@@ -522,8 +647,9 @@ def main() -> None:
                 )
                 rows = event_targets[row_index][valid_mask[row_index]]
                 target_specs = []
+                birth_terminal_queries: set[int] = set()
                 visible_birth_target_count = 0
-                visible_recovery_target_count = 0
+                visible_alive_opportunity_count = 0
                 for row in rows:
                     is_birth = bool(row[5].item())
                     is_alive = bool(row[6].item())
@@ -553,17 +679,174 @@ def main() -> None:
                     )
                     if not path:
                         continue
+                    terminal_query = int(path[-1])
+                    row_margins = birth_margin_rows[row_index]
+                    oracle_margin = float(row_margins[terminal_query])
+                    competing_margins = np.delete(row_margins, terminal_query)
+                    rank = 1 + int((competing_margins > oracle_margin).sum())
+                    pairwise_rank = float(
+                        (
+                            (oracle_margin > competing_margins).astype(np.float64)
+                            + 0.5
+                            * (oracle_margin == competing_margins).astype(np.float64)
+                        ).mean()
+                    )
+                    target_class = int(row[1].item())
+                    class_match = int(
+                        foreground_class_winner_rows[row_index, terminal_query]
+                    ) == target_class
+                    start_distance = abs(
+                        float(candidate_start_rows[row_index, terminal_query])
+                        - start_frame
+                    )
+                    start_distance_pass = start_distance <= float(args.num_frame)
+                    state_winner = str(
+                        int(state_winner_rows[row_index, terminal_query])
+                    )
+                    if is_birth:
+                        birth_terminal_queries.add(terminal_query)
+                        score_values["birth_oracle_path_margin"].append(
+                            oracle_margin
+                        )
+                        score_values["birth_competing_query_margin"].extend(
+                            float(value) for value in competing_margins
+                        )
+                        score_values[
+                            "birth_oracle_path_start_distance"
+                        ].append(start_distance)
+                        birth_oracle_ranks.append(rank)
+                        birth_pairwise_preference_rates.append(pairwise_rank)
+                        birth_oracle_state_winners[state_winner] += 1
+                        compatibility_counts["birth_class_match_count"] += int(
+                            class_match
+                        )
+                        compatibility_counts[
+                            "birth_start_distance_pass_count"
+                        ] += int(start_distance_pass)
+                        compatibility_counts[
+                            "birth_joint_class_and_distance_pass_count"
+                        ] += int(class_match and start_distance_pass)
+
+                        selected = torch.stack(
+                            [
+                                entry["birth_logits"][int(query_index)]
+                                for entry, query_index in zip(window, path)
+                            ],
+                            dim=0,
+                        )
+                        selected_frames = torch.tensor(
+                            [float(entry["frame"]) for entry in window],
+                            device=selected.device,
+                            dtype=selected.dtype,
+                        )
+                        interval_left = float(np.floor(start_frame))
+                        interval_right = float(np.ceil(start_frame))
+                        pre_birth = selected_frames < interval_left
+                        in_interval = (selected_frames >= interval_left) & (
+                            selected_frames <= interval_right
+                        )
+                        if not bool(in_interval.any().item()):
+                            in_interval[-1] = True
+                            pre_birth[-1] = False
+                            compatibility_counts[
+                                "birth_interval_fallback_count"
+                            ] += 1
+                        pre_survival_nll = F.softplus(selected[pre_birth]).sum()
+                        log_interval_survival = F.logsigmoid(
+                            -selected[in_interval]
+                        ).sum()
+                        raw_interval_probability = -torch.expm1(
+                            log_interval_survival
+                        )
+                        if float(raw_interval_probability.item()) < 1e-8:
+                            compatibility_counts[
+                                "birth_interval_probability_clamp_count"
+                            ] += 1
+                        interval_probability = raw_interval_probability.clamp_min(
+                            1e-8
+                        )
+                        event_nll = (
+                            pre_survival_nll - interval_probability.log()
+                        )
+                        score_values[
+                            "birth_oracle_path_interval_probability"
+                        ].append(float(interval_probability.item()))
+                        score_values[
+                            "birth_oracle_path_pre_survival_nll"
+                        ].append(float(pre_survival_nll.item()))
+                        score_values[
+                            "birth_oracle_path_interval_event_nll"
+                        ].append(float(event_nll.item()))
+                        score_values[
+                            "birth_oracle_path_pre_interval_margin"
+                        ].extend(
+                            float(value)
+                            for value in selected[pre_birth]
+                            .detach()
+                            .cpu()
+                            .tolist()
+                        )
+                        score_values[
+                            "birth_oracle_path_in_interval_margin"
+                        ].extend(
+                            float(value)
+                            for value in selected[in_interval]
+                            .detach()
+                            .cpu()
+                            .tolist()
+                        )
+                    else:
+                        score_values[
+                            "alive_opportunity_oracle_path_margin"
+                        ].append(oracle_margin)
+                        score_values[
+                            "alive_opportunity_competing_query_margin"
+                        ].extend(
+                            float(value) for value in competing_margins
+                        )
+                        score_values[
+                            "alive_opportunity_oracle_path_start_distance"
+                        ].append(start_distance)
+                        alive_opportunity_oracle_ranks.append(rank)
+                        alive_opportunity_pairwise_preference_rates.append(
+                            pairwise_rank
+                        )
+                        alive_opportunity_oracle_state_winners[state_winner] += 1
+                        compatibility_counts[
+                            "alive_opportunity_class_match_count"
+                        ] += int(class_match)
+                        compatibility_counts[
+                            "alive_opportunity_start_distance_pass_count"
+                        ] += int(start_distance_pass)
+                        compatibility_counts[
+                            "alive_opportunity_joint_class_and_distance_pass_count"
+                        ] += int(class_match and start_distance_pass)
+
                     visible_birth_target_count += int(is_birth)
-                    visible_recovery_target_count += int(is_alive)
+                    visible_alive_opportunity_count += int(is_alive)
                     target_specs.append(
                         {
                             "target_event_id": int(row[0].item()),
-                            "class_id": int(row[1].item()),
+                            "class_id": target_class,
                             "start_frame": start_frame,
                             "anchor_feature": window[-1]["query_features"][
-                                int(path[-1])
+                                terminal_query
                             ],
                         }
+                    )
+
+                available_background_queries = [
+                    query_index
+                    for query_index in range(birth_margin_rows.shape[1])
+                    if query_index not in birth_terminal_queries
+                ]
+                if available_background_queries:
+                    score_values["hardest_background_margin"].append(
+                        float(
+                            birth_margin_rows[
+                                row_index, available_background_queries
+                            ].max()
+                        )
                     )
 
                 predicted_queries = tuple(
@@ -593,7 +876,7 @@ def main() -> None:
                     visible_birth_target_count > 0
                 )
                 row_counts["visible_recovery_target_prefix_count"] = int(
-                    visible_recovery_target_count > 0
+                    visible_alive_opportunity_count > 0
                 )
                 row_counts["predicted_birth_prefix_count"] = int(
                     bool(predicted_queries)
@@ -617,7 +900,7 @@ def main() -> None:
                     visible_birth_target_count
                 )
                 row_counts["visible_recovery_target_count"] = (
-                    visible_recovery_target_count
+                    visible_alive_opportunity_count
                 )
                 row_counts["predicted_start_active_query_count"] = (
                     predicted_start_active_count
@@ -690,11 +973,117 @@ def main() -> None:
             f"{len(dataset.video_list)} videos"
         )
 
+    score_summaries = {
+        label: _score_summary(values, label=label)
+        for label, values in {**score_chunks, **score_values}.items()
+    }
+    if (
+        score_summaries["all_query_margin"].get("positive_count", 0)
+        != totals["predicted_start_active_query_count"]
+    ):
+        raise RuntimeError(
+            "score audit and predicted START-active query count disagree"
+        )
+    if (
+        score_summaries["prefix_max_margin"].get("positive_count", 0)
+        != totals["predicted_start_active_prefix_count"]
+    ):
+        raise RuntimeError(
+            "score audit and predicted START-active prefix count disagree"
+        )
+    if (
+        score_summaries["birth_oracle_path_margin"]["count"]
+        != totals["visible_birth_target_count"]
+    ):
+        raise RuntimeError("birth oracle-path score count does not close")
+    if (
+        score_summaries["alive_opportunity_oracle_path_margin"]["count"]
+        != totals["visible_recovery_target_count"]
+    ):
+        raise RuntimeError("alive-opportunity oracle-path score count does not close")
+
+    def compatibility_summary(prefix: str, denominator: int) -> dict:
+        fields = {
+            "class_match": compatibility_counts[
+                f"{prefix}_class_match_count"
+            ],
+            "start_distance_pass": compatibility_counts[
+                f"{prefix}_start_distance_pass_count"
+            ],
+            "joint_class_and_distance_pass": compatibility_counts[
+                f"{prefix}_joint_class_and_distance_pass_count"
+            ],
+        }
+        counts = {
+            f"{name}_count": int(value)
+            for name, value in fields.items()
+        }
+        rates = {
+            f"{name}_rate": (
+                float(value) / int(denominator) if denominator else None
+            )
+            for name, value in fields.items()
+        }
+        return {**counts, **rates}
+
+    birth_score_diagnostics = {
+        "scope": "terminal_checkpoint_eval_mode_train_only_post_forward_gt",
+        "decision_boundary_semantics": (
+            "zero_is_start_equal_to_strongest_competitor_not_a_tuned_threshold"
+        ),
+        "oracle_path_diagnostic_semantics": (
+            "post_forward_ground_truth_class_conditioned_temporal_viterbi"
+        ),
+        "oracle_path_is_runtime_association": False,
+        "counterfactual_intervention_performed": False,
+        "risk_calibration_valid": False,
+        "fixed_start_distance_gate_frames": int(args.num_frame),
+        "fixed_start_distance_gate_semantics": (
+            "registered_geometry_not_a_learned_or_searched_threshold"
+        ),
+        "query_count": int(args.num_queries),
+        "score_summaries": score_summaries,
+        "birth_oracle_query_rank": _rank_summary(
+            birth_oracle_ranks, query_count=int(args.num_queries)
+        ),
+        "alive_opportunity_oracle_query_rank": _rank_summary(
+            alive_opportunity_oracle_ranks, query_count=int(args.num_queries)
+        ),
+        "birth_oracle_pairwise_preference_rate": (
+            float(np.mean(birth_pairwise_preference_rates))
+            if birth_pairwise_preference_rates
+            else None
+        ),
+        "alive_opportunity_oracle_pairwise_preference_rate": (
+            float(np.mean(alive_opportunity_pairwise_preference_rates))
+            if alive_opportunity_pairwise_preference_rates
+            else None
+        ),
+        "birth_oracle_state_winner_counts": birth_oracle_state_winners,
+        "alive_opportunity_oracle_state_winner_counts": (
+            alive_opportunity_oracle_state_winners
+        ),
+        "birth_oracle_path_observational_compatibility": compatibility_summary(
+            "birth", totals["visible_birth_target_count"]
+        ),
+        "alive_opportunity_oracle_path_observational_compatibility": (
+            compatibility_summary(
+                "alive_opportunity", totals["visible_recovery_target_count"]
+            )
+        ),
+        "birth_interval_fallback_count": int(
+            compatibility_counts["birth_interval_fallback_count"]
+        ),
+        "birth_interval_probability_clamp_count": int(
+            compatibility_counts["birth_interval_probability_clamp_count"]
+        ),
+    }
+
     result = {
         "status": "DIAGNOSTIC_COMPLETE",
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
-        "protocol": "eventmatr_d11_failed_one_epoch_association_scan_v2",
+        "protocol": "eventmatr_d11_failed_one_epoch_association_scan_v3",
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,
@@ -712,6 +1101,14 @@ def main() -> None:
         "eos_semantics": "current_stream_termination_observation_only",
         "association_semantics": (
             "post_forward_opportunity_scan_without_target_ownership_exclusion"
+        ),
+        "association_target_semantics": (
+            "birth_targets_plus_alive_opportunity_upper_bound_without_teacher_"
+            "ownership_reconstruction"
+        ),
+        "visible_recovery_field_semantics": (
+            "legacy_field_name_means_alive_opportunity_without_target_ownership_"
+            "exclusion_not_reconstructed_recovery"
         ),
         "root_cause_scope": (
             "necessary_condition_opportunity_scan_not_teacher_ownership_reconstruction"
@@ -734,6 +1131,7 @@ def main() -> None:
         },
         "dataset_caches": dataset_cache_stats_before,
         "barrier_counts": totals,
+        "birth_score_diagnostics": birth_score_diagnostics,
         "videos_scanned": len(per_video),
         "per_video_barrier_counts": {
             video_name: dict(counts)

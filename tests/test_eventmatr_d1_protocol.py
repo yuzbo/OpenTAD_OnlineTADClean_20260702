@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from scripts.run_eventmatr_d11_association_scan import (
+    _rank_summary,
+    _score_summary,
+)
 from scripts.finalize_eventmatr_d1_pilot import validate_metric_lines
 from scripts.finalize_eventmatr_d11_mechanism import validate_mechanism_metrics
 
@@ -216,6 +221,16 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "event_padding_prefixes_ignored" in scan
     assert "frozen MATR requires physical batch" in scan
     assert "association scan changed the frozen physical batch schedule" in scan
+    assert "birth_score_diagnostics" in scan
+    assert "birth_oracle_pairwise_preference_rate" in scan
+    assert "alive_opportunity_oracle_pairwise_preference_rate" in scan
+    assert "birth_interval_probability_clamp_count" in scan
+    assert "zero_is_start_equal_to_strongest_competitor_not_a_tuned_threshold" in scan
+    assert "post_forward_ground_truth_class_conditioned_temporal_viterbi" in scan
+    assert '"counterfactual_intervention_performed": False' in scan
+    assert '"risk_calibration_valid": False' in scan
+    assert "registered_geometry_not_a_learned_or_searched_threshold" in scan
+    assert "legacy_field_name_means_alive_opportunity_without_target_ownership_" in scan
     assert '"eos_semantics": "current_stream_termination_observation_only"' in scan
     assert '"status": "DIAGNOSTIC_COMPLETE"' in scan
     assert '"one_epoch_mechanism_gate_status": "FAIL_UNCHANGED"' in scan
@@ -236,6 +251,25 @@ def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None
     assert "MATR_OPTIONS_SHA256" in slurm
     assert "--expected-checkpoint-sha256" in slurm
     assert "--expected-options-sha256" in slurm
+
+
+def test_d11_score_diagnostics_are_exact_and_fail_closed() -> None:
+    summary = _score_summary(
+        [np.asarray([-2.0, -1.0]), np.asarray([0.0, 1.0])],
+        label="unit",
+    )
+    assert summary["count"] == 4
+    assert summary["positive_count"] == 1
+    assert summary["zero_count"] == 1
+    assert summary["min"] == -2.0
+    assert summary["max"] == 1.0
+    ranks = _rank_summary([1, 2, 4], query_count=4)
+    assert ranks["top1_count"] == 1
+    assert ranks["top3_count"] == 2
+    with pytest.raises(RuntimeError, match="non-finite"):
+        _score_summary([float("nan")], label="bad")
+    with pytest.raises(RuntimeError, match="outside query bandwidth"):
+        _rank_summary([0], query_count=4)
 
 
 def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:

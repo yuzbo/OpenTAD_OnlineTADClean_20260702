@@ -101,6 +101,7 @@
         "frozen fixed-width MATR physical batches",
         "post-observed-EOS padding is a verified lifecycle no-op",
         "visible-target and predicted-birth opportunity counts",
+        "START-margin and ground-truth-class-conditioned oracle-path risk, rank and observational compatibility distributions",
         "class-mismatch, start-distance, ambiguity and assignment closure",
         "unchanged checkpoint hash",
         "zero capacity exhaustion",
