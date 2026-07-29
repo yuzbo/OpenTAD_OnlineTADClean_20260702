@@ -772,7 +772,11 @@ class DynamicEventMemory:
         ):
             raise ValueError("birth_logits must be [Q] for learned START preview")
         if self.birth_logit_threshold is None:
-            current_start = birth_logits > 0.0
+            current_start = (
+                birth_logits > 0.0
+                if self.strict_causal_boundary
+                else candidate_state_logits.argmax(dim=-1) == 1
+            )
         else:
             current_start = birth_logits >= self.birth_logit_threshold
         previous_start = self._previous_start_active.get(str(video_name))
@@ -1398,8 +1402,16 @@ class DynamicEventMemory:
 
             current_birth = birth_logits[batch_index].detach()
             if self.birth_logit_threshold is None:
-                current_start = current_birth > 0.0
-                birth_confidences = torch.sigmoid(current_birth)
+                if self.strict_causal_boundary:
+                    current_start = current_birth > 0.0
+                    birth_confidences = torch.sigmoid(current_birth)
+                else:
+                    current_start = (
+                        candidate_state_logits[batch_index].argmax(dim=-1) == 1
+                    )
+                    birth_confidences = candidate_state_logits[
+                        batch_index
+                    ].softmax(dim=-1)[:, 1]
             else:
                 current_start = current_birth >= self.birth_logit_threshold
                 birth_confidences = torch.sigmoid(current_birth)

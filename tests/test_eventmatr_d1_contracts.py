@@ -731,7 +731,9 @@ def test_event_normalized_birth_hazard_is_not_diluted_by_background_queries() ->
     twenty["loss_event_birth"].backward()
     assert birth_two.grad[0, 0] == pytest.approx(birth_twenty.grad[0, 0].item())
     assert birth_twenty.grad[0, 1:].abs().sum() > 0
-    assert int((birth_twenty.grad[0, 1:] != 0).sum().item()) == 1
+    assert birth_two.grad[0, 1:].sum().item() == pytest.approx(
+        birth_twenty.grad[0, 1:].sum().item()
+    )
 
 
 def test_right_censored_end_hazard_has_survival_gradient() -> None:
