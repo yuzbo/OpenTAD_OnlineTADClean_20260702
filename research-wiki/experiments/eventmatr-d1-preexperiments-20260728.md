@@ -308,3 +308,129 @@ chronological checkpoint replay and instrument the full path from candidate
 logits through birth, assignment, cancellation, end, gating and final emission.
 Threshold lowering/search remains forbidden; the purpose is to locate the
 collapse before changing the model.
+
+## Strict-causal checkpoint replay completed — 2026-07-29
+
+The registered read-only replay source is commit
+`6a23ab3a3711bc1ecb5a2fe442e302964ee3afb8`, tree
+`8564dca45850675ce9ac366ee051aacbc4d97dc1`, manifest SHA-256
+`b8980f21b34f3a862d8306c3a48249085351e4bd166f08d561016d29d3be58ed`.
+Related Slurm tests `1203223` passed `54/54` in `37.75s`. Replay array
+`1203224` completed all four tasks `0:0`; its combined finalizer receipt is
+`PASS`. Every lane replayed `203,363` real chronological train prefixes and
+observed exactly `200` current-time EOS markers. Source identity was unchanged
+before/after, all checkpoint SHA-256 values were unchanged, locked-test access
+was false, threshold search was false, runtime capacity exhaustion was zero,
+and every emitted row had a unique immutable ID and positive length.
+
+The replay ran in evaluation mode without targets at the model boundary.
+`segment_flag`, which is derived from ground truth, was additionally removed
+from the evaluation payload even though the inherited learned-flag branch did
+not consume it. Ground truth was used only after each forward pass.
+
+| Lane | Birth transitions | Cancels | Ends / emits | Reacquisitions | Active at observed EOS | Closure per birth | Videos with proposals |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| R | 46,935 | 46,892 | 0 / 0 | 0 | 43 | 0.000% | 0 / 200 |
+| T | 5,670 | 5,667 | 0 / 0 | 4,017 | 3 | 0.000% | 0 / 200 |
+| H | 2,648 | 2,599 | 46 / 46 | 0 | 3 | 1.737% | 6 / 200 |
+| TH | 5,621 | 5,072 | 519 / 519 | 3,611 | 30 | 9.233% | 26 / 200 |
+
+The stage accounting is exact: each lane satisfies births = cancellations +
+emissions + active records at observed EOS, with reacquisition counted as a
+birth transition but not a new immutable record. R/T have many learned START
+transitions, so candidate-birth starvation is not the explanation for zero
+output. Instead:
+
+- R owner argmax counts are `[46,892 BG, 0 START, 17,606 ALIVE, 0 END]`;
+- T owner argmax counts are `[5,667 BG, 0 START, 2,378 ALIVE, 0 END]`;
+- their maximum owner-END winning margins are still strictly negative
+  (`-1.263/-1.486`), so no owner can enter END;
+- `99.908%/99.947%` of birth transitions are cancelled;
+- H/TH produce `46/519` END decisions and exactly `46/519` ledger emissions,
+  proving that END-to-writer is live when END occurs;
+- the inherited native memory gate retains similar ground-truth-positive recall
+  in all lanes (about `86.6–88.6%`), so it is not the first-stage explanation
+  for the factor-specific collapse.
+
+The censored-hazard factor therefore changes the failed state transition, but
+does not yet solve detection:
+
+| Lane | Proposals | tIoU 0.3 matches | Precision | Recall | Birth match precision / recall within causal delay `[0,64]` |
+|---|---:|---:|---:|---:|---:|
+| R | 0 | 0 | n/a | 0.000% | 2.633% / 41.104% |
+| T | 0 | 0 | n/a | 0.000% | 8.272% / 15.597% |
+| H | 46 | 5 | 10.870% | 0.166% | 0.906% / 0.798% |
+| TH | 519 | 30 | 5.780% | 0.998% | 1.583% / 2.960% |
+
+Only `2/6` H/TH ground-truth end prefixes had any owner END argmax,
+respectively; this is an upper bound because it does not establish that the
+ending owner is the correct event. H/TH candidate Brier/ECE values look much
+better than R/T, but their event recall collapses, showing that
+background-dominated proper scores cannot substitute for conditional event
+recall and timing. TH also has `198` excess overlapping predictions across
+`23` fragmented ground-truth events. These values are diagnostic, not a paper
+result or a pass threshold.
+
+### Structural cause beyond the stage counts
+
+The replay localizes the immediate runtime failure. Code audit identifies two
+upstream mechanisms that make unchanged longer training scientifically
+unjustified:
+
+1. During training, a predicted START inherits a semantic `target_event_id`
+   only when its query index exactly equals the oracle path's current query.
+   Other predicted records retain `target_event_id=None`; their ragged owner
+   target is BACKGROUND with no class target, and they are excluded from the
+   true-event end hazard. At inference every record is predicted-only. Thus the
+   intended oracle/predicted mixture does not causally associate all correct
+   predicted tracks to prefix-visible events; it supplies a strong
+   predicted-track/background bias. The epoch-five false-track/cancel group
+   means (`10.712/1.627/0.889/0.242`) and replay cancellation rates are
+   consistent with this mechanism.
+2. `temporal_history` and the censored-birth risk indices are rebuilt inside
+   each 64-prefix forward batch. Videos span many such batches, so the
+   nominal 64-prefix pre-birth assignment/risk window is truncated at every
+   batch boundary. This is especially relevant to the poor H/TH birth timing
+   and must be repaired or isolated by a counterfactual before attributing the
+   result to the hazard formulation itself.
+
+An independent zero-history code/science reviewer agreed that cancellation and
+END starvation, not candidate absence or the writer, are the immediate causes;
+it independently identified the predicted/oracle target mismatch and
+batch-local history. Its suggestion that replay proposals themselves were
+oracle proposals was rejected: the replay passes no targets and all replay
+births are predicted-only. The correct limitation is that the checkpoint was
+trained under mixed oracle/predicted exposure.
+
+### Scope and next decision
+
+This is now sufficiently deep evidence for an external Pro discussion, but it
+does not complete the research program. The problem is real and partly
+intervenable: adding censored owner risk changes END from `0` to `46/519`, and
+the full composition raises closure over H. It is not solved: cancellation
+remains `90.2–98.1%`, detection recall remains at most `0.998%`, and
+cancel/reacquisition is mostly churn rather than stable identity.
+
+Do not release the existing 10/20-epoch jobs. First implement and test a minimal
+D1.1 repair:
+
+1. causally and one-to-one associate predicted training births to
+   prefix-visible events rather than requiring exact oracle-query equality;
+2. report oracle, predicted, merged, false and reacquired track supervision
+   separately, and event-normalize owner/cancel/end risk so false groups cannot
+   silently dominate;
+3. give cancellation an explicit supervised meaning distinct from generic
+   owner background, while retaining identity lock and explicit
+   reacquisition;
+4. carry a detached causal pre-birth history/risk window across batch
+   boundaries;
+5. isolate the inherited ground-truth-vs-learned native memory gate with a
+   fixed counterfactual, without changing its registered `0.5` operating point;
+6. define nearby-repeat strata in one declared coordinate system; the replay's
+   `64` feature-prefix units must not be conflated with the earlier annotation
+   audit's `64` source-frame units;
+7. rerun synthetic contracts, one-batch and one-epoch mechanism checks before
+   registering a new five-epoch seed-52 train-only pilot.
+
+Locked test, multiple seeds, raw RGB, threshold lowering/search, and promotion
+of train-only diagnostics remain blocked.

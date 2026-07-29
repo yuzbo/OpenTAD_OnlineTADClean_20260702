@@ -1,0 +1,93 @@
+{
+  "date": "2026-07-29",
+  "overall_verdict": "warn",
+  "integrity_status": "pass",
+  "scientific_status": "root_cause_localized_current_model_insufficient",
+  "evaluation_type": "real_gt_train_only_predicted_track_strict_causal_replay",
+  "source": {
+    "training_commit": "1f4bb29ad58dddcc33f6ff2bdc57a5934ee5c53d",
+    "training_tree": "aad757531cfcbfb79b616756466251f946574035",
+    "replay_commit": "6a23ab3a3711bc1ecb5a2fe442e302964ee3afb8",
+    "replay_tree": "8564dca45850675ce9ac366ee051aacbc4d97dc1",
+    "manifest_sha256": "b8980f21b34f3a862d8306c3a48249085351e4bd166f08d561016d29d3be58ed"
+  },
+  "jobs": {
+    "tests": "1203223",
+    "replay_array": "1203224",
+    "tests_passed": 54,
+    "replay_tasks_completed": 4
+  },
+  "integrity": {
+    "test_access": false,
+    "checkpoint_updated": false,
+    "threshold_search": false,
+    "ground_truth_visible_to_model": false,
+    "observed_eos_per_lane": 200,
+    "runtime_capacity_exhaustions": 0,
+    "source_identity_start_final_equal": true,
+    "ledger_invariants_pass": true
+  },
+  "lanes": {
+    "R": {
+      "births": 46935,
+      "cancellations": 46892,
+      "ends": 0,
+      "emissions": 0,
+      "reacquisitions": 0,
+      "active_at_eos": 43,
+      "videos_with_proposals": 0
+    },
+    "T": {
+      "births": 5670,
+      "cancellations": 5667,
+      "ends": 0,
+      "emissions": 0,
+      "reacquisitions": 4017,
+      "active_at_eos": 3,
+      "videos_with_proposals": 0
+    },
+    "H": {
+      "births": 2648,
+      "cancellations": 2599,
+      "ends": 46,
+      "emissions": 46,
+      "reacquisitions": 0,
+      "active_at_eos": 3,
+      "videos_with_proposals": 6,
+      "recall_at_tiou_0_3": 0.0016627868307283007
+    },
+    "TH": {
+      "births": 5621,
+      "cancellations": 5072,
+      "ends": 519,
+      "emissions": 519,
+      "reacquisitions": 3611,
+      "active_at_eos": 30,
+      "videos_with_proposals": 26,
+      "recall_at_tiou_0_3": 0.009976720984369804
+    }
+  },
+  "immediate_root_cause": [
+    "owner_background_cancellation",
+    "owner_end_argmax_starvation"
+  ],
+  "excluded_as_first_cause": [
+    "candidate_start_absence",
+    "end_to_writer_failure",
+    "native_class_score_threshold",
+    "factor_specific_native_memory_gate_collapse"
+  ],
+  "structural_risks": [
+    "predicted_track_target_requires_exact_oracle_query_equality",
+    "targetless_predicted_tracks_supervised_as_owner_background",
+    "true_event_end_hazard_excludes_targetless_predicted_tracks",
+    "prebirth_history_and_risk_window_reset_at_batch_boundaries",
+    "training_native_memory_gate_uses_ground_truth_while_replay_uses_learned_gate"
+  ],
+  "independent_review": {
+    "zero_history_reviewer_completed": true,
+    "cross_model_status": "unavailable_claude_revoked_oauth_gemini_invalid_key",
+    "reviewer_oracle_replay_claim_corrected": true
+  },
+  "decision": "hold_unchanged_10_20_epochs_and_open_minimal_d1_1_repair"
+}

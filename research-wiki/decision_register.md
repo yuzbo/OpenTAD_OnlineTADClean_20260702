@@ -1532,3 +1532,77 @@ Reversibility:
   emission collapse and satisfies a prospectively frozen lifecycle gate. The
   current five-epoch values remain diagnostic and cannot be promoted to paper
   evidence.
+
+## DR-039: Accept the Replay Root Cause, Reject Unchanged Longer Training, and Open D1.1 Repair
+
+Status: active redesign hold.
+
+Decision:
+
+> Accept strict-causal checkpoint replay array `1203224` as an integrity PASS
+> and as sufficient evidence for root-cause discussion. R/T do not fail because
+> START is absent or because the writer applies a score threshold; they fail
+> because nearly every predicted record is classified as owner BACKGROUND and
+> cancelled, while owner END never wins. H/TH show that censored owner risk can
+> restore END-to-emission liveness, but their timing, coverage, recall and
+> cancel/reacquisition churn are not a solved detector. Do not spend the
+> registered 10/20-epoch budget on the unchanged implementation. Authorize only
+> a minimal D1.1 repair and its train-only mechanism tests before a new pilot.
+
+Reason:
+
+- replay source `6a23ab3a3711bc1ecb5a2fe442e302964ee3afb8` passes
+  `54/54` remote tests; all four array tasks complete `0:0`;
+- every replay uses evaluation mode, predicted-only tracks, `200` observed EOS
+  markers, no locked test, no threshold search and an unchanged checkpoint;
+- R/T produce `46,935/5,670` births but cancel `46,892/5,667`, have zero owner
+  END and therefore zero emissions;
+- H/TH produce exactly `46/519` END and `46/519` emissions, excluding a writer
+  failure and showing a real objective-dependent liveness intervention;
+- H/TH still cover only `6/26` train videos and recall only
+  `0.166%/0.998%` at temporal overlap `0.3`;
+- T/TH record `4,017/3,611` reacquisitions but still cancel
+  `99.947%/90.233%` of births, so identity handling is currently churn rather
+  than a closed trajectory;
+- training associates a predicted record to a ground-truth event only through
+  exact oracle-query equality; unmatched predicted records are supervised as
+  owner background and excluded from true-event end hazard;
+- pre-birth temporal history and hazard risk windows reset at each batch
+  boundary, truncating the nominal causal window;
+- native memory-gate behavior is similar across lanes and is not the immediate
+  factor-specific bottleneck, but its train/inference teacher mismatch still
+  requires a fixed counterfactual.
+
+Resolution:
+
+1. preserve the five-epoch checkpoints, replay summaries and compressed traces
+   as read-only evidence;
+2. implement causal predicted-track/visible-event assignment, source-stratified
+   supervision accounting, explicit cancellation semantics and cross-batch
+   causal history;
+3. retain event-normalized interval-censored birth and right-censored end as
+   active components, but require conditional recall/timing evidence rather
+   than background-dominated calibration alone;
+4. test the repair with synthetic, batch-boundary, predicted-track and
+   cancel/reacquisition counterfactuals, then one batch and one epoch of real
+   train data;
+5. prospectively register a new five-epoch seed-52 train-only pilot only after
+   those contracts pass;
+6. use the GitHub evidence address for one external Pro scientific discussion
+   before freezing the D1.1 pilot matrix;
+7. keep the locked test, multiple seeds, raw RGB, distillation and threshold
+   changes blocked.
+
+Sources:
+
+- [experiments/eventmatr-d1-preexperiments-20260728.md](experiments/eventmatr-d1-preexperiments-20260728.md);
+- replay code commit
+  `6a23ab3a3711bc1ecb5a2fe442e302964ee3afb8`;
+- Slurm tests `1203223` and replay array `1203224`;
+- `.aris/traces/experiment-audit/2026-07-29_run02/`.
+
+Reversibility:
+
+- The redesign hold may be replaced only by source-exact counterfactual evidence
+  that separates predicted-track association, cancellation supervision,
+  cross-batch history and censored risk. It is not lifted by more epochs alone.
