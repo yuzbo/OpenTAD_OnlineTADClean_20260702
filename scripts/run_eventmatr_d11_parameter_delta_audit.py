@@ -131,6 +131,11 @@ def _parse_args() -> argparse.Namespace:
             "combined",
         ),
     )
+    parser.add_argument(
+        "--d14-variant",
+        default="none",
+        choices=("none", "normalized_survival", "decision_aligned_bag"),
+    )
     parser.add_argument("--expected-optimizer-steps", required=True, type=int)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
@@ -551,6 +556,7 @@ def main() -> None:
         expected_training_source_tree=cli.expected_training_source_tree,
         one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
         d13_variant=cli.d13_variant,
+        d14_variant=cli.d14_variant,
     )
     if int(checkpoint.get("epoch", -1)) != 1:
         raise RuntimeError("parameter-delta audit requires an epoch-one checkpoint")
@@ -621,17 +627,26 @@ def main() -> None:
         raise RuntimeError("checkpoint changed during parameter-delta audit")
     if _sha256(cli.options) != options_sha256:
         raise RuntimeError("options changed during parameter-delta audit")
+    final_status = _git("status", "--porcelain=v1", "--untracked-files=all")
+    if final_status:
+        raise RuntimeError(
+            f"parameter-delta audit source changed during execution:\n{final_status}"
+        )
 
     result = {
         "status": "PASS",
         "protocol": (
-            "eventmatr_d12_epoch1_parameter_delta_audit_v1"
+            "eventmatr_d14_epoch1_parameter_delta_audit_v1"
+            if cli.d14_variant != "none"
+            else "eventmatr_d12_epoch1_parameter_delta_audit_v1"
             if cli.d13_variant == "d12_control"
             else "eventmatr_d13_epoch1_parameter_delta_audit_v1"
         ),
         "event_d13_variant": cli.d13_variant,
+        "event_d14_variant": cli.d14_variant,
         "association_contract": checkpoint.get("association_contract"),
         "birth_risk_contract": checkpoint.get("birth_risk_contract"),
+        "birth_objective_contract": checkpoint.get("birth_objective_contract"),
         "test_access": False,
         "checkpoint_updated": False,
         "model_forward_executed": False,

@@ -13,6 +13,7 @@ import torch
 from scripts.run_eventmatr_d11_association_scan import (
     _rank_summary,
     _score_summary,
+    _validate_ledger_snapshot,
 )
 from scripts.run_eventmatr_d11_parameter_delta_audit import (
     _accumulate_delta,
@@ -32,6 +33,14 @@ from scripts.finalize_eventmatr_d11_effective_dose_gate import (
 from scripts.finalize_eventmatr_d13_mechanism import (
     validate_d13_mechanism_metrics,
 )
+from scripts.finalize_eventmatr_d14_mechanism import (
+    validate_d14_mechanism_metrics,
+)
+from scripts.finalize_eventmatr_d14_structure_gate import (
+    OFFICIAL_TRAIN_ARTIFACTS,
+    _validate_dataset_artifacts,
+    select_d14_structure_variant,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +54,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v5"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v6"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -73,10 +82,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "never releases a performance pilot" in (
         gates["d11_failed_one_epoch_association_scan"]["release_condition"]
     )
-    assert "D1.3 factorial mechanism" in (
-        gates["seed52_short_pilots"]["release_condition"]
-    )
-    assert "live combined structure" in (
+    assert "D1.4 terminal structure gate" in (
         gates["seed52_short_pilots"]["release_condition"]
     )
     assert "never releases a performance pilot" in (
@@ -106,6 +112,17 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
         "combined",
     ]
     assert "never report paper performance" in d13["release_condition"]
+    assert d13["status"] == "completed_failed_terminal_birth_liveness"
+    d14 = gates["d14_seed52_decision_alignment_mechanism"]
+    assert d14["checkpoint_schema"] == (
+        "eventmatr_d14_decision_alignment_mechanism_v1"
+    )
+    assert list(d14["prospective_variants"]) == [
+        "normalized_survival",
+        "decision_aligned_bag",
+    ]
+    assert d14["structure_gate"]["effect_size_threshold"] is None
+    assert "never paper performance" in d14["release_condition"]
     paper = protocol["paper_result_boundary"]
     assert paper["matched_training_budget"]["epochs"] == 100
     assert "no search" in paper["matched_postprocessing"]
@@ -153,6 +170,8 @@ def test_d1_real_smoke_covers_registered_lanes_without_test_access() -> None:
     assert "THUMOS14Dataset" in source
     assert "_load_real_batch" in source
     assert "_run_lane" in source
+    assert "D14_MECHANISM_VARIANTS" in source
+    assert '"d14_mechanisms"' in source
     assert '"test_access": False' in source
     assert '"checkpoint_updated": False' in source
     assert '"strict_causal_paper_result_valid": False' in source
@@ -370,6 +389,212 @@ def test_d13_finalizer_closes_factorial_census_without_effect_thresholds() -> No
                 ): 1.0,
             },
             "combined",
+        )
+
+
+def _valid_d14_metrics(variant: str) -> dict:
+    metrics = {
+        name: 1.0
+        for name in (
+            "event_transition_gradient_norm",
+            "event_birth_gradient_norm",
+            "event_owner_gradient_norm",
+            "event_birth_positive_count_unscaled",
+            "event_end_positive_count_unscaled",
+            "event_owner_assignment_count_unscaled",
+            "event_ragged_track_count_unscaled",
+            "event_false_track_cancel_group_count_unscaled",
+            "event_source_predicted_unmatched_row_count_unscaled",
+            "event_source_teacher_birth_row_count_unscaled",
+        )
+    }
+    metrics.update(
+        {
+            "d14_epoch_physical_batch_count": 3270.0,
+            "d14_epoch_birth_positive_count_total": 3003.0,
+            "d14_epoch_birth_selected_negative_count_total": 3003.0,
+            "d14_epoch_birth_negative_candidate_count_total": 2000000.0,
+            "d14_epoch_birth_positive_batch_count_total": 1685.0,
+            "d14_epoch_birth_zero_positive_batch_count_total": 1585.0,
+            "d14_epoch_birth_interval_fallback_count_total": 0.0,
+            "d14_epoch_birth_prebirth_exposure_count_total": 180182.0,
+            "d14_epoch_birth_interval_exposure_count_total": 5666.0,
+            "d14_epoch_birth_selected_risk_logit_count_total": 185852.0,
+            "d14_epoch_birth_postinterval_ignored_exposure_count_total": 4.0,
+            "d14_epoch_birth_prebirth_group_count_total": 2900.0,
+            "d14_epoch_birth_zero_prebirth_group_count_total": 103.0,
+            "d14_epoch_birth_normalized_survival_event_count_total": (
+                3003.0 if variant == "normalized_survival" else 0.0
+            ),
+            "d14_epoch_birth_decision_aligned_positive_bag_count_total": (
+                3003.0 if variant == "decision_aligned_bag" else 0.0
+            ),
+            "d14_epoch_birth_decision_aligned_negative_bag_count_total": (
+                3003.0 if variant == "decision_aligned_bag" else 0.0
+            ),
+            "event_runtime_capacity_exhaustions_unscaled": 0.0,
+            "event_association_audit_class_argmax_reject_pair_count_unscaled": 0.0,
+            (
+                "event_association_audit_"
+                "admissible_class_argmax_mismatch_pair_count_unscaled"
+            ): 1.0,
+        }
+    )
+    return metrics
+
+
+def test_d14_is_train_only_threshold_free_and_census_closed() -> None:
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d14_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "scripts" / "train_eventmatr_d14_mechanism.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d14_mechanism.py"
+    ).read_text(encoding="utf-8")
+    scan_slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d14_association_scan.sh"
+    ).read_text(encoding="utf-8")
+    delta_slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d14_parameter_delta_audit.sh"
+    ).read_text(encoding="utf-8")
+    structure_gate = (
+        ROOT / "scripts" / "finalize_eventmatr_d14_structure_gate.py"
+    ).read_text(encoding="utf-8")
+
+    assert "#SBATCH --gpus=1" in slurm
+    assert "SLURM_ARRAY_TASK_ID" not in slurm
+    assert "normalized_survival|decision_aligned_bag" in slurm
+    assert slurm.count("verify_source_identity.py") == 2
+    assert "--epochs 1" in launcher
+    assert "--study_protocol d14_mechanism" in launcher
+    assert "--event_d13_variant combined" in launcher
+    assert '--event_d14_variant "${MATR_D14_VARIANT}"' in launcher
+    assert "--random_seed 52" in launcher
+    assert "--load_model" not in launcher
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
+    assert 'if [[ -e "${LOCKED_TEST_SENTINEL}" ]]' in launcher
+    assert "eventmatr_d14_decision_alignment_mechanism_v1" in finalizer
+    assert 'for phase in ("start", "final")' in finalizer
+    assert '"official_paper_performance_valid": False' in finalizer
+    assert '"threshold_lowering": False' in finalizer
+    assert '"multi_seed": False' in finalizer
+    assert '"structure_gate_release": False' in finalizer
+    assert "--d13-variant combined" in scan_slurm
+    assert '--d14-variant "${MATR_D14_VARIANT}"' in scan_slurm
+    assert "--d13-variant combined" in delta_slurm
+    assert '--d14-variant "${MATR_D14_VARIANT}"' in delta_slurm
+    assert "eventmatr_d14_cross_arm_structure_gate_v1" in structure_gate
+    assert '"official_paper_performance_valid": False' in structure_gate
+    assert '"official_comparison_release": False' in structure_gate
+    assert '"locked_test_release": False' in structure_gate
+    assert '"effect_size_threshold": None' in structure_gate
+    assert 'for prefix in ("normalized", "bag", "control")' in structure_gate
+    for artifact in ("mechanism", "scan", "delta"):
+        assert f'f"--{{prefix}}-{artifact}"' in structure_gate
+
+    for variant in ("normalized_survival", "decision_aligned_bag"):
+        evidence = validate_d14_mechanism_metrics(
+            _valid_d14_metrics(variant), variant
+        )
+        assert evidence["census"][
+            "d14_epoch_birth_positive_count_total"
+        ] == 3003
+    with pytest.raises(ValueError, match="official-train census drifted"):
+        validate_d14_mechanism_metrics(
+            {
+                **_valid_d14_metrics("decision_aligned_bag"),
+                "d14_epoch_birth_interval_exposure_count_total": 5665.0,
+            },
+            "decision_aligned_bag",
+        )
+
+
+@pytest.mark.parametrize(
+    ("arm_passes", "expected"),
+    [
+        (
+            {
+                "normalized_survival": False,
+                "decision_aligned_bag": False,
+            },
+            None,
+        ),
+        (
+            {
+                "normalized_survival": True,
+                "decision_aligned_bag": False,
+            },
+            "normalized_survival",
+        ),
+        (
+            {
+                "normalized_survival": False,
+                "decision_aligned_bag": True,
+            },
+            "decision_aligned_bag",
+        ),
+        (
+            {
+                "normalized_survival": True,
+                "decision_aligned_bag": True,
+            },
+            "normalized_survival",
+        ),
+    ],
+)
+def test_d14_structure_selection_is_exact_and_has_no_effect_threshold(
+    arm_passes: dict, expected
+) -> None:
+    selected, reason = select_d14_structure_variant(arm_passes)
+    assert selected == expected
+    assert reason
+
+
+def test_d14_structure_gate_requires_frozen_official_train_artifacts() -> None:
+    delta = {
+        "dataset_caches": {
+            name: {"path": f"/frozen/{name}", **expected}
+            for name, expected in OFFICIAL_TRAIN_ARTIFACTS.items()
+        }
+    }
+    assert _validate_dataset_artifacts(delta, "arm") == OFFICIAL_TRAIN_ARTIFACTS
+    with pytest.raises(ValueError, match="not on the frozen official train artifact"):
+        _validate_dataset_artifacts(
+            {
+                "dataset_caches": {
+                    **delta["dataset_caches"],
+                    "train_features": {
+                        **delta["dataset_caches"]["train_features"],
+                        "sha256": "0" * 64,
+                    },
+                }
+            },
+            "arm",
+        )
+
+
+def test_terminal_ledger_audit_is_immutable_positive_and_duplicate_free() -> None:
+    row = {
+        "event_id": 3,
+        "sequence_id": 0,
+        "video_name": "v",
+        "start_frame": 0.0,
+        "end_frame": 2.0,
+        "emit_frame": 2.0,
+        "status": "emitted",
+    }
+    frozen = _validate_ledger_snapshot("v", [row])
+    assert frozen == (row,)
+    with pytest.raises(RuntimeError, match="immutable ledger changed"):
+        _validate_ledger_snapshot("v", [], frozen)
+    with pytest.raises(RuntimeError, match="non-positive length"):
+        _validate_ledger_snapshot("v", [{**row, "end_frame": 0.0}])
+    with pytest.raises(RuntimeError, match="duplicated an event id"):
+        _validate_ledger_snapshot(
+            "v",
+            [row, {**row, "sequence_id": 1}],
         )
 
 

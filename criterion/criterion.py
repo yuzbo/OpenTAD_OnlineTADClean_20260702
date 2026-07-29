@@ -1,10 +1,15 @@
+import math
+
 import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from .matcher import HungarianMatcher
-from models.event_memory import resolve_d13_mechanism_contracts
+from models.event_memory import (
+    resolve_d13_mechanism_contracts,
+    resolve_d14_birth_objective,
+)
 
 class CrossEntropyLoss(nn.Module):
     def __init__(self, focal=False, weight=None, reduce=True):
@@ -148,6 +153,10 @@ class CriterionMATR(nn.Module):
             self.event_association_contract,
             self.event_birth_risk_contract,
         ) = resolve_d13_mechanism_contracts(args)
+        (
+            self.event_d14_variant,
+            self.event_birth_objective_contract,
+        ) = resolve_d14_birth_objective(args)
         if (
             not self.event_d1_enabled
             and self.event_d13_variant != "d12_control"
@@ -155,6 +164,15 @@ class CriterionMATR(nn.Module):
             raise ValueError(
                 "a D1.3 mechanism variant requires the d1_censored lifecycle"
             )
+        if self.event_d14_variant != "none":
+            if not self.event_d1_enabled or not self.event_d1_use_hazard:
+                raise ValueError(
+                    "a D1.4 birth objective requires a censored-hazard D1 lane"
+                )
+            if self.event_d13_variant != "combined":
+                raise ValueError(
+                    "D1.4 must layer on the frozen D1.3 combined contract"
+                )
         self.event_d13_event_matched_birth = (
             self.event_birth_risk_contract
             == "event_matched_hard_negative_v1"
@@ -583,6 +601,12 @@ class CriterionMATR(nn.Module):
         prebirth_exposure_count = 0
         interval_exposure_count = 0
         selected_risk_logit_count = 0
+        prebirth_group_count = 0
+        zero_prebirth_group_count = 0
+        normalized_survival_event_count = 0
+        decision_aligned_positive_bag_count = 0
+        decision_aligned_negative_bag_count = 0
+        prebirth_hardest_logits = []
         positive_assignments = {}
         birth_risk_groups = list(outputs["event_birth_risk_groups"])
         for group in birth_risk_groups:
@@ -619,16 +643,47 @@ class CriterionMATR(nn.Module):
                     interval_fallback_count += 1
                 prebirth_exposure_count += int(pre_birth.sum().item())
                 interval_exposure_count += int(in_interval.sum().item())
-                pre_survival_nll = F.softplus(selected[pre_birth]).sum()
-                log_interval_survival = F.logsigmoid(
-                    -selected[in_interval]
-                ).sum()
-                interval_event_probability = (
-                    -torch.expm1(log_interval_survival)
-                ).clamp_min(1e-8)
-                birth_event_losses.append(
-                    pre_survival_nll - interval_event_probability.log()
-                )
+                prebirth_logits = selected[pre_birth]
+                if prebirth_logits.numel() > 0:
+                    prebirth_group_count += 1
+                    prebirth_hardest_logits.append(prebirth_logits.max())
+                else:
+                    zero_prebirth_group_count += 1
+                    prebirth_hardest_logits.append(None)
+                interval_logits = selected[in_interval]
+                if self.event_d14_variant == "decision_aligned_bag":
+                    # Temperature is prospectively fixed at the native logit
+                    # scale (one).  Subtracting log(|I|) makes this a
+                    # log-mean-exp.  A positive bag score is sufficient for at
+                    # least one interval logit to cross the unchanged runtime
+                    # zero boundary, but the converse is not guaranteed.  The
+                    # terminal structure gate therefore checks individual
+                    # logits and actual rising-edge runtime births directly.
+                    interval_bag_score = torch.logsumexp(
+                        interval_logits, dim=0
+                    ) - math.log(int(interval_logits.numel()))
+                    birth_event_losses.append(F.softplus(-interval_bag_score))
+                    decision_aligned_positive_bag_count += 1
+                else:
+                    pre_survival_terms = F.softplus(prebirth_logits)
+                    if self.event_d14_variant == "normalized_survival":
+                        pre_survival_nll = (
+                            pre_survival_terms.mean()
+                            if pre_survival_terms.numel() > 0
+                            else zero
+                        )
+                        normalized_survival_event_count += 1
+                    else:
+                        pre_survival_nll = pre_survival_terms.sum()
+                    log_interval_survival = F.logsigmoid(
+                        -interval_logits
+                    ).sum()
+                    interval_event_probability = (
+                        -torch.expm1(log_interval_survival)
+                    ).clamp_min(1e-8)
+                    birth_event_losses.append(
+                        pre_survival_nll - interval_event_probability.log()
+                    )
             else:
                 birth_event_losses.append(F.softplus(-selected[-1]))
             start_losses.append(
@@ -645,6 +700,19 @@ class CriterionMATR(nn.Module):
                     / self.segment_size,
                 )
             )
+
+        postinterval_ignored_exposure_count = (
+            selected_risk_logit_count
+            - prebirth_exposure_count
+            - interval_exposure_count
+        )
+        if postinterval_ignored_exposure_count < 0:
+            raise RuntimeError("birth-risk exposure partition did not close")
+        if self.event_d14_variant != "none" and (
+            prebirth_group_count + zero_prebirth_group_count
+            != len(birth_event_losses)
+        ):
+            raise RuntimeError("D1.4 prebirth event-group census did not close")
 
         # Construct the same finite pool of currently-unassigned, prefix-visible
         # query risks for both D1.2 and the prospective D1.3 intervention.
@@ -692,7 +760,32 @@ class CriterionMATR(nn.Module):
                 largest=True,
                 sorted=True,
             ).values
-            balanced_background_losses = list(F.softplus(hardest).unbind())
+            if self.event_d14_variant == "decision_aligned_bag":
+                if len(prebirth_hardest_logits) != positive_event_count:
+                    raise RuntimeError(
+                        "decision-aligned birth bags lost an event prebirth group"
+                    )
+                # Pair the deterministically ordered event groups with the
+                # deterministically sorted unique external negatives.  The hard
+                # maximum makes a negative bag non-positive only when both the
+                # event's prebirth history and its external candidate are
+                # non-positive under the unchanged runtime decision boundary.
+                for external_negative, prebirth_negative in zip(
+                    hardest.unbind(), prebirth_hardest_logits
+                ):
+                    negative_bag_score = (
+                        external_negative
+                        if prebirth_negative is None
+                        else torch.maximum(external_negative, prebirth_negative)
+                    )
+                    balanced_background_losses.append(
+                        F.softplus(negative_bag_score)
+                    )
+                decision_aligned_negative_bag_count = len(
+                    balanced_background_losses
+                )
+            else:
+                balanced_background_losses = list(F.softplus(hardest).unbind())
 
         ragged_logits = outputs["event_ragged_state_logits"]
         ragged_targets = outputs["event_ragged_state_targets"]
@@ -889,6 +982,25 @@ class CriterionMATR(nn.Module):
             ),
             "event_birth_selected_risk_logit_count": torch.tensor(
                 float(selected_risk_logit_count), device=device
+            ),
+            "event_birth_postinterval_ignored_exposure_count": torch.tensor(
+                float(postinterval_ignored_exposure_count),
+                device=device,
+            ),
+            "event_birth_prebirth_group_count": torch.tensor(
+                float(prebirth_group_count), device=device
+            ),
+            "event_birth_zero_prebirth_group_count": torch.tensor(
+                float(zero_prebirth_group_count), device=device
+            ),
+            "event_birth_normalized_survival_event_count": torch.tensor(
+                float(normalized_survival_event_count), device=device
+            ),
+            "event_birth_decision_aligned_positive_bag_count": torch.tensor(
+                float(decision_aligned_positive_bag_count), device=device
+            ),
+            "event_birth_decision_aligned_negative_bag_count": torch.tensor(
+                float(decision_aligned_negative_bag_count), device=device
             ),
             "event_alive_positive_count": (ragged_targets == 1).sum().detach(),
             "event_end_positive_count": torch.tensor(

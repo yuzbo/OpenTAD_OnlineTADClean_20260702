@@ -38,6 +38,7 @@ from on_tal_task import (  # noqa: E402
     D1_RUNTIME_FORBIDDEN_MODEL_INFO,
     D12_CHECKPOINT_SCHEMA,
     D13_CHECKPOINT_SCHEMA,
+    D14_CHECKPOINT_SCHEMA,
     make_model_inputs,
     validate_d1_checkpoint_compatibility,
 )
@@ -98,6 +99,11 @@ def _parse_args() -> argparse.Namespace:
             "combined",
         ),
     )
+    parser.add_argument(
+        "--d14-variant",
+        default="none",
+        choices=("none", "normalized_survival", "decision_aligned_bag"),
+    )
     parser.add_argument("--expected-checkpoint-sha256", required=True)
     parser.add_argument("--expected-options-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
@@ -147,8 +153,16 @@ def _validate_inputs(
     expected_training_source_tree: str,
     one_epoch_mechanism_gate_status: str,
     d13_variant: str,
+    d14_variant: str = "none",
 ) -> None:
     is_d13 = d13_variant != "d12_control"
+    is_d14 = d14_variant != "none"
+    if is_d14 and d13_variant != "combined":
+        raise RuntimeError("D1.4 scan requires the frozen D1.3 combined contract")
+    objectives = {
+        "normalized_survival": "event_normalized_censored_hazard_v1",
+        "decision_aligned_bag": "decision_aligned_interval_bag_v1",
+    }
     contracts = {
         "d12_control": (
             "hard_class_argmax_gate_v1",
@@ -168,7 +182,13 @@ def _validate_inputs(
         ),
     }
     expected_options = {
-        "study_protocol": "d13_mechanism" if is_d13 else "d11_mechanism",
+        "study_protocol": (
+            "d14_mechanism"
+            if is_d14
+            else "d13_mechanism"
+            if is_d13
+            else "d11_mechanism"
+        ),
         "model_variant": "eventmatr",
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
@@ -182,6 +202,8 @@ def _validate_inputs(
     }
     if is_d13:
         expected_options["event_d13_variant"] = d13_variant
+    if is_d14:
+        expected_options["event_d14_variant"] = d14_variant
     for field, expected in expected_options.items():
         if options.get(field) != expected:
             raise RuntimeError(
@@ -193,10 +215,20 @@ def _validate_inputs(
         raise RuntimeError("association scan requires the absent locked-test sentinel")
     expected_checkpoint = {
         "epoch": 1,
-        "study_protocol": "d13_mechanism" if is_d13 else "d11_mechanism",
+        "study_protocol": (
+            "d14_mechanism"
+            if is_d14
+            else "d13_mechanism"
+            if is_d13
+            else "d11_mechanism"
+        ),
         "model_variant": "eventmatr",
         "checkpoint_schema": (
-            D13_CHECKPOINT_SCHEMA if is_d13 else D12_CHECKPOINT_SCHEMA
+            D14_CHECKPOINT_SCHEMA
+            if is_d14
+            else D13_CHECKPOINT_SCHEMA
+            if is_d13
+            else D12_CHECKPOINT_SCHEMA
         ),
         "event_lifecycle_version": "d1_censored",
         "event_d1_lane": "th",
@@ -209,6 +241,13 @@ def _validate_inputs(
                 "event_d13_variant": d13_variant,
                 "association_contract": association_contract,
                 "birth_risk_contract": birth_risk_contract,
+            }
+        )
+    if is_d14:
+        expected_checkpoint.update(
+            {
+                "event_d14_variant": d14_variant,
+                "birth_objective_contract": objectives[d14_variant],
             }
         )
     for field, expected in expected_checkpoint.items():
@@ -299,6 +338,48 @@ def _validate_count_closure(counts: dict, label: str) -> None:
         raise RuntimeError(f"predicted birth accounting does not close for {label}")
     if counts["padding_prefix_count"] != counts["padding_noop_count"]:
         raise RuntimeError(f"padding no-op accounting does not close for {label}")
+
+
+def _validate_ledger_snapshot(
+    video_name: str,
+    rows,
+    previous_rows=(),
+) -> tuple[dict, ...]:
+    snapshot = tuple(dict(row) for row in rows)
+    previous = tuple(dict(row) for row in previous_rows)
+    if len(snapshot) < len(previous) or snapshot[: len(previous)] != previous:
+        raise RuntimeError(f"immutable ledger changed for {video_name}")
+
+    event_ids = []
+    sequence_ids = []
+    for row in snapshot:
+        if row.get("video_name") != video_name or row.get("status") != "emitted":
+            raise RuntimeError(f"ledger row identity/status drifted for {video_name}")
+        try:
+            event_id = int(row["event_id"])
+            sequence_id = int(row["sequence_id"])
+            start_frame = float(row["start_frame"])
+            end_frame = float(row["end_frame"])
+            emit_frame = float(row["emit_frame"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise RuntimeError(f"ledger row is malformed for {video_name}") from error
+        if not all(math.isfinite(value) for value in (start_frame, end_frame, emit_frame)):
+            raise RuntimeError(f"ledger row is non-finite for {video_name}")
+        if start_frame < 0.0:
+            raise RuntimeError(f"ledger row has a negative start for {video_name}")
+        if end_frame <= start_frame:
+            raise RuntimeError(f"ledger row has non-positive length for {video_name}")
+        if emit_frame < end_frame:
+            raise RuntimeError(f"ledger row was emitted before its end for {video_name}")
+        event_ids.append(event_id)
+        sequence_ids.append(sequence_id)
+    if len(event_ids) != len(set(event_ids)):
+        raise RuntimeError(f"ledger duplicated an event id for {video_name}")
+    if len(sequence_ids) != len(set(sequence_ids)):
+        raise RuntimeError(f"ledger duplicated a sequence id for {video_name}")
+    if sequence_ids != list(range(len(sequence_ids))):
+        raise RuntimeError(f"ledger sequence ids are not contiguous for {video_name}")
+    return snapshot
 
 
 def _metadata_values(value, *, batch_size: int, label: str) -> list:
@@ -393,6 +474,7 @@ def main() -> None:
         expected_training_source_tree=cli.expected_training_source_tree,
         one_epoch_mechanism_gate_status=cli.one_epoch_mechanism_gate_status,
         d13_variant=cli.d13_variant,
+        d14_variant=cli.d14_variant,
     )
 
     random.seed(52)
@@ -469,6 +551,7 @@ def main() -> None:
     last_real_frame: dict[str, float] = {}
     last_physical_frame: dict[str, float] = {}
     closed_streams: set[str] = set()
+    ledger_snapshots: dict[str, tuple[dict, ...]] = {}
     score_chunks: dict[str, list[np.ndarray]] = {
         "all_query_margin": [],
         "prefix_max_margin": [],
@@ -481,6 +564,7 @@ def main() -> None:
         "birth_oracle_path_interval_probability": [],
         "birth_oracle_path_pre_survival_nll": [],
         "birth_oracle_path_interval_event_nll": [],
+        "birth_oracle_path_interval_logmeanexp": [],
         "birth_oracle_path_pre_interval_margin": [],
         "birth_oracle_path_in_interval_margin": [],
         "alive_opportunity_oracle_path_margin": [],
@@ -622,6 +706,12 @@ def main() -> None:
             if "event_targets" in payload or "event_valid_mask" in payload:
                 raise RuntimeError("ground truth reached the predicted-only model payload")
             outputs = model(payload, device)
+            for video_name in sorted(set(names)):
+                ledger_snapshots[video_name] = _validate_ledger_snapshot(
+                    video_name,
+                    model.module.event_memory.ledger(video_name),
+                    ledger_snapshots.get(video_name, ()),
+                )
 
             state_logits = outputs["event_state_logits"].detach()
             birth_logits = outputs["event_birth_logits"].detach()
@@ -865,6 +955,12 @@ def main() -> None:
                         score_values[
                             "birth_oracle_path_interval_event_nll"
                         ].append(float(event_nll.item()))
+                        interval_logmeanexp = torch.logsumexp(
+                            selected[in_interval], dim=0
+                        ) - math.log(int(in_interval.sum().item()))
+                        score_values[
+                            "birth_oracle_path_interval_logmeanexp"
+                        ].append(float(interval_logmeanexp.item()))
                         score_values[
                             "birth_oracle_path_pre_interval_margin"
                         ].extend(
@@ -1063,6 +1159,17 @@ def main() -> None:
             f"complete scan produced {len(per_video)} per-video rows for "
             f"{len(dataset.video_list)} videos"
         )
+    ledger_row_count = sum(len(rows) for rows in ledger_snapshots.values())
+    if ledger_row_count != totals["runtime_emit_count"]:
+        raise RuntimeError(
+            "immutable ledger and runtime emission counts differ: "
+            f"{ledger_row_count} != {totals['runtime_emit_count']}"
+        )
+    if cli.max_batches == 0 and set(ledger_snapshots) != set(dataset.video_list):
+        raise RuntimeError("complete scan did not audit every video ledger")
+    final_status = _git("status", "--porcelain=v1", "--untracked-files=all")
+    if final_status:
+        raise RuntimeError(f"association scan source changed during execution:\n{final_status}")
 
     score_summaries = {
         label: _score_summary(values, label=label)
@@ -1175,13 +1282,17 @@ def main() -> None:
         "execution_status": "PASS",
         "status_semantics": "scan_completed_not_mechanism_or_performance_pass",
         "protocol": (
-            "eventmatr_d12_terminal_association_scan_v1"
+            "eventmatr_d14_terminal_association_scan_v1"
+            if cli.d14_variant != "none"
+            else "eventmatr_d12_terminal_association_scan_v1"
             if cli.d13_variant == "d12_control"
             else "eventmatr_d13_terminal_association_scan_v1"
         ),
         "event_d13_variant": cli.d13_variant,
+        "event_d14_variant": cli.d14_variant,
         "association_contract": model.module.event_association_contract,
         "birth_risk_contract": model.module.event_birth_risk_contract,
+        "birth_objective_contract": model.module.event_birth_objective_contract,
         "complete_scan": cli.max_batches == 0,
         "processed_batches": processed_batches,
         "forward_batches": forward_batches,
@@ -1231,6 +1342,16 @@ def main() -> None:
         },
         "dataset_caches": dataset_cache_stats_before,
         "barrier_counts": totals,
+        "lifecycle_integrity": {
+            "immutable_ledger_verified": True,
+            "positive_length_verified": True,
+            "nonnegative_start_verified": True,
+            "no_duplicate_event_verified": True,
+            "contiguous_sequence_id_verified": True,
+            "ledger_emit_count_closed": True,
+            "ledger_row_count": ledger_row_count,
+            "video_ledger_count": len(ledger_snapshots),
+        },
         "birth_score_diagnostics": birth_score_diagnostics,
         "videos_scanned": len(per_video),
         "per_video_barrier_counts": {

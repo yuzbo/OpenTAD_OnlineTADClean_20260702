@@ -14,6 +14,7 @@ from .event_memory import (
     causal_single_assignment,
     d1_owner_supervision,
     resolve_d13_mechanism_contracts,
+    resolve_d14_birth_objective,
     resolve_event_modes,
     resolve_model_variant,
     select_disjoint_teacher_query,
@@ -110,6 +111,10 @@ class MATR(nn.Module):
             self.event_association_contract,
             self.event_birth_risk_contract,
         ) = resolve_d13_mechanism_contracts(args)
+        (
+            self.event_d14_variant,
+            self.event_birth_objective_contract,
+        ) = resolve_d14_birth_objective(args)
         if (
             not self.event_d1_enabled
             and self.event_d13_variant != "d12_control"
@@ -117,6 +122,15 @@ class MATR(nn.Module):
             raise ValueError(
                 "a D1.3 mechanism variant requires the d1_censored lifecycle"
             )
+        if self.event_d14_variant != "none":
+            if not self.event_d1_enabled or not self.event_d1_use_hazard:
+                raise ValueError(
+                    "a D1.4 birth objective requires a censored-hazard D1 lane"
+                )
+            if self.event_d13_variant != "combined":
+                raise ValueError(
+                    "D1.4 must layer on the frozen D1.3 combined contract"
+                )
         if self.event_enabled:
             if torch.cuda.is_available() and torch.cuda.device_count() != 1:
                 raise RuntimeError(

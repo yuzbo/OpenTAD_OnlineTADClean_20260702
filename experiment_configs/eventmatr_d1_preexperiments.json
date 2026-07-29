@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v5",
+  "protocol_id": "eventmatr_d1_preexperiments_v6",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -200,7 +200,7 @@
     },
     {
       "stage": "d13_seed52_factorial_mechanism",
-      "status": "prospectively_frozen_not_run",
+      "status": "completed_failed_terminal_birth_liveness",
       "epochs": [
         1
       ],
@@ -235,11 +235,77 @@
         "zero capacity exhaustion and absent locked-test sentinel",
         "all interval fallback and causal exposure counts are recorded rather than hidden"
       ],
-      "release_condition": "all three arms, terminal scans, parameter audits, and a cross-arm causal analysis complete; this stage may only establish mechanism truth and select a structure for prospective freeze, never report paper performance"
+      "observed_evidence": {
+        "physical_batches_per_arm": 3270,
+        "birth_events_per_arm": 3003,
+        "prebirth_exposures_per_arm": 180182,
+        "birth_interval_exposures_per_arm": 5666,
+        "event_matched_selected_negatives_per_arm": 3003,
+        "soft_assignment_predicted_associations_per_soft_arm": 5,
+        "soft_assignment_admissible_wrong_argmax_pairs_per_soft_arm": 14,
+        "hard_gate_rejected_pairs_total": 19,
+        "terminal_query_logits_per_arm": 2033630,
+        "terminal_positive_birth_logits_all_arms": 0,
+        "terminal_predicted_lifecycle_events_all_arms": 0,
+        "best_terminal_maximum_birth_logit": -1.951154,
+        "best_terminal_mean_birth_logit": -3.760783
+      },
+      "failure_diagnosis": "soft assignment and event-matched external negatives intervene on their intended training mechanisms, but all frozen terminal logits remain below the unchanged runtime zero boundary; the remaining candidate causes are per-event prebirth exposure-length weighting and misalignment between a low per-step censored hazard likelihood and the runtime requirement that at least one interval logit cross zero",
+      "release_condition": "failed terminal structure gate; never report paper performance, and no short pilot, official comparison, threshold change, or locked-test access is released"
+    },
+    {
+      "stage": "d14_seed52_decision_alignment_mechanism",
+      "status": "prospectively_frozen_not_run",
+      "epochs": [
+        1
+      ],
+      "lanes": [
+        "TH"
+      ],
+      "fresh_start": true,
+      "fixed_training_learning_rate": 3.34e-06,
+      "checkpoint_schema": "eventmatr_d14_decision_alignment_mechanism_v1",
+      "external_control": "the completed D1.3 combined run with soft association, event-matched external negatives, and summed censored birth hazard",
+      "shared_contract": {
+        "association": "frozen D1.3 soft target-class log-probability assignment",
+        "external_birth_negatives": "exactly one unique hardest currently-unassigned negative per birth event",
+        "runtime_birth_decision": "an individual independent-birth logit strictly above zero on a causal rising edge",
+        "temperature_search": false,
+        "threshold_search": false
+      },
+      "prospective_variants": {
+        "normalized_survival": {
+          "single_factor": "replace each event's summed prebirth survival term by its arithmetic mean",
+          "interval_event_term": "retain the interval-censored first-birth event likelihood",
+          "decision_boundary": "unchanged"
+        },
+        "decision_aligned_bag": {
+          "single_factor": "replace the censored event likelihood by a unit-temperature interval log-mean-exp positive bag and a hardest prebirth-or-external negative bag",
+          "positive_semantics": "a positive interval bag score is sufficient for at least one individual interval logit to be above zero, but is not equivalent to the runtime any-positive rule; the terminal gate checks individual logits and actual rising edges",
+          "negative_semantics": "the negative bag is non-positive only if both its prebirth and unique external representatives are non-positive",
+          "decision_boundary": "unchanged"
+        }
+      },
+      "requires": [
+        "same official train features, data order, seed, architecture, optimizer schedule and 3270 updates",
+        "both arms preserve the D1.3 combined association and external-negative contracts",
+        "exact official-train census of 3003 birth events, 180182 prebirth exposures, 5666 interval exposures and 4 intentionally ignored post-interval exposures",
+        "complete deterministic terminal predicted-only lifecycle scan with an explicit interval log-mean-exp diagnostic",
+        "separate independent-birth, four-state, shared-fuse and owner parameter-delta audit",
+        "zero capacity exhaustion and absent locked-test sentinel",
+        "no threshold lowering, threshold search, locked-test access, multiple seeds, raw RGB or non-terminal checkpoint selection"
+      ],
+      "structure_gate": {
+        "absolute_liveness": "at least one individual terminal birth logit strictly above zero, at least one rising-edge birth, at least one visible-target assignment, and at least one runtime birth under the unchanged rule",
+        "lifecycle_closure": "positive runtime cancellation, end and emission counts with zero capacity exhaustion and all ledger invariants passing",
+        "selection_rule": "if only one arm passes, select it; if both pass, select normalized_survival because it retains the formal censored likelihood; if neither passes, select neither",
+        "effect_size_threshold": null
+      },
+      "release_condition": "both arms, terminal scans, parameter audits and the fail-closed cross-arm structure gate complete; this stage is train-only mechanism evidence and never paper performance"
     },
     {
       "stage": "seed52_short_pilots",
-      "status": "blocked_until_d13_structure_analysis_and_prospective_freeze",
+      "status": "blocked_until_d14_structure_gate_and_prospective_freeze",
       "epochs": [
         5,
         10,
@@ -252,7 +318,7 @@
         "H",
         "TH"
       ],
-      "release_condition": "the D1.3 factorial mechanism and terminal lifecycle evidence identify a live combined structure and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
+      "release_condition": "the D1.4 terminal structure gate identifies one live objective and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
     }
   ],
   "paper_result_boundary": {
@@ -278,7 +344,7 @@
       "immutable positive-length no-duplicate ledger with zero capacity exhaustion"
     ],
     "paper_validity": "only a prospectively frozen native-parent versus EventMATR full-budget evaluation is paper-comparable; one-epoch mechanisms, train-prefix scores, and 5/10/20-epoch pilots are not paper performance results",
-    "locked_test_release_condition": "D1.3 structure gate PASS, development analysis closed, and the native-parent versus combined EventMATR full-budget comparison contract frozen before any locked-test access"
+    "locked_test_release_condition": "D1.4 structure gate PASS, development analysis closed, and the native-parent versus selected EventMATR full-budget comparison contract frozen before any locked-test access"
   },
   "metrics": {
     "detection": [

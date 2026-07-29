@@ -41,6 +41,7 @@ D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
 }
 D12_CHECKPOINT_SCHEMA = "eventmatr_d12_independent_birth_v1"
 D13_CHECKPOINT_SCHEMA = "eventmatr_d13_factorial_mechanism_v1"
+D14_CHECKPOINT_SCHEMA = "eventmatr_d14_decision_alignment_mechanism_v1"
 
 
 def censor_d1_event_targets_for_model(event_targets, event_valid_mask):
@@ -109,6 +110,7 @@ def d1_checkpoint_contract(model, args):
     owner_state_count = getattr(event_memory, 'owner_state_count', None)
     if lifecycle == 'd1_censored':
         d13_variant = getattr(raw_model, 'event_d13_variant', 'd12_control')
+        d14_variant = getattr(raw_model, 'event_d14_variant', 'none')
         if owner_state_count != 3:
             raise RuntimeError(
                 'D1 checkpoint contract requires a three-state owner head'
@@ -124,9 +126,13 @@ def d1_checkpoint_contract(model, args):
             )
         contract = {
             'checkpoint_schema': (
-                D12_CHECKPOINT_SCHEMA
-                if d13_variant == 'd12_control'
-                else D13_CHECKPOINT_SCHEMA
+                D14_CHECKPOINT_SCHEMA
+                if d14_variant != 'none'
+                else (
+                    D12_CHECKPOINT_SCHEMA
+                    if d13_variant == 'd12_control'
+                    else D13_CHECKPOINT_SCHEMA
+                )
             ),
             'event_lifecycle_version': lifecycle,
             'event_d1_lane': getattr(args, 'event_d1_lane', None),
@@ -142,6 +148,15 @@ def d1_checkpoint_contract(model, args):
                     ),
                     'birth_risk_contract': getattr(
                         raw_model, 'event_birth_risk_contract', None
+                    ),
+                }
+            )
+        if d14_variant != 'none':
+            contract.update(
+                {
+                    'event_d14_variant': d14_variant,
+                    'birth_objective_contract': getattr(
+                        raw_model, 'event_birth_objective_contract', None
                     ),
                 }
             )
@@ -210,6 +225,7 @@ def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
     if getattr(args, 'study_protocol', None) not in {
         'd11_mechanism',
         'd13_mechanism',
+        'd14_mechanism',
     }:
         raise ValueError(
             'd11_effective_dose is restricted to one-epoch D1 mechanism protocols'
@@ -286,7 +302,10 @@ def train(args):
     d1_preexperiment = study_protocol == 'd1_preexperiment'
     d11_mechanism = study_protocol == 'd11_mechanism'
     d13_mechanism = study_protocol == 'd13_mechanism'
-    d1_train_only = d1_preexperiment or d11_mechanism or d13_mechanism
+    d14_mechanism = study_protocol == 'd14_mechanism'
+    d1_train_only = (
+        d1_preexperiment or d11_mechanism or d13_mechanism or d14_mechanism
+    )
     if matched_study and args.epochs != 100:
         raise ValueError('matched_study requires the preregistered terminal epoch 100')
     if d1_preexperiment and args.epochs not in {5, 10, 20}:
@@ -299,6 +318,10 @@ def train(args):
         raise ValueError('d13_mechanism requires exactly one epoch')
     if d13_mechanism and args.load_model:
         raise ValueError('d13_mechanism forbids checkpoint resume')
+    if d14_mechanism and args.epochs != 1:
+        raise ValueError('d14_mechanism requires exactly one epoch')
+    if d14_mechanism and args.load_model:
+        raise ValueError('d14_mechanism forbids checkpoint resume')
 
     train_dataset = THUMOS14Dataset(args, subset='train')
     train_loader = torch.utils.data.DataLoader(train_dataset, 
@@ -391,6 +414,9 @@ def train(args):
                             'study_protocol': study_protocol,
                             'event_d13_variant': getattr(
                                 args, 'event_d13_variant', 'd12_control'
+                            ),
+                            'event_d14_variant': getattr(
+                                args, 'event_d14_variant', 'none'
                             ),
                             'strict_causal_paper_result_valid': False,
                             'test_access': False,
@@ -588,7 +614,7 @@ def train_one_epoch(
     Path(proposal_txt_path.format("pred")).write_text("", encoding="utf-8")
     optimizer_step_count = 0
     learning_rates = []
-    d13_census_names = (
+    mechanism_census_names = (
         'event_birth_positive_count',
         'event_birth_selected_negative_count',
         'event_birth_negative_candidate_count',
@@ -598,8 +624,14 @@ def train_one_epoch(
         'event_birth_prebirth_exposure_count',
         'event_birth_interval_exposure_count',
         'event_birth_selected_risk_logit_count',
+        'event_birth_postinterval_ignored_exposure_count',
+        'event_birth_prebirth_group_count',
+        'event_birth_zero_prebirth_group_count',
+        'event_birth_normalized_survival_event_count',
+        'event_birth_decision_aligned_positive_bag_count',
+        'event_birth_decision_aligned_negative_bag_count',
     )
-    d13_epoch_census = {name: 0 for name in d13_census_names}
+    mechanism_epoch_census = {name: 0 for name in mechanism_census_names}
 
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(train_loader, print_freq, header)):
         inputs, targets, infos = parrallel_collate_fn(inputs, targets, infos, args.p_videos)
@@ -619,19 +651,27 @@ def train_one_epoch(
         
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
-        if getattr(args, 'study_protocol', None) == 'd13_mechanism':
-            for name in d13_census_names:
+        if getattr(args, 'study_protocol', None) in {
+            'd13_mechanism',
+            'd14_mechanism',
+        }:
+            stage_name = (
+                'D1.4'
+                if getattr(args, 'study_protocol', None) == 'd14_mechanism'
+                else 'D1.3'
+            )
+            for name in mechanism_census_names:
                 if name not in loss_dict_reduced:
                     raise RuntimeError(
-                        f'D1.3 mechanism census metric is missing: {name}'
+                        f'{stage_name} mechanism census metric is missing: {name}'
                     )
                 value = float(loss_dict_reduced[name].detach().cpu().item())
                 if not math.isfinite(value) or not value.is_integer():
                     raise RuntimeError(
-                        f'D1.3 mechanism census metric is not an integer: '
+                        f'{stage_name} mechanism census metric is not an integer: '
                         f'{name}={value}'
                     )
-                d13_epoch_census[name] += int(value)
+                mechanism_epoch_census[name] += int(value)
         loss_dict_reduced_unscaled = {f'{k}_unscaled': v for k, v in loss_dict_reduced.items()}
         loss_dict_reduced_scaled = {k: v * loss_weight[k] for k, v in loss_dict_reduced.items() if k in loss_weight}
         losses_reduced_scaled =sum(loss_dict_reduced_scaled.values())
@@ -700,15 +740,27 @@ def train_one_epoch(
     print("Averaged stats:", metric_logger)
     
     result = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    if getattr(args, 'study_protocol', None) == 'd13_mechanism':
+    if getattr(args, 'study_protocol', None) in {
+        'd13_mechanism',
+        'd14_mechanism',
+    }:
+        census_prefix = (
+            'd14'
+            if getattr(args, 'study_protocol', None) == 'd14_mechanism'
+            else 'd13'
+        )
         result.update(
             {
-                'd13_epoch_physical_batch_count': float(len(train_loader)),
+                '{}_epoch_physical_batch_count'.format(
+                    census_prefix
+                ): float(len(train_loader)),
                 **{
-                    'd13_epoch_{}_total'.format(name[len('event_'):]): float(
+                    '{}_epoch_{}_total'.format(
+                        census_prefix, name[len('event_'):]
+                    ): float(
                         value
                     )
-                    for name, value in d13_epoch_census.items()
+                    for name, value in mechanism_epoch_census.items()
                 },
             }
         )

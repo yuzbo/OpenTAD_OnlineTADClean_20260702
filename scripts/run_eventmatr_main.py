@@ -75,7 +75,10 @@ def _validate(args) -> str:
     d1_preexperiment = args.study_protocol == "d1_preexperiment"
     d11_mechanism = args.study_protocol == "d11_mechanism"
     d13_mechanism = args.study_protocol == "d13_mechanism"
-    d1_train_only = d1_preexperiment or d11_mechanism or d13_mechanism
+    d14_mechanism = args.study_protocol == "d14_mechanism"
+    d1_train_only = (
+        d1_preexperiment or d11_mechanism or d13_mechanism or d14_mechanism
+    )
     if d1_train_only:
         if args.mode != "train":
             raise RuntimeError(f"{args.study_protocol} is a train-only protocol")
@@ -85,13 +88,15 @@ def _validate(args) -> str:
             raise RuntimeError("D1.2 mechanism protocol requires exactly one epoch")
         if d13_mechanism and args.epochs != 1:
             raise RuntimeError("D1.3 mechanism protocol requires exactly one epoch")
+        if d14_mechanism and args.epochs != 1:
+            raise RuntimeError("D1.4 mechanism protocol requires exactly one epoch")
         if args.train_eval_step != args.epochs:
             raise RuntimeError(
                 "D1 train-only protocols evaluate the train prefix only at terminal epoch"
             )
-        if (d11_mechanism or d13_mechanism) and lane != "TH":
+        if (d11_mechanism or d13_mechanism or d14_mechanism) and lane != "TH":
             raise RuntimeError("D1 mechanism protocols are restricted to lane TH")
-        if (d11_mechanism or d13_mechanism) and args.load_model:
+        if (d11_mechanism or d13_mechanism or d14_mechanism) and args.load_model:
             raise RuntimeError(
                 "D1 mechanism protocols must start fresh and forbid checkpoint resume"
             )
@@ -139,6 +144,18 @@ def _validate(args) -> str:
                 raise RuntimeError(
                     "D1.3 mechanism protocol requires one prospective factorial variant"
                 )
+            if d14_mechanism:
+                if args.event_d13_variant != "combined":
+                    raise RuntimeError(
+                        "D1.4 must preserve the frozen D1.3 combined contract"
+                    )
+                if args.event_d14_variant not in {
+                    "normalized_survival",
+                    "decision_aligned_bag",
+                }:
+                    raise RuntimeError(
+                        "D1.4 requires one prospective birth-objective variant"
+                    )
         else:
             raise RuntimeError(
                 f"D1 MATR_LANE must be one of {['N', *D1_LANES]}, got {lane!r}"
@@ -171,14 +188,19 @@ def _validate(args) -> str:
         raise RuntimeError("matched_study is a train-only terminal-epoch protocol")
     if args.study_protocol == "locked_test" and args.mode != "eval":
         raise RuntimeError("locked_test is an eval-only protocol")
+    if args.study_protocol == "locked_test":
+        raise RuntimeError(
+            "locked_test remains blocked until the D1.4 structure gate, "
+            "prospective model freeze, and matched full-budget training pass"
+        )
     if (
-        args.study_protocol in {"matched_study", "locked_test"}
+        args.study_protocol == "matched_study"
         and args.model_variant == "eventmatr"
         and args.event_lifecycle_version == "d1_censored"
-        and args.event_d13_variant != "combined"
     ):
         raise RuntimeError(
-            "official D1 EventMATR comparison is frozen to the combined D1.3 contract"
+            "official D1 EventMATR training remains blocked until D1.4 selects "
+            "and prospectively freezes one live structure"
         )
 
     official_setting = dict(OFFICIAL_SETTING)

@@ -27,6 +27,10 @@ D13_MECHANISM_VARIANTS = (
     "event_matched_birth_only",
     "combined",
 )
+D14_MECHANISM_VARIANTS = (
+    "normalized_survival",
+    "decision_aligned_bag",
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -142,6 +146,7 @@ def main() -> None:
 
     receipts = []
     d13_receipts = []
+    d14_receipts = []
     with tempfile.TemporaryDirectory(
         prefix="eventmatr-d1-real-batch-", dir=str(cli.output.parent)
     ) as directory:
@@ -182,6 +187,21 @@ def main() -> None:
             receipt["registered_lane"] = "TH"
             receipt["mechanism_variant"] = variant
             d13_receipts.append(receipt)
+        for variant in D14_MECHANISM_VARIANTS:
+            args = _lane_args(base_args, "TH")
+            args.event_d13_variant = "combined"
+            args.event_d14_variant = variant
+            receipt = common._run_lane(
+                f"d14_{variant}",
+                base_args,
+                event_batch,
+                device,
+                checkpoint_dir,
+                lane_args=args,
+            )
+            receipt["registered_lane"] = "TH"
+            receipt["mechanism_variant"] = variant
+            d14_receipts.append(receipt)
 
     payload = {
         "status": "PASS",
@@ -200,6 +220,7 @@ def main() -> None:
         "official_batch_size": int(base_args.batch),
         "lanes": receipts,
         "d13_mechanisms": d13_receipts,
+        "d14_mechanisms": d14_receipts,
     }
     cli.output.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",

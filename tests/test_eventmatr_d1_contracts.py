@@ -954,6 +954,130 @@ def test_d13_zero_birth_batch_has_no_birth_loss_or_birth_head_gradient() -> None
     assert birth.grad is None
 
 
+def _d14_birth_case(
+    variant: str,
+    prebirth_values,
+    interval_values,
+    postinterval_values=(),
+):
+    args = _args()
+    args.event_d13_variant = "combined"
+    args.event_d14_variant = variant
+    criterion = _criterion(args)
+    query_count = 3
+    state = torch.zeros((1, query_count, 4))
+    current_birth = torch.tensor(
+        [[-0.5, 0.25, 1.25]], requires_grad=True
+    )
+    risk = torch.tensor(
+        [*prebirth_values, *interval_values, *postinterval_values],
+        dtype=torch.float32,
+        requires_grad=True,
+    )
+    frames = torch.arange(risk.numel(), dtype=torch.float32)
+    start_frame = float(len(prebirth_values)) + 0.5
+    outputs = {
+        "event_state_logits": state,
+        "event_birth_logits": current_birth,
+        "event_candidate_start_frames": torch.zeros((1, query_count)),
+        "event_query_features": torch.eye(query_count).unsqueeze(0),
+        "pred_cls": torch.zeros((1, query_count, 3)),
+    }
+    _empty_ragged(outputs, hidden_dim=query_count)
+    outputs["event_birth_risk_groups"] = [
+        {
+            "batch_index": 0,
+            "video_name": "v",
+            "target_event_id": 0,
+            "class_id": 0,
+            "start_frame": start_frame,
+            "frames": frames,
+            "selected_logits": risk,
+            "terminal_query": 0,
+        }
+    ]
+    target = torch.zeros((1, query_count, 8))
+    target[0, 0] = torch.tensor([0, 0, start_frame, 8, 0, 1, 0, 0])
+    losses = criterion.loss_event(
+        outputs,
+        {
+            "event_targets": target,
+            "event_valid_mask": torch.tensor([[True, False, False]]),
+        },
+        {
+            "video_name": ["v"],
+            "current_frame": torch.tensor([float(frames[-1].item())]),
+            "is_real_prefix": torch.tensor([True]),
+        },
+    )
+    return losses, risk, current_birth
+
+
+def test_d14_normalized_survival_removes_prebirth_length_weighting() -> None:
+    short, short_risk, _ = _d14_birth_case(
+        "normalized_survival", [0.0], [0.0]
+    )
+    long, long_risk, _ = _d14_birth_case(
+        "normalized_survival", [0.0, 0.0, 0.0, 0.0], [0.0]
+    )
+    assert short["loss_event_birth"].item() == pytest.approx(
+        long["loss_event_birth"].item()
+    )
+    short["loss_event_birth"].backward()
+    long["loss_event_birth"].backward()
+    assert short_risk.grad[0].item() == pytest.approx(
+        4.0 * long_risk.grad[0].item()
+    )
+    assert short["event_birth_normalized_survival_event_count"] == 1
+    assert short["event_birth_decision_aligned_positive_bag_count"] == 0
+
+
+def test_d14_decision_aligned_bag_uses_a_zero_boundary_sufficient_score() -> None:
+    all_negative, negative_risk, _ = _d14_birth_case(
+        "decision_aligned_bag", [-2.0], [-1.0, -1.0]
+    )
+    one_positive, positive_risk, current_birth = _d14_birth_case(
+        "decision_aligned_bag", [2.0], [-1.0, 1.0]
+    )
+    assert one_positive["loss_event_birth"] < all_negative["loss_event_birth"]
+    assert one_positive["event_birth_decision_aligned_positive_bag_count"] == 1
+    assert one_positive["event_birth_decision_aligned_negative_bag_count"] == 1
+    assert one_positive["event_birth_selected_negative_count"] == 1
+    one_positive["loss_event_birth"].backward()
+    assert positive_risk.grad[-1] < 0
+    assert positive_risk.grad[0] > 0
+    # The event's harder prebirth mistake wins the negative bag over the unique
+    # external negative; the unselected current queries receive no gradient.
+    assert current_birth.grad is None or current_birth.grad.abs().sum() == 0
+    all_negative["loss_event_birth"].backward()
+    assert negative_risk.grad[-2:].max() < 0
+
+
+@pytest.mark.parametrize(
+    "variant", ["normalized_survival", "decision_aligned_bag"]
+)
+def test_d14_birth_objectives_ignore_postinterval_exposures(variant: str) -> None:
+    losses, risk, _ = _d14_birth_case(
+        variant,
+        [-2.0],
+        [-1.0, 1.0],
+        [8.0, 9.0],
+    )
+    assert losses["event_birth_prebirth_exposure_count"] == 1
+    assert losses["event_birth_interval_exposure_count"] == 2
+    assert losses["event_birth_postinterval_ignored_exposure_count"] == 2
+    losses["loss_event_birth"].backward()
+    assert risk.grad[-2:].abs().sum() == 0
+
+
+def test_d14_requires_the_frozen_d13_combined_contract() -> None:
+    args = _args()
+    args.event_d13_variant = "event_matched_birth_only"
+    args.event_d14_variant = "normalized_survival"
+    with pytest.raises(ValueError, match="frozen D1.3 combined"):
+        _criterion(args)
+
+
 def test_right_censored_end_hazard_has_survival_gradient() -> None:
     criterion = _criterion()
     dense_state = torch.zeros((1, 2, 4))

@@ -36,6 +36,11 @@ _D13_MECHANISM_CONTRACTS = {
         "event_matched_hard_negative_v1",
     ),
 }
+_D14_BIRTH_OBJECTIVE_CONTRACTS = {
+    "none": "summed_censored_hazard_v1",
+    "normalized_survival": "event_normalized_censored_hazard_v1",
+    "decision_aligned_bag": "decision_aligned_interval_bag_v1",
+}
 
 
 def resolve_d13_mechanism_contracts(args) -> Tuple[str, str, str]:
@@ -50,6 +55,19 @@ def resolve_d13_mechanism_contracts(args) -> Tuple[str, str, str]:
         )
     association_contract, birth_risk_contract = _D13_MECHANISM_CONTRACTS[variant]
     return variant, association_contract, birth_risk_contract
+
+
+def resolve_d14_birth_objective(args) -> Tuple[str, str]:
+    """Resolve the prospective D1.4 objective layered on frozen D1.3 combined."""
+
+    variant = str(getattr(args, "event_d14_variant", "none"))
+    if variant not in _D14_BIRTH_OBJECTIVE_CONTRACTS:
+        raise ValueError(
+            "event_d14_variant must be one of {}, got {!r}".format(
+                sorted(_D14_BIRTH_OBJECTIVE_CONTRACTS), variant
+            )
+        )
+    return variant, _D14_BIRTH_OBJECTIVE_CONTRACTS[variant]
 
 
 def temporal_viterbi_assignment(

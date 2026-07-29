@@ -115,6 +115,20 @@ def make_parser():
         ),
     )
     parser.add_argument(
+        '--event_d14_variant',
+        default='none',
+        choices=(
+            'none',
+            'normalized_survival',
+            'decision_aligned_bag',
+        ),
+        type=str,
+        help=(
+            'Prospective D1.4 birth-objective intervention layered on the '
+            'frozen D1.3 combined association and event-matched negatives.'
+        ),
+    )
+    parser.add_argument(
         '--event_teacher_forcing_ratio',
         default=0.5,
         type=float,
@@ -134,6 +148,7 @@ def make_parser():
             'd1_preexperiment',
             'd11_mechanism',
             'd13_mechanism',
+            'd14_mechanism',
             'locked_test',
         ),
         type=str,
