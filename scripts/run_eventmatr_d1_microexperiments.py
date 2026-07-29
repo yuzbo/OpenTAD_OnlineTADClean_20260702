@@ -329,9 +329,9 @@ def integrated_lane_experiment(lane: str) -> dict:
         )
 
     event_targets = torch.zeros((3, 2, 8))
-    event_targets[0, 0] = torch.tensor([0, 0, 2, 8, 2, 1, 0, 0])
-    event_targets[1, 0] = torch.tensor([0, 0, 2, 8, 2, 0, 1, 0])
-    event_targets[2, 0] = torch.tensor([0, 0, 2, 8, 2, 0, 1, 0])
+    event_targets[0, 0] = torch.tensor([0, 0, 2, float("nan"), 2, 1, 0, 0])
+    event_targets[1, 0] = torch.tensor([0, 0, 2, float("nan"), 2, 0, 1, 0])
+    event_targets[2, 0] = torch.tensor([0, 0, 2, 6, 2, 0, 0, 1])
     valid = torch.tensor([[True, False]] * 3)
     infos = {
         "st": torch.tensor([0, 1, 2]),
