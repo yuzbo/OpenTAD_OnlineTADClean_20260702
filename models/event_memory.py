@@ -7,6 +7,7 @@ records are allocated dynamically and therefore are not a hand-sized semantic
 slot bank.
 """
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -80,6 +81,12 @@ class CausalAssociationResult:
     ambiguous_targets: Tuple[int, ...]
     unmatched_queries: Tuple[int, ...]
     unmatched_targets: Tuple[int, ...]
+    predicted_query_count: int
+    target_count: int
+    pair_count: int
+    class_mismatch_pair_count: int
+    start_distance_reject_pair_count: int
+    admissible_pair_count: int
 
 
 def causal_single_assignment(
@@ -111,15 +118,24 @@ def causal_single_assignment(
         or query_features.size(0) != candidate_start_frames.size(0)
     ):
         raise ValueError("causal association query axes do not match")
-    if max_start_distance < 0:
+    if not math.isfinite(float(max_start_distance)) or max_start_distance < 0:
         raise ValueError("max_start_distance must be non-negative")
-    if ambiguity_tolerance < 0:
+    if not math.isfinite(float(ambiguity_tolerance)) or ambiguity_tolerance < 0:
         raise ValueError("ambiguity_tolerance must be non-negative")
+    if not torch.isfinite(candidate_start_frames).all():
+        raise ValueError("candidate_start_frames must be finite")
+    if not torch.isfinite(class_logits).all() or not torch.isfinite(
+        query_features
+    ).all():
+        raise ValueError("association logits/features must be finite")
 
     queries = tuple(sorted({int(index) for index in predicted_query_indices}))
     query_count = candidate_start_frames.size(0)
     if any(index < 0 or index >= query_count for index in queries):
         raise ValueError("predicted query index exceeds query bandwidth")
+    foreground_classes = class_logits.size(-1) - 1
+    if foreground_classes < 1:
+        raise ValueError("class_logits must contain foreground and background classes")
 
     normalized_targets = []
     target_ids = set()
@@ -133,11 +149,21 @@ def causal_single_assignment(
             raise ValueError("target anchor_feature must be a rank-one tensor")
         if anchor.numel() != query_features.size(-1):
             raise ValueError("target anchor feature dimension does not match queries")
+        if not torch.isfinite(anchor).all():
+            raise ValueError("target anchor_feature must be finite")
+        start_frame = float(raw["start_frame"])
+        if not math.isfinite(start_frame):
+            raise ValueError("target start_frame must be finite")
+        class_id = int(raw["class_id"])
+        if class_id < 0 or class_id >= foreground_classes:
+            raise ValueError(
+                "target class_id is outside foreground range: {}".format(class_id)
+            )
         normalized_targets.append(
             {
                 "target_event_id": target_event_id,
-                "class_id": int(raw["class_id"]),
-                "start_frame": float(raw["start_frame"]),
+                "class_id": class_id,
+                "start_frame": start_frame,
                 "anchor_feature": anchor,
             }
         )
@@ -150,9 +176,14 @@ def causal_single_assignment(
             ambiguous_targets=(),
             unmatched_queries=queries,
             unmatched_targets=targets,
+            predicted_query_count=len(queries),
+            target_count=len(targets),
+            pair_count=len(queries) * len(targets),
+            class_mismatch_pair_count=0,
+            start_distance_reject_pair_count=0,
+            admissible_pair_count=0,
         )
 
-    foreground_classes = max(1, class_logits.size(-1) - 1)
     with torch.no_grad():
         foreground_logits = class_logits[:, :foreground_classes]
         class_log_probability = foreground_logits.log_softmax(dim=-1)
@@ -166,16 +197,20 @@ def causal_single_assignment(
         by_target: Dict[int, List[Tuple[int, float]]] = {
             target_event_id: [] for target_event_id in targets
         }
+        class_mismatch_pair_count = 0
+        start_distance_reject_pair_count = 0
         scale = max(1.0, float(max_start_distance))
         for query_index in queries:
             predicted_class = int(predicted_classes[query_index].item())
             predicted_start = float(candidate_start_frames[query_index].item())
             for target in normalized_targets:
-                class_id = min(
-                    max(0, int(target["class_id"])), foreground_classes - 1
-                )
+                class_id = int(target["class_id"])
                 start_distance = abs(predicted_start - target["start_frame"])
-                if predicted_class != class_id or start_distance > max_start_distance:
+                if predicted_class != class_id:
+                    class_mismatch_pair_count += 1
+                    continue
+                if start_distance > max_start_distance:
+                    start_distance_reject_pair_count += 1
                     continue
                 anchor = F.normalize(
                     target["anchor_feature"].to(query_features), dim=0
@@ -243,6 +278,12 @@ def causal_single_assignment(
             for target_event_id in targets
             if target_event_id not in assigned_targets
         ),
+        predicted_query_count=len(queries),
+        target_count=len(targets),
+        pair_count=len(queries) * len(targets),
+        class_mismatch_pair_count=class_mismatch_pair_count,
+        start_distance_reject_pair_count=start_distance_reject_pair_count,
+        admissible_pair_count=len(pair_scores),
     )
 
 

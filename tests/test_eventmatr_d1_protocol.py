@@ -22,6 +22,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v3"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -41,8 +42,20 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert protocol["gates"][2]["release_condition"] == (
         "all prior hard contracts pass"
     )
-    assert protocol["gates"][3]["release_condition"] == (
-        "D1.1 one-epoch mechanism receipt is PASS"
+    assert protocol["gates"][3]["stage"] == (
+        "d11_failed_one_epoch_association_scan"
+    )
+    assert protocol["gates"][3]["checkpoint_training_source"]["commit"] == (
+        "de0837cf38e05d65a40f0744b863056edc2f433a"
+    )
+    assert "never releases a performance pilot" in (
+        protocol["gates"][3]["release_condition"]
+    )
+    assert "one-epoch training mechanism receipt" in (
+        protocol["gates"][4]["release_condition"]
+    )
+    assert "never the diagnostic scan status" in (
+        protocol["gates"][4]["release_condition"]
     )
 
 
@@ -151,7 +164,8 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
     assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
     assert "--load_model" not in launcher
     assert '"performance_gate_applied": False' in finalizer
-    assert '"five_epoch_matrix_release": True' in finalizer
+    assert '"five_epoch_contract_revision_only": True' in finalizer
+    assert '"existing_five_epoch_matrix_release": False' in finalizer
     assert "eventmatr_d11_ternary_owner_v1" in finalizer
     assert "validate_d1_checkpoint_compatibility" in task
     assert "D11_CHECKPOINT_SCHEMA" in task
@@ -180,6 +194,41 @@ def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds() -> Non
         validate_mechanism_metrics(
             {**metrics, "event_runtime_capacity_exhaustions_unscaled": 1.0}
         )
+
+
+def test_d11_association_scan_is_read_only_train_only_and_source_exact() -> None:
+    scan = (
+        ROOT / "scripts" / "run_eventmatr_d11_association_scan.py"
+    ).read_text(encoding="utf-8")
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d11_association_scan.sh"
+    ).read_text(encoding="utf-8")
+    assert 'THUMOS14Dataset(args, subset="train")' in scan
+    assert 'make_model_inputs(args, features, runtime_infos)' in scan
+    assert "D1_RUNTIME_FORBIDDEN_MODEL_INFO" in scan
+    assert '"ground_truth_visible_to_model": False' in scan
+    assert 'runtime_infos.pop("is_real_prefix")' in scan
+    assert '"padding_metadata_visible_to_model": False' in scan
+    assert '"eos_semantics": "current_stream_termination_observation_only"' in scan
+    assert '"status": "DIAGNOSTIC_COMPLETE"' in scan
+    assert '"one_epoch_mechanism_gate_status": "FAIL_UNCHANGED"' in scan
+    assert "expected_model_info_keys" in scan
+    assert "post_forward_opportunity_scan_without_target_ownership_exclusion" in scan
+    assert "necessary_condition_opportunity_scan_not_teacher_ownership_reconstruction" in scan
+    assert '"performance_gate_release": False' in scan
+    assert '"checkpoint_updated": False' in scan
+    assert '"strict_causal_paper_result_valid": False' in scan
+    assert '"threshold_search": False' in scan
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in scan
+    assert "model.load_state_dict" in scan
+    assert "optimizer" not in scan
+    assert "#SBATCH --gpus=1" in slurm
+    assert "verify_source_identity.py" in slurm
+    assert "--max-batches" not in slurm
+    assert "MATR_CHECKPOINT_SHA256" in slurm
+    assert "MATR_OPTIONS_SHA256" in slurm
+    assert "--expected-checkpoint-sha256" in slurm
+    assert "--expected-options-sha256" in slurm
 
 
 def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:

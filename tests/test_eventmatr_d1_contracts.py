@@ -230,6 +230,12 @@ def test_causal_single_assignment_ignores_teacher_query_identity() -> None:
     assert dict(result.assignments) == {1: 7}
     assert result.unmatched_queries == ()
     assert result.unmatched_targets == ()
+    assert result.predicted_query_count == 1
+    assert result.target_count == 1
+    assert result.pair_count == 1
+    assert result.class_mismatch_pair_count == 0
+    assert result.start_distance_reject_pair_count == 0
+    assert result.admissible_pair_count == 1
 
 
 def test_causal_single_assignment_refuses_exactly_ambiguous_identity() -> None:
@@ -257,6 +263,74 @@ def test_causal_single_assignment_refuses_exactly_ambiguous_identity() -> None:
     assert result.ambiguous_targets == (3,)
     assert result.unmatched_queries == (0, 1)
     assert result.unmatched_targets == (3,)
+    assert result.pair_count == 2
+    assert result.admissible_pair_count == 2
+
+
+def test_causal_single_assignment_accounts_for_each_rejection_barrier() -> None:
+    result = causal_single_assignment(
+        predicted_query_indices=[0, 1],
+        candidate_start_frames=torch.tensor([10.0, 30.0]),
+        class_logits=torch.tensor(
+            [[NEG, POS, NEG], [POS, NEG, NEG]], dtype=torch.float32
+        ),
+        query_features=torch.tensor(
+            [[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32
+        ),
+        target_specs=[
+            {
+                "target_event_id": 7,
+                "class_id": 0,
+                "start_frame": 10.0,
+                "anchor_feature": torch.tensor([1.0, 0.0]),
+            }
+        ],
+        max_start_distance=4.0,
+    )
+    assert dict(result.assignments) == {}
+    assert result.pair_count == 2
+    assert result.class_mismatch_pair_count == 1
+    assert result.start_distance_reject_pair_count == 1
+    assert result.admissible_pair_count == 0
+
+
+def test_causal_single_assignment_rejects_nonfinite_or_invalid_semantics() -> None:
+    common = {
+        "predicted_query_indices": [0],
+        "candidate_start_frames": torch.tensor([10.0]),
+        "class_logits": torch.tensor([[POS, NEG, NEG]], dtype=torch.float32),
+        "query_features": torch.tensor([[1.0, 0.0]], dtype=torch.float32),
+        "max_start_distance": 4.0,
+    }
+    target = {
+        "target_event_id": 7,
+        "class_id": 0,
+        "start_frame": 10.0,
+        "anchor_feature": torch.tensor([1.0, 0.0]),
+    }
+    with pytest.raises(ValueError, match="finite"):
+        causal_single_assignment(
+            **{**common, "candidate_start_frames": torch.tensor([float("nan")])},
+            target_specs=[target],
+        )
+    with pytest.raises(ValueError, match="foreground range"):
+        causal_single_assignment(
+            **common,
+            target_specs=[{**target, "class_id": 9}],
+        )
+    with pytest.raises(ValueError, match="foreground range"):
+        causal_single_assignment(
+            **{**common, "predicted_query_indices": []},
+            target_specs=[{**target, "class_id": 9}],
+        )
+    with pytest.raises(ValueError, match="foreground and background"):
+        causal_single_assignment(
+            **{
+                **common,
+                "class_logits": torch.tensor([[POS]], dtype=torch.float32),
+            },
+            target_specs=[],
+        )
 
 
 def test_causal_temporal_history_is_independent_of_physical_batch_splits() -> None:
@@ -802,6 +876,9 @@ def test_right_censored_end_hazard_has_survival_gradient() -> None:
     assert losses["event_source_teacher_birth_group_count"] == 1
     assert losses["event_source_teacher_birth_end_risk_group_count"] == 1
     assert losses["event_association_teacher_birth_count"] == 1
+    assert losses["event_association_predicted_associated_count"] == 0
+    assert losses["event_source_predicted_associated_row_count"] == 0
+    assert losses["event_association_audit_prefix_count"] == 0
     assert losses["event_source_teacher_birth_birth_count"] == 1
     assert losses["event_source_teacher_birth_end_count"] == 1
     assert losses["event_runtime_birth_count"] == 2
@@ -878,6 +955,7 @@ def test_full_d1_model_uses_one_differentiable_ragged_unroll() -> None:
     }
     outputs = model(copy.deepcopy(model_input), torch.device("cpu"))
     assert outputs["event_ragged_state_logits"].size(0) >= 1
+    assert len(outputs["event_association_audit_rows"]) == 3
     criterion = _criterion(args)
     losses = criterion.loss_event(
         outputs,

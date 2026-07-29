@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v2",
+  "protocol_id": "eventmatr_d1_preexperiments_v3",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -85,6 +85,28 @@
       "release_condition": "all prior hard contracts pass"
     },
     {
+      "stage": "d11_failed_one_epoch_association_scan",
+      "trigger": "one-epoch predicted-associated source is absent or zero",
+      "checkpoint_epoch": 1,
+      "checkpoint_training_source": {
+        "commit": "de0837cf38e05d65a40f0744b863056edc2f433a",
+        "tree": "91d998e787c42895b08571ef0ed5ab5af5458a47"
+      },
+      "lanes": [
+        "TH"
+      ],
+      "requires": [
+        "predicted-only strict-causal train replay",
+        "ground truth outside the model boundary",
+        "visible-target and predicted-birth opportunity counts",
+        "class-mismatch, start-distance, ambiguity and assignment closure",
+        "unchanged checkpoint hash",
+        "zero capacity exhaustion",
+        "absent locked-test sentinel"
+      ],
+      "release_condition": "diagnostic execution is recorded with the one-epoch mechanism gate still failed; this stage never releases a performance pilot"
+    },
+    {
       "stage": "seed52_short_pilots",
       "epochs": [
         5,
@@ -98,7 +120,7 @@
         "H",
         "TH"
       ],
-      "release_condition": "D1.1 one-epoch mechanism receipt is PASS"
+      "release_condition": "the D1.1 one-epoch training mechanism receipt, never the diagnostic scan status, is PASS and the full five-epoch science contract is prospectively frozen"
     }
   ],
   "metrics": {

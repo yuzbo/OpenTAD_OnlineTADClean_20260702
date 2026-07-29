@@ -346,6 +346,7 @@ class MATR(nn.Module):
                 ragged_sources = []
                 birth_risk_groups = []
                 association_rows = []
+                association_audit_rows = []
                 runtime_source_events = []
                 if self.event_d1_enabled and self.training:
                     if event_targets is None or event_valid_mask is None:
@@ -525,6 +526,37 @@ class MATR(nn.Module):
                             query_features=event_query_features[batch_index],
                             target_specs=visible_target_specs,
                             max_start_distance=float(self.n_seglen),
+                        )
+                        association_audit_rows.append(
+                            {
+                                "video_name": video_name,
+                                "frame": frame_value,
+                                "visible_target_count": int(
+                                    association.target_count
+                                ),
+                                "predicted_birth_query_count": int(
+                                    association.predicted_query_count
+                                ),
+                                "pair_count": int(association.pair_count),
+                                "class_mismatch_pair_count": int(
+                                    association.class_mismatch_pair_count
+                                ),
+                                "start_distance_reject_pair_count": int(
+                                    association.start_distance_reject_pair_count
+                                ),
+                                "admissible_pair_count": int(
+                                    association.admissible_pair_count
+                                ),
+                                "ambiguous_query_count": len(
+                                    association.ambiguous_queries
+                                ),
+                                "ambiguous_target_count": len(
+                                    association.ambiguous_targets
+                                ),
+                                "assignment_count": len(
+                                    association.assignments
+                                ),
+                            }
                         )
                         for query_index, target_event_id in sorted(
                             association.assignments.items()
@@ -929,6 +961,7 @@ class MATR(nn.Module):
                 out["event_ragged_sources"] = ragged_sources
                 out["event_birth_risk_groups"] = birth_risk_groups
                 out["event_association_rows"] = association_rows
+                out["event_association_audit_rows"] = association_audit_rows
                 out["event_runtime_source_events"] = runtime_source_events
 
             # Dense prototypes train the same decoder used for ragged runtime

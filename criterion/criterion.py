@@ -830,6 +830,25 @@ class CriterionMATR(nn.Module):
         for row in outputs["event_association_rows"]:
             source = str(row["source"])
             association_counts[source] = association_counts.get(source, 0) + 1
+        association_audit_rows = outputs.get("event_association_audit_rows", ())
+        losses["event_association_audit_prefix_count"] = torch.tensor(
+            float(len(association_audit_rows)), device=device
+        )
+        for field in (
+            "visible_target_count",
+            "predicted_birth_query_count",
+            "pair_count",
+            "class_mismatch_pair_count",
+            "start_distance_reject_pair_count",
+            "admissible_pair_count",
+            "ambiguous_query_count",
+            "ambiguous_target_count",
+            "assignment_count",
+        ):
+            losses["event_association_audit_{}".format(field)] = torch.tensor(
+                float(sum(int(row[field]) for row in association_audit_rows)),
+                device=device,
+            )
         lifecycle_counts = {}
         for row in outputs.get("event_runtime_source_events", ()):
             key = (str(row["source"]), str(row["transition"]))
@@ -841,6 +860,15 @@ class CriterionMATR(nn.Module):
                 for character in str(source)
             )
 
+        known_sources = {
+            "predicted_associated",
+            "predicted_ambiguous",
+            "predicted_unmatched",
+            "teacher_birth",
+            "teacher_recovery",
+            "teacher_query_conflict_skipped",
+            "associated_error_recovery",
+        }
         for source in sorted(
             set(source_row_counts)
             | set(source_class_row_counts)
@@ -848,6 +876,7 @@ class CriterionMATR(nn.Module):
             | set(source_end_risk_counts)
             | set(association_counts)
             | {source for source, _ in lifecycle_counts}
+            | known_sources
         ):
             suffix = metric_source_name(source)
             losses["event_source_{}_row_count".format(suffix)] = torch.tensor(

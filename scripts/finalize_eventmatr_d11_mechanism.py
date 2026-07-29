@@ -186,7 +186,8 @@ def main() -> None:
         "strict_causal_paper_result_valid": False,
         "train_prefix_metrics_diagnostic_only": True,
         "performance_gate_applied": False,
-        "five_epoch_matrix_release": True,
+        "five_epoch_contract_revision_only": True,
+        "existing_five_epoch_matrix_release": False,
         "source_identity": expected_identity,
         "smoke_gate": smoke,
         "checkpoint": {
