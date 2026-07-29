@@ -120,7 +120,7 @@
         "same seed and train-dataset-then-model construction order",
         "unchanged model and dataset initialization source since training",
         "all-parameter initial-to-terminal absolute and relative deltas",
-        "optimizer step-count closure",
+        "3270 completed loader batches plus conditional Adam parameter-step bounds",
         "no model forward or optimizer step",
         "unchanged checkpoint hash",
         "absent locked-test sentinel"

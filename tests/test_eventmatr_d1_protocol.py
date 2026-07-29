@@ -331,19 +331,68 @@ def test_d11_parameter_delta_audit_is_read_only_and_exact() -> None:
     assert summary["max_absolute_delta"] == pytest.approx(1.0)
 
     checkpoint = {
+        "epoch": 1,
         "optimizer": {
             "state": {
                 0: {"step": torch.tensor(3270)},
-                1: {"step": 3270},
+                1: {"step": 1258},
             },
-            "param_groups": [{"lr": 1.0e-8}],
+            "param_groups": [{"lr": 1.0e-8, "params": [0, 1]}],
         }
     }
-    optimizer = _optimizer_step_summary(checkpoint, expected_steps=3270)
+    parameter_names = [
+        "module.event_transition_head.state.weight",
+        "module.event_owner_decoder.state.weight",
+    ]
+    optimizer = _optimizer_step_summary(
+        checkpoint,
+        expected_steps=3270,
+        parameter_names=parameter_names,
+    )
     assert optimizer["step_count_closed"] is True
-    assert optimizer["unique_steps"] == [3270]
+    assert optimizer["unique_steps"] == [1258, 3270]
+    assert optimizer["step_histogram"] == {"1258": 1, "3270": 1}
+    assert sum(
+        group["parameter_count"]
+        for group in optimizer["step_summary_by_group"].values()
+    ) == optimizer["parameter_count"]
+    assert sum(
+        group["state_initialized_parameter_count"]
+        for group in optimizer["step_summary_by_group"].values()
+    ) == optimizer["state_parameter_count"]
+    assert optimizer["step_summary_by_group"]["event_owner_decoder"][
+        "conditional_step_parameter_count"
+    ] == 1
     with pytest.raises(RuntimeError, match="step-count closure failed"):
-        _optimizer_step_summary(checkpoint, expected_steps=3269)
+        _optimizer_step_summary(
+            checkpoint,
+            expected_steps=3269,
+            parameter_names=parameter_names,
+        )
+    partial_checkpoint = {
+        "optimizer": {
+            "state": {0: {"step": 3270}},
+            "param_groups": [{"lr": 1.0e-8, "params": [0, 1]}],
+        }
+    }
+    partial = _optimizer_step_summary(
+        partial_checkpoint,
+        expected_steps=3270,
+        parameter_names=parameter_names,
+    )
+    assert partial["state_uninitialized_parameter_count"] == 1
+    unknown_checkpoint = {
+        "optimizer": {
+            "state": {2: {"step": 3270}},
+            "param_groups": [{"lr": 1.0e-8, "params": [0, 1]}],
+        }
+    }
+    with pytest.raises(RuntimeError, match="unknown parameter"):
+        _optimizer_step_summary(
+            unknown_checkpoint,
+            expected_steps=3270,
+            parameter_names=parameter_names,
+        )
 
 
 def test_d1_pilot_finalizer_rejects_empty_or_incomplete_metrics() -> None:
