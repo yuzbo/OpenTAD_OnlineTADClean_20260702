@@ -137,6 +137,7 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
         ROOT / "scripts" / "finalize_eventmatr_d11_mechanism.py"
     ).read_text(encoding="utf-8")
     task = (ROOT / "on_tal_task.py").read_text(encoding="utf-8")
+    config = (ROOT / "util" / "config.py").read_text(encoding="utf-8")
 
     assert "#SBATCH --gpus=1" in slurm
     assert "SLURM_ARRAY_TASK_ID" not in slurm
@@ -154,6 +155,7 @@ def test_d11_one_epoch_mechanism_is_singleton_fresh_and_train_only() -> None:
     assert "eventmatr_d11_ternary_owner_v1" in finalizer
     assert "validate_d1_checkpoint_compatibility" in task
     assert "D11_CHECKPOINT_SCHEMA" in task
+    assert "'d11_mechanism'" in config
 
 
 def test_d11_mechanism_gate_requires_liveness_without_effect_thresholds() -> None:

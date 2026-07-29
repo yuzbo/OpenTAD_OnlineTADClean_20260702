@@ -112,10 +112,11 @@ def make_parser():
             'upstream_native',
             'matched_study',
             'd1_preexperiment',
+            'd11_mechanism',
             'locked_test',
         ),
         type=str,
-        help='Audit label separating upstream behaviour, formal training, D1 train-only pilots, and one-shot test.',
+        help='Audit label separating upstream behaviour, formal training, D1 train-only gates, and one-shot test.',
     )
     
     parser.add_argument('--use_flag', action='store_true')
