@@ -41,6 +41,18 @@ D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
 }
 
 
+def censor_d1_event_targets_for_model(event_targets, event_valid_mask):
+    """Hide a GT endpoint until its first observable END prefix."""
+
+    censored = event_targets.clone()
+    valid = event_valid_mask.to(device=censored.device).bool()
+    observed_end = censored[..., 7] > 0.5
+    censored[..., 3] = censored[..., 3].masked_fill(
+        valid & ~observed_end, float("nan")
+    )
+    return censored
+
+
 def make_model_inputs(args, feature_inputs, infos, targets=None):
     """Build the causal model boundary while retaining evaluator-only metadata."""
 
@@ -64,7 +76,9 @@ def make_model_inputs(args, feature_inputs, infos, targets=None):
         and targets is not None
         and bool(getattr(args, "training", False))
     ):
-        payload["event_targets"] = targets["event_targets"]
+        payload["event_targets"] = censor_d1_event_targets_for_model(
+            targets["event_targets"], targets["event_valid_mask"]
+        )
         payload["event_valid_mask"] = targets["event_valid_mask"]
     return payload
 

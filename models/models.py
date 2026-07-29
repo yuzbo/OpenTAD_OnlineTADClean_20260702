@@ -7,11 +7,15 @@ import math
 import random
 from .transformer import build_transformer
 from .event_memory import (
+    CausalTemporalHistory,
     DynamicEventMemory,
     EventTransitionHead,
     OwnerEventDecoder,
+    causal_single_assignment,
+    d1_owner_supervision,
     resolve_event_modes,
     resolve_model_variant,
+    select_disjoint_teacher_query,
     temporal_viterbi_assignment,
 )
 
@@ -112,7 +116,10 @@ class MATR(nn.Module):
             # O0 refreshes it from current queries, whereas O1 carries it
             # forward.  Both paths use this same lifecycle/class decoder.
             self.event_owner_decoder = OwnerEventDecoder(
-                n_embedding_dim, n_class, num_heads=n_dec_head
+                n_embedding_dim,
+                n_class,
+                num_heads=n_dec_head,
+                num_states=3 if self.event_d1_enabled else 4,
             )
             self.event_memory = DynamicEventMemory(
                 birth_mode=self.birth_mode,
@@ -129,7 +136,9 @@ class MATR(nn.Module):
                     self.event_d1_enabled and self.event_d1_use_identity
                 ),
                 strict_causal_boundary=self.event_d1_enabled,
+                owner_state_count=3 if self.event_d1_enabled else 4,
             )
+            self.event_temporal_history = CausalTemporalHistory(n_seglen)
     
     def forward(self, inputs, device):
         # inputs - batch x seq_len x featsize
@@ -152,6 +161,31 @@ class MATR(nn.Module):
                         sorted(forbidden)
                     )
                 )
+            if self.training and event_targets is not None:
+                if event_valid_mask is None:
+                    raise RuntimeError(
+                        "D1 training target visibility mask is missing"
+                    )
+                valid = event_valid_mask.to(event_targets.device).bool()
+                observed_end = event_targets[..., 7] > 0.5
+                exposed_future_end = (
+                    valid
+                    & ~observed_end
+                    & torch.isfinite(event_targets[..., 3])
+                )
+                if bool(exposed_future_end.any().item()):
+                    raise RuntimeError(
+                        "D1 model boundary received a future GT endpoint"
+                    )
+                missing_observed_end = (
+                    valid
+                    & observed_end
+                    & ~torch.isfinite(event_targets[..., 3])
+                )
+                if bool(missing_observed_end.any().item()):
+                    raise RuntimeError(
+                        "D1 observed END target is missing its current endpoint"
+                    )
         inputs = inputs['inputs']
         st = infos['st']
         ed = infos['ed']
@@ -310,7 +344,9 @@ class MATR(nn.Module):
                 ragged_embeddings = []
                 ragged_group_keys = []
                 ragged_sources = []
-                temporal_history = {}
+                birth_risk_groups = []
+                association_rows = []
+                runtime_source_events = []
                 if self.event_d1_enabled and self.training:
                     if event_targets is None or event_valid_mask is None:
                         raise RuntimeError(
@@ -342,14 +378,13 @@ class MATR(nn.Module):
                         for row in rows:
                             target_by_id[int(row[0].item())] = row
 
-                        history = temporal_history.setdefault(video_name, [])
-                        history.append(
-                            {
-                                "frame": frame_value,
-                                "state_logits": event_state_logits[batch_index],
-                                "class_logits": anc_cls[batch_index],
-                                "query_features": event_query_features[batch_index],
-                            }
+                        self.event_temporal_history.append(
+                            video_name=video_name,
+                            frame=frame_value,
+                            state_logits=event_state_logits[batch_index],
+                            birth_logits=event_birth_logits[batch_index],
+                            class_logits=anc_cls[batch_index],
+                            query_features=event_query_features[batch_index],
                         )
                         active_target_ids = {
                             record.target_event_id
@@ -364,18 +399,24 @@ class MATR(nn.Module):
                             )
                         )
                         teacher_ratio = min(1.0, max(0.0, teacher_ratio))
+                        visible_target_specs = []
+                        visible_target_details = {}
                         for target_event_id, row in target_by_id.items():
                             is_birth = bool(row[5].item())
+                            is_alive = bool(row[6].item())
+                            is_end = bool(row[7].item())
                             missing_track = target_event_id not in active_target_ids
-                            if not (is_birth or missing_track):
+                            if not (is_birth or (missing_track and is_alive)):
                                 continue
                             start_frame = float(row[2].item())
                             lower = max(0.0, start_frame - self.n_seglen + 1.0)
-                            window = [
-                                item
-                                for item in history
-                                if lower <= item["frame"] <= frame_value
-                            ]
+                            window = self.event_temporal_history.window(
+                                video_name, lower=lower, upper=frame_value
+                            )
+                            if not window:
+                                raise RuntimeError(
+                                    "causal history omitted the current real prefix"
+                                )
                             window_state = torch.stack(
                                 [item["state_logits"] for item in window],
                                 dim=0,
@@ -411,8 +452,130 @@ class MATR(nn.Module):
                                 )
                             if not path:
                                 continue
-                            # Reproducible oracle/predicted mixture without a
-                            # second RNG stream or future annotations.
+                            if is_birth:
+                                risk_indices = list(range(len(window)))
+                                if self.event_d1_lane == "r":
+                                    risk_indices = [len(window) - 1]
+                                birth_risk_groups.append(
+                                    {
+                                        "batch_index": int(batch_index),
+                                        "video_name": video_name,
+                                        "target_event_id": int(target_event_id),
+                                        "class_id": int(row[1].item()),
+                                        "start_frame": float(start_frame),
+                                        "frames": torch.tensor(
+                                            [
+                                                float(window[index]["frame"])
+                                                for index in risk_indices
+                                            ],
+                                            device=event_state_logits.device,
+                                            dtype=event_state_logits.dtype,
+                                        ),
+                                        "selected_logits": torch.stack(
+                                            [
+                                                window[index]["birth_logits"][
+                                                    int(path[path_index])
+                                                ]
+                                                for path_index, index in enumerate(
+                                                    risk_indices
+                                                )
+                                            ]
+                                        ),
+                                        "terminal_query": int(path[-1]),
+                                    }
+                                )
+                            if not missing_track or is_end:
+                                continue
+                            detail = {
+                                "row": row,
+                                "path": path,
+                                "start_frame": start_frame,
+                                "is_birth": is_birth,
+                                "anchor_feature": window[-1]["query_features"][
+                                    int(path[-1])
+                                ],
+                            }
+                            visible_target_details[int(target_event_id)] = detail
+                            visible_target_specs.append(
+                                {
+                                    "target_event_id": int(target_event_id),
+                                    "class_id": int(row[1].item()),
+                                    "start_frame": start_frame,
+                                    "anchor_feature": window[-1][
+                                        "query_features"
+                                    ][int(path[-1])],
+                                }
+                            )
+
+                        predicted_birth_queries = (
+                            self.event_memory.preview_birth_queries(
+                                video_name,
+                                candidate_state_logits=event_state_logits[
+                                    batch_index
+                                ],
+                                birth_logits=event_birth_logits[batch_index],
+                            )
+                        )
+                        association = causal_single_assignment(
+                            predicted_query_indices=predicted_birth_queries,
+                            candidate_start_frames=candidate_start_frames[
+                                batch_index
+                            ],
+                            class_logits=anc_cls[batch_index],
+                            query_features=event_query_features[batch_index],
+                            target_specs=visible_target_specs,
+                            max_start_distance=float(self.n_seglen),
+                        )
+                        for query_index, target_event_id in sorted(
+                            association.assignments.items()
+                        ):
+                            detail = visible_target_details[int(target_event_id)]
+                            oracle_births.append(
+                                {
+                                    "query_index": int(query_index),
+                                    "target_event_id": int(target_event_id),
+                                    "start_frame": max(
+                                        0.0, float(detail["start_frame"])
+                                    ),
+                                    "source": "predicted_associated",
+                                    "association_status": "associated",
+                                    "force_create": False,
+                                    "merge_predicted": True,
+                                }
+                            )
+                            association_rows.append(
+                                {
+                                    "video_name": video_name,
+                                    "frame": frame_value,
+                                    "query_index": int(query_index),
+                                    "target_event_id": int(target_event_id),
+                                    "source": "predicted_associated",
+                                }
+                            )
+
+                        for query_index in association.unmatched_queries:
+                            association_rows.append(
+                                {
+                                    "video_name": video_name,
+                                    "frame": frame_value,
+                                    "query_index": int(query_index),
+                                    "target_event_id": None,
+                                    "source": (
+                                        "predicted_ambiguous"
+                                        if query_index
+                                        in association.ambiguous_queries
+                                        else "predicted_unmatched"
+                                    ),
+                                }
+                            )
+
+                        # Reproducible teacher/predicted mixture without a
+                        # second RNG stream or future annotations.  Teacher
+                        # rows are independent births and cannot silently
+                        # relabel an inadmissible predicted query.
+                        occupied_birth_queries = set(predicted_birth_queries)
+                        for target_event_id in association.unmatched_targets:
+                            detail = visible_target_details[int(target_event_id)]
                             draw = (
                                 (
                                     target_event_id * 1103515245
@@ -420,17 +583,92 @@ class MATR(nn.Module):
                                 )
                                 & 0xFFFF
                             ) / 65536.0
+                            force_create = draw < teacher_ratio
+                            source = (
+                                "teacher_birth"
+                                if detail["is_birth"]
+                                else "teacher_recovery"
+                            )
+                            teacher_query = int(detail["path"][-1])
+                            teacher_query_reassigned = False
+                            if force_create:
+                                row = detail["row"]
+                                class_id = min(
+                                    max(0, int(row[1].item())),
+                                    anc_cls.size(-1) - 2,
+                                )
+                                available = [
+                                    query_index
+                                    for query_index in range(
+                                        event_state_logits.size(1)
+                                    )
+                                    if query_index not in occupied_birth_queries
+                                ]
+                                if available:
+                                    with torch.no_grad():
+                                        start_evidence = event_state_logits[
+                                            batch_index
+                                        ].log_softmax(dim=-1)[:, 1]
+                                        class_evidence = anc_cls[
+                                            batch_index
+                                        ].log_softmax(dim=-1)[:, class_id]
+                                        normalized_queries = F.normalize(
+                                            event_query_features[batch_index],
+                                            dim=-1,
+                                        )
+                                        normalized_anchor = F.normalize(
+                                            detail["anchor_feature"].to(
+                                                event_query_features
+                                            ),
+                                            dim=0,
+                                        )
+                                        scores = (
+                                            start_evidence
+                                            + class_evidence
+                                            + normalized_queries
+                                            @ normalized_anchor
+                                        )
+                                    (
+                                        selected_teacher_query,
+                                        teacher_query_reassigned,
+                                    ) = select_disjoint_teacher_query(
+                                        scores,
+                                        preferred_query=teacher_query,
+                                        occupied_queries=occupied_birth_queries,
+                                    )
+                                else:
+                                    selected_teacher_query = None
+                                if selected_teacher_query is None:
+                                    force_create = False
+                                    source = "teacher_query_conflict_skipped"
+                                else:
+                                    teacher_query = selected_teacher_query
+                            if force_create:
+                                occupied_birth_queries.add(teacher_query)
                             oracle_births.append(
                                 {
-                                    "query_index": int(path[-1]),
+                                    "query_index": int(teacher_query),
                                     "target_event_id": int(target_event_id),
-                                    "start_frame": max(0.0, start_frame),
-                                    "source": (
-                                        "oracle"
-                                        if is_birth
-                                        else "oracle_reacquisition"
+                                    "start_frame": max(
+                                        0.0, float(detail["start_frame"])
                                     ),
-                                    "force_create": draw < teacher_ratio,
+                                    "source": source,
+                                    "association_status": "associated",
+                                    "force_create": force_create,
+                                    "merge_predicted": False,
+                                }
+                            )
+                            association_rows.append(
+                                {
+                                    "video_name": video_name,
+                                    "frame": frame_value,
+                                    "query_index": int(teacher_query),
+                                    "target_event_id": int(target_event_id),
+                                    "source": source,
+                                    "force_create": bool(force_create),
+                                    "query_reassigned": bool(
+                                        teacher_query_reassigned
+                                    ),
                                 }
                             )
                     if self.ownership_mode == "fresh_rematch" and real_prefix:
@@ -481,20 +719,15 @@ class MATR(nn.Module):
                                     if target_event_id is None
                                     else target_by_id.get(int(target_event_id))
                                 )
-                                if target_row is None:
-                                    target_state = 0
-                                    target_class = -100
-                                    target_end_offset = 0.0
-                                else:
-                                    states = [
-                                        bool(target_row[column].item())
-                                        for column in (5, 6, 7)
-                                    ]
-                                    target_state = 1 + states.index(True)
-                                    target_class = int(target_row[1].item())
-                                    target_end_offset = (
-                                        frame_value - float(target_row[3].item())
-                                    ) / self.n_seglen
+                                (
+                                    target_state,
+                                    target_class,
+                                    target_end_offset,
+                                ) = d1_owner_supervision(
+                                    target_row,
+                                    current_frame=frame_value,
+                                    segment_size=self.n_seglen,
+                                )
                                 ragged_state_logits.append(
                                     owner_state_logits[0, owner_index]
                                 )
@@ -519,8 +752,7 @@ class MATR(nn.Module):
                                     )
                                 )
                                 ragged_sources.append(record_info["source"])
-                    runtime_rows.append(
-                        self.event_memory.step(
+                    runtime_row = self.event_memory.step(
                             video_names=[video_names[batch_index]],
                             current_frames=current_frames[
                                 batch_index : batch_index + 1
@@ -559,6 +791,12 @@ class MATR(nn.Module):
                             oracle_births=[oracle_births],
                             **owner_runtime,
                         )
+                    runtime_rows.append(runtime_row)
+                    runtime_source_events.extend(
+                        dict(row)
+                        for row in self.event_memory.last_audit.get(
+                            "lifecycle_events", ()
+                        )
                     )
                 runtime = {
                     key: torch.cat([row[key] for row in runtime_rows], dim=0)
@@ -566,6 +804,7 @@ class MATR(nn.Module):
                 }
                 if self.event_d1_enabled and self.training:
                     self.event_memory.detach_graph()
+                    self.event_temporal_history.detach()
             else:
                 shape = event_birth_logits.shape
                 runtime = {
@@ -666,7 +905,7 @@ class MATR(nn.Module):
                     )
                 else:
                     out["event_ragged_state_logits"] = event_state_logits.new_zeros(
-                        (0, 4)
+                        (0, self.event_owner_decoder.num_states)
                     )
                     out["event_ragged_state_targets"] = torch.zeros(
                         (0,), device=event_state_logits.device, dtype=torch.long
@@ -688,6 +927,9 @@ class MATR(nn.Module):
                     )
                 out["event_ragged_group_keys"] = ragged_group_keys
                 out["event_ragged_sources"] = ragged_sources
+                out["event_birth_risk_groups"] = birth_risk_groups
+                out["event_association_rows"] = association_rows
+                out["event_runtime_source_events"] = runtime_source_events
 
             # Dense prototypes train the same decoder used for ragged runtime
             # records.  This path is deliberately present in every BxO cell,
@@ -710,6 +952,7 @@ class MATR(nn.Module):
         """Reset only EventMATR runtime records; native MATR is a no-op."""
         if self.event_enabled:
             self.event_memory.reset(video_name)
+            self.event_temporal_history.reset(video_name)
 
     @staticmethod
     def _slice_prefix_info(infos, key, index, default):

@@ -210,10 +210,16 @@ def _model_inputs(args, inputs, infos, targets):
     visible_infos = {
         key: value for key, value in infos.items() if key not in forbidden
     }
+    event_targets = targets["event_targets"].clone()
+    event_valid = targets["event_valid_mask"].to(event_targets.device).bool()
+    observed_end = event_targets[..., 7] > 0.5
+    event_targets[..., 3] = event_targets[..., 3].masked_fill(
+        event_valid & ~observed_end, float("nan")
+    )
     return {
         "inputs": inputs,
         "infos": visible_infos,
-        "event_targets": targets["event_targets"],
+        "event_targets": event_targets,
         "event_valid_mask": targets["event_valid_mask"],
     }
 

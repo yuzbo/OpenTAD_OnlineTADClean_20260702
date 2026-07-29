@@ -8,7 +8,7 @@ slot bank.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -69,6 +69,332 @@ def temporal_viterbi_assignment(
             path.append(query_index)
         path.reverse()
     return path
+
+
+@dataclass(frozen=True)
+class CausalAssociationResult:
+    """One-to-one training association computed from prefix-visible evidence."""
+
+    assignments: Mapping[int, int]
+    ambiguous_queries: Tuple[int, ...]
+    ambiguous_targets: Tuple[int, ...]
+    unmatched_queries: Tuple[int, ...]
+    unmatched_targets: Tuple[int, ...]
+
+
+def causal_single_assignment(
+    *,
+    predicted_query_indices: Sequence[int],
+    candidate_start_frames: torch.Tensor,
+    class_logits: torch.Tensor,
+    query_features: torch.Tensor,
+    target_specs: Sequence[Mapping],
+    max_start_distance: float,
+    ambiguity_tolerance: float = 1e-8,
+) -> CausalAssociationResult:
+    """Associate learned births to visible events without future information.
+
+    Each target spec must contain ``target_event_id``, ``class_id``,
+    ``start_frame`` and the current causal-path ``anchor_feature``.  A pair is
+    admissible only when its foreground top class agrees and its start estimate
+    is within the declared feature-prefix window.  Assignment is stop-gradient,
+    deterministic and one-to-one.  Exact score ties are reported as ambiguous
+    rather than being turned into arbitrary identity labels.
+    """
+
+    if candidate_start_frames.ndim != 1:
+        raise ValueError("candidate_start_frames must be [Q]")
+    if class_logits.ndim != 2 or query_features.ndim != 2:
+        raise ValueError("class_logits/query_features must be [Q,*]")
+    if (
+        class_logits.size(0) != candidate_start_frames.size(0)
+        or query_features.size(0) != candidate_start_frames.size(0)
+    ):
+        raise ValueError("causal association query axes do not match")
+    if max_start_distance < 0:
+        raise ValueError("max_start_distance must be non-negative")
+    if ambiguity_tolerance < 0:
+        raise ValueError("ambiguity_tolerance must be non-negative")
+
+    queries = tuple(sorted({int(index) for index in predicted_query_indices}))
+    query_count = candidate_start_frames.size(0)
+    if any(index < 0 or index >= query_count for index in queries):
+        raise ValueError("predicted query index exceeds query bandwidth")
+
+    normalized_targets = []
+    target_ids = set()
+    for raw in target_specs:
+        target_event_id = int(raw["target_event_id"])
+        if target_event_id in target_ids:
+            raise ValueError("target_specs contains a duplicate target_event_id")
+        target_ids.add(target_event_id)
+        anchor = raw["anchor_feature"]
+        if not torch.is_tensor(anchor) or anchor.ndim != 1:
+            raise ValueError("target anchor_feature must be a rank-one tensor")
+        if anchor.numel() != query_features.size(-1):
+            raise ValueError("target anchor feature dimension does not match queries")
+        normalized_targets.append(
+            {
+                "target_event_id": target_event_id,
+                "class_id": int(raw["class_id"]),
+                "start_frame": float(raw["start_frame"]),
+                "anchor_feature": anchor,
+            }
+        )
+    normalized_targets.sort(key=lambda item: item["target_event_id"])
+    targets = tuple(item["target_event_id"] for item in normalized_targets)
+    if not queries or not targets:
+        return CausalAssociationResult(
+            assignments={},
+            ambiguous_queries=(),
+            ambiguous_targets=(),
+            unmatched_queries=queries,
+            unmatched_targets=targets,
+        )
+
+    foreground_classes = max(1, class_logits.size(-1) - 1)
+    with torch.no_grad():
+        foreground_logits = class_logits[:, :foreground_classes]
+        class_log_probability = foreground_logits.log_softmax(dim=-1)
+        predicted_classes = foreground_logits.argmax(dim=-1)
+        normalized_queries = F.normalize(query_features, dim=-1)
+
+        pair_scores = {}
+        by_query: Dict[int, List[Tuple[int, float]]] = {
+            query_index: [] for query_index in queries
+        }
+        by_target: Dict[int, List[Tuple[int, float]]] = {
+            target_event_id: [] for target_event_id in targets
+        }
+        scale = max(1.0, float(max_start_distance))
+        for query_index in queries:
+            predicted_class = int(predicted_classes[query_index].item())
+            predicted_start = float(candidate_start_frames[query_index].item())
+            for target in normalized_targets:
+                class_id = min(
+                    max(0, int(target["class_id"])), foreground_classes - 1
+                )
+                start_distance = abs(predicted_start - target["start_frame"])
+                if predicted_class != class_id or start_distance > max_start_distance:
+                    continue
+                anchor = F.normalize(
+                    target["anchor_feature"].to(query_features), dim=0
+                )
+                continuity = float(
+                    torch.dot(normalized_queries[query_index], anchor).item()
+                )
+                class_evidence = float(
+                    class_log_probability[query_index, class_id].item()
+                )
+                score = continuity + class_evidence - start_distance / scale
+                target_event_id = int(target["target_event_id"])
+                pair_scores[(query_index, target_event_id)] = score
+                by_query[query_index].append((target_event_id, score))
+                by_target[target_event_id].append((query_index, score))
+
+    def tied_best(values):
+        ordered = sorted((score for _, score in values), reverse=True)
+        return (
+            len(ordered) > 1
+            and abs(float(ordered[0]) - float(ordered[1])) <= ambiguity_tolerance
+        )
+
+    ambiguous_queries = {
+        query_index
+        for query_index, values in by_query.items()
+        if tied_best(values)
+    }
+    ambiguous_targets = {
+        target_event_id
+        for target_event_id, values in by_target.items()
+        if tied_best(values)
+    }
+    ambiguous_queries.update(
+        query_index
+        for target_event_id in ambiguous_targets
+        for query_index, _ in by_target[target_event_id]
+    )
+    ranked_pairs = sorted(
+        (
+            (score, query_index, target_event_id)
+            for (query_index, target_event_id), score in pair_scores.items()
+            if query_index not in ambiguous_queries
+            and target_event_id not in ambiguous_targets
+        ),
+        key=lambda item: (-item[0], item[1], item[2]),
+    )
+    assignments: Dict[int, int] = {}
+    assigned_targets = set()
+    for _, query_index, target_event_id in ranked_pairs:
+        if query_index in assignments or target_event_id in assigned_targets:
+            continue
+        assignments[query_index] = target_event_id
+        assigned_targets.add(target_event_id)
+
+    return CausalAssociationResult(
+        assignments=dict(assignments),
+        ambiguous_queries=tuple(sorted(ambiguous_queries)),
+        ambiguous_targets=tuple(sorted(ambiguous_targets)),
+        unmatched_queries=tuple(
+            query_index for query_index in queries if query_index not in assignments
+        ),
+        unmatched_targets=tuple(
+            target_event_id
+            for target_event_id in targets
+            if target_event_id not in assigned_targets
+        ),
+    )
+
+
+class CausalTemporalHistory:
+    """Video-keyed prefix history whose semantics ignore physical batches."""
+
+    def __init__(self, window_size: int):
+        if int(window_size) < 1:
+            raise ValueError("window_size must be positive")
+        self.window_size = int(window_size)
+        self._entries: Dict[str, List[dict]] = {}
+
+    def reset(self, video_name: Optional[str] = None) -> None:
+        if video_name is None:
+            self._entries.clear()
+        else:
+            self._entries.pop(str(video_name), None)
+
+    def append(
+        self,
+        *,
+        video_name: str,
+        frame: float,
+        state_logits: torch.Tensor,
+        birth_logits: torch.Tensor,
+        class_logits: torch.Tensor,
+        query_features: torch.Tensor,
+        is_real_prefix: bool = True,
+    ) -> None:
+        if not is_real_prefix:
+            return
+        if state_logits.ndim != 2 or state_logits.size(-1) != 4:
+            raise ValueError("history state_logits must be [Q,4]")
+        if birth_logits.shape != state_logits.shape[:1]:
+            raise ValueError("history birth_logits must be [Q]")
+        if class_logits.ndim != 2 or query_features.ndim != 2:
+            raise ValueError("history class_logits/query_features must be [Q,*]")
+        if (
+            class_logits.size(0) != state_logits.size(0)
+            or query_features.size(0) != state_logits.size(0)
+        ):
+            raise ValueError("history query axes do not match")
+        video_name = str(video_name)
+        frame = float(frame)
+        entries = self._entries.setdefault(video_name, [])
+        if entries and frame <= float(entries[-1]["frame"]):
+            raise RuntimeError(
+                "non-causal temporal history for {}: {} after {}".format(
+                    video_name, frame, entries[-1]["frame"]
+                )
+            )
+        entries.append(
+            {
+                "frame": frame,
+                "state_logits": state_logits,
+                "birth_logits": birth_logits,
+                "class_logits": class_logits,
+                "query_features": query_features,
+            }
+        )
+        lower = frame - self.window_size + 1.0
+        entries[:] = [entry for entry in entries if entry["frame"] >= lower]
+
+    def window(
+        self, video_name: str, *, lower: float, upper: float
+    ) -> Tuple[dict, ...]:
+        return tuple(
+            entry
+            for entry in self._entries.get(str(video_name), ())
+            if float(lower) <= entry["frame"] <= float(upper)
+        )
+
+    def frames(self, video_name: str) -> Tuple[float, ...]:
+        return tuple(
+            float(entry["frame"])
+            for entry in self._entries.get(str(video_name), ())
+        )
+
+    def detach(self) -> None:
+        for entries in self._entries.values():
+            for entry in entries:
+                for key in (
+                    "state_logits",
+                    "birth_logits",
+                    "class_logits",
+                    "query_features",
+                ):
+                    entry[key] = entry[key].detach()
+
+
+def d1_owner_supervision(
+    target_row: Optional[torch.Tensor],
+    *,
+    current_frame: float,
+    segment_size: int,
+) -> Tuple[int, int, float]:
+    """Map one prefix-visible target to CANCEL/CONTINUE/END supervision."""
+
+    if int(segment_size) < 1:
+        raise ValueError("segment_size must be positive")
+    if target_row is None:
+        return 0, -100, 0.0
+    if target_row.ndim != 1 or target_row.numel() < 8:
+        raise ValueError("D1 event target row must contain eight columns")
+    states = [bool(target_row[column].item()) for column in (5, 6, 7)]
+    if sum(int(state) for state in states) != 1:
+        raise RuntimeError("D1 owner target must have one visible state")
+    target_state = 2 if states[2] else 1
+    target_class = int(target_row[1].item())
+    if not states[2]:
+        return target_state, target_class, 0.0
+    end_frame = float(target_row[3].item())
+    if not torch.isfinite(target_row[3]):
+        raise RuntimeError("D1 observed END target has no finite endpoint")
+    target_end_offset = (float(current_frame) - end_frame) / int(segment_size)
+    return target_state, target_class, target_end_offset
+
+
+def select_disjoint_teacher_query(
+    scores: torch.Tensor,
+    *,
+    preferred_query: int,
+    occupied_queries: Sequence[int],
+) -> Tuple[Optional[int], bool]:
+    """Choose a deterministic free teacher query without relabelling a prediction."""
+
+    if scores.ndim != 1:
+        raise ValueError("teacher query scores must be rank one")
+    preferred_query = int(preferred_query)
+    if preferred_query < 0 or preferred_query >= scores.numel():
+        raise ValueError("preferred teacher query exceeds query bandwidth")
+    occupied = {int(index) for index in occupied_queries}
+    if any(index < 0 or index >= scores.numel() for index in occupied):
+        raise ValueError("occupied teacher query exceeds query bandwidth")
+    if preferred_query not in occupied:
+        return preferred_query, False
+    available = [
+        query_index
+        for query_index in range(scores.numel())
+        if query_index not in occupied
+    ]
+    if not available:
+        return None, False
+    with torch.no_grad():
+        selected = min(
+            available,
+            key=lambda query_index: (
+                -float(scores[query_index].item()),
+                query_index,
+            ),
+        )
+    return int(selected), True
 
 
 def resolve_model_variant(args) -> str:
@@ -183,8 +509,17 @@ class OwnerEventDecoder(nn.Module):
     applied to copied persistent owner embeddings at runtime.
     """
 
-    def __init__(self, hidden_dim: int, num_classes: int, num_heads: int = 4):
+    def __init__(
+        self,
+        hidden_dim: int,
+        num_classes: int,
+        num_heads: int = 4,
+        num_states: int = 4,
+    ):
         super().__init__()
+        if int(num_states) not in {3, 4}:
+            raise ValueError("owner num_states must be 3 or 4")
+        self.num_states = int(num_states)
         self.cross_attention = nn.MultiheadAttention(
             hidden_dim, num_heads, batch_first=True
         )
@@ -195,7 +530,7 @@ class OwnerEventDecoder(nn.Module):
             nn.Linear(hidden_dim * 2, hidden_dim),
         )
         self.norm2 = nn.LayerNorm(hidden_dim)
-        self.state = nn.Linear(hidden_dim, 4)
+        self.state = nn.Linear(hidden_dim, self.num_states)
         self.end_offset = nn.Sequential(nn.Linear(hidden_dim, 1), nn.Tanh())
         self.classification = nn.Linear(hidden_dim, num_classes)
 
@@ -241,6 +576,9 @@ class EventRecord:
     target_event_id: Optional[int] = None
     source: str = "predicted"
     reacquisition_count: int = 0
+    association_status: str = "unmatched"
+    cancel_frame: Optional[float] = None
+    last_reacquisition_mode: Optional[str] = None
 
 
 class DynamicEventMemory:
@@ -262,6 +600,7 @@ class DynamicEventMemory:
         segment_size: int = 64,
         enable_reacquisition: bool = False,
         strict_causal_boundary: bool = False,
+        owner_state_count: int = 4,
     ):
         if birth_mode not in _BIRTH_MODES:
             raise ValueError("invalid birth_mode: {!r}".format(birth_mode))
@@ -273,6 +612,8 @@ class DynamicEventMemory:
             raise ValueError("emit_delay_frames must be non-negative")
         if resource_limit < 0:
             raise ValueError("resource_limit must be non-negative")
+        if int(owner_state_count) not in {3, 4}:
+            raise ValueError("owner_state_count must be 3 or 4")
         self.birth_mode = birth_mode
         self.ownership_mode = ownership_mode
         self.birth_logit_threshold = (
@@ -289,6 +630,7 @@ class DynamicEventMemory:
         self.segment_size = int(segment_size)
         self.enable_reacquisition = bool(enable_reacquisition)
         self.strict_causal_boundary = bool(strict_causal_boundary)
+        self.owner_state_count = int(owner_state_count)
 
         self._records: Dict[str, List[EventRecord]] = {}
         self._cancelled_records: Dict[str, List[EventRecord]] = {}
@@ -309,6 +651,7 @@ class DynamicEventMemory:
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
+            "lifecycle_events": [],
         }
 
     def reset(self, video_name: Optional[str] = None) -> None:
@@ -339,6 +682,7 @@ class DynamicEventMemory:
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
+            "lifecycle_events": [],
         }
 
     def records(self, video_name: str) -> Tuple[EventRecord, ...]:
@@ -397,6 +741,7 @@ class DynamicEventMemory:
                         "target_event_id": None,
                         "source": "missing",
                         "owner_query_id": -1,
+                        "association_status": "missing",
                     }
                 )
             else:
@@ -406,9 +751,38 @@ class DynamicEventMemory:
                         "target_event_id": record.target_event_id,
                         "source": record.source,
                         "owner_query_id": int(record.owner_query_id),
+                        "association_status": record.association_status,
                     }
                 )
         return metadata
+
+    def preview_birth_queries(
+        self,
+        video_name: str,
+        *,
+        candidate_state_logits: torch.Tensor,
+        birth_logits: Optional[torch.Tensor] = None,
+    ) -> Tuple[int, ...]:
+        """Preview current learned START rising edges without mutating state."""
+
+        if candidate_state_logits.ndim != 2 or candidate_state_logits.size(-1) != 4:
+            raise ValueError("candidate_state_logits must be [Q,4]")
+        if birth_logits is None or tuple(birth_logits.shape) != (
+            candidate_state_logits.size(0),
+        ):
+            raise ValueError("birth_logits must be [Q] for learned START preview")
+        if self.birth_logit_threshold is None:
+            current_start = birth_logits > 0.0
+        else:
+            current_start = birth_logits >= self.birth_logit_threshold
+        previous_start = self._previous_start_active.get(str(video_name))
+        if previous_start is None or previous_start.numel() != current_start.numel():
+            previous_start = torch.zeros_like(current_start)
+        rising = current_start.detach() & ~previous_start.to(current_start.device)
+        return tuple(
+            int(index)
+            for index in rising.nonzero(as_tuple=False).reshape(-1).tolist()
+        )
 
     def detach_graph(self) -> None:
         """Detach carried state after one chronological training unroll.
@@ -454,13 +828,24 @@ class DynamicEventMemory:
             if record.event_id == int(event_id) and record.status != "emitted":
                 record.status = "cancelled"
                 del records[index]
-                if self.strict_causal_boundary:
+                if self.enable_reacquisition:
                     self._cancelled_records.setdefault(video_name, []).append(record)
                 self.last_audit.setdefault("cancellations", []).append(
                     {
                         "video_name": video_name,
                         "event_id": int(event_id),
                         "reason": str(reason),
+                        "source": record.source,
+                        "target_event_id": record.target_event_id,
+                    }
+                )
+                self.last_audit.setdefault("lifecycle_events", []).append(
+                    {
+                        "transition": "cancel",
+                        "video_name": video_name,
+                        "event_id": int(event_id),
+                        "source": record.source,
+                        "target_event_id": record.target_event_id,
                     }
                 )
                 return True
@@ -612,6 +997,8 @@ class DynamicEventMemory:
             "status": "emitted",
             "source": record.source,
             "reacquisition_count": int(record.reacquisition_count),
+            "association_status": record.association_status,
+            "last_reacquisition_mode": record.last_reacquisition_mode,
         }
         self._ledger.setdefault(record.video_name, []).append(row)
         return row
@@ -659,6 +1046,18 @@ class DynamicEventMemory:
             candidate_state_logits.shape
         ) != (batch_size, query_count, 4):
             raise ValueError("candidate_state_logits must be [B,Q,4]")
+        if owner_state_logits is not None:
+            if owner_state_logits.ndim != 3:
+                raise ValueError("owner_state_logits must be [B,R,S]")
+            if (
+                owner_state_logits.size(0) != batch_size
+                or owner_state_logits.size(-1) != self.owner_state_count
+            ):
+                raise ValueError(
+                    "owner_state_logits must use {} active-owner states".format(
+                        self.owner_state_count
+                    )
+                )
         if self.birth_logit_threshold is None and candidate_state_logits is None:
             raise ValueError(
                 "formal learned START decisions require candidate_state_logits"
@@ -721,6 +1120,7 @@ class DynamicEventMemory:
             "runtime_capacity_exhaustions": 0,
             "padding_prefixes_ignored": 0,
             "eos_observed": 0,
+            "lifecycle_events": [],
         }
         for batch_index, (video_name, frame) in enumerate(zip(names, frames)):
             records = self._records.setdefault(video_name, [])
@@ -735,7 +1135,7 @@ class DynamicEventMemory:
 
             duration = durations[batch_index]
             if duration is not None:
-                if self.enable_reacquisition:
+                if self.strict_causal_boundary:
                     raise RuntimeError(
                         "D1 runtime forbids true_duration/full-video metadata"
                     )
@@ -800,10 +1200,12 @@ class DynamicEventMemory:
                         owner_state_logits[batch_index, owner_index].argmax().item()
                     )
                     if state == 0:
-                        # BACKGROUND is a learned competitive owner state, not
-                        # a probability threshold.  For an already-active
-                        # record it means the proposed birth was rejected.
+                        # D1 uses an explicit CANCEL owner state.  Legacy
+                        # four-state EventMATR keeps state zero as BACKGROUND,
+                        # which has the same runtime transition but a different
+                        # training vocabulary.
                         record.status = "cancelled"
+                        record.cancel_frame = float(frame)
                         if self.enable_reacquisition:
                             self._cancelled_records.setdefault(video_name, []).append(
                                 record
@@ -815,25 +1217,52 @@ class DynamicEventMemory:
                             {
                                 "video_name": video_name,
                                 "event_id": int(record.event_id),
-                                "reason": "learned_owner_background",
+                                "reason": (
+                                    "learned_owner_cancel"
+                                    if self.owner_state_count == 3
+                                    else "learned_owner_background"
+                                ),
                                 "frame": float(frame),
+                                "source": record.source,
+                                "target_event_id": record.target_event_id,
+                            }
+                        )
+                        step_audit["lifecycle_events"].append(
+                            {
+                                "transition": "cancel",
+                                "video_name": video_name,
+                                "event_id": int(record.event_id),
+                                "frame": float(frame),
+                                "source": record.source,
+                                "target_event_id": record.target_event_id,
                             }
                         )
                         cancellation_count[batch_index] += 1
                         continue
+                    end_state_index = 2 if self.owner_state_count == 3 else 3
+                    current_owner_logits = owner_state_logits[
+                        batch_index, owner_index
+                    ]
+                    competing_owner_logits = torch.cat(
+                        (
+                            current_owner_logits[:end_state_index],
+                            current_owner_logits[end_state_index + 1 :],
+                        ),
+                        dim=0,
+                    )
                     end_margin = owner_state_logits[
-                        batch_index, owner_index, 3
-                    ] - owner_state_logits[batch_index, owner_index, :3].max()
+                        batch_index, owner_index, end_state_index
+                    ] - competing_owner_logits.max()
                     if self.end_logit_threshold is None:
-                        should_end = state == 3
+                        should_end = state == end_state_index
                         end_confidence = float(
                             owner_state_logits[
                                 batch_index, owner_index
-                            ].softmax(dim=-1)[3].item()
+                            ].softmax(dim=-1)[end_state_index].item()
                         )
                     else:
                         should_end = (
-                            state == 3
+                            state == end_state_index
                             and float(end_margin.item())
                             >= self.end_logit_threshold
                         )
@@ -862,6 +1291,16 @@ class DynamicEventMemory:
                         record.end_frame = predicted_end
                         record.end_score = end_confidence
                         record.status = "ended"
+                        step_audit["lifecycle_events"].append(
+                            {
+                                "transition": "end",
+                                "video_name": video_name,
+                                "event_id": int(record.event_id),
+                                "frame": float(frame),
+                                "source": record.source,
+                                "target_event_id": record.target_event_id,
+                            }
+                        )
                         ended_mask[
                             batch_index, int(record.owner_query_id)
                         ] = True
@@ -912,6 +1351,16 @@ class DynamicEventMemory:
                         record.end_frame = predicted_end
                         record.end_score = end_confidence
                         record.status = "ended"
+                        step_audit["lifecycle_events"].append(
+                            {
+                                "transition": "end",
+                                "video_name": video_name,
+                                "event_id": int(record.event_id),
+                                "frame": float(frame),
+                                "source": record.source,
+                                "target_event_id": record.target_event_id,
+                            }
+                        )
                         ended_mask[batch_index, query_index] = True
                         step_audit["ends"] += 1
                         end_count[batch_index] += 1
@@ -928,6 +1377,16 @@ class DynamicEventMemory:
                             "record owner query is outside current query bandwidth"
                         )
                     self._emit_record(record, frame)
+                    step_audit["lifecycle_events"].append(
+                        {
+                            "transition": "emit",
+                            "video_name": video_name,
+                            "event_id": int(record.event_id),
+                            "frame": float(frame),
+                            "source": record.source,
+                            "target_event_id": record.target_event_id,
+                        }
+                    )
                     emitted_mask[batch_index, query_index] = True
                     step_audit["emits"] += 1
                     emit_count[batch_index] += 1
@@ -939,12 +1398,8 @@ class DynamicEventMemory:
 
             current_birth = birth_logits[batch_index].detach()
             if self.birth_logit_threshold is None:
-                current_start = (
-                    candidate_state_logits[batch_index].argmax(dim=-1) == 1
-                )
-                birth_confidences = candidate_state_logits[
-                    batch_index
-                ].softmax(dim=-1)[:, 1]
+                current_start = current_birth > 0.0
+                birth_confidences = torch.sigmoid(current_birth)
             else:
                 current_start = current_birth >= self.birth_logit_threshold
                 birth_confidences = torch.sigmoid(current_birth)
@@ -956,6 +1411,7 @@ class DynamicEventMemory:
             birth_indices = rising.nonzero(as_tuple=False).reshape(-1).tolist()
 
             oracle_by_query = {}
+            independent_oracle_specs = []
             for oracle_row in oracle_rows[batch_index] or ():
                 query_index = int(oracle_row["query_index"])
                 if query_index < 0 or query_index >= query_count:
@@ -964,7 +1420,15 @@ class DynamicEventMemory:
                             query_index, query_count
                         )
                     )
-                oracle_by_query[query_index] = dict(oracle_row)
+                oracle_row = dict(oracle_row)
+                if bool(oracle_row.get("merge_predicted", True)):
+                    if query_index in oracle_by_query:
+                        raise RuntimeError(
+                            "multiple supervised associations target one predicted query"
+                        )
+                    oracle_by_query[query_index] = oracle_row
+                else:
+                    independent_oracle_specs.append(oracle_row)
 
             # A predicted START that agrees with an oracle path is one mixed
             # predicted/oracle track, not a duplicated semantic event.
@@ -973,7 +1437,8 @@ class DynamicEventMemory:
                 spec = {
                     "query_index": int(query_index),
                     "target_event_id": None,
-                    "source": "predicted",
+                    "source": "predicted_unmatched",
+                    "association_status": "unmatched",
                     "start_frame": float(
                         candidate_start_frames[batch_index, query_index].item()
                     ),
@@ -981,13 +1446,29 @@ class DynamicEventMemory:
                 if query_index in oracle_by_query:
                     oracle_row = oracle_by_query.pop(query_index)
                     spec.update(oracle_row)
-                    spec["source"] = "predicted_oracle"
+                    spec["source"] = str(
+                        oracle_row.get("source", "predicted_associated")
+                    )
+                    spec["association_status"] = "associated"
                 birth_specs.append(spec)
             birth_specs.extend(
                 spec
                 for spec in oracle_by_query.values()
                 if bool(spec.get("force_create", True))
             )
+            birth_specs.extend(
+                spec
+                for spec in independent_oracle_specs
+                if bool(spec.get("force_create", True))
+            )
+            birth_query_indices = [
+                int(spec["query_index"]) for spec in birth_specs
+            ]
+            if len(set(birth_query_indices)) != len(birth_query_indices):
+                raise RuntimeError(
+                    "one prefix cannot create multiple event records from the "
+                    "same query; teacher and predicted tracks must be disjoint"
+                )
 
             active_target_ids = {
                 record.target_event_id
@@ -1049,20 +1530,6 @@ class DynamicEventMemory:
                             if archived.target_event_id == int(target_event_id):
                                 reacquired = archived
                                 break
-                    else:
-                        predicted_class = int(
-                            foreground[batch_index, query_index].argmax().item()
-                        )
-                        for archived in reversed(cancelled):
-                            archived_class = int(
-                                archived.class_distribution.argmax().item()
-                            )
-                            if (
-                                archived.target_event_id is None
-                                and archived_class == predicted_class
-                            ):
-                                reacquired = archived
-                                break
                     if reacquired is not None:
                         cancelled.remove(reacquired)
                         reacquired.status = "active"
@@ -1088,9 +1555,32 @@ class DynamicEventMemory:
                         reacquired.end_frame = None
                         reacquired.end_score = None
                         reacquired.emit_frame = None
-                        reacquired.source = "reacquired"
+                        reacquired.cancel_frame = None
+                        reacquired.source = "associated_error_recovery"
+                        reacquired.association_status = "associated"
+                        reacquired.last_reacquisition_mode = "exact_target_id"
                         reacquired.reacquisition_count += 1
                         records.append(reacquired)
+                        step_audit["lifecycle_events"].extend(
+                            [
+                                {
+                                    "transition": "birth",
+                                    "video_name": video_name,
+                                    "event_id": int(reacquired.event_id),
+                                    "frame": float(frame),
+                                    "source": reacquired.source,
+                                    "target_event_id": reacquired.target_event_id,
+                                },
+                                {
+                                    "transition": "reacquire",
+                                    "video_name": video_name,
+                                    "event_id": int(reacquired.event_id),
+                                    "frame": float(frame),
+                                    "source": reacquired.source,
+                                    "target_event_id": reacquired.target_event_id,
+                                },
+                            ]
+                        )
                         new_birth_mask[batch_index, query_index] = True
                         step_audit["births"] += 1
                         step_audit["reacquisitions"] += 1
@@ -1121,9 +1611,27 @@ class DynamicEventMemory:
                     target_event_id=(
                         None if target_event_id is None else int(target_event_id)
                     ),
-                    source=str(spec.get("source", "predicted")),
+                    source=str(spec.get("source", "predicted_unmatched")),
+                    association_status=str(
+                        spec.get(
+                            "association_status",
+                            "associated"
+                            if target_event_id is not None
+                            else "unmatched",
+                        )
+                    ),
                 )
                 records.append(record)
+                step_audit["lifecycle_events"].append(
+                    {
+                        "transition": "birth",
+                        "video_name": video_name,
+                        "event_id": int(record.event_id),
+                        "frame": float(frame),
+                        "source": record.source,
+                        "target_event_id": record.target_event_id,
+                    }
+                )
                 new_birth_mask[batch_index, query_index] = True
                 next_id += 1
                 step_audit["births"] += 1

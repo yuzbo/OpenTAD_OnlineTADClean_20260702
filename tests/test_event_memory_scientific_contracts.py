@@ -604,12 +604,13 @@ def test_learned_owner_background_cancels_false_birth_and_allows_rebirth(
     assert cancelled["cancelled_mask"].tolist() == [[True]]
     assert memory.records("video_1") == ()
     assert memory.ledger("video_1") == ()
-    assert memory.last_audit["cancellations"][-1] == {
-        "video_name": "video_1",
-        "event_id": first_id,
-        "reason": "learned_owner_background",
-        "frame": 11.0,
-    }
+    cancellation = memory.last_audit["cancellations"][-1]
+    assert cancellation["video_name"] == "video_1"
+    assert cancellation["event_id"] == first_id
+    assert cancellation["reason"] == "learned_owner_background"
+    assert cancellation["frame"] == 11.0
+    assert cancellation["source"] == "predicted_unmatched"
+    assert cancellation["target_event_id"] is None
 
     reborn = _step(memory, 12, births=[POS], ends=[NEG], starts=[12])
     assert reborn["new_birth_mask"].tolist() == [[True]]
