@@ -738,6 +738,7 @@ def test_padding_prefix_changes_no_lifecycle_or_previous_start_state() -> None:
         is_eos=True,
     )
     assert padding["padding_prefixes_ignored"].tolist() == [1]
+    assert padding["active_count"].tolist() == [1]
     assert padding["eos_observed"].tolist() == [0]
     assert memory.ledger("video_1") == ()
 

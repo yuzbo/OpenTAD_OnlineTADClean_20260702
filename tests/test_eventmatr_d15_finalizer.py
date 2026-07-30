@@ -8,6 +8,7 @@ import hashlib
 import json
 
 import pytest
+import torch
 
 from scripts.finalize_eventmatr_d15_owner_counterfactual import (
     CHANNELS,
@@ -20,6 +21,7 @@ from scripts.run_eventmatr_d15_owner_counterfactual import (
     EXPECTED_D14_COUNTS,
     OFFICIAL_TRAIN_ARTIFACTS,
     _validate_d14_gate,
+    _validate_padding_runtime,
 )
 
 
@@ -242,6 +244,40 @@ def test_d15_finalizer_fails_closed_on_source_identity_aliasing() -> None:
             training_tree=TRAINING_TREE,
             d14_source_commit=D14_COMMIT,
             d14_source_tree=D14_TREE,
+        )
+
+
+def test_d15_padding_runtime_preserves_existing_active_records() -> None:
+    runtime = {
+        "padding_prefixes_ignored": torch.tensor([1]),
+        "active_count": torch.tensor([3]),
+        "birth_count": torch.tensor([0]),
+        "end_count": torch.tensor([0]),
+        "new_birth_mask": torch.tensor([[False]]),
+    }
+
+    _validate_padding_runtime(
+        runtime,
+        expected_active_count=3,
+        label="OF/shadow",
+    )
+
+    wrong_active = dict(runtime)
+    wrong_active["active_count"] = torch.tensor([0])
+    with pytest.raises(RuntimeError, match="padding active_count drifted"):
+        _validate_padding_runtime(
+            wrong_active,
+            expected_active_count=3,
+            label="OF/shadow",
+        )
+
+    mutated = dict(runtime)
+    mutated["birth_count"] = torch.tensor([1])
+    with pytest.raises(RuntimeError, match="padding produced birth_count"):
+        _validate_padding_runtime(
+            mutated,
+            expected_active_count=3,
+            label="OF/shadow",
         )
 
 

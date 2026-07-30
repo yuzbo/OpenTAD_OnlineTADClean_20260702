@@ -837,6 +837,25 @@ def _trace_transition(
     return "no_transition"
 
 
+def _validate_padding_runtime(
+    runtime: dict[str, torch.Tensor],
+    *,
+    expected_active_count: int,
+    label: str,
+) -> None:
+    if int(runtime["padding_prefixes_ignored"][0]) != 1:
+        raise RuntimeError(f"{label} padding was not ignored exactly once")
+    for key, value in runtime.items():
+        if key == "padding_prefixes_ignored":
+            continue
+        if key == "active_count":
+            if value.tolist() != [expected_active_count]:
+                raise RuntimeError(f"{label} padding active_count drifted")
+            continue
+        if bool(value.any().item()):
+            raise RuntimeError(f"{label} padding produced {key}")
+
+
 def _process_route_prefix(
     state: RouteState,
     *,
@@ -905,15 +924,13 @@ def _process_route_prefix(
             )
             for record in memory.records(video_name)
         )
-        if before != after or int(runtime["padding_prefixes_ignored"][0]) != 1:
+        if before != after:
             raise RuntimeError(f"{state.channel}/{state.route} padding mutated state")
-        for key, value in runtime.items():
-            if key == "padding_prefixes_ignored":
-                continue
-            if bool(value.any().item()):
-                raise RuntimeError(
-                    f"{state.channel}/{state.route} padding produced {key}"
-                )
+        _validate_padding_runtime(
+            runtime,
+            expected_active_count=len(before),
+            label=f"{state.channel}/{state.route}",
+        )
         state.counters["padding_prefix_count"] += 1
         state.counters["padding_noop_count"] += 1
         return
