@@ -21,6 +21,8 @@ PROTOCOL = "eventmatr_d15_owner_counterfactual_v1"
 FINALIZER_PROTOCOL = "eventmatr_d15_owner_counterfactual_finalizer_v1"
 CHANNELS = ("PF", "PR", "OF", "OR")
 ROUTES = ("formal", "shadow")
+SEGMENT_SIZE = 64.0
+QUERY_COUNT = 10
 CHANNEL_FACTORS = {
     "PF": ("predicted", "free"),
     "PR": ("predicted", "refreshed"),
@@ -123,11 +125,19 @@ def _load(path: Path, label: str) -> dict:
 
 
 def _expect(payload: dict, expected: dict, label: str) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} is not an object")
     for key, value in expected.items():
         if payload.get(key) != value:
             raise ValueError(
                 f"{label} {key} mismatch: {payload.get(key)!r} != {value!r}"
             )
+
+
+def _required_mapping(value, label: str) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} is not an object")
+    return value
 
 
 def _nonnegative_integer(value, label: str) -> int:
@@ -140,6 +150,35 @@ def _nonnegative_integer(value, label: str) -> int:
     if not math.isfinite(numeric) or numeric < 0 or not numeric.is_integer():
         raise ValueError(f"{label} is not a finite non-negative integer")
     return int(numeric)
+
+
+def _optional_nonnegative_integer(value, label: str):
+    if value is None:
+        return None
+    return _nonnegative_integer(value, label)
+
+
+def _finite_float(value, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{label} is not numeric")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is not numeric") from error
+    if not math.isfinite(numeric):
+        raise ValueError(f"{label} is not finite")
+    return numeric
+
+
+def _count_mapping(value, label: str) -> dict[str, int]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} is absent")
+    parsed = {}
+    for key, count in value.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"{label} contains an invalid key")
+        parsed[key] = _nonnegative_integer(count, f"{label}.{key}")
+    return parsed
 
 
 def _valid_sha256(value, label: str) -> str:
@@ -290,6 +329,8 @@ def _validate_route(
         raise ValueError(
             f"{channel}/{route} unexpectedly used exact-ID reacquisition"
         )
+    if parsed["end_count"] != parsed["emit_count"]:
+        raise ValueError(f"{channel}/{route} end/emission closure differs")
     if parsed["end_without_emission_count"] != max(
         0, parsed["end_count"] - parsed["emit_count"]
     ):
@@ -314,35 +355,152 @@ def _validate_route(
     )
     if fragments != parsed["decision_row_count"]:
         raise ValueError(f"{channel}/{route} decision fragment accounting differs")
+    created_by_source = _count_mapping(
+        row.get("created_records_by_source"),
+        f"{channel}/{route}.created_records_by_source",
+    )
+    if sum(created_by_source.values()) != unique_records:
+        raise ValueError(f"{channel}/{route} source/unique-record accounting differs")
+    decisions_by_source = _count_mapping(
+        row.get("decision_rows_by_source"),
+        f"{channel}/{route}.decision_rows_by_source",
+    )
+    if sum(decisions_by_source.values()) != fragments:
+        raise ValueError(f"{channel}/{route} source/decision-row accounting differs")
+    first_state_counts = _count_mapping(
+        row.get("first_owner_decision_state_counts"),
+        f"{channel}/{route}.first_owner_decision_state_counts",
+    )
+    winner_counts = _count_mapping(
+        row.get("owner_state_winner_counts"),
+        f"{channel}/{route}.owner_state_winner_counts",
+    )
+    for label, state_counts in (
+        ("first-owner", first_state_counts),
+        ("winner", winner_counts),
+    ):
+        if not set(state_counts).issubset({"0", "1", "2"}):
+            raise ValueError(f"{channel}/{route} {label} states drifted")
+    if sum(first_state_counts.values()) > unique_records:
+        raise ValueError(f"{channel}/{route} first-owner decisions exceed records")
+    if sum(winner_counts.values()) != fragments:
+        raise ValueError(f"{channel}/{route} winner/decision-row accounting differs")
+    transition_counts = _count_mapping(
+        row.get("transition_counts"),
+        f"{channel}/{route}.transition_counts",
+    )
+    allowed_transitions = {
+        "birth",
+        "cancel",
+        "diagnostic_retain_cancel",
+        "end",
+        "emit",
+        "reacquire",
+    }
+    if not set(transition_counts).issubset(allowed_transitions):
+        raise ValueError(f"{channel}/{route} transition vocabulary drifted")
+    expected_transition_counts = {
+        "birth": parsed["birth_count"],
+        "cancel": parsed["cancellation_count"],
+        "end": parsed["end_count"],
+        "emit": parsed["emit_count"],
+        "reacquire": parsed["reacquisition_count"],
+    }
+    for name, expected in expected_transition_counts.items():
+        if transition_counts.get(name, 0) != expected:
+            raise ValueError(
+                f"{channel}/{route} transition/count accounting differs: {name}"
+            )
+    if route == "formal" and transition_counts.get(
+        "diagnostic_retain_cancel", 0
+    ):
+        raise ValueError(f"{channel}/{route} used the shadow cancel intervention")
+    if route == "shadow" and transition_counts.get("cancel", 0):
+        raise ValueError(f"{channel}/{route} applied a formal cancellation")
+    eos_active_counts = _count_mapping(
+        row.get("eos_active_record_counts_by_video"),
+        f"{channel}/{route}.eos_active_record_counts_by_video",
+    )
+    eos_birth_counts = _count_mapping(
+        row.get("eos_birth_counts_by_video"),
+        f"{channel}/{route}.eos_birth_counts_by_video",
+    )
+    if (
+        len(eos_active_counts) != parsed["observed_eos_count"]
+        or set(eos_active_counts) != set(eos_birth_counts)
+    ):
+        raise ValueError(f"{channel}/{route} per-video EOS coverage differs")
+    if sum(eos_active_counts.values()) != parsed["records_active_after_eos"]:
+        raise ValueError(f"{channel}/{route} active-after-EOS accounting differs")
+    if sum(value > 0 for value in eos_active_counts.values()) != parsed[
+        "videos_with_active_records_after_eos"
+    ]:
+        raise ValueError(f"{channel}/{route} active-after-EOS videos differ")
+    if sum(eos_birth_counts.values()) > parsed["birth_count"]:
+        raise ValueError(f"{channel}/{route} EOS births exceed all births")
     integrity = _validate_integrity(
         row.get("lifecycle_integrity", {}), f"{channel}/{route}"
     )
     if integrity["ledger_row_count"] != parsed["emit_count"]:
         raise ValueError(f"{channel}/{route} ledger/emission count differs")
-    for stats_name, stats in row.get("statistics", {}).items():
+    statistics = row.get("statistics")
+    if not isinstance(statistics, dict):
+        raise ValueError(f"{channel}/{route} statistics are absent")
+    for stats_name, stats in statistics.items():
         if not isinstance(stats, dict):
             raise ValueError(f"{channel}/{route} statistic {stats_name} is malformed")
+        count = _nonnegative_integer(
+            stats.get("count"), f"{channel}/{route}.{stats_name}.count"
+        )
+        expected_stat_fields = (
+            {"count"}
+            if count == 0
+            else {"count", "mean", "std", "min", "max", "positive_count"}
+        )
+        if set(stats) != expected_stat_fields:
+            raise ValueError(
+                f"{channel}/{route} statistic {stats_name} schema drifted"
+            )
         for key, value in stats.items():
-            if key == "count":
+            if key in {"count", "positive_count"}:
                 _nonnegative_integer(
-                    value, f"{channel}/{route}.{stats_name}.count"
+                    value, f"{channel}/{route}.{stats_name}.{key}"
                 )
-            elif not math.isfinite(float(value)):
+            else:
+                _finite_float(
+                    value, f"{channel}/{route}.{stats_name}.{key}"
+                )
+        if count:
+            positive_count = _nonnegative_integer(
+                stats["positive_count"],
+                f"{channel}/{route}.{stats_name}.positive_count",
+            )
+            if positive_count > count:
                 raise ValueError(
-                    f"{channel}/{route} statistic {stats_name}.{key} is non-finite"
+                    f"{channel}/{route} statistic {stats_name} positives exceed count"
+                )
+            if (
+                float(stats["std"]) < 0
+                or float(stats["min"]) > float(stats["mean"])
+                or float(stats["mean"]) > float(stats["max"])
+            ):
+                raise ValueError(
+                    f"{channel}/{route} statistic {stats_name} ordering drifted"
                 )
     return {
         "counts": parsed,
         "unique_runtime_record_count": unique_records,
         "linked_unique_target_count": linked_targets,
         "raw_semantic_duplicate_count": raw_duplicates,
+        "created_records_by_source": created_by_source,
+        "decision_rows_by_source": decisions_by_source,
+        "eos_active_record_counts_by_video": eos_active_counts,
+        "eos_birth_counts_by_video": eos_birth_counts,
         "lifecycle_integrity": integrity,
-        "first_owner_decision_state_counts": row.get(
-            "first_owner_decision_state_counts", {}
-        ),
-        "owner_state_winner_counts": row.get("owner_state_winner_counts", {}),
-        "transition_counts": row.get("transition_counts", {}),
-        "statistics": row.get("statistics", {}),
+        "first_owner_decision_state_counts": first_state_counts,
+        "owner_state_winner_counts": winner_counts,
+        "transition_counts": transition_counts,
+        "statistics": statistics,
     }
 
 
@@ -353,15 +511,22 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
         "route",
         "video_name",
         "runtime_event_id",
+        "diagnostic_target_event_id",
+        "diagnostic_target_end_frame",
+        "source",
         "creation_frame",
         "current_frame",
+        "is_eos",
         "first_owner_decision",
         "owner_query_before_refresh",
         "owner_query_after_refresh",
         "formal_owner_query_id_after_intervention",
         "formal_owner_query_id_unchanged",
         "matched_current_query",
+        "owner_to_birth_cosine",
+        "owner_to_oracle_query_cosine",
         "owner_attention_top_query",
+        "oracle_query_attention_rank",
         "owner_attention_entropy",
         "cancel_logit",
         "continue_logit",
@@ -375,6 +540,8 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
         "shadow_transition",
         "target_end_observable_now",
         "frames_from_annotated_end",
+        "formal_lifetime",
+        "shadow_lifetime",
     }
     expected_counts = {
         (channel, route): routes[channel][route]["counts"]["decision_row_count"]
@@ -385,8 +552,15 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
     end_argmax_counts: Counter = Counter()
     suppressed_end_counts: Counter = Counter()
     target_backed_end_counts: Counter = Counter()
+    target_backed_near_end_counts: Counter = Counter()
+    end_at_observed_target_end_counts: Counter = Counter()
+    transition_counts: Counter = Counter()
+    source_counts: Counter = Counter()
+    first_state_counts: Counter = Counter()
+    eos_survivor_counts: Counter = Counter()
     last_frame: dict[tuple[str, str, str], float] = {}
     event_ids_at_frame: dict[tuple[str, str, str], set[int]] = {}
+    seen_event_ids: dict[tuple[str, str, str], set[int]] = {}
     line_count = 0
 
     try:
@@ -415,16 +589,24 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                     raise ValueError(
                         f"D1.5 trace line {line_number} video name is invalid"
                     )
+                if not isinstance(row["source"], str) or not row["source"]:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} source is invalid"
+                    )
                 event_id = _nonnegative_integer(
                     row["runtime_event_id"],
                     f"trace[{line_number}].runtime_event_id",
                 )
-                frame = float(row["current_frame"])
-                creation_frame = float(row["creation_frame"])
-                if not math.isfinite(frame) or not math.isfinite(creation_frame):
-                    raise ValueError(
-                        f"D1.5 trace line {line_number} has a non-finite frame"
-                    )
+                target_event_id = _optional_nonnegative_integer(
+                    row["diagnostic_target_event_id"],
+                    f"trace[{line_number}].diagnostic_target_event_id",
+                )
+                frame = _finite_float(
+                    row["current_frame"], f"trace[{line_number}].current_frame"
+                )
+                creation_frame = _finite_float(
+                    row["creation_frame"], f"trace[{line_number}].creation_frame"
+                )
                 if creation_frame < 0 or frame < creation_frame:
                     raise ValueError(
                         f"D1.5 trace line {line_number} has an invalid lifetime"
@@ -444,6 +626,137 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                         f"D1.5 trace line {line_number} duplicates one owner decision"
                     )
                 event_ids_at_frame[stream_key].add(event_id)
+                first_decision = row["first_owner_decision"]
+                if not isinstance(first_decision, bool):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} first-decision flag is invalid"
+                    )
+                seen = seen_event_ids.setdefault(stream_key, set())
+                if first_decision != (event_id not in seen):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} first-decision audit drifted"
+                    )
+                seen.add(event_id)
+                if not isinstance(row["is_eos"], bool):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} EOS flag is invalid"
+                    )
+
+                owner_query_before = _nonnegative_integer(
+                    row["owner_query_before_refresh"],
+                    f"trace[{line_number}].owner_query_before_refresh",
+                )
+                owner_query_after = _nonnegative_integer(
+                    row["owner_query_after_refresh"],
+                    f"trace[{line_number}].owner_query_after_refresh",
+                )
+                formal_owner_query = _nonnegative_integer(
+                    row["formal_owner_query_id_after_intervention"],
+                    (
+                        f"trace[{line_number}]."
+                        "formal_owner_query_id_after_intervention"
+                    ),
+                )
+                matched_query = _optional_nonnegative_integer(
+                    row["matched_current_query"],
+                    f"trace[{line_number}].matched_current_query",
+                )
+                attention_top_query = _nonnegative_integer(
+                    row["owner_attention_top_query"],
+                    f"trace[{line_number}].owner_attention_top_query",
+                )
+                oracle_rank = _optional_nonnegative_integer(
+                    row["oracle_query_attention_rank"],
+                    f"trace[{line_number}].oracle_query_attention_rank",
+                )
+                if oracle_rank is not None and oracle_rank < 1:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} oracle rank is invalid"
+                    )
+                for query_label, query_index in (
+                    ("owner query before", owner_query_before),
+                    ("owner query after", owner_query_after),
+                    ("formal owner query", formal_owner_query),
+                    ("attention top query", attention_top_query),
+                ):
+                    if query_index >= QUERY_COUNT:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} {query_label} "
+                            "exceeds query bandwidth"
+                        )
+                if matched_query is not None and matched_query >= QUERY_COUNT:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} matched query "
+                        "exceeds query bandwidth"
+                    )
+                if oracle_rank is not None and oracle_rank > QUERY_COUNT:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} oracle rank "
+                        "exceeds query bandwidth"
+                    )
+
+                owner_to_birth = _finite_float(
+                    row["owner_to_birth_cosine"],
+                    f"trace[{line_number}].owner_to_birth_cosine",
+                )
+                if not -1.00001 <= owner_to_birth <= 1.00001:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} birth cosine is invalid"
+                    )
+                owner_to_oracle_raw = row["owner_to_oracle_query_cosine"]
+                owner_to_oracle = (
+                    None
+                    if owner_to_oracle_raw is None
+                    else _finite_float(
+                        owner_to_oracle_raw,
+                        f"trace[{line_number}].owner_to_oracle_query_cosine",
+                    )
+                )
+                if owner_to_oracle is not None and not (
+                    -1.00001 <= owner_to_oracle <= 1.00001
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} oracle cosine is invalid"
+                    )
+                if (owner_to_oracle is None) != (oracle_rank is None):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} oracle-query audit drifted"
+                    )
+                entropy = _finite_float(
+                    row["owner_attention_entropy"],
+                    f"trace[{line_number}].owner_attention_entropy",
+                )
+                if entropy < 0:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} attention entropy is invalid"
+                    )
+
+                logits = [
+                    _finite_float(
+                        row[name], f"trace[{line_number}].{name}"
+                    )
+                    for name in ("cancel_logit", "continue_logit", "end_logit")
+                ]
+                margins = [
+                    _finite_float(
+                        row[name], f"trace[{line_number}].{name}"
+                    )
+                    for name in ("cancel_margin", "continue_margin", "end_margin")
+                ]
+                expected_margins = [
+                    logits[index]
+                    - max(logits[:index] + logits[index + 1 :])
+                    for index in range(3)
+                ]
+                if any(
+                    not math.isclose(
+                        observed, expected, rel_tol=1e-6, abs_tol=1e-6
+                    )
+                    for observed, expected in zip(margins, expected_margins)
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} state margins drifted"
+                    )
                 winner = _nonnegative_integer(
                     row["state_argmax"], f"trace[{line_number}].state_argmax"
                 )
@@ -451,16 +764,119 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                     raise ValueError(
                         f"D1.5 trace line {line_number} state winner is invalid"
                     )
+                expected_winner = max(range(3), key=lambda index: logits[index])
+                if winner != expected_winner:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} state winner drifted"
+                    )
                 if row["formal_owner_query_id_unchanged"] is not True:
                     raise ValueError(
                         f"D1.5 trace line {line_number} mutated formal owner identity"
                     )
-                if int(row["formal_owner_query_id_after_intervention"]) != int(
-                    row["owner_query_before_refresh"]
-                ):
+                if formal_owner_query != owner_query_before:
                     raise ValueError(
                         f"D1.5 trace line {line_number} owner identity audit drifted"
                     )
+                if matched_query is None:
+                    if owner_query_after != owner_query_before:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} unmatched refresh drifted"
+                        )
+                else:
+                    if CHANNEL_FACTORS[channel][1] != "refreshed":
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} refreshed a free route"
+                        )
+                    if owner_query_after != matched_query:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} refresh query drifted"
+                        )
+                if (
+                    CHANNEL_FACTORS[channel][1] == "refreshed"
+                    and oracle_rank is not None
+                    and matched_query is None
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} omitted a visible refresh"
+                    )
+                if (
+                    CHANNEL_FACTORS[channel][1] == "free"
+                    and matched_query is not None
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} matched a free route"
+                    )
+
+                if not isinstance(row["target_end_observable_now"], bool):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} end-observable flag is invalid"
+                    )
+                if not isinstance(
+                    row["end_suppressed_by_minimum_duration"], bool
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} end-suppression flag is invalid"
+                    )
+                target_end_frame_raw = row["diagnostic_target_end_frame"]
+                frame_from_end_raw = row["frames_from_annotated_end"]
+                if target_event_id is None:
+                    if (
+                        target_end_frame_raw is not None
+                        or frame_from_end_raw is not None
+                        or row["target_end_observable_now"]
+                    ):
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} leaked an unlinked target"
+                        )
+                    target_end_frame = None
+                    frame_from_end = None
+                else:
+                    target_end_frame = _finite_float(
+                        target_end_frame_raw,
+                        f"trace[{line_number}].diagnostic_target_end_frame",
+                    )
+                    frame_from_end = _finite_float(
+                        frame_from_end_raw,
+                        f"trace[{line_number}].frames_from_annotated_end",
+                    )
+                    if target_end_frame < 0 or not math.isclose(
+                        frame - target_end_frame,
+                        frame_from_end,
+                        rel_tol=1e-6,
+                        abs_tol=1e-6,
+                    ):
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} target-end audit drifted"
+                        )
+
+                formal_lifetime_raw = row["formal_lifetime"]
+                shadow_lifetime_raw = row["shadow_lifetime"]
+                expected_lifetime = frame - creation_frame
+                if route == "formal":
+                    if shadow_lifetime_raw is not None:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} mixed route lifetimes"
+                        )
+                    lifetime = _finite_float(
+                        formal_lifetime_raw,
+                        f"trace[{line_number}].formal_lifetime",
+                    )
+                else:
+                    if formal_lifetime_raw is not None:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} mixed route lifetimes"
+                        )
+                    lifetime = _finite_float(
+                        shadow_lifetime_raw,
+                        f"trace[{line_number}].shadow_lifetime",
+                    )
+                if not math.isclose(
+                    lifetime, expected_lifetime, rel_tol=1e-6, abs_tol=1e-6
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} route lifetime drifted"
+                    )
+
                 transition_field = (
                     "formal_transition" if route == "formal" else "shadow_transition"
                 )
@@ -472,16 +888,85 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                     raise ValueError(
                         f"D1.5 trace line {line_number} transition fields drifted"
                     )
-                transition_parts = set(transition.split("+"))
+                transition_sequence = transition.split("+")
+                transition_parts = set(transition_sequence)
+                if (
+                    not transition
+                    or len(transition_sequence) != len(transition_parts)
+                    or not transition_parts.issubset(
+                        {
+                            "cancel",
+                            "diagnostic_retain_cancel",
+                            "continue",
+                            "end_suppressed_min_duration",
+                            "end",
+                            "emit",
+                        }
+                    )
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} transition is invalid"
+                    )
+                suppressed = row["end_suppressed_by_minimum_duration"]
+                if suppressed and winner != 2:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} suppressed a non-end winner"
+                    )
+                if winner == 0:
+                    expected_transition = (
+                        "cancel"
+                        if route == "formal"
+                        else "diagnostic_retain_cancel"
+                    )
+                    if transition != expected_transition:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} cancel policy drifted"
+                        )
+                elif winner == 1:
+                    if transition != "continue":
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} continue policy drifted"
+                        )
+                elif suppressed:
+                    if transition != "end_suppressed_min_duration":
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} suppression policy drifted"
+                        )
+                elif "end" not in transition_parts or not transition_parts.issubset(
+                    {"end", "emit"}
+                ):
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} end policy drifted"
+                    )
                 route_counts[key] += 1
+                source_counts[(channel, route, row["source"])] += 1
+                if first_decision:
+                    first_state_counts[(channel, route, str(winner))] += 1
                 end_argmax_counts[key] += int(winner == 2)
-                suppressed_end_counts[key] += int(
-                    row["end_suppressed_by_minimum_duration"] is True
+                suppressed_end_counts[key] += int(suppressed)
+                for part in transition_parts.intersection(
+                    {"cancel", "diagnostic_retain_cancel", "end", "emit"}
+                ):
+                    transition_counts[(channel, route, part)] += 1
+                target_backed_end = (
+                    "end" in transition_parts and target_event_id is not None
                 )
-                target_backed_end_counts[key] += int(
-                    "end" in transition_parts
-                    and row.get("diagnostic_target_event_id") is not None
+                target_backed_end_counts[key] += int(target_backed_end)
+                target_backed_near_end_counts[key] += int(
+                    target_backed_end
+                    and abs(frame_from_end) <= SEGMENT_SIZE
                 )
+                end_at_observed_target_end_counts[key] += int(
+                    target_backed_end and row["target_end_observable_now"]
+                )
+                if (
+                    row["is_eos"]
+                    and "cancel" not in transition_parts
+                    and "end" not in transition_parts
+                ):
+                    eos_survivor_counts[
+                        (channel, route, row["video_name"])
+                    ] += 1
                 line_count += 1
     except (OSError, UnicodeError) as error:
         raise ValueError("D1.5 trace cannot be decoded as gzip JSONL") from error
@@ -514,6 +999,73 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                 raise ValueError(
                     f"D1.5 trace {channel}/{route} target-backed ends differ"
                 )
+            if (
+                target_backed_near_end_counts[key]
+                != counts["target_backed_end_within_one_segment_count"]
+            ):
+                raise ValueError(
+                    f"D1.5 trace {channel}/{route} near-target ends differ"
+                )
+            if (
+                end_at_observed_target_end_counts[key]
+                != counts["end_at_observed_target_end_count"]
+            ):
+                raise ValueError(
+                    f"D1.5 trace {channel}/{route} observed-target ends differ"
+                )
+            observed_sources = {
+                source: count
+                for (seen_channel, seen_route, source), count in source_counts.items()
+                if seen_channel == channel and seen_route == route
+            }
+            if observed_sources != routes[channel][route]["decision_rows_by_source"]:
+                raise ValueError(
+                    f"D1.5 trace {channel}/{route} source rows differ"
+                )
+            observed_first_states = {
+                state: count
+                for (
+                    seen_channel,
+                    seen_route,
+                    state,
+                ), count in first_state_counts.items()
+                if seen_channel == channel and seen_route == route
+            }
+            if observed_first_states != routes[channel][route][
+                "first_owner_decision_state_counts"
+            ]:
+                raise ValueError(
+                    f"D1.5 trace {channel}/{route} first-owner states differ"
+                )
+            eos_active = routes[channel][route][
+                "eos_active_record_counts_by_video"
+            ]
+            eos_births = routes[channel][route]["eos_birth_counts_by_video"]
+            for video_name, active_count in eos_active.items():
+                reconstructed = (
+                    eos_survivor_counts[(channel, route, video_name)]
+                    + eos_births[video_name]
+                )
+                if reconstructed != active_count:
+                    raise ValueError(
+                        f"D1.5 trace {channel}/{route} "
+                        f"{video_name} active-after-EOS count differs"
+                    )
+            for transition_name in (
+                "cancel",
+                "diagnostic_retain_cancel",
+                "end",
+                "emit",
+            ):
+                if transition_counts[(channel, route, transition_name)] != (
+                    routes[channel][route]["transition_counts"].get(
+                        transition_name, 0
+                    )
+                ):
+                    raise ValueError(
+                        f"D1.5 trace {channel}/{route} "
+                        f"{transition_name} transitions differ"
+                    )
     return {
         "line_count": line_count,
         "route_line_counts": {
@@ -523,6 +1075,13 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
         },
         "chronological_per_route_video": True,
         "owner_decisions_unique_per_prefix": True,
+        "first_owner_decisions_cross_checked": True,
+        "active_after_eos_cross_checked": True,
+        "required_fields_and_finite_values_verified": True,
+        "owner_state_logits_margins_and_winners_cross_checked": True,
+        "route_lifetimes_cross_checked": True,
+        "target_end_distances_cross_checked": True,
+        "source_counts_cross_checked": True,
         "transition_counts_cross_checked": True,
     }
 
@@ -603,12 +1162,12 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
 
     # State-machine defects precede model-objective interpretation.
     for channel in CHANNELS:
-        if formal[channel]["end_count"] > formal[channel]["emit_count"]:
+        if formal[channel]["end_count"] != formal[channel]["emit_count"]:
             return {
                 "diagnosis": "end_to_emission_closure_fault",
                 "authorized_next_intervention": "ledger_state_machine_repair_only",
                 "model_training_authorized": False,
-                "reason": f"{channel} ended records without matching emissions",
+                "reason": f"{channel} end and emission counts did not match",
             }
     for channel in CHANNELS:
         if (
@@ -624,11 +1183,24 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
                 "reason": f"{channel} had end winners but no runtime end",
             }
 
-    pr_closes = formal["PR"]["end_count"] > 0 and formal["PR"]["emit_count"] > 0
-    of_closes = formal["OF"]["end_count"] > 0 and formal["OF"]["emit_count"] > 0
-    or_closes = formal["OR"]["end_count"] > 0 and formal["OR"]["emit_count"] > 0
+    closes = {
+        channel: formal[channel]["end_count"] > 0
+        and formal[channel]["emit_count"] > 0
+        for channel in CHANNELS
+    }
+    if closes["PF"]:
+        return {
+            "diagnosis": "predicted_free_reference_control_drift",
+            "authorized_next_intervention": "diagnostic_implementation_repair_only",
+            "model_training_authorized": False,
+            "reason": "PF unexpectedly closed despite the frozen D1.4 reference",
+        }
+    pr_closes = closes["PR"]
+    of_closes = closes["OF"]
+    or_closes = closes["OR"]
+    pf_fails = not closes["PF"]
 
-    if pr_closes and not of_closes:
+    if pf_fails and pr_closes and not of_closes:
         return {
             "diagnosis": "identity_transport_is_sufficient_under_predicted_burden",
             "authorized_next_intervention": (
@@ -637,7 +1209,7 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
             "model_training_authorized": True,
             "reason": "PR restored frozen-owner end/emission while OF did not",
         }
-    if of_closes and not pr_closes:
+    if pf_fails and of_closes and not pr_closes:
         return {
             "diagnosis": "clean_admission_is_sufficient_without_continuous_refresh",
             "authorized_next_intervention": (
@@ -646,7 +1218,7 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
             "model_training_authorized": True,
             "reason": "OF restored end/emission while PR did not",
         }
-    if or_closes and not pr_closes and not of_closes:
+    if pf_fails and or_closes and not pr_closes and not of_closes:
         return {
             "diagnosis": "admission_identity_interaction",
             "authorized_next_intervention": (
@@ -655,7 +1227,7 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
             "model_training_authorized": True,
             "reason": "only OR restored frozen-owner end/emission",
         }
-    if pr_closes and of_closes:
+    if pf_fails and pr_closes and of_closes:
         return {
             "diagnosis": "multiple_single_factor_sufficiency_ambiguous",
             "authorized_next_intervention": (
@@ -674,7 +1246,12 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
         ]
         for channel in CHANNELS
     }
-    if any(value > 0 for value in shadow_near_end.values()):
+    formal_model_cells_fail = not any(
+        closes[channel] for channel in ("PR", "OF", "OR")
+    )
+    if formal_model_cells_fail and any(
+        value > 0 for value in shadow_near_end.values()
+    ):
         return {
             "diagnosis": "early_cancellation_truncates_later_end_decisions",
             "authorized_next_intervention": (
@@ -794,11 +1371,17 @@ def validate_scan(
         {"sha256": manifest_sha256},
         "D1.5 manifest",
     )
-    if scan.get("checkpoint", {}).get("sha256") != checkpoint_sha256:
+    manifest_ref = _required_mapping(scan.get("manifest"), "D1.5 manifest")
+    checkpoint_ref = _required_mapping(scan.get("checkpoint"), "D1.5 checkpoint")
+    options_ref = _required_mapping(scan.get("options"), "D1.5 options")
+    d14_gate_ref = _required_mapping(
+        scan.get("d14_structure_gate"), "D1.5 D1.4 structure gate"
+    )
+    if checkpoint_ref.get("sha256") != checkpoint_sha256:
         raise ValueError("D1.5 checkpoint hash mismatch")
-    if scan.get("options", {}).get("sha256") != options_sha256:
+    if options_ref.get("sha256") != options_sha256:
         raise ValueError("D1.5 options hash mismatch")
-    if scan.get("d14_structure_gate", {}).get("sha256") != d14_gate_sha256:
+    if d14_gate_ref.get("sha256") != d14_gate_sha256:
         raise ValueError("D1.5 D1.4-gate hash mismatch")
     _expect(
         scan.get("query_compatibility_rule", {}),
@@ -806,16 +1389,16 @@ def validate_scan(
         "D1.5 query compatibility rule",
     )
     linked_manifest = _validate_linked_file(
-        scan.get("manifest", {}), "D1.5 manifest"
+        manifest_ref, "D1.5 manifest"
     )
     linked_checkpoint = _validate_linked_file(
-        scan.get("checkpoint", {}), "D1.5 checkpoint"
+        checkpoint_ref, "D1.5 checkpoint"
     )
     linked_options = _validate_linked_file(
-        scan.get("options", {}), "D1.5 options"
+        options_ref, "D1.5 options"
     )
     linked_d14_gate = _validate_linked_file(
-        scan.get("d14_structure_gate", {}), "D1.4 structure gate"
+        d14_gate_ref, "D1.4 structure gate"
     )
     if linked_manifest["sha256"] != manifest_sha256:
         raise ValueError("linked D1.5 manifest hash mismatch")
@@ -825,7 +1408,9 @@ def validate_scan(
         raise ValueError("linked D1.5 options hash mismatch")
     if linked_d14_gate["sha256"] != d14_gate_sha256:
         raise ValueError("linked D1.4 structure-gate hash mismatch")
-    d14_binding = scan.get("d14_structure_gate", {}).get("binding", {})
+    d14_binding = _required_mapping(
+        d14_gate_ref.get("binding"), "D1.5 D1.4 structure-gate binding"
+    )
     expected_d14_lifecycle = {
         "runtime_birth_count": EXPECTED_D14_COUNTS["birth_count"],
         "runtime_cancel_count": EXPECTED_D14_COUNTS["cancellation_count"],
@@ -860,10 +1445,16 @@ def validate_scan(
     channels = scan.get("channels")
     if not isinstance(channels, dict) or set(channels) != set(CHANNELS):
         raise ValueError("D1.5 requires exactly PF/PR/OF/OR channels")
+    channel_rows = {
+        channel: _required_mapping(
+            channels[channel], f"D1.5 channel {channel}"
+        )
+        for channel in CHANNELS
+    }
     routes = {
         channel: {
             route: _validate_route(
-                channels[channel].get(route, {}),
+                channel_rows[channel].get(route, {}),
                 channel=channel,
                 route=route,
                 query_hash=query_hash,

@@ -407,10 +407,13 @@ class RouteState:
     target_link_history: Counter = field(default_factory=Counter)
     counters: Counter = field(default_factory=Counter)
     created_by_source: Counter = field(default_factory=Counter)
+    decision_rows_by_source: Counter = field(default_factory=Counter)
     first_state_counts: Counter = field(default_factory=Counter)
     winner_counts: Counter = field(default_factory=Counter)
     transition_counts: Counter = field(default_factory=Counter)
     ledger_snapshots: dict[str, tuple[dict, ...]] = field(default_factory=dict)
+    eos_active_record_counts: dict[str, int] = field(default_factory=dict)
+    eos_birth_counts: dict[str, int] = field(default_factory=dict)
     query_consumption_digest: object = field(default_factory=hashlib.sha256)
     stats: dict[str, StreamingStats] = field(
         default_factory=lambda: {
@@ -1014,17 +1017,17 @@ def _process_route_prefix(
                     )[0].item()
                 )
                 state.stats["owner_to_oracle_query_cosine"].add(owner_to_oracle)
-            owner_to_birth = None
-            if key in state.birth_embeddings:
-                owner_to_birth = float(
-                    F.cosine_similarity(
-                        record.owner_embedding.reshape(1, -1),
-                        state.birth_embeddings[key]
-                        .to(record.owner_embedding)
-                        .reshape(1, -1),
-                    )[0].item()
-                )
-                state.stats["owner_to_birth_cosine"].add(owner_to_birth)
+            if key not in state.birth_embeddings:
+                raise RuntimeError("diagnostic record lost its creation embedding")
+            owner_to_birth = float(
+                F.cosine_similarity(
+                    record.owner_embedding.reshape(1, -1),
+                    state.birth_embeddings[key]
+                    .to(record.owner_embedding)
+                    .reshape(1, -1),
+                )[0].item()
+            )
+            state.stats["owner_to_birth_cosine"].add(owner_to_birth)
             end_suppressed = (
                 winner == 2
                 and frame < record.start_frame + memory.min_duration_frames
@@ -1048,9 +1051,13 @@ def _process_route_prefix(
                     "diagnostic_target_event_id": (
                         None if link is None else link.target_event_id
                     ),
+                    "diagnostic_target_end_frame": (
+                        None if link is None else float(link.target_end_frame)
+                    ),
                     "source": record.source,
                     "creation_frame": float(record.created_frame),
                     "current_frame": float(frame),
+                    "is_eos": bool(is_eos),
                     "first_owner_decision": bool(first),
                     "owner_query_before_refresh": int(record.owner_query_id),
                     "owner_query_after_refresh": (
@@ -1083,8 +1090,8 @@ def _process_route_prefix(
                     ),
                     "frames_from_annotated_end": (
                         None
-                        if target is None
-                        else float(frame - target.end_frame)
+                        if link is None
+                        else float(frame - link.target_end_frame)
                     ),
                     "formal_lifetime": (
                         float(frame - record.created_frame)
@@ -1200,6 +1207,7 @@ def _process_route_prefix(
         trace_handle.write(
             json.dumps(trace_row, sort_keys=True, separators=(",", ":")) + "\n"
         )
+        state.decision_rows_by_source[str(trace_row["source"])] += 1
         state.counters["decision_row_count"] += 1
 
     snapshot = _validate_ledger_snapshot(
@@ -1210,7 +1218,17 @@ def _process_route_prefix(
     state.ledger_snapshots[video_name] = snapshot
     _assert_no_gt_runtime_ids(state)
     if is_eos:
-        active_after_eos = len(memory.records(video_name))
+        active_after_eos = len(_active_records(memory, video_name))
+        if (
+            video_name in state.eos_active_record_counts
+            or video_name in state.eos_birth_counts
+        ):
+            raise RuntimeError("diagnostic route observed duplicate EOS")
+        state.eos_active_record_counts[video_name] = active_after_eos
+        state.eos_birth_counts[video_name] = sum(
+            event.get("transition") == "birth"
+            for event in memory.last_audit.get("lifecycle_events", ())
+        )
         state.counters["records_active_after_eos"] += active_after_eos
         state.counters["videos_with_active_records_after_eos"] += int(
             active_after_eos > 0
@@ -1391,7 +1409,7 @@ def _process_positive_control_prefix(
         memory, label="positive lifecycle control"
     )
     if is_eos:
-        active_after_eos = len(memory.records(video_name))
+        active_after_eos = len(_active_records(memory, video_name))
         control.counters["records_active_after_eos"] += active_after_eos
         control.counters["videos_with_active_records_after_eos"] += int(
             active_after_eos > 0
@@ -1520,6 +1538,13 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
         },
         "unique_runtime_record_count": len(state.created_records),
         "created_records_by_source": dict(sorted(state.created_by_source.items())),
+        "decision_rows_by_source": dict(
+            sorted(state.decision_rows_by_source.items())
+        ),
+        "eos_active_record_counts_by_video": dict(
+            sorted(state.eos_active_record_counts.items())
+        ),
+        "eos_birth_counts_by_video": dict(sorted(state.eos_birth_counts.items())),
         "linked_unique_target_count": linked_targets,
         "raw_semantic_duplicate_count": duplicates,
         "batch_local_owner_decision_fragment_count": state.counters[

@@ -14,6 +14,10 @@ from scripts.finalize_eventmatr_d15_owner_counterfactual import (
     CHANNELS,
     PROTOCOL,
     ROUTES,
+    _route_next_repair,
+    _expect,
+    _required_mapping,
+    _validate_route,
     _validate_source_provenance,
     _validate_trace,
 )
@@ -40,7 +44,22 @@ def _routes() -> dict:
                     "end_argmax_count": 0,
                     "end_min_duration_suppression_count": 0,
                     "target_backed_end_transition_count": 0,
-                }
+                    "target_backed_end_within_one_segment_count": 0,
+                    "end_at_observed_target_end_count": 0,
+                    "records_active_after_eos": 0,
+                    "videos_with_active_records_after_eos": 0,
+                },
+                "decision_rows_by_source": {"predicted": 1},
+                "first_owner_decision_state_counts": {"0": 1},
+                "transition_counts": {
+                    (
+                        "cancel"
+                        if route == "formal"
+                        else "diagnostic_retain_cancel"
+                    ): 1
+                },
+                "eos_active_record_counts_by_video": {},
+                "eos_birth_counts_by_video": {},
             }
             for route in ROUTES
         }
@@ -56,9 +75,11 @@ def _trace_row(channel: str, route: str) -> dict:
         "video_name": "video_test_0000001",
         "runtime_event_id": 0,
         "diagnostic_target_event_id": None,
+        "diagnostic_target_end_frame": None,
         "source": "predicted",
         "creation_frame": 0.0,
         "current_frame": 4.0,
+        "is_eos": False,
         "first_owner_decision": True,
         "owner_query_before_refresh": 1,
         "owner_query_after_refresh": 1,
@@ -220,6 +241,21 @@ def test_d15_finalizer_preserves_three_distinct_source_identities() -> None:
     )
 
 
+def test_d15_finalizer_rejects_non_mapping_receipt_sections_cleanly() -> None:
+    with pytest.raises(ValueError, match="is not an object"):
+        _expect(None, {"status": "PASS"}, "nested section")
+    with pytest.raises(ValueError, match="is not an object"):
+        _required_mapping([], "nested section")
+    with pytest.raises(ValueError, match="is not an object"):
+        _validate_route(
+            None,
+            channel="PF",
+            route="formal",
+            query_hash="0" * 64,
+            consumption_hash="1" * 64,
+        )
+
+
 def test_d15_finalizer_fails_closed_on_source_identity_aliasing() -> None:
     scan = _source_provenance_scan()
     aliased = copy.deepcopy(scan)
@@ -309,3 +345,243 @@ def test_d15_trace_integrity_fails_closed_on_missing_route_row(tmp_path) -> None
 
     with pytest.raises(ValueError, match="trace route counts differ"):
         _validate_trace(path, _routes())
+
+
+def test_d15_trace_integrity_requires_every_registered_field(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    del rows[0]["owner_to_birth_cosine"]
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="omitted"):
+        _validate_trace(path, _routes())
+
+
+def test_d15_trace_integrity_recomputes_state_and_lifetime(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    rows[0]["cancel_margin"] = float("nan")
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="not finite"):
+        _validate_trace(path, _routes())
+
+    rows[0] = _trace_row(CHANNELS[0], ROUTES[0])
+    rows[0]["formal_lifetime"] = 3.0
+    _write_trace(path, rows)
+    with pytest.raises(ValueError, match="route lifetime drifted"):
+        _validate_trace(path, _routes())
+
+
+def test_d15_trace_integrity_recomputes_target_end_distance(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    rows[0]["diagnostic_target_event_id"] = 7
+    rows[0]["diagnostic_target_end_frame"] = 3.0
+    rows[0]["frames_from_annotated_end"] = 2.0
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="target-end audit drifted"):
+        _validate_trace(path, _routes())
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (("first_owner_decision", False), "first-decision audit drifted"),
+        (("owner_query_before_refresh", 10), "exceeds query bandwidth"),
+        (("owner_query_after_refresh", 10), "exceeds query bandwidth"),
+        (
+            ("formal_owner_query_id_after_intervention", 10),
+            "exceeds query bandwidth",
+        ),
+        (("owner_attention_top_query", 10), "exceeds query bandwidth"),
+        (("matched_current_query", 10), "exceeds query bandwidth"),
+        (("oracle_query_attention_rank", 11), "exceeds query bandwidth"),
+        (("formal_transition", "continue"), "cancel policy drifted"),
+    ],
+)
+def test_d15_trace_integrity_rejects_decision_contract_drift(
+    tmp_path, mutation, message
+) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    field, value = mutation
+    rows[0][field] = value
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match=message):
+        _validate_trace(path, _routes())
+
+
+def test_d15_trace_integrity_cross_checks_source_counts(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    routes = _routes()
+    routes["PF"]["formal"]["decision_rows_by_source"] = {"other": 1}
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="source rows differ"):
+        _validate_trace(path, routes)
+
+
+def _routing_routes() -> dict:
+    return {
+        channel: {
+            route: {
+                "counts": {
+                    "end_count": 0,
+                    "emit_count": 0,
+                    "end_argmax_count": 0,
+                    "target_backed_end_within_one_segment_count": 0,
+                }
+            }
+            for route in ROUTES
+        }
+        for channel in CHANNELS
+    }
+
+
+def _route_receipt() -> dict:
+    eos = {f"video_validation_{index:07d}": 0 for index in range(200)}
+    return {
+        "channel": "PF",
+        "route": "formal",
+        "admission": "predicted",
+        "identity": "free",
+        "query_stream_sha256": "0" * 64,
+        "query_consumption_sha256": "1" * 64,
+        "counts": {
+            "real_prefix_count": 203363,
+            "padding_prefix_count": 5917,
+            "padding_noop_count": 5917,
+            "observed_eos_count": 200,
+            "birth_count": 1,
+            "cancellation_count": 1,
+            "end_count": 0,
+            "emit_count": 0,
+            "reacquisition_count": 0,
+            "capacity_exhaustion_count": 0,
+            "records_active_after_eos": 0,
+            "videos_with_active_records_after_eos": 0,
+            "association_count": 0,
+            "late_association_count": 0,
+            "owner_refresh_count": 0,
+            "record_target_exact_tie_count": 0,
+            "query_prefix_consumption_count": 209280,
+            "decision_row_count": 1,
+            "end_argmax_count": 0,
+            "end_min_duration_suppression_count": 0,
+            "target_backed_end_transition_count": 0,
+            "target_backed_end_within_one_segment_count": 0,
+            "end_at_observed_target_end_count": 0,
+            "end_without_emission_count": 0,
+        },
+        "unique_runtime_record_count": 1,
+        "created_records_by_source": {"predicted": 1},
+        "decision_rows_by_source": {"predicted": 1},
+        "linked_unique_target_count": 0,
+        "raw_semantic_duplicate_count": 0,
+        "batch_local_owner_decision_fragment_count": 1,
+        "first_owner_decision_state_counts": {"0": 1},
+        "owner_state_winner_counts": {"0": 1},
+        "transition_counts": {"birth": 1, "cancel": 1},
+        "statistics": {},
+        "eos_active_record_counts_by_video": eos,
+        "eos_birth_counts_by_video": dict(eos),
+        "lifecycle_integrity": {
+            "immutable_ledger_verified": True,
+            "positive_length_verified": True,
+            "nonnegative_start_verified": True,
+            "no_duplicate_event_verified": True,
+            "contiguous_sequence_id_verified": True,
+            "ledger_emit_count_closed": True,
+            "ledger_row_count": 0,
+            "video_ledger_count": 200,
+            "ground_truth_stored_in_runtime_record": False,
+        },
+    }
+
+
+def test_d15_route_receipt_closes_all_new_accounting() -> None:
+    parsed = _validate_route(
+        _route_receipt(),
+        channel="PF",
+        route="formal",
+        query_hash="0" * 64,
+        consumption_hash="1" * 64,
+    )
+
+    assert parsed["created_records_by_source"] == {"predicted": 1}
+    assert parsed["decision_rows_by_source"] == {"predicted": 1}
+    assert len(parsed["eos_active_record_counts_by_video"]) == 200
+
+
+def test_d15_routing_refuses_a_drifted_pf_control() -> None:
+    routes = _routing_routes()
+    routes["PF"]["formal"]["counts"]["end_count"] = 1
+    routes["PF"]["formal"]["counts"]["emit_count"] = 1
+
+    decision = _route_next_repair(routes)
+
+    assert decision["diagnosis"] == "predicted_free_reference_control_drift"
+    assert decision["model_training_authorized"] is False
+
+
+def test_d15_routing_prioritizes_end_emission_mismatch() -> None:
+    routes = _routing_routes()
+    routes["OR"]["formal"]["counts"]["emit_count"] = 1
+    routes["OR"]["shadow"]["counts"][
+        "target_backed_end_within_one_segment_count"
+    ] = 1
+
+    decision = _route_next_repair(routes)
+
+    assert decision["diagnosis"] == "end_to_emission_closure_fault"
+    assert decision["model_training_authorized"] is False
+
+
+def test_d15_routing_uses_shadow_only_after_formal_cells_fail() -> None:
+    routes = _routing_routes()
+    routes["PR"]["formal"]["counts"]["end_count"] = 1
+    routes["PR"]["formal"]["counts"]["emit_count"] = 1
+    routes["OR"]["shadow"]["counts"][
+        "target_backed_end_within_one_segment_count"
+    ] = 1
+
+    decision = _route_next_repair(routes)
+
+    assert (
+        decision["diagnosis"]
+        == "identity_transport_is_sufficient_under_predicted_burden"
+    )
+
+    routes = _routing_routes()
+    routes["OR"]["shadow"]["counts"][
+        "target_backed_end_within_one_segment_count"
+    ] = 1
+    decision = _route_next_repair(routes)
+    assert (
+        decision["diagnosis"]
+        == "early_cancellation_truncates_later_end_decisions"
+    )
