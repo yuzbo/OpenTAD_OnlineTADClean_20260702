@@ -501,3 +501,68 @@ The preserved submission script SHA-256 is
 At this amendment point the complete scan is running. No D1.5 structural
 route, model-training authorization, short pilot, official comparison,
 locked-test access or paper claim has been released.
+
+## Evidence-gate amendment and exact rerun — 2026-07-31
+
+The preceding launch statement is superseded without deleting its history.
+Job `1207567` failed `1:0` after `2:51` because the first padding contract
+incorrectly expected zero retained active records. This was an evidence
+implementation failure, not a model result. Commit
+`ebf53c57280cd9f6099f84b7b1ac02a0b53cd63d`, tree
+`63aae98fcc8f0fef8f748017247f262a3780978b`, repaired that contract;
+preflight `1207607` then completed `0:0`.
+
+Two later complete scans were deliberately stopped before adjudication:
+
+- `1207643` was clean after `12:20` but was cancelled only to replace the
+  inherited 12-hour allocation with a 24-hour allocation;
+- `1207757` was clean after `15:13` but was cancelled when an independent
+  audit showed that the finalizer did not yet reconstruct enough evidence
+  from the chronological trace. Its partial trace is preserved, but no
+  lifecycle diagnosis is accepted from it.
+
+The final evidence hardening is exact commit
+`451825211171a9c95e423bab1c5889c43b217f7a`, tree
+`83577119cbd5a71c581581b864997ba77298a145`, on
+`codex/eventmatr-d1`. It does not alter the checkpoint, frozen decisions,
+model outputs or training. It adds fail-closed checks for:
+
+- every registered trace field, finite state logits/margins, recomputed
+  winners, query bounds, route lifetime and target-end distance;
+- decision-source, first-decision-state, transition and end/emission
+  aggregate closure;
+- per-video active records after observed EOS, reconstructed from surviving
+  pre-existing records plus births at that same observed EOS;
+- true active-record semantics rather than all retained-but-not-yet-cleaned
+  records;
+- malformed nested receipt objects as controlled validation failures.
+
+Exact preflight `1207933` completed `0:0` in `3:04` with empty stderr and
+`162 passed`, followed by the synthetic mechanisms, official one-batch
+train smoke and 12-batch real D1.5 partial scan. The real partial trace has
+`4,050` owner-decision rows; every new field and per-source aggregate was
+independently cross-checked. Its three visible positive-control events again
+closed as exactly three births, three ends and three emissions. The successful
+root is
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/preflight_4518252_20260731_r11`.
+Its preflight-script, start-identity, final-identity, official-smoke,
+partial-scan and partial-trace SHA-256 values are respectively:
+
+- `c62e9c9b51394b1a1c918121f11b904ccf29e7938f96edd7698c8dc0f6e2d463`;
+- `e37f9efa75b938ad5b59dfd8be2b6e5a5d73bd1edb4b5a9be0a1112695fbeef4`;
+- `0bccb46fbfc35650fa810b1b37d3bafa4b7c47c8430f588265570c0bb2dd13e0`;
+- `1d0ee5b8eb993b11afbf83b75a279bff1bf0170030b4e0ef86f74419058ff091`;
+- `b27d6e464e2943007fbf4c73e391d6425f6bcc8772b164a80194ba9aff580575`;
+- `bfb318654e9a7fdf9a94bd09847f3e6ee5004042d1d4446f0bb0a04bc79bc06c`.
+
+The source-exact complete scan is Slurm job `1207954` under
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_4518252_20260731_r4`;
+its submission-script SHA-256 is
+`e397a170d8862cb6e68fe03d52a512fc773d174323358309a9c9bd1b553545a4`.
+At this record point it is running with a 24-hour limit and empty stderr.
+Only its fail-closed final receipt may choose the next structural repair.
+
+This remains a GT-aided, post-forward, train-only causal diagnosis. It is not
+an official comparison or paper performance result and cannot release the
+locked test, multiple seeds, raw RGB, threshold search/lowering or a longer
+pilot.

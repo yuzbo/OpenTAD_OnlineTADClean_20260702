@@ -1010,3 +1010,37 @@ Complete-scan state:
 Current wiki node:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T29 — D1.5 evidence finalizer hardened; exact complete rerun started
+
+Date: 2026-07-31
+
+Evidence correction:
+
+- complete-scan job `1207567` failed only the padding evidence contract;
+- `1207643` was cancelled to replace a 12-hour allocation with 24 hours;
+- `1207757` was cancelled after an independent audit found insufficient
+  trace-to-receipt reconstruction;
+- none of these attempts is accepted as a model or scientific outcome.
+
+Exact rerun identity:
+
+- code `451825211171a9c95e423bab1c5889c43b217f7a`, tree
+  `83577119cbd5a71c581581b864997ba77298a145`;
+- finalizer now reconstructs source, first-state, transition, end/emission,
+  target-end and observed-EOS activity evidence from the chronological trace;
+- preflight `1207933` completed `0:0`, with empty stderr, `162` passing tests,
+  official one-batch smoke and a 12-batch real partial contract pass;
+- complete job `1207954` is running under the append-only 24-hour root
+  `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_4518252_20260731_r4`.
+
+Scientific boundary:
+
+- D1.5 remains frozen-checkpoint, no-gradient, train-only and GT-aided only
+  after the shared forward;
+- no paper performance, next repair, pilot, locked test, multiple seeds,
+  raw-RGB work or threshold change is released before the final receipt.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
