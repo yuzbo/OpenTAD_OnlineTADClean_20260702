@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import gzip
+import hashlib
 import json
 
 import pytest
@@ -11,8 +13,20 @@ from scripts.finalize_eventmatr_d15_owner_counterfactual import (
     CHANNELS,
     PROTOCOL,
     ROUTES,
+    _validate_source_provenance,
     _validate_trace,
 )
+from scripts.run_eventmatr_d15_owner_counterfactual import (
+    EXPECTED_D14_COUNTS,
+    OFFICIAL_TRAIN_ARTIFACTS,
+    _validate_d14_gate,
+)
+
+
+D14_COMMIT = "fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4"
+D14_TREE = "7603fc6b8226fa8f9dcb3d5212136fb47631bc32"
+TRAINING_COMMIT = "92cf34aa07bebee2a7a7e3661431d5055804b29b"
+TRAINING_TREE = "aef4f64bc020df9d39ead9811fbc01407f1c754a"
 
 
 def _routes() -> dict:
@@ -77,6 +91,160 @@ def _write_trace(path, rows: list[dict]) -> None:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
 
+def _sha256(path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _d14_gate(checkpoint, options) -> dict:
+    checkpoint_sha256 = _sha256(checkpoint)
+    options_sha256 = _sha256(options)
+    lifecycle = {
+        "runtime_birth_count": EXPECTED_D14_COUNTS["birth_count"],
+        "runtime_cancel_count": EXPECTED_D14_COUNTS["cancellation_count"],
+        "runtime_end_count": EXPECTED_D14_COUNTS["end_count"],
+        "runtime_emit_count": EXPECTED_D14_COUNTS["emit_count"],
+        "runtime_reacquisition_count": EXPECTED_D14_COUNTS["reacquisition_count"],
+        "runtime_capacity_exhaustion_count": EXPECTED_D14_COUNTS[
+            "capacity_exhaustion_count"
+        ],
+    }
+    return {
+        "protocol": "eventmatr_d14_cross_arm_structure_gate_v1",
+        "status": "FAIL_STRUCTURE_GATE",
+        "selected_variant": None,
+        "test_access": False,
+        "threshold_search": False,
+        "threshold_lowering": False,
+        "multi_seed": False,
+        "raw_rgb_training": False,
+        "strict_causal_paper_result_valid": False,
+        "official_paper_performance_valid": False,
+        "locked_test_release": False,
+        "paper_claim_release": False,
+        "source_identity": {
+            "d14": {"commit": D14_COMMIT, "tree": D14_TREE},
+        },
+        "official_train_artifacts": OFFICIAL_TRAIN_ARTIFACTS,
+        "arms": {
+            "decision_aligned_bag": {
+                "checkpoint_sha256": checkpoint_sha256,
+                "terminal_lifecycle": lifecycle,
+            },
+        },
+        "linked_training_artifacts": {
+            "bag": {
+                "checkpoint": {
+                    "path": str(checkpoint.resolve()),
+                    "bytes": checkpoint.stat().st_size,
+                    "sha256": checkpoint_sha256,
+                },
+                "options": {
+                    "path": str(options.resolve()),
+                    "bytes": options.stat().st_size,
+                    "sha256": options_sha256,
+                },
+            },
+        },
+    }
+
+
+def _source_provenance_scan() -> dict:
+    return {
+        "training_source_identity": {
+            "commit": TRAINING_COMMIT,
+            "tree": TRAINING_TREE,
+            "clean": True,
+            "status": "PASS",
+            "status_porcelain": "",
+            "smoke": {"status": "PASS", "test_access": False},
+        },
+        "d14_structure_gate": {
+            "binding": {
+                "source_identity": {
+                    "commit": D14_COMMIT,
+                    "tree": D14_TREE,
+                },
+            },
+        },
+    }
+
+
+def test_d15_d14_gate_accepts_distinct_training_and_gate_sources(tmp_path) -> None:
+    checkpoint = tmp_path / "terminal_epoch1.pth"
+    options = tmp_path / "opts.json"
+    checkpoint.write_bytes(b"checkpoint")
+    options.write_text("{}\n", encoding="utf-8")
+    gate = _d14_gate(checkpoint, options)
+
+    binding = _validate_d14_gate(
+        gate,
+        checkpoint=checkpoint.resolve(),
+        options=options.resolve(),
+        checkpoint_sha256=_sha256(checkpoint),
+        options_sha256=_sha256(options),
+        d14_source_commit=D14_COMMIT,
+        d14_source_tree=D14_TREE,
+    )
+
+    assert binding["source_identity"] == {
+        "commit": D14_COMMIT,
+        "tree": D14_TREE,
+    }
+    with pytest.raises(RuntimeError, match="D1.4 gate source commit mismatch"):
+        _validate_d14_gate(
+            gate,
+            checkpoint=checkpoint.resolve(),
+            options=options.resolve(),
+            checkpoint_sha256=_sha256(checkpoint),
+            options_sha256=_sha256(options),
+            d14_source_commit=TRAINING_COMMIT,
+            d14_source_tree=TRAINING_TREE,
+        )
+
+
+def test_d15_finalizer_preserves_three_distinct_source_identities() -> None:
+    provenance = _validate_source_provenance(
+        _source_provenance_scan(),
+        training_commit=TRAINING_COMMIT,
+        training_tree=TRAINING_TREE,
+        d14_source_commit=D14_COMMIT,
+        d14_source_tree=D14_TREE,
+    )
+
+    assert provenance["training_source_identity"]["commit"] == TRAINING_COMMIT
+    assert provenance["d14_source_identity"]["commit"] == D14_COMMIT
+    assert provenance["training_source_identity"]["commit"] != (
+        provenance["d14_source_identity"]["commit"]
+    )
+
+
+def test_d15_finalizer_fails_closed_on_source_identity_aliasing() -> None:
+    scan = _source_provenance_scan()
+    aliased = copy.deepcopy(scan)
+    aliased["d14_structure_gate"]["binding"]["source_identity"]["commit"] = (
+        TRAINING_COMMIT
+    )
+    with pytest.raises(ValueError, match="D1.5 D1.4 source identity commit mismatch"):
+        _validate_source_provenance(
+            aliased,
+            training_commit=TRAINING_COMMIT,
+            training_tree=TRAINING_TREE,
+            d14_source_commit=D14_COMMIT,
+            d14_source_tree=D14_TREE,
+        )
+
+    wrong_training = copy.deepcopy(scan)
+    wrong_training["training_source_identity"]["commit"] = D14_COMMIT
+    with pytest.raises(ValueError, match="training source identity commit mismatch"):
+        _validate_source_provenance(
+            wrong_training,
+            training_commit=TRAINING_COMMIT,
+            training_tree=TRAINING_TREE,
+            d14_source_commit=D14_COMMIT,
+            d14_source_tree=D14_TREE,
+        )
+
+
 def test_d15_trace_integrity_cross_checks_every_route(tmp_path) -> None:
     path = tmp_path / "trace.jsonl.gz"
     rows = [
@@ -105,4 +273,3 @@ def test_d15_trace_integrity_fails_closed_on_missing_route_row(tmp_path) -> None
 
     with pytest.raises(ValueError, match="trace route counts differ"):
         _validate_trace(path, _routes())
-

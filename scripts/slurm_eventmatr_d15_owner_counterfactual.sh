@@ -16,6 +16,8 @@ set -euo pipefail
 : "${MATR_TRAIN_SOURCE_IDENTITY:?MATR_TRAIN_SOURCE_IDENTITY is required}"
 : "${MATR_TRAIN_SOURCE_COMMIT:?MATR_TRAIN_SOURCE_COMMIT is required}"
 : "${MATR_TRAIN_SOURCE_TREE:?MATR_TRAIN_SOURCE_TREE is required}"
+: "${MATR_D14_SOURCE_COMMIT:?MATR_D14_SOURCE_COMMIT is required}"
+: "${MATR_D14_SOURCE_TREE:?MATR_D14_SOURCE_TREE is required}"
 : "${MATR_D14_STRUCTURE_GATE:?MATR_D14_STRUCTURE_GATE is required}"
 : "${MATR_D14_STRUCTURE_GATE_SHA256:?MATR_D14_STRUCTURE_GATE_SHA256 is required}"
 : "${MATR_D15_SOURCE_COMMIT:?MATR_D15_SOURCE_COMMIT is required}"
@@ -63,6 +65,8 @@ python3 scripts/run_eventmatr_d15_owner_counterfactual.py \
   --manifest "${MANIFEST}" \
   --expected-training-source-commit "${MATR_TRAIN_SOURCE_COMMIT}" \
   --expected-training-source-tree "${MATR_TRAIN_SOURCE_TREE}" \
+  --expected-d14-source-commit "${MATR_D14_SOURCE_COMMIT}" \
+  --expected-d14-source-tree "${MATR_D14_SOURCE_TREE}" \
   --expected-diagnostic-source-commit "${MATR_D15_SOURCE_COMMIT}" \
   --expected-diagnostic-source-tree "${MATR_D15_SOURCE_TREE}" \
   --expected-manifest-sha256 "${MATR_D15_MANIFEST_SHA256}" \
@@ -85,6 +89,10 @@ python3 scripts/finalize_eventmatr_d15_owner_counterfactual.py \
   --source-identity-final "${FINAL_IDENTITY}" \
   --diagnostic-source-commit "${MATR_D15_SOURCE_COMMIT}" \
   --diagnostic-source-tree "${MATR_D15_SOURCE_TREE}" \
+  --training-source-commit "${MATR_TRAIN_SOURCE_COMMIT}" \
+  --training-source-tree "${MATR_TRAIN_SOURCE_TREE}" \
+  --d14-source-commit "${MATR_D14_SOURCE_COMMIT}" \
+  --d14-source-tree "${MATR_D14_SOURCE_TREE}" \
   --manifest-sha256 "${MATR_D15_MANIFEST_SHA256}" \
   --checkpoint-sha256 "${MATR_CHECKPOINT_SHA256}" \
   --options-sha256 "${MATR_OPTIONS_SHA256}" \

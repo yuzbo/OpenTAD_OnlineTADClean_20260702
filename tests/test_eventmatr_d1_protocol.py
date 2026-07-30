@@ -54,7 +54,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v7"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v8"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -128,6 +128,11 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     d15 = gates["d15_frozen_owner_counterfactual"]
     assert d15["status"] == "prospectively_frozen_not_run"
     assert d15["training"] is False
+    assert d15["d14_gate_source"] == {
+        "commit": "fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4",
+        "tree": "7603fc6b8226fa8f9dcb3d5212136fb47631bc32",
+    }
+    assert d15["d14_gate_source"] != protocol["base_training_source"]
     assert list(d15["channels"]) == ["PF", "PR", "OF", "OR"]
     assert (
         "one shared GT-free query stream for all channels"
@@ -156,6 +161,36 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "5/10/20-epoch pilots are not paper performance results" in (
         paper["paper_validity"]
     )
+
+
+def test_d15_slurm_wrapper_keeps_three_source_identities_separate() -> None:
+    source = (
+        ROOT / "scripts" / "slurm_eventmatr_d15_owner_counterfactual.sh"
+    ).read_text(encoding="utf-8")
+    for variable in (
+        "MATR_TRAIN_SOURCE_COMMIT",
+        "MATR_TRAIN_SOURCE_TREE",
+        "MATR_D14_SOURCE_COMMIT",
+        "MATR_D14_SOURCE_TREE",
+        "MATR_D15_SOURCE_COMMIT",
+        "MATR_D15_SOURCE_TREE",
+    ):
+        assert f"${{{variable}:?" in source
+    for option in (
+        "--expected-training-source-commit",
+        "--expected-training-source-tree",
+        "--expected-d14-source-commit",
+        "--expected-d14-source-tree",
+        "--expected-diagnostic-source-commit",
+        "--expected-diagnostic-source-tree",
+        "--training-source-commit",
+        "--training-source-tree",
+        "--d14-source-commit",
+        "--d14-source-tree",
+        "--diagnostic-source-commit",
+        "--diagnostic-source-tree",
+    ):
+        assert option in source
 
 
 def test_d1_microexperiment_receipt_is_diagnostic_only() -> None:

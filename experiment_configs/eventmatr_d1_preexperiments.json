@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v7",
+  "protocol_id": "eventmatr_d1_preexperiments_v8",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -318,6 +318,10 @@
       "stage": "d15_frozen_owner_counterfactual",
       "status": "prospectively_frozen_not_run",
       "checkpoint_source": "D1.4 decision-aligned terminal epoch-one checkpoint",
+      "d14_gate_source": {
+        "commit": "fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4",
+        "tree": "7603fc6b8226fa8f9dcb3d5212136fb47631bc32"
+      },
       "lanes": [
         "TH"
       ],

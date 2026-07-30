@@ -710,11 +710,63 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
     }
 
 
+def _validate_source_provenance(
+    scan: dict,
+    *,
+    training_commit: str,
+    training_tree: str,
+    d14_source_commit: str,
+    d14_source_tree: str,
+) -> dict:
+    training_identity = scan.get("training_source_identity")
+    if not isinstance(training_identity, dict):
+        raise ValueError("D1.5 training source identity is absent")
+    _expect(
+        training_identity,
+        {
+            "commit": training_commit,
+            "tree": training_tree,
+            "clean": True,
+            "status": "PASS",
+            "status_porcelain": "",
+        },
+        "D1.5 training source identity",
+    )
+    _expect(
+        training_identity.get("smoke", {}),
+        {"status": "PASS", "test_access": False},
+        "D1.5 training source smoke",
+    )
+    d14_identity = (
+        scan.get("d14_structure_gate", {})
+        .get("binding", {})
+        .get("source_identity")
+    )
+    if not isinstance(d14_identity, dict):
+        raise ValueError("D1.5 D1.4 source identity is absent")
+    _expect(
+        d14_identity,
+        {
+            "commit": d14_source_commit,
+            "tree": d14_source_tree,
+        },
+        "D1.5 D1.4 source identity",
+    )
+    return {
+        "training_source_identity": training_identity,
+        "d14_source_identity": d14_identity,
+    }
+
+
 def validate_scan(
     scan: dict,
     *,
     diagnostic_commit: str,
     diagnostic_tree: str,
+    training_commit: str,
+    training_tree: str,
+    d14_source_commit: str,
+    d14_source_tree: str,
     manifest_sha256: str,
     checkpoint_sha256: str,
     options_sha256: str,
@@ -729,6 +781,13 @@ def validate_scan(
             "clean_start_and_final": True,
         },
         "D1.5 scan source identity",
+    )
+    provenance = _validate_source_provenance(
+        scan,
+        training_commit=training_commit,
+        training_tree=training_tree,
+        d14_source_commit=d14_source_commit,
+        d14_source_tree=d14_source_tree,
     )
     _expect(
         scan.get("manifest", {}),
@@ -861,6 +920,7 @@ def validate_scan(
     return {
         "query_stream_sha256": query_hash,
         "route_consumption_stream_sha256": consumption_hash,
+        **provenance,
         "global_census": {
             key: int(global_census[key]) for key in EXPECTED_CENSUS
         },
@@ -886,6 +946,10 @@ def main() -> None:
     parser.add_argument("--source-identity-final", required=True, type=Path)
     parser.add_argument("--diagnostic-source-commit", required=True)
     parser.add_argument("--diagnostic-source-tree", required=True)
+    parser.add_argument("--training-source-commit", required=True)
+    parser.add_argument("--training-source-tree", required=True)
+    parser.add_argument("--d14-source-commit", required=True)
+    parser.add_argument("--d14-source-tree", required=True)
     parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--checkpoint-sha256", required=True)
     parser.add_argument("--options-sha256", required=True)
@@ -919,6 +983,10 @@ def main() -> None:
         scan,
         diagnostic_commit=args.diagnostic_source_commit,
         diagnostic_tree=args.diagnostic_source_tree,
+        training_commit=args.training_source_commit,
+        training_tree=args.training_source_tree,
+        d14_source_commit=args.d14_source_commit,
+        d14_source_tree=args.d14_source_tree,
         manifest_sha256=args.manifest_sha256,
         checkpoint_sha256=args.checkpoint_sha256,
         options_sha256=args.options_sha256,

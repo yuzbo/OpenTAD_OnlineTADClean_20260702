@@ -125,6 +125,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--expected-training-source-commit", required=True)
     parser.add_argument("--expected-training-source-tree", required=True)
+    parser.add_argument("--expected-d14-source-commit", required=True)
+    parser.add_argument("--expected-d14-source-tree", required=True)
     parser.add_argument("--expected-diagnostic-source-commit", required=True)
     parser.add_argument("--expected-diagnostic-source-tree", required=True)
     parser.add_argument("--expected-manifest-sha256", required=True)
@@ -179,6 +181,37 @@ def _load_json(path: Path, label: str) -> dict:
     return payload
 
 
+def _validate_registered_source_identities(
+    manifest: dict,
+    *,
+    training_source_commit: str,
+    training_source_tree: str,
+    d14_source_commit: str,
+    d14_source_tree: str,
+) -> None:
+    if manifest.get("protocol_id") != "eventmatr_d1_preexperiments_v8":
+        raise RuntimeError("D1.5 manifest protocol is not the frozen v8 contract")
+    expected_training = {
+        "commit": training_source_commit,
+        "tree": training_source_tree,
+    }
+    if manifest.get("base_training_source") != expected_training:
+        raise RuntimeError("D1.5 registered training source identity mismatch")
+    d15_rows = [
+        gate
+        for gate in manifest.get("gates", [])
+        if gate.get("stage") == "d15_frozen_owner_counterfactual"
+    ]
+    if len(d15_rows) != 1:
+        raise RuntimeError("D1.5 manifest must contain exactly one frozen D1.5 gate")
+    expected_d14 = {
+        "commit": d14_source_commit,
+        "tree": d14_source_tree,
+    }
+    if d15_rows[0].get("d14_gate_source") != expected_d14:
+        raise RuntimeError("D1.5 registered D1.4 source identity mismatch")
+
+
 def _finite_number(value, label: str) -> float:
     try:
         numeric = float(value)
@@ -205,8 +238,8 @@ def _validate_d14_gate(
     options: Path,
     checkpoint_sha256: str,
     options_sha256: str,
-    training_source_commit: str,
-    training_source_tree: str,
+    d14_source_commit: str,
+    d14_source_tree: str,
 ) -> dict:
     expected = {
         "protocol": "eventmatr_d14_cross_arm_structure_gate_v1",
@@ -228,10 +261,10 @@ def _validate_d14_gate(
                 f"D1.4 structure gate {key} mismatch: {gate.get(key)!r} != {value!r}"
             )
     source = gate.get("source_identity", {}).get("d14", {})
-    if source.get("commit") != training_source_commit:
-        raise RuntimeError("D1.4 gate training commit mismatch")
-    if source.get("tree") != training_source_tree:
-        raise RuntimeError("D1.4 gate training tree mismatch")
+    if source.get("commit") != d14_source_commit:
+        raise RuntimeError("D1.4 gate source commit mismatch")
+    if source.get("tree") != d14_source_tree:
+        raise RuntimeError("D1.4 gate source tree mismatch")
     official = gate.get("official_train_artifacts")
     if official != OFFICIAL_TRAIN_ARTIFACTS:
         raise RuntimeError("D1.4 gate official train artifact identity drifted")
@@ -256,9 +289,7 @@ def _validate_d14_gate(
     if bag.get("checkpoint_sha256") != checkpoint_sha256:
         raise RuntimeError("D1.4 gate checkpoint SHA-256 mismatch")
 
-    linked = gate.get("linked_training_artifacts", {}).get(
-        "decision_aligned_bag", {}
-    )
+    linked = gate.get("linked_training_artifacts", {}).get("bag", {})
     expected_linked = {
         "checkpoint": (checkpoint, checkpoint_sha256),
         "options": (options, options_sha256),
@@ -277,6 +308,10 @@ def _validate_d14_gate(
             raise RuntimeError(f"D1.4 gate linked {name} size mismatch")
     return {
         "path": str(checkpoint),
+        "source_identity": {
+            "commit": d14_source_commit,
+            "tree": d14_source_tree,
+        },
         "checkpoint_sha256": checkpoint_sha256,
         "options_sha256": options_sha256,
         "terminal_lifecycle": expected_lifecycle,
@@ -1555,6 +1590,14 @@ def main() -> None:
     manifest_sha256 = _sha256(cli.manifest)
     if manifest_sha256 != cli.expected_manifest_sha256:
         raise RuntimeError("D1.5 manifest SHA-256 mismatch")
+    manifest = _load_json(cli.manifest, "D1.5 manifest")
+    _validate_registered_source_identities(
+        manifest,
+        training_source_commit=cli.expected_training_source_commit,
+        training_source_tree=cli.expected_training_source_tree,
+        d14_source_commit=cli.expected_d14_source_commit,
+        d14_source_tree=cli.expected_d14_source_tree,
+    )
 
     options = _load_json(cli.options, "options")
     training_identity = _load_json(
@@ -1583,8 +1626,8 @@ def main() -> None:
         options=cli.options,
         checkpoint_sha256=checkpoint_before["sha256"],
         options_sha256=options_before["sha256"],
-        training_source_commit=cli.expected_training_source_commit,
-        training_source_tree=cli.expected_training_source_tree,
+        d14_source_commit=cli.expected_d14_source_commit,
+        d14_source_tree=cli.expected_d14_source_tree,
     )
     checkpoint = torch.load(cli.checkpoint, map_location="cpu")
     _validate_inputs(
