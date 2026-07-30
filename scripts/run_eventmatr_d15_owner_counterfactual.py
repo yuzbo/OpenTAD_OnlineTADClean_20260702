@@ -56,6 +56,7 @@ from scripts.run_eventmatr_d11_association_scan import (  # noqa: E402
 from scripts.eventmatr_d15_contracts import (  # noqa: E402
     TargetView,
     deterministic_target_query_assignment,
+    validate_parallel_window_causality,
 )
 from util.utils import memory_initialize, parrallel_collate_fn  # noqa: E402
 
@@ -77,6 +78,7 @@ EXPECTED_D14_COUNTS = {
     "capacity_exhaustion_count": 0,
 }
 EXPECTED_COMPLETE_CENSUS = {
+    "parallel_window_causality_batch_count": 3270,
     "real_prefix_count": 203363,
     "padding_prefix_count": 5917,
     "visible_birth_target_count": 3003,
@@ -1704,6 +1706,13 @@ def main() -> None:
                         label="is_eos",
                     )
                 ]
+                validate_parallel_window_causality(
+                    features,
+                    video_names=names,
+                    current_frames=frames,
+                    segment_size=int(args.num_frame),
+                )
+                global_counts["parallel_window_causality_batch_count"] += 1
                 for video_name, frame, is_real, is_eos in zip(
                     names, frames, real_flags, eos_flags
                 ):
@@ -1977,6 +1986,7 @@ def main() -> None:
         "ground_truth_visible_to_query_backbone": False,
         "ground_truth_visible_to_owner_intervention": True,
         "ground_truth_stored_in_runtime_record": False,
+        "parallel_window_causality_verified": True,
         "optimizer_constructed": False,
         "optimizer_step_count": 0,
         "checkpoint_updated": False,

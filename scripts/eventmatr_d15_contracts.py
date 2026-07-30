@@ -21,6 +21,44 @@ class TargetView:
     is_end: bool
 
 
+def validate_parallel_window_causality(
+    features: torch.Tensor,
+    *,
+    video_names: list[str],
+    current_frames: list[float],
+    segment_size: int,
+) -> None:
+    """Prove the frozen MATR batch/time diagonal is prefix-equivalent.
+
+    MATR's inherited flag-memory update indexes ``base_x[i]`` for batch row
+    ``i``.  On the official sliding-window loader this is causal only because
+    one physical batch is a square Toeplitz block: batch and segment axes have
+    equal width, all rows are consecutive prefixes of one video, and
+    ``features[b,t] == features[t,b]``.  Fail closed before the query forward
+    if any part of that exact equivalence drifts.
+    """
+
+    if features.ndim != 3:
+        raise RuntimeError("D1.5 frozen MATR features must be [B,T,F]")
+    batch_size, temporal_size = map(int, features.shape[:2])
+    if batch_size != segment_size or temporal_size != segment_size:
+        raise RuntimeError(
+            "D1.5 frozen MATR diagonal requires batch == temporal == segment size"
+        )
+    if len(video_names) != batch_size or len(current_frames) != batch_size:
+        raise RuntimeError("D1.5 frozen MATR diagonal metadata width drifted")
+    if len(set(video_names)) != 1:
+        raise RuntimeError("D1.5 frozen MATR physical batch crossed video identity")
+    first_frame = float(current_frames[0])
+    expected_frames = [first_frame + float(index) for index in range(batch_size)]
+    if current_frames != expected_frames:
+        raise RuntimeError("D1.5 frozen MATR physical batch is not consecutive")
+    if not torch.equal(features, features.transpose(0, 1)):
+        raise RuntimeError(
+            "D1.5 inherited batch/time diagonal is not prefix-equivalent"
+        )
+
+
 def query_compatibility_scores(
     targets: Iterable[TargetView],
     *,

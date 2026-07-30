@@ -50,6 +50,7 @@ from scripts.finalize_eventmatr_d15_owner_counterfactual import (
 from scripts.eventmatr_d15_contracts import (
     TargetView,
     deterministic_target_query_assignment,
+    validate_parallel_window_causality,
 )
 
 
@@ -283,7 +284,30 @@ def test_d15_target_query_assignment_is_one_to_one_and_tie_deterministic() -> No
         include_birth_evidence=True,
     )
     assert assignments == {4: 0, 7: 1}
-    assert ties == 2
+    # One greedy decision has four exactly tied candidates.  After its
+    # deterministic target/query removal, the final pair is unique.
+    assert ties == 1
+
+
+def test_d15_frozen_parallel_window_diagonal_is_prefix_equivalent() -> None:
+    axis = torch.arange(4, dtype=torch.float32)
+    features = (axis[:, None] + axis[None, :]).unsqueeze(-1)
+    validate_parallel_window_causality(
+        features,
+        video_names=["v"] * 4,
+        current_frames=[0.0, 1.0, 2.0, 3.0],
+        segment_size=4,
+    )
+
+    broken = features.clone()
+    broken[0, 1, 0] += 1.0
+    with pytest.raises(RuntimeError, match="not prefix-equivalent"):
+        validate_parallel_window_causality(
+            broken,
+            video_names=["v"] * 4,
+            current_frames=[0.0, 1.0, 2.0, 3.0],
+            segment_size=4,
+        )
 
 
 def test_causal_single_assignment_ignores_teacher_query_identity() -> None:
@@ -1457,23 +1481,37 @@ def test_d15_query_only_mode_is_gt_free_eval_only_and_skips_internal_runtime() -
     args.training = False
     model = MATR(args).eval()
     model.set_event_diagnostic_query_only(True)
+    batch_size = args.num_frame
+    video_names = ["v"] * batch_size
+    axis = torch.arange(batch_size, dtype=torch.float32)
+    inputs = (
+        (axis[:, None] + axis[None, :])
+        .unsqueeze(-1)
+        .expand(-1, -1, args.feat_dim)
+        .clone()
+    )
     payload = {
-        "inputs": torch.randn((1, 4, 8)),
+        # Native MATR's inherited flag-memory path assumes the official
+        # batch-size == segment-length shape.  Query-only mode disables only
+        # EventMATR lifecycle mutation; it must preserve that query backbone.
+        "inputs": inputs,
         "infos": {
-            "st": torch.tensor([0]),
-            "ed": torch.tensor([4]),
-            "video_name": ["v"],
-            "current_frame": torch.tensor([3]),
-            "is_real_prefix": torch.tensor([True]),
-            "is_eos": torch.tensor([False]),
+            "st": torch.arange(
+                1 - args.num_frame, 1, dtype=torch.long
+            ),
+            "ed": torch.arange(1, args.num_frame + 1, dtype=torch.long),
+            "video_name": video_names,
+            "current_frame": torch.arange(batch_size, dtype=torch.long),
+            "is_real_prefix": torch.ones((batch_size,), dtype=torch.bool),
+            "is_eos": torch.zeros((batch_size,), dtype=torch.bool),
         },
     }
     with torch.no_grad():
         outputs = model(payload, torch.device("cpu"))
-    assert outputs["event_birth_count"].tolist() == [0]
-    assert outputs["event_cancellation_count"].tolist() == [0]
-    assert outputs["event_end_count"].tolist() == [0]
-    assert outputs["event_emit_count"].tolist() == [0]
+    assert outputs["event_birth_count"].tolist() == [0] * batch_size
+    assert outputs["event_cancellation_count"].tolist() == [0] * batch_size
+    assert outputs["event_end_count"].tolist() == [0] * batch_size
+    assert outputs["event_emit_count"].tolist() == [0] * batch_size
     assert outputs["event_ragged_state_logits"].shape == (0, 3)
     assert outputs["event_association_rows"] == []
     assert model.event_memory.records("v") == ()
@@ -1548,14 +1586,14 @@ def test_d15_frozen_routing_table(
 
 def test_d15_runtime_and_ledger_faults_precede_model_repair_routing() -> None:
     routes = _d15_routing_fixture()
-    routes["PR"]["formal"]["end_count"] = 1
+    routes["PR"]["formal"]["counts"]["end_count"] = 1
     assert (
         _route_next_repair(routes)["diagnosis"]
         == "end_to_emission_closure_fault"
     )
 
     routes = _d15_routing_fixture()
-    routes["PR"]["formal"]["end_argmax_count"] = 1
+    routes["PR"]["formal"]["counts"]["end_argmax_count"] = 1
     assert (
         _route_next_repair(routes)["diagnosis"]
         == "runtime_end_gate_or_order_fault"

@@ -53,6 +53,7 @@ EXPECTED_D14_COUNTS = {
     "capacity_exhaustion_count": 0,
 }
 EXPECTED_CENSUS = {
+    "parallel_window_causality_batch_count": 3270,
     "real_prefix_count": 203363,
     "padding_prefix_count": 5917,
     "visible_birth_target_count": 3003,
@@ -92,6 +93,7 @@ MANDATORY_SCAN_FLAGS = {
     "ground_truth_visible_to_query_backbone": False,
     "ground_truth_visible_to_owner_intervention": True,
     "ground_truth_stored_in_runtime_record": False,
+    "parallel_window_causality_verified": True,
     "optimizer_constructed": False,
     "optimizer_step_count": 0,
     "checkpoint_updated": False,

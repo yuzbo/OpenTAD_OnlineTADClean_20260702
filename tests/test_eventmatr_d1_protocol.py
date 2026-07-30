@@ -54,7 +54,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v6"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v7"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -82,7 +82,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "never releases a performance pilot" in (
         gates["d11_failed_one_epoch_association_scan"]["release_condition"]
     )
-    assert "D1.4 terminal structure gate" in (
+    assert "D1.5 passes diagnostic integrity" in (
         gates["seed52_short_pilots"]["release_condition"]
     )
     assert "never releases a performance pilot" in (
@@ -123,6 +123,28 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     ]
     assert d14["structure_gate"]["effect_size_threshold"] is None
     assert "never paper performance" in d14["release_condition"]
+    d15 = gates["d15_frozen_owner_counterfactual"]
+    assert d15["status"] == "prospectively_frozen_not_run"
+    assert d15["training"] is False
+    assert list(d15["channels"]) == ["PF", "PR", "OF", "OR"]
+    assert (
+        "one shared GT-free query stream for all channels"
+        in d15["requires"]
+    )
+    assert any(
+        "batch-time diagonal" in requirement
+        and "consecutive-prefix Toeplitz block" in requirement
+        for requirement in d15["requires"]
+    )
+    assert (
+        "each isolated route independently hashes its consumed physical-prefix "
+        "sequence and all eight hashes must agree"
+        in d15["requires"]
+    )
+    assert "never releases a performance pilot" in d15["release_condition"]
+    assert "never releases a performance pilot" not in (
+        gates["seed52_short_pilots"]["release_condition"]
+    )
     paper = protocol["paper_result_boundary"]
     assert paper["matched_training_budget"]["epochs"] == 100
     assert "no search" in paper["matched_postprocessing"]

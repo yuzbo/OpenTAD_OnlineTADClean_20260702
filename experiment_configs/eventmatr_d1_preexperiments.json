@@ -342,6 +342,7 @@
       },
       "requires": [
         "one shared GT-free query stream for all channels",
+        "every official physical batch proves the inherited MATR batch-time diagonal is an exact same-video consecutive-prefix Toeplitz block before forward",
         "ground truth consulted only after each current-prefix query forward",
         "ground-truth target IDs stored only in isolated diagnostic sidecars and never EventRecord",
         "one independent recurrent no-cancel shadow per channel",
