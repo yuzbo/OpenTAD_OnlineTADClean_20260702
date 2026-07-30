@@ -149,7 +149,8 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     )
     paper = protocol["paper_result_boundary"]
     assert paper["matched_training_budget"]["epochs"] == 100
-    assert "no search" in paper["matched_postprocessing"]
+    assert "prospectively harmonized" in paper["matched_postprocessing"]
+    assert "not yet equivalent" in paper["matched_postprocessing"]
     assert "epoch-100 terminal checkpoints" in paper["terminal_checkpoint_policy"]
     assert "one-epoch mechanisms" in paper["paper_validity"]
     assert "5/10/20-epoch pilots are not paper performance results" in (
