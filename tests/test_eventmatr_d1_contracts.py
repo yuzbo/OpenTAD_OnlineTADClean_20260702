@@ -37,12 +37,20 @@ from criterion.matcher import HungarianMatcher
 from models.event_memory import (
     CausalTemporalHistory,
     DynamicEventMemory,
+    OwnerEventDecoder,
     causal_single_assignment,
     d1_owner_supervision,
     select_disjoint_teacher_query,
     temporal_viterbi_assignment,
 )
 from models.models import MATR
+from scripts.finalize_eventmatr_d15_owner_counterfactual import (
+    _route_next_repair,
+)
+from scripts.eventmatr_d15_contracts import (
+    TargetView,
+    deterministic_target_query_assignment,
+)
 
 
 NEG = -20.0
@@ -130,6 +138,8 @@ def _step(
     true_duration: int | None = None,
     owner_runtime: dict | None = None,
     oracle_births: list[dict] | None = None,
+    diagnostic_suppress_predicted_births: bool = False,
+    diagnostic_cancel_as_continue: bool = False,
 ):
     metadata = {}
     if true_duration is not None:
@@ -149,6 +159,10 @@ def _step(
         is_real_prefix=[True],
         is_eos=[is_eos],
         oracle_births=[oracle_births or []],
+        diagnostic_suppress_predicted_births=(
+            diagnostic_suppress_predicted_births
+        ),
+        diagnostic_cancel_as_continue=diagnostic_cancel_as_continue,
         **metadata,
         **(owner_runtime or {}),
     )
@@ -253,6 +267,23 @@ def test_d12_runtime_birth_is_independent_of_four_state_bg_winner() -> None:
         candidate_state_logits=state[0],
         birth_logits=birth[0],
     ) == (0, 1)
+
+
+def test_d15_target_query_assignment_is_one_to_one_and_tie_deterministic() -> None:
+    targets = [
+        TargetView(4, 0, 2.0, 8.0, 2.0, True, False, False),
+        TargetView(7, 0, 2.0, 9.0, 2.0, True, False, False),
+    ]
+    assignments, ties = deterministic_target_query_assignment(
+        targets,
+        class_logits=torch.zeros((2, 3)),
+        birth_logits=torch.zeros((2,)),
+        candidate_start_frames=torch.tensor([2.0, 2.0]),
+        segment_size=4,
+        include_birth_evidence=True,
+    )
+    assert assignments == {4: 0, 7: 1}
+    assert ties == 2
 
 
 def test_causal_single_assignment_ignores_teacher_query_identity() -> None:
@@ -730,6 +761,114 @@ def test_d1_runtime_continue_and_end_states_close_one_positive_interval() -> Non
     assert ledger[0]["end_frame"] > ledger[0]["start_frame"]
 
 
+def test_d15_owner_decoder_attention_is_opt_in_and_numerically_inert() -> None:
+    torch.manual_seed(19)
+    decoder = OwnerEventDecoder(
+        hidden_dim=8,
+        num_classes=3,
+        num_heads=2,
+        num_states=3,
+    ).eval()
+    owners = torch.randn((1, 2, 8))
+    queries = torch.randn((1, 3, 8))
+    default = decoder(owners, queries)
+    with_attention = decoder(owners, queries, return_attention=True)
+
+    assert len(default) == 4
+    assert len(with_attention) == 5
+    for expected, actual in zip(default, with_attention[:4]):
+        assert torch.equal(expected, actual)
+    attention = with_attention[4]
+    assert attention.shape == (1, 2, 3)
+    assert torch.allclose(attention.sum(dim=-1), torch.ones((1, 2)))
+
+
+def test_d15_suppressed_predicted_birth_still_allows_sidecar_only_oracle_birth() -> None:
+    memory = _memory()
+    oracle = {
+        "query_index": 0,
+        "target_event_id": None,
+        "start_frame": 1.0,
+        "source": "diagnostic_oracle_visible",
+        "association_status": "diagnostic_sidecar_only",
+        "force_create": True,
+        "merge_predicted": False,
+    }
+    with torch.no_grad():
+        result = _step(
+            memory,
+            3,
+            birth=POS,
+            start=1,
+            oracle_births=[oracle],
+            diagnostic_suppress_predicted_births=True,
+        )
+    assert result["birth_count"].tolist() == [1]
+    record = memory.records("video")[0]
+    assert record.source == "diagnostic_oracle_visible"
+    assert record.target_event_id is None
+
+    predicted_only = _memory()
+    with torch.no_grad():
+        suppressed = _step(
+            predicted_only,
+            3,
+            birth=POS,
+            start=1,
+            diagnostic_suppress_predicted_births=True,
+        )
+    assert suppressed["birth_count"].tolist() == [0]
+    assert predicted_only.records("video") == ()
+
+
+def test_d15_cancel_as_continue_is_recurrent_and_eval_only() -> None:
+    memory = _memory()
+    _step(memory, 3, birth=POS, start=1)
+    owners, padding, event_ids = memory.owner_batch(
+        ["video"],
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        embedding_dim=2,
+    )
+    cancel_runtime = {
+        "owner_state_logits": torch.tensor([[[POS, NEG, NEG]]]),
+        "owner_end_offsets": torch.zeros((1, 1)),
+        "owner_updated_embeddings": owners + 1.0,
+        "owner_valid_mask": ~padding,
+        "owner_record_ids": event_ids,
+    }
+    with pytest.raises(RuntimeError, match="eval-mode no_grad"):
+        _step(
+            memory,
+            4,
+            birth=NEG,
+            owner_runtime=cancel_runtime,
+            diagnostic_cancel_as_continue=True,
+        )
+
+    with torch.no_grad():
+        retained = _step(
+            memory,
+            4,
+            birth=NEG,
+            owner_runtime=cancel_runtime,
+            diagnostic_cancel_as_continue=True,
+        )
+    assert retained["cancellation_count"].tolist() == [0]
+    assert len(memory.records("video")) == 1
+    assert torch.equal(memory.records("video")[0].owner_embedding, owners[0, 0] + 1)
+    assert memory.last_audit["lifecycle_events"] == [
+        {
+            "transition": "diagnostic_retain_cancel",
+            "video_name": "video",
+            "event_id": 0,
+            "frame": 4.0,
+            "source": "predicted_unmatched",
+            "target_event_id": None,
+        }
+    ]
+
+
 def test_negative_start_is_clamped_and_targetless_birth_does_not_reuse_identity() -> None:
     memory = _memory()
     _step(memory, 3, birth=POS, start=-7)
@@ -915,6 +1054,12 @@ def test_d13_event_matched_birth_selects_exactly_one_negative_per_event() -> Non
     assert losses["event_birth_zero_positive_batch_count"] == 0
     losses["loss_event_birth"].backward()
     assert int((birth.grad != 0).sum().item()) == 4
+    assert losses["event_birth_risk_group_count"] == 2
+    assert losses["event_owner_assignment_count"] == 2
+    assert (
+        losses["event_birth_risk_group_count"]
+        == losses["event_owner_assignment_count"]
+    )
 
 
 def test_d13_zero_birth_batch_has_no_birth_loss_or_birth_head_gradient() -> None:
@@ -1305,3 +1450,113 @@ def test_d1_eval_boundary_rejects_ground_truth_segment_flag() -> None:
     }
     with pytest.raises(RuntimeError, match="segment_flag"):
         model(payload, torch.device("cpu"))
+
+
+def test_d15_query_only_mode_is_gt_free_eval_only_and_skips_internal_runtime() -> None:
+    args = _args()
+    args.training = False
+    model = MATR(args).eval()
+    model.set_event_diagnostic_query_only(True)
+    payload = {
+        "inputs": torch.randn((1, 4, 8)),
+        "infos": {
+            "st": torch.tensor([0]),
+            "ed": torch.tensor([4]),
+            "video_name": ["v"],
+            "current_frame": torch.tensor([3]),
+            "is_real_prefix": torch.tensor([True]),
+            "is_eos": torch.tensor([False]),
+        },
+    }
+    with torch.no_grad():
+        outputs = model(payload, torch.device("cpu"))
+    assert outputs["event_birth_count"].tolist() == [0]
+    assert outputs["event_cancellation_count"].tolist() == [0]
+    assert outputs["event_end_count"].tolist() == [0]
+    assert outputs["event_emit_count"].tolist() == [0]
+    assert outputs["event_ragged_state_logits"].shape == (0, 3)
+    assert outputs["event_association_rows"] == []
+    assert model.event_memory.records("v") == ()
+
+    with pytest.raises(RuntimeError, match="eval-mode no_grad"):
+        model(payload, torch.device("cpu"))
+
+
+def test_d15_query_only_mode_cannot_be_enabled_during_training() -> None:
+    model = MATR(_args()).train()
+    with pytest.raises(RuntimeError, match="cannot be enabled in training"):
+        model.set_event_diagnostic_query_only(True)
+
+
+def _d15_routing_fixture() -> dict:
+    count_template = {
+        "end_count": 0,
+        "emit_count": 0,
+        "end_argmax_count": 0,
+        "target_backed_end_within_one_segment_count": 0,
+    }
+    return {
+        channel: {
+            route: {"counts": dict(count_template)}
+            for route in ("formal", "shadow")
+        }
+        for channel in ("PF", "PR", "OF", "OR")
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutations", "expected"),
+    [
+        (
+            [("PR", "formal", "end_count", 1), ("PR", "formal", "emit_count", 1)],
+            "identity_transport_is_sufficient_under_predicted_burden",
+        ),
+        (
+            [("OF", "formal", "end_count", 1), ("OF", "formal", "emit_count", 1)],
+            "clean_admission_is_sufficient_without_continuous_refresh",
+        ),
+        (
+            [("OR", "formal", "end_count", 1), ("OR", "formal", "emit_count", 1)],
+            "admission_identity_interaction",
+        ),
+        (
+            [
+                (
+                    "PF",
+                    "shadow",
+                    "target_backed_end_within_one_segment_count",
+                    1,
+                )
+            ],
+            "early_cancellation_truncates_later_end_decisions",
+        ),
+        (
+            [],
+            "frozen_owner_end_representation_or_risk_objective_insufficient",
+        ),
+    ],
+)
+def test_d15_frozen_routing_table(
+    mutations: list[tuple[str, str, str, int]],
+    expected: str,
+) -> None:
+    routes = _d15_routing_fixture()
+    for channel, route, field, value in mutations:
+        routes[channel][route]["counts"][field] = value
+    assert _route_next_repair(routes)["diagnosis"] == expected
+
+
+def test_d15_runtime_and_ledger_faults_precede_model_repair_routing() -> None:
+    routes = _d15_routing_fixture()
+    routes["PR"]["formal"]["end_count"] = 1
+    assert (
+        _route_next_repair(routes)["diagnosis"]
+        == "end_to_emission_closure_fault"
+    )
+
+    routes = _d15_routing_fixture()
+    routes["PR"]["formal"]["end_argmax_count"] = 1
+    assert (
+        _route_next_repair(routes)["diagnosis"]
+        == "runtime_end_gate_or_order_fault"
+    )

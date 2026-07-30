@@ -685,10 +685,12 @@ class OwnerEventDecoder(nn.Module):
         owner_embeddings: torch.Tensor,
         current_queries: torch.Tensor,
         owner_padding_mask: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        attended = self.cross_attention(
+        *,
+        return_attention: bool = False,
+    ):
+        attended, attention_weights = self.cross_attention(
             owner_embeddings, current_queries, current_queries
-        )[0]
+        )
         owner_state = self.norm1(owner_embeddings + attended)
         owner_state = self.norm2(owner_state + self.ffn(owner_state))
         state_logits = self.state(owner_state)
@@ -702,7 +704,10 @@ class OwnerEventDecoder(nn.Module):
             class_logits = class_logits.masked_fill(
                 owner_padding_mask.unsqueeze(-1), 0.0
             )
-        return state_logits, end_offsets, class_logits, owner_state
+        result = (state_logits, end_offsets, class_logits, owner_state)
+        if return_attention:
+            return (*result, attention_weights)
+        return result
 
 
 @dataclass
@@ -1191,7 +1196,16 @@ class DynamicEventMemory:
         owner_updated_embeddings: Optional[torch.Tensor] = None,
         owner_valid_mask: Optional[torch.Tensor] = None,
         owner_record_ids: Optional[torch.Tensor] = None,
+        diagnostic_suppress_predicted_births: bool = False,
+        diagnostic_cancel_as_continue: bool = False,
     ) -> Dict[str, torch.Tensor]:
+        if (
+            diagnostic_suppress_predicted_births
+            or diagnostic_cancel_as_continue
+        ) and (preserve_graph or torch.is_grad_enabled()):
+            raise RuntimeError(
+                "diagnostic lifecycle interventions require eval-mode no_grad"
+            )
         if birth_logits.ndim != 2:
             raise ValueError("birth_logits must be [B,Q]")
         batch_size, query_count = birth_logits.shape
@@ -1368,6 +1382,18 @@ class DynamicEventMemory:
                         owner_state_logits[batch_index, owner_index].argmax().item()
                     )
                     if state == 0:
+                        if diagnostic_cancel_as_continue:
+                            step_audit["lifecycle_events"].append(
+                                {
+                                    "transition": "diagnostic_retain_cancel",
+                                    "video_name": video_name,
+                                    "event_id": int(record.event_id),
+                                    "frame": float(frame),
+                                    "source": record.source,
+                                    "target_event_id": record.target_event_id,
+                                }
+                            )
+                            continue
                         # D1 uses an explicit CANCEL owner state.  Legacy
                         # four-state EventMATR keeps state zero as BACKGROUND,
                         # which has the same runtime transition but a different
@@ -1585,6 +1611,8 @@ class DynamicEventMemory:
             rising = current_start & ~previous_start
             self._previous_start_active[video_name] = current_start.clone()
             birth_indices = rising.nonzero(as_tuple=False).reshape(-1).tolist()
+            if diagnostic_suppress_predicted_births:
+                birth_indices = []
 
             oracle_by_query = {}
             independent_oracle_specs = []

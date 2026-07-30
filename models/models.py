@@ -169,6 +169,11 @@ class MATR(nn.Module):
                 owner_state_count=3 if self.event_d1_enabled else 4,
             )
             self.event_temporal_history = CausalTemporalHistory(n_seglen)
+            # Read-only counterfactual scans may share one GT-free MATR query
+            # stream across several isolated lifecycle memories.  The default
+            # is production behavior; only an explicit eval-only setter can
+            # disable the in-model runtime unroll.
+            self._event_diagnostic_query_only = False
     
     def forward(self, inputs, device):
         # inputs - batch x seq_len x featsize
@@ -176,6 +181,20 @@ class MATR(nn.Module):
         infos = inputs['infos']
         event_targets = inputs.get("event_targets")
         event_valid_mask = inputs.get("event_valid_mask")
+        if (
+            self.event_enabled
+            and self._event_diagnostic_query_only
+            and (
+                self.training
+                or torch.is_grad_enabled()
+                or event_targets is not None
+                or event_valid_mask is not None
+            )
+        ):
+            raise RuntimeError(
+                "EventMATR diagnostic query-only mode requires eval-mode no_grad "
+                "and a GT-free model payload"
+            )
         if self.event_d1_enabled:
             forbidden = {
                 "duration",
@@ -353,11 +372,24 @@ class MATR(nn.Module):
                 }
             )
 
+            ragged_state_logits = []
+            ragged_state_targets = []
+            ragged_end_offsets = []
+            ragged_end_targets = []
+            ragged_class_logits = []
+            ragged_class_targets = []
+            ragged_embeddings = []
+            ragged_group_keys = []
+            ragged_sources = []
+            birth_risk_groups = []
+            association_rows = []
+            association_audit_rows = []
+            runtime_source_events = []
             run_runtime = (
                 self.event_d1_enabled
                 or (not self.training)
                 or bool(getattr(self.args, "event_runtime_during_training", False))
-            )
+            ) and not self._event_diagnostic_query_only
             if run_runtime:
                 # A MATR batch contains consecutive prefixes.  Lifecycle state
                 # must therefore be unrolled in presentation order; decoding
@@ -365,19 +397,6 @@ class MATR(nn.Module):
                 # prefixes in the same batch.
                 runtime_rows = []
                 video_names = infos['video_name']
-                ragged_state_logits = []
-                ragged_state_targets = []
-                ragged_end_offsets = []
-                ragged_end_targets = []
-                ragged_class_logits = []
-                ragged_class_targets = []
-                ragged_embeddings = []
-                ragged_group_keys = []
-                ragged_sources = []
-                birth_risk_groups = []
-                association_rows = []
-                association_audit_rows = []
-                runtime_source_events = []
                 if self.event_d1_enabled and self.training:
                     if event_targets is None or event_valid_mask is None:
                         raise RuntimeError(
@@ -1028,6 +1047,21 @@ class MATR(nn.Module):
         if self.event_enabled:
             self.event_memory.reset(video_name)
             self.event_temporal_history.reset(video_name)
+
+    def set_event_diagnostic_query_only(self, enabled: bool) -> None:
+        """Enable the GT-free, eval-only query stream used by D1.5 diagnostics."""
+
+        enabled = bool(enabled)
+        if enabled and self.training:
+            raise RuntimeError(
+                "EventMATR diagnostic query-only mode cannot be enabled in training"
+            )
+        if not self.event_enabled and enabled:
+            raise RuntimeError(
+                "native MATR has no EventMATR diagnostic runtime to disable"
+            )
+        if self.event_enabled:
+            self._event_diagnostic_query_only = enabled
 
     @staticmethod
     def _slice_prefix_info(infos, key, index, default):

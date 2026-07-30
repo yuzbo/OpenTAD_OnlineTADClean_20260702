@@ -596,7 +596,7 @@ class CriterionMATR(nn.Module):
         birth_event_losses = []
         balanced_background_losses = []
         start_losses = []
-        assignment_count = 0
+        birth_risk_group_count = 0
         interval_fallback_count = 0
         prebirth_exposure_count = 0
         interval_exposure_count = 0
@@ -624,7 +624,7 @@ class CriterionMATR(nn.Module):
             selected_risk_logit_count += int(selected.numel())
             start_frame = float(group["start_frame"])
             terminal_query = int(group["terminal_query"])
-            assignment_count += 1
+            birth_risk_group_count += 1
             positive_assignments.setdefault(birth_index, set()).add(
                 terminal_query
             )
@@ -1006,13 +1006,25 @@ class CriterionMATR(nn.Module):
             "event_end_positive_count": torch.tensor(
                 float(observed_end_groups), device=device
             ),
+            "event_birth_risk_group_count": torch.tensor(
+                float(birth_risk_group_count), device=device
+            ),
+            # Backward-compatible metric alias.  The historical name was
+            # semantically wrong: this value counts positive birth-risk groups,
+            # not successful predicted-owner associations.
             "event_owner_assignment_count": torch.tensor(
-                float(assignment_count), device=device
+                float(birth_risk_group_count), device=device
             ),
             "event_ragged_track_count": torch.tensor(
                 float(len(grouped)), device=device
             ),
+            "event_batch_track_fragment_count": torch.tensor(
+                float(len(grouped)), device=device
+            ),
             "event_false_track_cancel_group_count": torch.tensor(
+                float(false_track_groups), device=device
+            ),
+            "event_all_negative_owner_fragment_count": torch.tensor(
                 float(false_track_groups), device=device
             ),
         }

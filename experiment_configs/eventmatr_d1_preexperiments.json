@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v6",
+  "protocol_id": "eventmatr_d1_preexperiments_v7",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -255,7 +255,7 @@
     },
     {
       "stage": "d14_seed52_decision_alignment_mechanism",
-      "status": "prospectively_frozen_not_run",
+      "status": "completed_failed_structure_gate",
       "epochs": [
         1
       ],
@@ -301,11 +301,70 @@
         "selection_rule": "if only one arm passes, select it; if both pass, select normalized_survival because it retains the formal censored likelihood; if neither passes, select neither",
         "effect_size_threshold": null
       },
-      "release_condition": "both arms, terminal scans, parameter audits and the fail-closed cross-arm structure gate complete; this stage is train-only mechanism evidence and never paper performance"
+      "observed_evidence": {
+        "normalized_survival_positive_terminal_birth_logits": 0,
+        "decision_aligned_positive_terminal_birth_logits": 923712,
+        "decision_aligned_runtime_births": 30002,
+        "decision_aligned_runtime_cancellations": 29974,
+        "decision_aligned_runtime_ends": 0,
+        "decision_aligned_runtime_emissions": 0,
+        "capacity_exhaustions": 0,
+        "structure_gate_status": "FAIL_STRUCTURE_GATE",
+        "selected_variant": null
+      },
+      "release_condition": "completed and failed; no short pilot, official comparison, paper claim, threshold change or locked-test access is released"
+    },
+    {
+      "stage": "d15_frozen_owner_counterfactual",
+      "status": "prospectively_frozen_not_run",
+      "checkpoint_source": "D1.4 decision-aligned terminal epoch-one checkpoint",
+      "lanes": [
+        "TH"
+      ],
+      "training": false,
+      "optimizer_constructed": false,
+      "paper_performance_valid": false,
+      "factors": {
+        "admission": [
+          "unchanged predicted rising-edge admission",
+          "one oracle-visible admission per training event"
+        ],
+        "identity": [
+          "free persistent owner",
+          "post-forward oracle current-query refresh"
+        ]
+      },
+      "channels": {
+        "PF": "predicted admission and free identity; exact D1.4 reproduction control",
+        "PR": "predicted admission and oracle current-query refresh",
+        "OF": "oracle-visible admission and free identity",
+        "OR": "oracle-visible admission and oracle current-query refresh"
+      },
+      "requires": [
+        "one shared GT-free query stream for all channels",
+        "ground truth consulted only after each current-prefix query forward",
+        "ground-truth target IDs stored only in isolated diagnostic sidecars and never EventRecord",
+        "one independent recurrent no-cancel shadow per channel",
+        "GT-forced positive lifecycle control closes exactly 3003 births, ends and emissions",
+        "PF reproduces exactly 30002 births, 29974 cancellations, zero ends, zero emissions and zero capacity exhaustion",
+        "official annotation, RGB-plus-flow feature, proposal-label and video-length hashes are unchanged",
+        "each isolated route independently hashes its consumed physical-prefix sequence and all eight hashes must agree",
+        "chronological compressed JSONL decision trace whose per-route rows, ordering, owner uniqueness and transition aggregates are revalidated by the fail-closed finalizer",
+        "no threshold search, optimizer, checkpoint update, test access or detection metric"
+      ],
+      "query_compatibility_rule": {
+        "birth": "target-class log probability plus birth log-sigmoid minus absolute candidate-start error divided by segment size",
+        "visible_refresh": "target-class log probability minus absolute candidate-start error divided by segment size",
+        "record_target_link": "owner/current-query cosine plus record target-class log probability minus start error divided by segment size",
+        "assignment": "deterministic greedy one-to-one with no effect threshold",
+        "target_query_tie_break": "target event id then query index",
+        "record_target_tie_break": "runtime event id then target event id"
+      },
+      "release_condition": "only a PASS_DIAGNOSTIC receipt may route at most one minimal structural repair; this stage never releases a performance pilot or paper result"
     },
     {
       "stage": "seed52_short_pilots",
-      "status": "blocked_until_d14_structure_gate_and_prospective_freeze",
+      "status": "blocked_until_d15_routes_one_repair_and_new_structure_gate_passes",
       "epochs": [
         5,
         10,
@@ -318,11 +377,11 @@
         "H",
         "TH"
       ],
-      "release_condition": "the D1.4 terminal structure gate identifies one live objective and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
+      "release_condition": "D1.5 passes diagnostic integrity, selects one non-ambiguous minimal repair, that repair passes new strict-causal integration and structure gates, and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
     }
   ],
   "paper_result_boundary": {
-    "status": "blocked_until_structure_gate_and_prospective_freeze",
+    "status": "blocked_until_d15_routed_repair_structure_gate_and_comparability_debt_close",
     "official_parent_anchor": "native MATR",
     "dataset": "official THUMOS14 train-validation split and locked test split",
     "input_features": "official extracted RGB+flow features with feat_dim 4096",
@@ -335,7 +394,7 @@
       "optimizer_and_scheduler": "identical to the official parent protocol"
     },
     "matched_evaluation": "same official evaluator at temporal IoU 0.3 through 0.7",
-    "matched_postprocessing": "same fixed class threshold 0.1, flag threshold 0.5, and non-maximum-suppression threshold 0.3 with no search",
+    "matched_postprocessing": "must be prospectively harmonized before paper evaluation; current EventMATR confidence ranking and full-file suppression are not yet equivalent to the native parent",
     "terminal_checkpoint_policy": "both models are evaluated only from their prospectively declared epoch-100 terminal checkpoints; no best-epoch selection",
     "strict_causal_requirements": [
       "no true duration or complete-video timing at the model boundary",
@@ -343,8 +402,14 @@
       "no future frame, future metadata, or ground-truth inference input",
       "immutable positive-length no-duplicate ledger with zero capacity exhaustion"
     ],
-    "paper_validity": "only a prospectively frozen native-parent versus EventMATR full-budget evaluation is paper-comparable; one-epoch mechanisms, train-prefix scores, and 5/10/20-epoch pilots are not paper performance results",
-    "locked_test_release_condition": "D1.4 structure gate PASS, development analysis closed, and the native-parent versus selected EventMATR full-budget comparison contract frozen before any locked-test access"
+    "official_comparability_debt": [
+      "replace complete-video frame_to_time conversion with arrival timestamps or a predeclared fixed feature stride/FPS",
+      "prove or replace full-file online_nms with prefix-equivalent streaming suppression",
+      "harmonize native class-probability ranking and EventMATR birth-class-end geometric ranking prospectively",
+      "record a common-initialization hash for all matched native/EventMATR parameters"
+    ],
+    "paper_validity": "only a prospectively frozen native-parent versus EventMATR full-budget evaluation after all comparability debt closes is paper-comparable; D1.5 counterfactuals, one-epoch mechanisms, train-prefix scores, and 5/10/20-epoch pilots are not paper performance results",
+    "locked_test_release_condition": "D1.5 routes one non-ambiguous repair, the repaired model passes a new structure gate, all official-comparability debt is closed, development analysis is closed, and the native-parent versus selected EventMATR full-budget comparison contract is frozen before any locked-test access"
   },
   "metrics": {
     "detection": [

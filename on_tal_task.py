@@ -630,6 +630,9 @@ def train_one_epoch(
         'event_birth_normalized_survival_event_count',
         'event_birth_decision_aligned_positive_bag_count',
         'event_birth_decision_aligned_negative_bag_count',
+        'event_birth_risk_group_count',
+        'event_batch_track_fragment_count',
+        'event_all_negative_owner_fragment_count',
     )
     mechanism_epoch_census = {name: 0 for name in mechanism_census_names}
 
