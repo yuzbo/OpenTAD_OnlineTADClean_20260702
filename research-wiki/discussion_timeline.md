@@ -970,3 +970,43 @@ authorized.
 Current wiki node:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T28 — D1.5 exact provenance and remote preflight pass
+
+Date: 2026-07-30
+
+Exact execution identity:
+
+- code commit `9b9189af46462e50dad90bf35248799300f974d8`;
+- tree `45b1ab3b361681fd5a04f07500851c7bcacef093`;
+- manifest protocol `eventmatr_d1_preexperiments_v8`, SHA-256
+  `8ed0d91cde2017f30c1815ad15fef9f590969cf7bd81110e8c9df53f4318cda3`;
+- source training `92cf34aa.../aef4f64b...`, D1.4 gate source
+  `fa27b365.../7603fc6b...` and D1.5 diagnostic source
+  `9b9189af.../45b1ab3b...` are now separately verified and retained.
+
+Preflight evidence:
+
+- attempts `1207473`, `1207477`, `1207501`, `1207506`, `1207516` and
+  `1207522` failed closed at infrastructure, test, smoke-contract or provenance
+  checks before a complete D1.5 scan;
+- job `1207543` completed `0:0`;
+- `144` tests passed, followed by synthetic mechanisms and an official
+  train-batch smoke with `test_access=false`;
+- a 12-batch real D1.5 partial scan verified the inherited causal prefix
+  diagonal on all 12 batches, preserved all route-consumption hashes and closed
+  the three-event positive lifecycle control exactly;
+- those partial values validate execution only and do not authorize a
+  structural diagnosis or performance claim.
+
+Complete-scan state:
+
+- Slurm job `1207567` was submitted under append-only root
+  `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_9b9189a_20260730_r1`;
+- the job is train-only, read-only, zero-optimizer, zero-checkpoint-update and
+  has no locked-test access;
+- the finalizer must pass before one and only one next repair may be routed.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)

@@ -412,3 +412,92 @@ before the complete train scan.
 Status at registration: **implementation complete, remote preflight and
 complete diagnostic scan not yet run**. No scientific route, model repair,
 performance pilot, official comparison or paper claim has been released.
+
+## Exact-source and preflight amendment — 2026-07-30
+
+The pre-execution registration above is historical and is superseded for
+execution by the following exact source:
+
+- code commit:
+  `9b9189af46462e50dad90bf35248799300f974d8`;
+- code tree:
+  `45b1ab3b361681fd5a04f07500851c7bcacef093`;
+- manifest protocol:
+  `eventmatr_d1_preexperiments_v8`;
+- manifest SHA-256:
+  `8ed0d91cde2017f30c1815ad15fef9f590969cf7bd81110e8c9df53f4318cda3`;
+- branch:
+  `codex/eventmatr-d1`;
+- remote:
+  `https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702.git`.
+
+The amendment preserves three independent source identities instead of
+aliasing them:
+
+1. exact source training:
+   `92cf34aa07bebee2a7a7e3661431d5055804b29b`,
+   tree `aef4f64bc020df9d39ead9811fbc01407f1c754a`;
+2. D1.4 gate/checkpoint diagnostic source:
+   `fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4`,
+   tree `7603fc6b8226fa8f9dcb3d5212136fb47631bc32`;
+3. current D1.5 diagnostic source:
+   `9b9189af46462e50dad90bf35248799300f974d8`,
+   tree `45b1ab3b361681fd5a04f07500851c7bcacef093`.
+
+The runner now verifies those identities separately against the frozen
+manifest, source-training receipt and D1.4 structure-gate receipt. The scan
+embeds all three, and the finalizer rejects any missing, mismatched or aliased
+identity. The D1.4 linked training-artifact key is bound to its actual frozen
+receipt key, `bag`; no historical artifact was rewritten.
+
+### Append-only preflight ledger
+
+All failed attempts stopped before a complete D1.5 scan and remain preserved:
+
+| Job | Exit | Furthest completed stage | Fail-closed reason |
+|---|---:|---|---|
+| `1207473` | `1:0` | source identity | Shared-filesystem temporary capture directory was not writable. No test or model execution. |
+| `1207477` | `1:0` | tests | `135` tests passed and four tests exposed stale/incorrect test assumptions. No official-data scan. |
+| `1207501` | `1:0` | tests | `139` tests passed; one stale D1.4 release-wording assertion remained. No official-data scan. |
+| `1207506` | `1:0` | tests | `139` tests passed; one stale post-processing wording assertion remained. No official-data scan. |
+| `1207516` | `1:0` | tests and synthetic mechanisms | `140` tests passed; official-train smoke refused to start without explicit source-identity environment variables. |
+| `1207522` | `1:0` | official-train smoke | Tests, synthetic mechanisms and the official one-batch smoke passed; D1.5 then detected the training-source/D1.4-source identity alias and stopped before any diagnostic batch. |
+| `1207543` | `0:0` | complete preflight | `144` tests, synthetic mechanisms, official one-batch smoke and a 12-batch real D1.5 partial scan all passed. |
+
+The successful preflight root is
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/preflight_9b9189a_20260730_r7`.
+Its immutable evidence includes:
+
+- preflight script SHA-256:
+  `10761a5583b29552f16e4cd095211090afe9e0c996a51c1518d549dcaf3fee40`;
+- start identity SHA-256:
+  `25d9ce5fd24f9e45be1e0fcf8188bcd46d14ab25b8d54c1528de3b558c9ec54c`;
+- final identity SHA-256:
+  `990704d43fdb935e12ef7fbf210b8b12f185e1a8c124f65990b632c780b4df12`;
+- official-train smoke SHA-256:
+  `5ce119d570bf3acdcbb21b4c3fa84323118419b1f06b105d8cb6d68320653d0f`;
+- 12-batch partial scan SHA-256:
+  `ffcdcab54088899864c4105eb045537f250e8d9e6bb4248b38e0d0de7b23cd20`;
+- partial trace SHA-256:
+  `af878d21e23df069d504adbd8e85dcc762a3ce434d12acfd1774d3495425018a`.
+
+The partial scan consumed `12` verified causal physical batches and `768`
+real prefixes with one common route-consumption hash. It observed three
+visible births. The positive lifecycle control closed exactly three births,
+three ends and three emissions with zero capacity exhaustion. The oracle
+formal channels admitted and then cancelled those three records; their
+recurrent shadows remained active and produced no end in this short prefix.
+Predicted channels had no birth in these first batches. These values validate
+execution only and are not a population diagnosis or paper result.
+
+### Complete-scan launch
+
+The complete official-train diagnostic was submitted as Slurm job `1207567`
+under the append-only root
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_9b9189a_20260730_r1`.
+The preserved submission script SHA-256 is
+`cd3360bf399b36976c31b475e82e847f5887fb040bf296c007685c588b7c19c9`.
+
+At this amendment point the complete scan is running. No D1.5 structural
+route, model-training authorization, short pilot, official comparison,
+locked-test access or paper claim has been released.
