@@ -1080,3 +1080,30 @@ comparability still requires a separately frozen, matched 100-epoch
 native-MATR/EventMATR comparison using the official split, the same extracted
 features, optimization, post-processing, terminal checkpoint and evaluator,
 followed by one locked-test evaluation.
+
+## D1.4 semantic correction and D1.5 protocol freeze
+
+A complete source-level review narrowed two D1.4 accounting statements without
+changing any historical raw value or the failed gate:
+
+1. the D1 `event_owner_assignment_count=3,003` is incremented once per positive
+   birth-risk group. It is not a count of successfully associated predicted
+   owner tracks;
+2. `305,064` counts batch-local all-negative owner groups grouped by
+   `(video_name, runtime_event_id)`;
+3. because the two counters have different units, `101.6:1` is not a gradient
+   ratio, loss weight or established root-cause dose;
+4. the strong evidence remains that targetless predicted records are routed to
+   cancellation while end-risk supervision is restricted to target-backed
+   groups. Whether this mismatch, identity drift, early-cancel truncation or
+   over-admission is dominant remains unresolved.
+
+The next diagnostic is now prospectively frozen as a train-only, read-only
+two-by-two crossing of predicted/oracle-visible admission and free/oracle-
+refreshed identity, with a recurrent no-cancel shadow for every cell. The exact
+protocol, contamination boundary, required fields, interpretation table and
+official-comparability debt are recorded in
+[eventmatr-d15-owner-counterfactual-protocol-20260730.md](eventmatr-d15-owner-counterfactual-protocol-20260730.md).
+
+D1.5 cannot retroactively pass D1.4 and cannot produce paper performance. Its
+only purpose is to select at most one next structural intervention.

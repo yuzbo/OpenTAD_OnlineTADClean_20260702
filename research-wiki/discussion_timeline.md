@@ -902,3 +902,41 @@ Current wiki nodes:
 
 - [experiments/eventmatr-d11-structural-repair-design-20260729.md](experiments/eventmatr-d11-structural-repair-design-20260729.md)
 - [decision_register.md#dr-043-fail-d14-preserve-decision-aligned-birth-as-an-intervention-and-isolate-owner-end-failure](decision_register.md)
+
+## T26 — D1.4 interpretation narrowed; D1.5 counterfactual frozen
+
+Date: 2026-07-30
+
+Semantic correction:
+
+- `3,003` is the positive birth-risk-group count, not successful predicted
+  owner associations;
+- `305,064` is a batch-local all-negative owner-group count;
+- their `101.6:1` quotient is not a gradient or loss-dose ratio;
+- this correction does not alter D1.4's failed structure gate.
+
+Scientific decision:
+
+- retain birth activation as real mechanism evidence;
+- treat identity routing, early-cancel end truncation, owner-state competition
+  and over-admission as competing causes;
+- freeze a train-only, read-only `predicted/oracle-visible admission ×
+  free/oracle-refreshed identity` diagnostic;
+- carry a recurrent no-cancel shadow in every cell;
+- use oracle target IDs only in an isolated post-forward diagnostic sidecar;
+- authorize at most one subsequent structural repair from a predeclared
+  decision table.
+
+Paper boundary:
+
+- D1.5 is explicitly GT-aided after forward and cannot report paper
+  performance;
+- complete-video output scaling, full-file non-maximum suppression, score
+  semantics and common initialization remain official-comparability debts;
+- the matched 100-epoch native-MATR/EventMATR study and one later locked-test
+  evaluation remain blocked.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+- [decision_register.md#dr-044-correct-d14-counter-semantics-and-freeze-the-d15-admission-by-identity-diagnostic](decision_register.md)

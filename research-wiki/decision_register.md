@@ -1927,3 +1927,80 @@ Reversibility:
 - Only a fresh model that passes every unchanged structure-liveness and ledger
   check can lift the analysis hold; no threshold adjustment or longer training
   may substitute for that pass.
+
+## DR-044: Correct D1.4 Counter Semantics and Freeze the D1.5 Admission-by-Identity Diagnostic
+
+Status: approved for implementation; frozen-checkpoint analysis only.
+
+Decision:
+
+> Preserve the D1.4 failed gate and all raw evidence, but withdraw the
+> interpretation of `3,003` as successful owner assignments and of
+> `305,064 / 3,003` as an optimization-dose ratio. Before any new training,
+> run the frozen D1.4 decision-aligned checkpoint through a train-only,
+> read-only `predicted/oracle-visible admission × free/oracle-refreshed
+> identity` diagnostic, with a recurrent no-cancel shadow. Use its frozen
+> decision table to authorize at most one next structural repair.
+
+Reason:
+
+- criterion source increments the `3,003` counter once per positive birth-risk
+  group rather than once per successful predicted-owner association;
+- `305,064` is a batch-local all-negative owner-group count, so the quotient
+  compares unlike units and cannot establish a gradient ratio;
+- the D1.4 terminal result still proves a live but over-admitting birth branch
+  and a dead predicted-only end/emission path;
+- predicted records without a target ID are supervised as cancellation, while
+  end risk is target-backed only, but this source mismatch is not yet separated
+  from identity drift, model-induced cancellation truncation, owner-state
+  competition or birth calibration;
+- the earlier oracle-birth/oracle-identity proposal changed multiple factors at
+  once. The new four-cell design keeps predicted births unchanged in its
+  identity contrast and clean admission unchanged in its free-versus-refresh
+  contrast.
+
+Resolution:
+
+1. channels are `PF`, `PR`, `OF` and `OR`, where `P/O` is
+   predicted/oracle-visible admission and `F/R` is free/oracle-refreshed
+   identity;
+2. `PF` must exactly reproduce `30,002` births, `29,974` cancellations, zero
+   ends, zero emissions and zero capacity exhaustion or the diagnostic stops;
+3. every channel carries an isolated recurrent shadow that ignores formal
+   cancellation for retention only and can never emit a paper prediction;
+4. oracle IDs live only in a diagnostic sidecar and cannot enter
+   `EventRecord.target_event_id`, the query backbone, duplicate exclusion,
+   exact-ID recovery, birth decisions or the formal ledger;
+5. all runs are deterministic `eval`/`no_grad`, use official train-only
+   artifacts, construct no optimizer, update no checkpoint and access no test;
+6. a GT-forced lifecycle is retained only as a non-empty state-machine and
+   ledger-integrity control;
+7. `PR > PF` on end/emission authorizes only a predicted-track supervision
+   bridge; `OF > PF` without a refresh requirement authorizes only calibrated
+   admission work; shadow-only closure authorizes only cancellation/unresolved
+   semantics; persistent failure under `OF/OR` and their shadows authorizes only
+   a proper owner-risk intervention after the inherited-memory flag check;
+8. no threshold search, longer training, additional seed, raw RGB, locked test
+   or paper performance claim is released.
+
+Official-comparability boundary:
+
+- D1.5 is deliberately GT-aided after forward and therefore
+  `paper_performance_valid=false`;
+- the future paper route must additionally remove complete-video
+  `frame_to_time` from the formal output path, prove prefix-equivalent
+  post-processing, freeze a controlled score formula and verify common
+  initialization hashes;
+- only a future structure pass followed by the separately frozen matched
+  100-epoch native-MATR/EventMATR comparison may release one locked-test
+  evaluation.
+
+Source:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md).
+
+Reversibility:
+
+- D1.5 may falsify every currently favored structural repair.
+- It cannot change the D1.4 result, select a deployable checkpoint or support a
+  performance/novelty claim.
