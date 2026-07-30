@@ -940,3 +940,33 @@ Current wiki nodes:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
 - [decision_register.md#dr-044-correct-d14-counter-semantics-and-freeze-the-d15-admission-by-identity-diagnostic](decision_register.md)
+
+## T27 — D1.5 implementation frozen before remote execution
+
+Date: 2026-07-30
+
+Implementation identity:
+
+- code commit `ee59b096c6e47f4085e6236696dc7c6831d81dd5`;
+- tree `af6de42f9e53f3142353f93c4809bf8a34b4d7be`;
+- manifest SHA-256
+  `903a93a129c16b3bc4778d7ddf002e15eca1cbed1e3ba75e5261ff69bf2c8b22`;
+- pushed branch `codex/eventmatr-d1`.
+
+Integrity additions:
+
+- `PF` formal retains the exact D1.4 one-route owner-decode shape;
+- all memories are prepared from one GT-free forward before route mutation;
+- each route independently hashes its consumed prefix stream;
+- the finalizer now decompresses and cross-checks every owner-decision row;
+- active and archived records are both checked for GT contamination;
+- output artifacts are append-only and outside the source repository.
+
+Local compilation, static, manifest, shell, whitespace and pure finalizer tests
+pass. CUDA model tests, official-data smoke and the complete train scan remain
+pending Slurm work. Therefore no D1.5 diagnosis or next model repair is yet
+authorized.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)

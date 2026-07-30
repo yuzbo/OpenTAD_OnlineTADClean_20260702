@@ -357,3 +357,58 @@ The first implementation is restricted to:
 
 Production `EventRecord` schema, official ledger schema, training objective and
 runtime inference remain unchanged in this diagnostic revision.
+
+## Pre-execution implementation registration — 2026-07-30
+
+The diagnostic implementation is now frozen at:
+
+- code commit:
+  `ee59b096c6e47f4085e6236696dc7c6831d81dd5`;
+- code tree:
+  `af6de42f9e53f3142353f93c4809bf8a34b4d7be`;
+- manifest SHA-256:
+  `903a93a129c16b3bc4778d7ddf002e15eca1cbed1e3ba75e5261ff69bf2c8b22`;
+- branch:
+  `codex/eventmatr-d1`;
+- remote:
+  `https://github.com/yuzbo/OpenTAD_OnlineTADClean_20260702.git`.
+
+The implementation uses one evaluation-only, no-gradient, GT-free MATR query
+forward. `PF` formal keeps the original one-route batch shape so that its owner
+decode remains the exact D1.4 reproduction control. The other seven isolated
+routes are decoded together for throughput; whenever a formal route and its
+shadow still have byte-identical pre-intervention owner inputs, the shadow
+reuses the formal decode exactly. All eight memories are prepared before any
+route mutates its own state.
+
+Ground truth is parsed only after the shared query forward. Diagnostic target
+IDs remain in Python sidecars; every active and archived runtime record is
+checked for `target_event_id=None`. Oracle admission suppresses predicted
+births but still updates the rising-edge history. The no-cancel shadow retains
+the recurrently updated owner embedding and class distribution while changing
+only the cancellation transition.
+
+Evidence integrity is stricter than the minimum protocol text:
+
+1. every route independently hashes the exact sequence of physical prefixes
+   and shared batch-output tokens that it consumes;
+2. all eight route-consumption hashes and counts must agree;
+3. the finalizer decompresses the decision trace and validates mandatory
+   fields, per-route row counts, per-video chronological order, one owner
+   decision per runtime ID and prefix, and the reported end-winner,
+   minimum-duration-suppression and target-backed-end aggregates;
+4. output and receipt paths are append-only and must remain outside the source
+   repository;
+5. the positive lifecycle control checks both active and archived runtime
+   records for GT contamination.
+
+Local pre-execution checks pass Python compilation, static undefined-name
+inspection, manifest parsing, shell syntax, Git whitespace validation, and two
+pure-Python finalizer trace-integrity tests. The workstation PyTorch binary
+cannot load its native DLL, so model-level tests are not claimed locally. A
+clean exact-source Slurm CUDA test and official-data smoke remain mandatory
+before the complete train scan.
+
+Status at registration: **implementation complete, remote preflight and
+complete diagnostic scan not yet run**. No scientific route, model repair,
+performance pilot, official comparison or paper claim has been released.
