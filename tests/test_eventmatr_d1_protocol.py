@@ -122,7 +122,9 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
         "decision_aligned_bag",
     ]
     assert d14["structure_gate"]["effect_size_threshold"] is None
-    assert "never paper performance" in d14["release_condition"]
+    assert d14["status"] == "completed_failed_structure_gate"
+    assert "no short pilot" in d14["release_condition"]
+    assert "locked-test access" in d14["release_condition"]
     d15 = gates["d15_frozen_owner_counterfactual"]
     assert d15["status"] == "prospectively_frozen_not_run"
     assert d15["training"] is False
