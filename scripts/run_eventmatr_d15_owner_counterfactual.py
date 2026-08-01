@@ -58,10 +58,15 @@ from scripts.eventmatr_d15_contracts import (  # noqa: E402
     deterministic_target_query_assignment,
     validate_parallel_window_causality,
 )
+from scripts.eventmatr_d15_statistics import (  # noqa: E402
+    EXPECTED_LIFECYCLE_COUNTS,
+    build_lifecycle_census,
+    validate_lifecycle_census,
+)
 from util.utils import memory_initialize, parrallel_collate_fn  # noqa: E402
 
 
-PROTOCOL = "eventmatr_d15_owner_counterfactual_v1"
+PROTOCOL = "eventmatr_d15_owner_counterfactual_v2"
 CHANNELS = {
     "PF": ("predicted", "free"),
     "PR": ("predicted", "refreshed"),
@@ -189,8 +194,8 @@ def _validate_registered_source_identities(
     d14_source_commit: str,
     d14_source_tree: str,
 ) -> None:
-    if manifest.get("protocol_id") != "eventmatr_d1_preexperiments_v8":
-        raise RuntimeError("D1.5 manifest protocol is not the frozen v8 contract")
+    if manifest.get("protocol_id") != "eventmatr_d1_preexperiments_v9":
+        raise RuntimeError("D1.5 manifest protocol is not the frozen v9 contract")
     expected_training = {
         "commit": training_source_commit,
         "tree": training_source_tree,
@@ -489,7 +494,10 @@ def _map_unlinked_records(
     target_query_map: dict[int, int],
     query_features: torch.Tensor,
 ) -> None:
-    if CHANNELS[state.channel][1] != "refreshed" or not targets:
+    # Target links are post-forward diagnostic sidecars for every route.  Only
+    # refreshed channels consume a linked current query in the decoder below;
+    # free channels still need the same target-backed outcome audit.
+    if not targets:
         return
     active = _active_records(state.memory, video_name)
     active_ids = {int(record.event_id) for record in active}
@@ -1149,17 +1157,17 @@ def _process_route_prefix(
         frame=frame,
         pending_oracle=pending_oracle,
     )
-    if CHANNELS[state.channel][1] == "refreshed":
-        # A predicted record is born after the owner decode.  Causal sidecar
-        # attachment here makes it refreshable only at its next owner decision.
-        _map_unlinked_records(
-            state,
-            video_name=video_name,
-            frame=frame,
-            targets=targets,
-            target_query_map=target_query_map,
-            query_features=event_query_features[0],
-        )
+    # A predicted record is born after the owner decode.  Attach the diagnostic
+    # sidecar now for every route; refreshed routes can consume it only at the
+    # next real owner decision, while free routes never consume it at all.
+    _map_unlinked_records(
+        state,
+        video_name=video_name,
+        frame=frame,
+        targets=targets,
+        target_query_map=target_query_map,
+        query_features=event_query_features[0],
+    )
 
     audit_events: dict[int, list[str]] = {}
     for event in memory.last_audit.get("lifecycle_events", ()):
@@ -1241,6 +1249,7 @@ class PositiveControlState:
     links: dict[tuple[str, int], DiagnosticOwnerLink] = field(default_factory=dict)
     admitted_targets: set[tuple[str, int]] = field(default_factory=set)
     ledger_snapshots: dict[str, tuple[dict, ...]] = field(default_factory=dict)
+    right_censored_events: dict[tuple[str, int], dict] = field(default_factory=dict)
     counters: Counter = field(default_factory=Counter)
 
 
@@ -1409,11 +1418,30 @@ def _process_positive_control_prefix(
         memory, label="positive lifecycle control"
     )
     if is_eos:
-        active_after_eos = len(_active_records(memory, video_name))
+        active_records = _active_records(memory, video_name)
+        active_after_eos = len(active_records)
         control.counters["records_active_after_eos"] += active_after_eos
         control.counters["videos_with_active_records_after_eos"] += int(
             active_after_eos > 0
         )
+        for record in active_records:
+            link = control.links.get((video_name, int(record.event_id)))
+            if link is None:
+                raise RuntimeError(
+                    "positive control active-at-EOS record has no target sidecar"
+                )
+            target_key = (video_name, int(link.target_event_id))
+            if target_key in control.right_censored_events:
+                raise RuntimeError("positive control duplicated a censored target")
+            control.right_censored_events[target_key] = {
+                "video_name": video_name,
+                "event_id": int(link.target_event_id),
+                "class_id": int(link.target_class_id),
+                "start_frame": float(link.target_start_frame),
+                "end_frame": float(link.target_end_frame),
+                "censor_frame": float(frame),
+                "runtime_event_id": int(record.event_id),
+            }
 
 
 def _hash_query_outputs(
@@ -1490,10 +1518,15 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
         raise RuntimeError(
             f"{state.channel}/{state.route} ledger/emission count did not close"
         )
-    duplicates = sum(
-        max(0, count - 1) for count in state.target_link_history.values()
+    decision_target_counts = Counter(
+        (video_name, int(link.target_event_id))
+        for key, link in state.links.items()
+        if key in state.first_decisions
     )
-    linked_targets = len(state.target_link_history)
+    duplicates = sum(
+        max(0, count - 1) for count in decision_target_counts.values()
+    )
+    linked_targets = len(decision_target_counts)
     required_counts = {
         name: int(state.counters.get(name, 0))
         for name in (
@@ -1525,6 +1558,31 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
     required_counts["end_without_emission_count"] = max(
         0, required_counts["end_count"] - required_counts["emit_count"]
     )
+    required_counts["records_active_at_scan_end"] = sum(
+        record.status == "active"
+        for records in state.memory._records.values()
+        for record in records
+    )
+    accounted_records = (
+        required_counts["cancellation_count"]
+        + required_counts["end_count"]
+        + required_counts["records_active_at_scan_end"]
+    )
+    if required_counts["birth_count"] != accounted_records:
+        raise RuntimeError(
+            f"{state.channel}/{state.route} lifecycle partition did not close: "
+            f"{required_counts['birth_count']} != {accounted_records}"
+        )
+    required_counts["silent_record_loss_count"] = 0
+    if (
+        required_counts["observed_eos_count"]
+        == EXPECTED_COMPLETE_CENSUS["observed_eos_count"]
+        and required_counts["records_active_at_scan_end"]
+        != required_counts["records_active_after_eos"]
+    ):
+        raise RuntimeError(
+            f"{state.channel}/{state.route} final active/EOS accounting differed"
+        )
     return {
         "channel": state.channel,
         "route": state.route,
@@ -1565,6 +1623,7 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
             "no_duplicate_event_verified": True,
             "contiguous_sequence_id_verified": True,
             "ledger_emit_count_closed": True,
+            "birth_terminal_active_partition_closed": True,
             "ledger_row_count": ledger_count,
             "video_ledger_count": len(state.ledger_snapshots),
             "ground_truth_stored_in_runtime_record": False,
@@ -1572,7 +1631,9 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
     }
 
 
-def _positive_control_summary(control: PositiveControlState) -> dict:
+def _positive_control_summary(
+    control: PositiveControlState, *, lifecycle_census: dict
+) -> dict:
     ledger_count = sum(len(rows) for rows in control.ledger_snapshots.values())
     if ledger_count != control.counters["emit_count"]:
         raise RuntimeError("positive control ledger/emission count did not close")
@@ -1593,6 +1654,48 @@ def _positive_control_summary(control: PositiveControlState) -> dict:
             "videos_with_active_records_after_eos",
         )
     }
+    required_counts["right_censored_event_count"] = len(
+        control.right_censored_events
+    )
+    required_counts["records_active_at_scan_end"] = sum(
+        record.status == "active"
+        for records in control.memory._records.values()
+        for record in records
+    )
+    accounted_records = (
+        required_counts["cancellation_count"]
+        + required_counts["end_count"]
+        + required_counts["records_active_at_scan_end"]
+    )
+    if required_counts["birth_count"] != accounted_records:
+        raise RuntimeError("positive control lifecycle partition did not close")
+    if (
+        required_counts["observed_eos_count"]
+        == EXPECTED_COMPLETE_CENSUS["observed_eos_count"]
+        and required_counts["records_active_at_scan_end"]
+        != required_counts["records_active_after_eos"]
+    ):
+        raise RuntimeError("positive control final active/EOS accounting differed")
+    census_by_key = {
+        (event["video_name"], int(event["event_id"])): event
+        for event in lifecycle_census["events"]
+    }
+    censored_rows = []
+    for key, row in sorted(control.right_censored_events.items()):
+        census_row = census_by_key.get(key)
+        if census_row is None:
+            raise RuntimeError("positive control censored target is absent from census")
+        if census_row["observation_status"] != "right_censored":
+            raise RuntimeError("positive control retained a non-censored target at EOS")
+        if int(census_row["class_id"]) != int(row["class_id"]):
+            raise RuntimeError("positive control censored target class drifted")
+        censored_rows.append(
+            {
+                **row,
+                "class_label": census_row["class_label"],
+                "observation_status": census_row["observation_status"],
+            }
+        )
     return {
         "counts": {
             **required_counts,
@@ -1600,6 +1703,7 @@ def _positive_control_summary(control: PositiveControlState) -> dict:
         },
         "admitted_unique_target_count": len(control.admitted_targets),
         "sidecar_link_count": len(control.links),
+        "right_censored_events": censored_rows,
         "lifecycle_integrity": {
             "immutable_ledger_verified": True,
             "positive_length_verified": True,
@@ -1607,6 +1711,7 @@ def _positive_control_summary(control: PositiveControlState) -> dict:
             "no_duplicate_event_verified": True,
             "contiguous_sequence_id_verified": True,
             "ledger_emit_count_closed": True,
+            "birth_terminal_active_partition_closed": True,
             "ledger_row_count": ledger_count,
             "video_ledger_count": len(control.ledger_snapshots),
             "ground_truth_stored_in_runtime_record": False,
@@ -1700,6 +1805,16 @@ def main() -> None:
     artifact_paths = _dataset_paths(options)
     artifacts_before = _artifact_receipt(artifact_paths)
     dataset = THUMOS14Dataset(args, subset="train")
+    lifecycle_census = build_lifecycle_census(
+        video_dict=dataset.video_dict,
+        video_len=dataset.video_len,
+        label_names=dataset.label_name,
+        birth_mode=dataset.event_birth_mode,
+        anti_len=int(dataset.anti_len),
+    )
+    validate_lifecycle_census(lifecycle_census, require_official_counts=True)
+    if dataset.event_birth_mode != "instant_transition":
+        raise RuntimeError("D1.5 requires the frozen instant-transition birth mode")
     if cli.max_batches == 0 and len(dataset.video_list) != 200:
         raise RuntimeError("complete D1.5 scan requires the official 200 videos")
     loader = torch.utils.data.DataLoader(
@@ -2007,20 +2122,37 @@ def main() -> None:
                     )
         control_counts = positive_control.counters
         expected_events = EXPECTED_COMPLETE_CENSUS["visible_birth_target_count"]
-        for key in ("birth_count", "end_count", "emit_count"):
-            if control_counts[key] != expected_events:
+        expected_observable_ends = EXPECTED_LIFECYCLE_COUNTS[
+            "observable_end_target_count"
+        ]
+        expected_control_counts = {
+            "birth_count": expected_events,
+            "end_count": expected_observable_ends,
+            "emit_count": expected_observable_ends,
+            "records_active_after_eos": EXPECTED_LIFECYCLE_COUNTS[
+                "right_censored_event_count"
+            ],
+            "videos_with_active_records_after_eos": EXPECTED_LIFECYCLE_COUNTS[
+                "right_censored_event_count"
+            ],
+        }
+        for key, expected in expected_control_counts.items():
+            if control_counts[key] != expected:
                 raise RuntimeError(
                     f"positive control {key} did not close: "
-                    f"{control_counts[key]} != {expected_events}"
+                    f"{control_counts[key]} != {expected}"
                 )
         for key in (
             "cancellation_count",
             "reacquisition_count",
             "capacity_exhaustion_count",
-            "records_active_after_eos",
         ):
             if control_counts[key] != 0:
                 raise RuntimeError(f"positive control produced nonzero {key}")
+        if len(positive_control.right_censored_events) != EXPECTED_LIFECYCLE_COUNTS[
+            "right_censored_event_count"
+        ]:
+            raise RuntimeError("positive control right-censored identities did not close")
 
     channel_summaries = {
         channel: {
@@ -2100,8 +2232,11 @@ def main() -> None:
             "record_target_tie_break": "runtime_event_id_then_target_event_id",
         },
         "global_census": dict(sorted(global_counts.items())),
+        "lifecycle_census": lifecycle_census,
         "channels": channel_summaries,
-        "positive_lifecycle_control": _positive_control_summary(positive_control),
+        "positive_lifecycle_control": _positive_control_summary(
+            positive_control, lifecycle_census=lifecycle_census
+        ),
         "trace_artifact": trace_receipt,
         "source_identity": {
             "commit": source_commit,

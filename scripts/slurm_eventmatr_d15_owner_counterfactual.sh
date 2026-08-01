@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 set -euo pipefail
 
 : "${PROJECT_DIR:?PROJECT_DIR is required}"

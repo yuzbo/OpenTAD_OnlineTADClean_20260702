@@ -17,6 +17,7 @@ from scripts.finalize_eventmatr_d15_owner_counterfactual import (
     _route_next_repair,
     _expect,
     _required_mapping,
+    _validate_positive_control,
     _validate_route,
     _validate_source_provenance,
     _validate_trace,
@@ -60,6 +61,8 @@ def _routes() -> dict:
                 },
                 "eos_active_record_counts_by_video": {},
                 "eos_birth_counts_by_video": {},
+                "linked_unique_target_count": 0,
+                "raw_semantic_duplicate_count": 0,
             }
             for route in ROUTES
         }
@@ -445,6 +448,37 @@ def test_d15_trace_integrity_cross_checks_source_counts(tmp_path) -> None:
         _validate_trace(path, routes)
 
 
+def test_d15_trace_integrity_rejects_unreported_target_sidecar(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    rows[0]["diagnostic_target_event_id"] = 7
+    rows[0]["diagnostic_target_end_frame"] = 3.0
+    rows[0]["frames_from_annotated_end"] = 1.0
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="sidecar accounting differs"):
+        _validate_trace(path, _routes())
+
+
+def test_d15_trace_integrity_rejects_overreported_pf_sidecar(tmp_path) -> None:
+    path = tmp_path / "trace.jsonl.gz"
+    rows = [
+        _trace_row(channel, route)
+        for channel in CHANNELS
+        for route in ROUTES
+    ]
+    routes = _routes()
+    routes["PF"]["formal"]["linked_unique_target_count"] = 1
+    _write_trace(path, rows)
+
+    with pytest.raises(ValueError, match="sidecar accounting differs"):
+        _validate_trace(path, routes)
+
+
 def _routing_routes() -> dict:
     return {
         channel: {
@@ -453,6 +487,7 @@ def _routing_routes() -> dict:
                     "end_count": 0,
                     "emit_count": 0,
                     "end_argmax_count": 0,
+                    "end_min_duration_suppression_count": 0,
                     "target_backed_end_within_one_segment_count": 0,
                 }
             }
@@ -483,6 +518,7 @@ def _route_receipt() -> dict:
             "reacquisition_count": 0,
             "capacity_exhaustion_count": 0,
             "records_active_after_eos": 0,
+            "records_active_at_scan_end": 0,
             "videos_with_active_records_after_eos": 0,
             "association_count": 0,
             "late_association_count": 0,
@@ -496,6 +532,7 @@ def _route_receipt() -> dict:
             "target_backed_end_within_one_segment_count": 0,
             "end_at_observed_target_end_count": 0,
             "end_without_emission_count": 0,
+            "silent_record_loss_count": 0,
         },
         "unique_runtime_record_count": 1,
         "created_records_by_source": {"predicted": 1},
@@ -516,6 +553,7 @@ def _route_receipt() -> dict:
             "no_duplicate_event_verified": True,
             "contiguous_sequence_id_verified": True,
             "ledger_emit_count_closed": True,
+            "birth_terminal_active_partition_closed": True,
             "ledger_row_count": 0,
             "video_ledger_count": 200,
             "ground_truth_stored_in_runtime_record": False,
@@ -537,12 +575,137 @@ def test_d15_route_receipt_closes_all_new_accounting() -> None:
     assert len(parsed["eos_active_record_counts_by_video"]) == 200
 
 
+def _right_censored_positive_control() -> tuple[dict, dict]:
+    censored = [
+        {
+            "video_name": "video_validation_0000318",
+            "event_id": 22,
+            "class_id": 0,
+            "class_label": "HammerThrow",
+            "start_frame": 900.0,
+            "end_frame": 932.2,
+            "censor_frame": 932.0,
+            "runtime_event_id": 10,
+            "observation_status": "right_censored",
+        },
+        {
+            "video_name": "video_validation_0000985",
+            "event_id": 9,
+            "class_id": 1,
+            "class_label": "VolleyballSpiking",
+            "start_frame": 900.0,
+            "end_frame": 931.2,
+            "censor_frame": 931.0,
+            "runtime_event_id": 11,
+            "observation_status": "right_censored",
+        },
+    ]
+    census = {
+        "events": [
+            {
+                "video_name": row["video_name"],
+                "event_id": row["event_id"],
+                "class_id": row["class_id"],
+                "class_label": row["class_label"],
+                "start_frame": row["start_frame"],
+                "end_frame": row["end_frame"],
+                "last_observed_frame": row["censor_frame"],
+                "observation_status": "right_censored",
+            }
+            for row in censored
+        ]
+    }
+    control = {
+        "counts": {
+            "real_prefix_count": 203363,
+            "padding_prefix_count": 5917,
+            "padding_noop_count": 5917,
+            "observed_eos_count": 200,
+            "birth_count": 3003,
+            "cancellation_count": 0,
+            "end_count": 3001,
+            "emit_count": 3001,
+            "reacquisition_count": 0,
+            "capacity_exhaustion_count": 0,
+            "records_active_after_eos": 2,
+            "records_active_at_scan_end": 2,
+            "videos_with_active_records_after_eos": 2,
+            "right_censored_event_count": 2,
+        },
+        "admitted_unique_target_count": 3003,
+        "sidecar_link_count": 3003,
+        "right_censored_events": censored,
+        "lifecycle_integrity": {
+            "immutable_ledger_verified": True,
+            "positive_length_verified": True,
+            "nonnegative_start_verified": True,
+            "no_duplicate_event_verified": True,
+            "contiguous_sequence_id_verified": True,
+            "ledger_emit_count_closed": True,
+            "birth_terminal_active_partition_closed": True,
+            "ledger_row_count": 3001,
+            "video_ledger_count": 200,
+            "ground_truth_stored_in_runtime_record": False,
+        },
+    }
+    return control, census
+
+
+def test_d15_positive_control_closes_right_censoring_without_forced_end() -> None:
+    control, census = _right_censored_positive_control()
+
+    parsed = _validate_positive_control(control, lifecycle_census=census)
+
+    assert parsed["counts"]["birth_count"] == 3003
+    assert parsed["counts"]["end_count"] == 3001
+    assert parsed["counts"]["records_active_at_scan_end"] == 2
+    assert parsed["counts"]["right_censored_event_count"] == 2
+    forced_end = copy.deepcopy(control)
+    forced_end["counts"]["end_count"] = 3003
+    forced_end["counts"]["emit_count"] = 3003
+    forced_end["lifecycle_integrity"]["ledger_row_count"] = 3003
+    with pytest.raises(ValueError, match="did not close"):
+        _validate_positive_control(forced_end, lifecycle_census=census)
+
+
+def _effect_row(effect: float = 0.0, passed: bool = False) -> dict:
+    return {
+        "paired_effect": effect,
+        "cluster_bootstrap_ci95": [max(0.0, effect - 0.01), effect + 0.01],
+        "holm_adjusted_p": 0.001 if passed else 1.0,
+        "scientific_gate_pass": passed,
+    }
+
+
+def _paired_analysis() -> dict:
+    return {
+        "route_summaries": {
+            f"{channel}/{route}": {"primary_success_count": 0}
+            for channel in CHANNELS
+            for route in ROUTES
+        },
+        "formal_effect_family": {
+            "comparisons": {
+                "identity_refresh_under_predicted_admission": _effect_row(),
+                "identity_refresh_under_oracle_visible_admission": _effect_row(),
+                "oracle_visible_admission_under_free_identity": _effect_row(),
+            }
+        },
+        "no_cancel_effect_family": {
+            "comparisons": {
+                f"no_cancel_shadow_under_{channel}": _effect_row()
+                for channel in CHANNELS
+            }
+        },
+    }
+
+
 def test_d15_routing_refuses_a_drifted_pf_control() -> None:
     routes = _routing_routes()
-    routes["PF"]["formal"]["counts"]["end_count"] = 1
-    routes["PF"]["formal"]["counts"]["emit_count"] = 1
+    paired = _paired_analysis()
+    paired["route_summaries"]["PF/formal"]["primary_success_count"] = 1
 
-    decision = _route_next_repair(routes)
+    decision = _route_next_repair(routes, paired)
 
     assert decision["diagnosis"] == "predicted_free_reference_control_drift"
     assert decision["model_training_authorized"] is False
@@ -555,33 +718,56 @@ def test_d15_routing_prioritizes_end_emission_mismatch() -> None:
         "target_backed_end_within_one_segment_count"
     ] = 1
 
-    decision = _route_next_repair(routes)
+    decision = _route_next_repair(routes, _paired_analysis())
 
     assert decision["diagnosis"] == "end_to_emission_closure_fault"
     assert decision["model_training_authorized"] is False
 
 
-def test_d15_routing_uses_shadow_only_after_formal_cells_fail() -> None:
+def test_d15_routing_requires_replicated_material_identity_effect() -> None:
     routes = _routing_routes()
-    routes["PR"]["formal"]["counts"]["end_count"] = 1
-    routes["PR"]["formal"]["counts"]["emit_count"] = 1
-    routes["OR"]["shadow"]["counts"][
-        "target_backed_end_within_one_segment_count"
-    ] = 1
+    paired = _paired_analysis()
+    paired["formal_effect_family"]["comparisons"][
+        "identity_refresh_under_predicted_admission"
+    ] = _effect_row(0.08, True)
+    paired["formal_effect_family"]["comparisons"][
+        "identity_refresh_under_oracle_visible_admission"
+    ] = _effect_row(0.07, True)
 
-    decision = _route_next_repair(routes)
+    decision = _route_next_repair(routes, paired)
+
+    assert decision["diagnosis"] == "replicated_identity_transport_effect"
+    assert decision["model_implementation_authorized"] is True
+    assert decision["model_training_authorized"] is False
+
+
+def test_d15_routing_does_not_use_one_or_a_few_events() -> None:
+    routes = _routing_routes()
+    paired = _paired_analysis()
+    paired["formal_effect_family"]["comparisons"][
+        "identity_refresh_under_predicted_admission"
+    ] = _effect_row(1.0 / 3001.0, False)
+    paired["route_summaries"]["PR/formal"]["primary_success_count"] = 1
+
+    decision = _route_next_repair(routes, paired)
 
     assert (
         decision["diagnosis"]
-        == "identity_transport_is_sufficient_under_predicted_burden"
+        == "no_preregistered_material_structural_effect"
     )
 
+
+def test_d15_routing_uses_only_a_corrected_shadow_effect() -> None:
     routes = _routing_routes()
-    routes["OR"]["shadow"]["counts"][
-        "target_backed_end_within_one_segment_count"
-    ] = 1
-    decision = _route_next_repair(routes)
+    paired = _paired_analysis()
+    paired["no_cancel_effect_family"]["comparisons"][
+        "no_cancel_shadow_under_OR"
+    ] = _effect_row(0.09, True)
+
+    decision = _route_next_repair(routes, paired)
+
     assert (
         decision["diagnosis"]
-        == "early_cancellation_truncates_later_end_decisions"
+        == "material_no_cancel_effect_without_formal_factor_effect"
     )
+    assert decision["model_training_authorized"] is False

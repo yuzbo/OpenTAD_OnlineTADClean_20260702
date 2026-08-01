@@ -54,7 +54,7 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v8"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v9"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
@@ -126,7 +126,10 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert "no short pilot" in d14["release_condition"]
     assert "locked-test access" in d14["release_condition"]
     d15 = gates["d15_frozen_owner_counterfactual"]
-    assert d15["status"] == "prospectively_frozen_not_run"
+    assert d15["status"] == (
+        "v1_invalid_right_censor_closure_v2_amended_pending_full_rerun"
+    )
+    assert d15["protocol"] == "eventmatr_d15_owner_counterfactual_v2"
     assert d15["training"] is False
     assert d15["d14_gate_source"] == {
         "commit": "fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4",
@@ -149,6 +152,14 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
         in d15["requires"]
     )
     assert "never releases a performance pilot" in d15["release_condition"]
+    assert d15["event_level_structure_gate"]["minimum_absolute_effect"] == 0.05
+    assert d15["event_level_structure_gate"][
+        "minimum_net_improved_events"
+    ] == 151
+    assert d15["event_level_structure_gate"]["threshold_search"] is False
+    assert "primary success as zero" in d15["event_level_structure_gate"][
+        "ambiguous_identity_policy"
+    ]
     assert "never releases a performance pilot" not in (
         gates["seed52_short_pilots"]["release_condition"]
     )

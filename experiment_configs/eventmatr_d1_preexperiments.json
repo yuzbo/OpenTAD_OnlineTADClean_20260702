@@ -1,12 +1,12 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v8",
+  "protocol_id": "eventmatr_d1_preexperiments_v9",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
   },
   "scope": "standard closed-set fully-supervised strict-causal On-TAD on official MATR THUMOS14 RGB+flow features",
   "problem_claims": {
-    "sparse_lifecycle": "dense BxQ background averaging under-scales approximately 0.1477 percent birth/end positives",
+    "sparse_lifecycle": "dense BxQ background averaging under-scales approximately 0.1477 percent birth/end first-crossing opportunities; this is not a total-lifecycle supervision or gradient-dose ratio",
     "runtime_gap": "prototype owner training does not train the chronological ragged inference lifecycle",
     "identity_gap": "sticky records lack stable pre-birth assignment, learned cancellation, and reacquisition",
     "causal_boundary": "true_duration, complete-video timing, and offline EOS are invalid model inputs"
@@ -316,7 +316,8 @@
     },
     {
       "stage": "d15_frozen_owner_counterfactual",
-      "status": "prospectively_frozen_not_run",
+      "status": "v1_invalid_right_censor_closure_v2_amended_pending_full_rerun",
+      "protocol": "eventmatr_d15_owner_counterfactual_v2",
       "checkpoint_source": "D1.4 decision-aligned terminal epoch-one checkpoint",
       "d14_gate_source": {
         "commit": "fa27b3657b72c5b713ee3d2a5c0e652e7ca14eb4",
@@ -350,13 +351,42 @@
         "ground truth consulted only after each current-prefix query forward",
         "ground-truth target IDs stored only in isolated diagnostic sidecars and never EventRecord",
         "one independent recurrent no-cancel shadow per channel",
-        "GT-forced positive lifecycle control closes exactly 3003 births, ends and emissions",
+        "GT-forced positive lifecycle control closes exactly 3003 births as 3001 observed ends and emissions plus 2 exact-identity right-censored active records",
+        "hash-bound lifecycle census closes 3007 annotations as 3001 fully observed, 2 right-censored, 0 left-truncated and 4 completely unobservable events",
         "PF reproduces exactly 30002 births, 29974 cancellations, zero ends, zero emissions and zero capacity exhaustion",
         "official annotation, RGB-plus-flow feature, proposal-label and video-length hashes are unchanged",
         "each isolated route independently hashes its consumed physical-prefix sequence and all eight hashes must agree",
         "chronological compressed JSONL decision trace whose per-route rows, ordering, owner uniqueness and transition aggregates are revalidated by the fail-closed finalizer",
+        "trace-derived decision-bearing target-link coverage and duplicate counts exactly equal every route summary",
         "no threshold search, optimizer, checkpoint update, test access or detection metric"
       ],
+      "event_level_structure_gate": {
+        "primary_outcome": "same target event has a target-backed END and immutable emission within a symmetric 64-feature-step window around its annotated end",
+        "observable_endpoint_denominator": 3001,
+        "right_censored_endpoint_exclusions": 2,
+        "unresolved_identity_policy": "count primary success as zero and report unresolved separately; never assert that unmatched means false action",
+        "ambiguous_identity_policy": "if more than one runtime record links to one target event, count primary success as zero and report identity ambiguity separately",
+        "formal_comparisons": [
+          "PR minus PF identity refresh under predicted admission",
+          "OR minus OF identity refresh under oracle-visible admission",
+          "OF minus PF oracle-visible admission under free identity"
+        ],
+        "minimum_absolute_effect": 0.05,
+        "minimum_net_improved_events": 151,
+        "video_cluster_bootstrap": {
+          "replicates": 10000,
+          "seed": 52015,
+          "interval": "95 percent percentile interval with lower bound strictly above zero"
+        },
+        "video_cluster_sign_flip": {
+          "replicates": 10000,
+          "seed": 52016,
+          "sidedness": "two-sided"
+        },
+        "multiple_comparison_correction": "Holm familywise alpha 0.05 over the three formal comparisons",
+        "no_cancel_family": "four shadow-minus-formal comparisons use the same effect and uncertainty requirements with a separate Holm correction and may route diagnostic semantics only",
+        "threshold_search": false
+      },
       "query_compatibility_rule": {
         "birth": "target-class log probability plus birth log-sigmoid minus absolute candidate-start error divided by segment size",
         "visible_refresh": "target-class log probability minus absolute candidate-start error divided by segment size",

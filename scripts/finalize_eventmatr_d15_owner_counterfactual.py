@@ -13,12 +13,19 @@ import gzip
 import hashlib
 import json
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
+from scripts.eventmatr_d15_statistics import (
+    EXPECTED_LIFECYCLE_COUNTS,
+    EXPECTED_RIGHT_CENSORED_IDENTITIES,
+    build_paired_event_analysis,
+    validate_lifecycle_census,
+)
 
-PROTOCOL = "eventmatr_d15_owner_counterfactual_v1"
-FINALIZER_PROTOCOL = "eventmatr_d15_owner_counterfactual_finalizer_v1"
+
+PROTOCOL = "eventmatr_d15_owner_counterfactual_v2"
+FINALIZER_PROTOCOL = "eventmatr_d15_owner_counterfactual_finalizer_v2"
 CHANNELS = ("PF", "PR", "OF", "OR")
 ROUTES = ("formal", "shadow")
 SEGMENT_SIZE = 64.0
@@ -242,6 +249,7 @@ def _validate_integrity(row: dict, label: str) -> dict:
         "no_duplicate_event_verified": True,
         "contiguous_sequence_id_verified": True,
         "ledger_emit_count_closed": True,
+        "birth_terminal_active_partition_closed": True,
         "ground_truth_stored_in_runtime_record": False,
     }
     _expect(row, expected, f"{label} lifecycle integrity")
@@ -299,6 +307,7 @@ def _validate_route(
             "reacquisition_count",
             "capacity_exhaustion_count",
             "records_active_after_eos",
+            "records_active_at_scan_end",
             "videos_with_active_records_after_eos",
             "association_count",
             "late_association_count",
@@ -312,6 +321,7 @@ def _validate_route(
             "target_backed_end_within_one_segment_count",
             "end_at_observed_target_end_count",
             "end_without_emission_count",
+            "silent_record_loss_count",
         )
     }
     for name in ("real_prefix_count", "padding_prefix_count", "observed_eos_count"):
@@ -335,6 +345,16 @@ def _validate_route(
         0, parsed["end_count"] - parsed["emit_count"]
     ):
         raise ValueError(f"{channel}/{route} end/emission accounting drifted")
+    if parsed["silent_record_loss_count"] != 0:
+        raise ValueError(f"{channel}/{route} silently lost a runtime record")
+    if parsed["birth_count"] != (
+        parsed["cancellation_count"]
+        + parsed["end_count"]
+        + parsed["records_active_at_scan_end"]
+    ):
+        raise ValueError(f"{channel}/{route} lifecycle partition did not close")
+    if parsed["records_active_at_scan_end"] != parsed["records_active_after_eos"]:
+        raise ValueError(f"{channel}/{route} final active/EOS accounting differs")
     unique_records = _nonnegative_integer(
         row.get("unique_runtime_record_count"),
         f"{channel}/{route}.unique_runtime_record_count",
@@ -504,7 +524,186 @@ def _validate_route(
     }
 
 
-def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
+def _build_event_outcome_rows(
+    lifecycle_census: dict,
+    record_audits: dict[tuple[str, str, str, int], dict],
+) -> tuple[list[dict], dict[str, int]]:
+    census_by_key = {
+        (event["video_name"], int(event["event_id"])): event
+        for event in lifecycle_census["events"]
+    }
+    visible_events = [
+        event for event in lifecycle_census["events"] if event["birth_observed"]
+    ]
+    records_by_target = defaultdict(list)
+    unresolved_runtime_records = Counter()
+    for audit in record_audits.values():
+        target_event_id = audit["target_event_id"]
+        route_label = f"{audit['channel']}/{audit['route']}"
+        if target_event_id is None:
+            unresolved_runtime_records[route_label] += 1
+            continue
+        target_key = (audit["video_name"], int(target_event_id))
+        target = census_by_key.get(target_key)
+        if target is None or not target["birth_observed"]:
+            raise ValueError("D1.5 trace linked a non-visible lifecycle target")
+        records_by_target[
+            (
+                audit["channel"],
+                audit["route"],
+                audit["video_name"],
+                int(target_event_id),
+            )
+        ].append(audit)
+
+    def weighted_mean(records: list[dict], total_key: str, count_key: str):
+        count = sum(record[count_key] for record in records)
+        if count == 0:
+            return None
+        return sum(record[total_key] for record in records) / count
+
+    outcome_rows = []
+    for event in visible_events:
+        for channel in CHANNELS:
+            for route in ROUTES:
+                key = (
+                    channel,
+                    route,
+                    event["video_name"],
+                    int(event["event_id"]),
+                )
+                records = records_by_target.get(key, [])
+                identity_resolved = len(records) == 1
+                first_decisions = [
+                    record["first_owner_decision"]
+                    for record in records
+                    if record["first_owner_decision"] is not None
+                ]
+                first_decision = (
+                    min(
+                        first_decisions,
+                        key=lambda row: (
+                            row["current_frame"], row["runtime_event_id"]
+                        ),
+                    )
+                    if first_decisions
+                    else None
+                )
+                end_observations = sorted(
+                    (
+                        observation
+                        for record in records
+                        for observation in record["target_backed_end_observations"]
+                    ),
+                    key=lambda row: (row["current_frame"], row["runtime_event_id"]),
+                )
+                nearest_end = (
+                    min(
+                        end_observations,
+                        key=lambda row: (
+                            abs(row["frames_from_annotated_end"]),
+                            row["current_frame"],
+                            row["runtime_event_id"],
+                        ),
+                    )
+                    if end_observations
+                    else None
+                )
+                outcome_rows.append(
+                    {
+                        "channel": channel,
+                        "route": route,
+                        "video_name": event["video_name"],
+                        "event_id": int(event["event_id"]),
+                        "class_id": int(event["class_id"]),
+                        "class_label": event["class_label"],
+                        "observation_status": event["observation_status"],
+                        "target_start_frame": float(event["start_frame"]),
+                        "target_end_frame": float(event["end_frame"]),
+                        "target_end_crossing_frame": float(
+                            event["end_crossing_frame"]
+                        ),
+                        "linked_runtime_event_ids": sorted(
+                            int(record["runtime_event_id"]) for record in records
+                        ),
+                        "linked_runtime_record_count": len(records),
+                        "unresolved_identity": len(records) == 0,
+                        "ambiguous_identity": len(records) > 1,
+                        "identity_resolved": identity_resolved,
+                        "decision_row_count": sum(
+                            record["decision_row_count"] for record in records
+                        ),
+                        "near_end_end": int(
+                            any(record["near_end_end"] for record in records)
+                        ),
+                        "immutable_emission": int(
+                            any(record["immutable_emission"] for record in records)
+                        ),
+                        "near_end_immutable_emission": int(
+                            any(
+                                record["near_end_immutable_emission"]
+                                for record in records
+                            )
+                        ),
+                        "primary_success": int(
+                            identity_resolved and records[0]["primary_success"]
+                        ),
+                        "premature_cancel": int(
+                            any(record["premature_cancel"] for record in records)
+                        ),
+                        "cancel_winner_before_end": int(
+                            any(
+                                record["cancel_winner_before_end"]
+                                for record in records
+                            )
+                        ),
+                        "target_end_observed_in_trace": int(
+                            any(
+                                record["target_end_observed_in_trace"]
+                                for record in records
+                            )
+                        ),
+                        "first_owner_decision": first_decision,
+                        "maximum_active_lifetime": (
+                            max(record["maximum_lifetime"] for record in records)
+                            if records
+                            else None
+                        ),
+                        "first_target_backed_end_delay": (
+                            end_observations[0]["frames_from_annotated_end"]
+                            if end_observations
+                            else None
+                        ),
+                        "nearest_target_backed_end_delay": (
+                            nearest_end["frames_from_annotated_end"]
+                            if nearest_end is not None
+                            else None
+                        ),
+                        "mean_owner_to_birth_cosine": weighted_mean(
+                            records,
+                            "owner_to_birth_cosine_total",
+                            "owner_to_birth_cosine_count",
+                        ),
+                        "mean_owner_to_oracle_query_cosine": weighted_mean(
+                            records,
+                            "owner_to_oracle_query_cosine_total",
+                            "owner_to_oracle_query_cosine_count",
+                        ),
+                        "mean_oracle_query_attention_rank": weighted_mean(
+                            records,
+                            "oracle_query_attention_rank_total",
+                            "oracle_query_attention_rank_count",
+                        ),
+                    }
+                )
+    return outcome_rows, dict(sorted(unresolved_runtime_records.items()))
+
+
+def _validate_trace(
+    path: Path,
+    routes: dict[str, dict[str, dict]],
+    lifecycle_census=None,
+) -> dict:
     required_fields = {
         "protocol",
         "channel",
@@ -561,6 +760,7 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
     last_frame: dict[tuple[str, str, str], float] = {}
     event_ids_at_frame: dict[tuple[str, str, str], set[int]] = {}
     seen_event_ids: dict[tuple[str, str, str], set[int]] = {}
+    record_audits: dict[tuple[str, str, str, int], dict] = {}
     line_count = 0
 
     try:
@@ -938,6 +1138,95 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                     raise ValueError(
                         f"D1.5 trace line {line_number} end policy drifted"
                     )
+                record_key = (channel, route, row["video_name"], event_id)
+                audit = record_audits.setdefault(
+                    record_key,
+                    {
+                        "channel": channel,
+                        "route": route,
+                        "video_name": row["video_name"],
+                        "runtime_event_id": event_id,
+                        "target_event_id": None,
+                        "decision_row_count": 0,
+                        "first_owner_decision": None,
+                        "near_end_end": False,
+                        "immutable_emission": False,
+                        "near_end_immutable_emission": False,
+                        "primary_success": False,
+                        "premature_cancel": False,
+                        "cancel_winner_before_end": False,
+                        "target_end_observed_in_trace": False,
+                        "maximum_lifetime": 0.0,
+                        "owner_to_birth_cosine_total": 0.0,
+                        "owner_to_birth_cosine_count": 0,
+                        "owner_to_oracle_query_cosine_total": 0.0,
+                        "owner_to_oracle_query_cosine_count": 0,
+                        "oracle_query_attention_rank_total": 0.0,
+                        "oracle_query_attention_rank_count": 0,
+                        "target_backed_end_observations": [],
+                    },
+                )
+                if target_event_id is not None:
+                    if audit["target_event_id"] not in (None, target_event_id):
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} changed target identity"
+                        )
+                    audit["target_event_id"] = target_event_id
+                elif audit["target_event_id"] is not None:
+                    raise ValueError(
+                        f"D1.5 trace line {line_number} dropped target identity"
+                    )
+                audit["decision_row_count"] += 1
+                audit["maximum_lifetime"] = max(
+                    audit["maximum_lifetime"], lifetime
+                )
+                audit["owner_to_birth_cosine_total"] += owner_to_birth
+                audit["owner_to_birth_cosine_count"] += 1
+                if owner_to_oracle is not None:
+                    audit["owner_to_oracle_query_cosine_total"] += owner_to_oracle
+                    audit["owner_to_oracle_query_cosine_count"] += 1
+                if oracle_rank is not None:
+                    audit["oracle_query_attention_rank_total"] += oracle_rank
+                    audit["oracle_query_attention_rank_count"] += 1
+                if first_decision:
+                    if audit["first_owner_decision"] is not None:
+                        raise ValueError(
+                            f"D1.5 trace line {line_number} duplicated first decision"
+                        )
+                    audit["first_owner_decision"] = {
+                        "current_frame": frame,
+                        "runtime_event_id": event_id,
+                        "state_argmax": winner,
+                        "target_linked_at_decision": target_event_id is not None,
+                    }
+                if target_event_id is not None:
+                    near_end = abs(frame_from_end) <= SEGMENT_SIZE
+                    has_end = "end" in transition_parts
+                    has_emit = "emit" in transition_parts
+                    audit["near_end_end"] |= has_end and near_end
+                    audit["immutable_emission"] |= has_emit
+                    audit["near_end_immutable_emission"] |= has_emit and near_end
+                    audit["primary_success"] |= has_end and has_emit and near_end
+                    audit["premature_cancel"] |= (
+                        route == "formal"
+                        and "cancel" in transition_parts
+                        and frame_from_end < 0.0
+                    )
+                    audit["cancel_winner_before_end"] |= (
+                        winner == 0 and frame_from_end < 0.0
+                    )
+                    audit["target_end_observed_in_trace"] |= bool(
+                        row["target_end_observable_now"]
+                    )
+                    if has_end:
+                        audit["target_backed_end_observations"].append(
+                            {
+                                "current_frame": frame,
+                                "runtime_event_id": event_id,
+                                "frames_from_annotated_end": frame_from_end,
+                                "immutable_emission": has_emit,
+                            }
+                        )
                 route_counts[key] += 1
                 source_counts[(channel, route, row["source"])] += 1
                 if first_decision:
@@ -1066,7 +1355,49 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
                         f"D1.5 trace {channel}/{route} "
                         f"{transition_name} transitions differ"
                     )
-    return {
+    trace_linkage = {}
+    for channel in CHANNELS:
+        for route in ROUTES:
+            audits = [
+                audit
+                for audit in record_audits.values()
+                if audit["channel"] == channel and audit["route"] == route
+            ]
+            target_record_counts = Counter(
+                (audit["video_name"], int(audit["target_event_id"]))
+                for audit in audits
+                if audit["target_event_id"] is not None
+            )
+            linked_record_count = sum(target_record_counts.values())
+            linked_target_count = len(target_record_counts)
+            duplicate_record_count = sum(
+                max(0, count - 1) for count in target_record_counts.values()
+            )
+            reported_linked_targets = routes[channel][route][
+                "linked_unique_target_count"
+            ]
+            reported_duplicates = routes[channel][route][
+                "raw_semantic_duplicate_count"
+            ]
+            if (
+                linked_target_count != reported_linked_targets
+                or duplicate_record_count != reported_duplicates
+            ):
+                raise ValueError(
+                    f"D1.5 trace {channel}/{route} sidecar accounting differs"
+                )
+            trace_linkage[f"{channel}/{route}"] = {
+                "decision_bearing_runtime_record_count": len(audits),
+                "linked_runtime_record_count": linked_record_count,
+                "linked_unique_target_count": linked_target_count,
+                "duplicate_target_record_count": duplicate_record_count,
+                "unresolved_runtime_record_count": sum(
+                    audit["target_event_id"] is None for audit in audits
+                ),
+                "reported_linked_unique_target_count": reported_linked_targets,
+                "reported_raw_semantic_duplicate_count": reported_duplicates,
+            }
+    result = {
         "line_count": line_count,
         "route_line_counts": {
             f"{channel}/{route}": route_counts[(channel, route)]
@@ -1083,10 +1414,24 @@ def _validate_trace(path: Path, routes: dict[str, dict[str, dict]]) -> dict:
         "target_end_distances_cross_checked": True,
         "source_counts_cross_checked": True,
         "transition_counts_cross_checked": True,
+        "target_sidecar_accounting_cross_checked": True,
+        "trace_derived_target_linkage": trace_linkage,
     }
+    if lifecycle_census is not None:
+        outcome_rows, unresolved_runtime_records = _build_event_outcome_rows(
+            lifecycle_census, record_audits
+        )
+        result["unresolved_runtime_record_counts"] = unresolved_runtime_records
+        result["paired_event_analysis"] = build_paired_event_analysis(
+            census=lifecycle_census,
+            outcome_rows=outcome_rows,
+            channels=CHANNELS,
+            routes=ROUTES,
+        )
+    return result
 
 
-def _validate_positive_control(row: dict) -> dict:
+def _validate_positive_control(row: dict, *, lifecycle_census: dict) -> dict:
     if not isinstance(row, dict):
         raise ValueError("positive lifecycle control is absent")
     counts = row.get("counts")
@@ -1108,10 +1453,18 @@ def _validate_positive_control(row: dict) -> dict:
             "reacquisition_count",
             "capacity_exhaustion_count",
             "records_active_after_eos",
+            "records_active_at_scan_end",
             "videos_with_active_records_after_eos",
+            "right_censored_event_count",
         )
     }
     expected_events = EXPECTED_CENSUS["visible_birth_target_count"]
+    expected_observable_ends = EXPECTED_LIFECYCLE_COUNTS[
+        "observable_end_target_count"
+    ]
+    expected_right_censored = EXPECTED_LIFECYCLE_COUNTS[
+        "right_censored_event_count"
+    ]
     expected = {
         "real_prefix_count": EXPECTED_CENSUS["real_prefix_count"],
         "padding_prefix_count": EXPECTED_CENSUS["padding_prefix_count"],
@@ -1119,12 +1472,14 @@ def _validate_positive_control(row: dict) -> dict:
         "observed_eos_count": EXPECTED_CENSUS["observed_eos_count"],
         "birth_count": expected_events,
         "cancellation_count": 0,
-        "end_count": expected_events,
-        "emit_count": expected_events,
+        "end_count": expected_observable_ends,
+        "emit_count": expected_observable_ends,
         "reacquisition_count": 0,
         "capacity_exhaustion_count": 0,
-        "records_active_after_eos": 0,
-        "videos_with_active_records_after_eos": 0,
+        "records_active_after_eos": expected_right_censored,
+        "records_active_at_scan_end": expected_right_censored,
+        "videos_with_active_records_after_eos": expected_right_censored,
+        "right_censored_event_count": expected_right_censored,
     }
     if parsed != expected:
         raise ValueError(
@@ -1139,25 +1494,112 @@ def _validate_positive_control(row: dict) -> dict:
     )
     if admitted != expected_events or links != expected_events:
         raise ValueError("positive lifecycle control target coverage did not close")
+    censored_rows = row.get("right_censored_events")
+    if not isinstance(censored_rows, list) or len(censored_rows) != (
+        expected_right_censored
+    ):
+        raise ValueError("positive lifecycle control censored identities are absent")
+    census_by_key = {
+        (event["video_name"], int(event["event_id"])): event
+        for event in lifecycle_census["events"]
+    }
+    parsed_censored = []
+    seen_censored = set()
+    required_censored_fields = {
+        "video_name",
+        "event_id",
+        "class_id",
+        "class_label",
+        "start_frame",
+        "end_frame",
+        "censor_frame",
+        "runtime_event_id",
+        "observation_status",
+    }
+    for index, censored in enumerate(censored_rows):
+        if not isinstance(censored, dict) or set(censored) != required_censored_fields:
+            raise ValueError(f"positive censored event {index} schema drifted")
+        video_name = censored["video_name"]
+        event_id = _nonnegative_integer(
+            censored["event_id"], f"positive_censored[{index}].event_id"
+        )
+        class_id = _nonnegative_integer(
+            censored["class_id"], f"positive_censored[{index}].class_id"
+        )
+        _nonnegative_integer(
+            censored["runtime_event_id"],
+            f"positive_censored[{index}].runtime_event_id",
+        )
+        if not isinstance(video_name, str) or not video_name:
+            raise ValueError("positive censored event video is invalid")
+        if not isinstance(censored["class_label"], str):
+            raise ValueError("positive censored event class label is invalid")
+        if censored["observation_status"] != "right_censored":
+            raise ValueError("positive control labeled a non-censored event")
+        key = (video_name, event_id)
+        if key in seen_censored:
+            raise ValueError("positive lifecycle control duplicated a censored event")
+        seen_censored.add(key)
+        census_event = census_by_key.get(key)
+        if census_event is None:
+            raise ValueError("positive censored event is absent from lifecycle census")
+        if (
+            int(census_event["class_id"]) != class_id
+            or census_event["class_label"] != censored["class_label"]
+            or census_event["observation_status"] != "right_censored"
+        ):
+            raise ValueError("positive censored event identity drifted")
+        for field in ("start_frame", "end_frame"):
+            value = _finite_float(
+                censored[field], f"positive_censored[{index}].{field}"
+            )
+            if not math.isclose(
+                value,
+                float(census_event[field]),
+                rel_tol=1e-7,
+                abs_tol=1e-7,
+            ):
+                raise ValueError("positive censored event endpoint drifted")
+        censor_frame = _finite_float(
+            censored["censor_frame"], f"positive_censored[{index}].censor_frame"
+        )
+        if not math.isclose(
+            censor_frame,
+            float(census_event["last_observed_frame"]),
+            rel_tol=0.0,
+            abs_tol=1e-7,
+        ):
+            raise ValueError("positive censored event censor frame drifted")
+        parsed_censored.append(dict(censored))
+    observed_censored_identities = tuple(
+        sorted(
+            (row["video_name"], int(row["event_id"]), row["class_label"])
+            for row in parsed_censored
+        )
+    )
+    if observed_censored_identities != EXPECTED_RIGHT_CENSORED_IDENTITIES:
+        raise ValueError("positive lifecycle control censored identities drifted")
     integrity = _validate_integrity(
         row.get("lifecycle_integrity", {}), "positive_control"
     )
-    if integrity["ledger_row_count"] != expected_events:
+    if integrity["ledger_row_count"] != expected_observable_ends:
         raise ValueError("positive lifecycle control ledger count differs")
     return {
         "counts": parsed,
         "admitted_unique_target_count": admitted,
         "sidecar_link_count": links,
+        "right_censored_events": sorted(
+            parsed_censored, key=lambda item: (item["video_name"], item["event_id"])
+        ),
         "lifecycle_integrity": integrity,
     }
 
 
-def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
+def _route_next_repair(
+    routes: dict[str, dict[str, dict]], paired_analysis: dict
+) -> dict:
     formal = {
         channel: routes[channel]["formal"]["counts"] for channel in CHANNELS
-    }
-    shadow = {
-        channel: routes[channel]["shadow"]["counts"] for channel in CHANNELS
     }
 
     # State-machine defects precede model-objective interpretation.
@@ -1166,12 +1608,25 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
             return {
                 "diagnosis": "end_to_emission_closure_fault",
                 "authorized_next_intervention": "ledger_state_machine_repair_only",
+                "model_implementation_authorized": False,
                 "model_training_authorized": False,
                 "reason": f"{channel} end and emission counts did not match",
             }
     for channel in CHANNELS:
+        unsuppressed_end_winners = (
+            formal[channel]["end_argmax_count"]
+            - formal[channel]["end_min_duration_suppression_count"]
+        )
+        if unsuppressed_end_winners < 0:
+            return {
+                "diagnosis": "end_suppression_accounting_fault",
+                "authorized_next_intervention": "diagnostic_implementation_repair_only",
+                "model_implementation_authorized": False,
+                "model_training_authorized": False,
+                "reason": f"{channel} suppressed more END decisions than it won",
+            }
         if (
-            formal[channel]["end_argmax_count"] > 0
+            unsuppressed_end_winners > 0
             and formal[channel]["end_count"] == 0
         ):
             return {
@@ -1179,111 +1634,167 @@ def _route_next_repair(routes: dict[str, dict[str, dict]]) -> dict:
                 "authorized_next_intervention": (
                     "minimum_duration_mask_identity_or_step_order_repair_only"
                 ),
+                "model_implementation_authorized": False,
                 "model_training_authorized": False,
-                "reason": f"{channel} had end winners but no runtime end",
+                "reason": f"{channel} had unsuppressed END winners but no runtime END",
             }
 
-    closes = {
-        channel: formal[channel]["end_count"] > 0
-        and formal[channel]["emit_count"] > 0
-        for channel in CHANNELS
-    }
-    if closes["PF"]:
+    route_summaries = paired_analysis.get("route_summaries")
+    formal_family = paired_analysis.get("formal_effect_family", {}).get(
+        "comparisons"
+    )
+    shadow_family = paired_analysis.get("no_cancel_effect_family", {}).get(
+        "comparisons"
+    )
+    if not isinstance(route_summaries, dict):
+        raise ValueError("D1.5 paired route summaries are absent")
+    if not isinstance(formal_family, dict) or not isinstance(shadow_family, dict):
+        raise ValueError("D1.5 paired effect families are absent")
+    if route_summaries.get("PF/formal", {}).get("primary_success_count") != 0:
         return {
             "diagnosis": "predicted_free_reference_control_drift",
             "authorized_next_intervention": "diagnostic_implementation_repair_only",
+            "model_implementation_authorized": False,
             "model_training_authorized": False,
-            "reason": "PF unexpectedly closed despite the frozen D1.4 reference",
+            "reason": "PF produced event-level success despite exact D1.4 zero END",
         }
-    pr_closes = closes["PR"]
-    of_closes = closes["OF"]
-    or_closes = closes["OR"]
-    pf_fails = not closes["PF"]
 
-    if pf_fails and pr_closes and not of_closes:
+    formal_names = {
+        "identity_predicted": "identity_refresh_under_predicted_admission",
+        "identity_oracle": "identity_refresh_under_oracle_visible_admission",
+        "clean_admission": "oracle_visible_admission_under_free_identity",
+    }
+    missing_formal = set(formal_names.values()).difference(formal_family)
+    if missing_formal:
+        raise ValueError(f"D1.5 formal paired gates are missing: {sorted(missing_formal)}")
+    formal_pass = {
+        label: bool(formal_family[name].get("scientific_gate_pass"))
+        for label, name in formal_names.items()
+    }
+    paired_gate_summary = {
+        "formal": {
+            label: {
+                "comparison": name,
+                "paired_effect": formal_family[name]["paired_effect"],
+                "cluster_bootstrap_ci95": formal_family[name][
+                    "cluster_bootstrap_ci95"
+                ],
+                "holm_adjusted_p": formal_family[name]["holm_adjusted_p"],
+                "scientific_gate_pass": formal_pass[label],
+            }
+            for label, name in formal_names.items()
+        },
+        "no_cancel": {
+            name: {
+                "paired_effect": evidence["paired_effect"],
+                "cluster_bootstrap_ci95": evidence["cluster_bootstrap_ci95"],
+                "holm_adjusted_p": evidence["holm_adjusted_p"],
+                "scientific_gate_pass": bool(evidence["scientific_gate_pass"]),
+            }
+            for name, evidence in sorted(shadow_family.items())
+        },
+    }
+
+    identity_is_replicated = (
+        formal_pass["identity_predicted"] and formal_pass["identity_oracle"]
+    )
+    if identity_is_replicated and not formal_pass["clean_admission"]:
         return {
-            "diagnosis": "identity_transport_is_sufficient_under_predicted_burden",
+            "diagnosis": "replicated_identity_transport_effect",
             "authorized_next_intervention": (
-                "training_only_predicted_track_supervision_bridge"
+                "matr_internal_discovery_plus_persistent_event_queries_structure_only"
             ),
-            "model_training_authorized": True,
-            "reason": "PR restored frozen-owner end/emission while OF did not",
+            "model_implementation_authorized": True,
+            "model_training_authorized": False,
+            "reason": (
+                "identity refresh exceeded the preregistered event-level gate "
+                "under both admission regimes while clean admission did not"
+            ),
+            "paired_gate_summary": paired_gate_summary,
         }
-    if pf_fails and of_closes and not pr_closes:
+    if (
+        formal_pass["clean_admission"]
+        and not formal_pass["identity_predicted"]
+        and not formal_pass["identity_oracle"]
+    ):
         return {
-            "diagnosis": "clean_admission_is_sufficient_without_continuous_refresh",
+            "diagnosis": "clean_admission_only_effect",
             "authorized_next_intervention": (
                 "score_independent_sampling_corrected_birth_admission"
             ),
-            "model_training_authorized": True,
-            "reason": "OF restored end/emission while PR did not",
-        }
-    if pf_fails and or_closes and not pr_closes and not of_closes:
-        return {
-            "diagnosis": "admission_identity_interaction",
-            "authorized_next_intervention": (
-                "one_prospectively_registered_two_factor_repair"
+            "model_implementation_authorized": True,
+            "model_training_authorized": False,
+            "reason": (
+                "clean admission exceeded the preregistered event-level gate "
+                "while neither identity contrast did"
             ),
-            "model_training_authorized": True,
-            "reason": "only OR restored frozen-owner end/emission",
+            "paired_gate_summary": paired_gate_summary,
         }
-    if pf_fails and pr_closes and of_closes:
+    if any(formal_pass.values()):
         return {
-            "diagnosis": "multiple_single_factor_sufficiency_ambiguous",
+            "diagnosis": "factorial_effect_not_uniquely_attributable",
             "authorized_next_intervention": (
                 "no_model_repair_until_predeclared_disambiguation"
             ),
+            "model_implementation_authorized": False,
             "model_training_authorized": False,
             "reason": (
-                "identity refresh and clean admission each restored lifecycle; "
-                "the frozen matrix does not identify one unique repair"
+                "one identity context only or both admission and identity "
+                "families passed; the factorial does not select one repair"
             ),
+            "paired_gate_summary": paired_gate_summary,
         }
 
-    shadow_near_end = {
-        channel: shadow[channel][
-            "target_backed_end_within_one_segment_count"
-        ]
-        for channel in CHANNELS
+    shadow_passes = {
+        name: evidence
+        for name, evidence in shadow_family.items()
+        if evidence.get("scientific_gate_pass") is True
     }
-    formal_model_cells_fail = not any(
-        closes[channel] for channel in ("PR", "OF", "OR")
-    )
-    if formal_model_cells_fail and any(
-        value > 0 for value in shadow_near_end.values()
-    ):
+    if shadow_passes:
         return {
-            "diagnosis": "early_cancellation_truncates_later_end_decisions",
+            "diagnosis": "material_no_cancel_effect_without_formal_factor_effect",
             "authorized_next_intervention": (
                 "separate_unresolved_identity_from_false_track_cancel_or_hold_state"
             ),
-            "model_training_authorized": True,
+            "model_implementation_authorized": True,
+            "model_training_authorized": False,
             "reason": (
-                "formal channels failed while recurrent no-cancel shadows produced "
-                "target-backed end decisions within one segment of observed ends"
+                "no formal factorial contrast passed, but at least one no-cancel "
+                "shadow exceeded the separately corrected event-level gate"
             ),
-            "shadow_near_end_counts": shadow_near_end,
+            "passing_no_cancel_comparisons": sorted(shadow_passes),
+            "paired_gate_summary": paired_gate_summary,
         }
 
-    if all(
-        formal[channel]["end_count"] == 0
-        and shadow[channel]["end_count"] == 0
-        for channel in ("OF", "OR")
-    ):
+    oracle_successes = {
+        label: route_summaries[label]["primary_success_count"]
+        for label in ("OF/formal", "OR/formal", "OF/shadow", "OR/shadow")
+    }
+    if not any(oracle_successes.values()):
         return {
             "diagnosis": "frozen_owner_end_representation_or_risk_objective_insufficient",
             "authorized_next_intervention": (
                 "segment_flag_read_only_diagnostic_then_policy_independent_"
                 "three_state_competing_risk_objective"
             ),
+            "model_implementation_authorized": False,
             "model_training_authorized": False,
-            "reason": "OF/OR and their recurrent shadows never produced an end",
+            "reason": (
+                "oracle-visible formal and no-cancel routes produced no "
+                "event-level endpoint success"
+            ),
+            "paired_gate_summary": paired_gate_summary,
         }
     return {
-        "diagnosis": "factorial_result_not_uniquely_routable",
+        "diagnosis": "no_preregistered_material_structural_effect",
         "authorized_next_intervention": "no_model_repair_until_diagnostic_refinement",
+        "model_implementation_authorized": False,
         "model_training_authorized": False,
-        "reason": "observed cells do not match one prospectively frozen routing row",
+        "reason": (
+            "some endpoint events occurred, but no paired comparison met the "
+            "frozen effect-size and uncertainty gate"
+        ),
+        "paired_gate_summary": paired_gate_summary,
     }
 
 
@@ -1434,6 +1945,13 @@ def validate_scan(
             global_census.get(key), f"global_census.{key}"
         ) != expected:
             raise ValueError(f"D1.5 global census drifted: {key}")
+    lifecycle_census = validate_lifecycle_census(
+        scan.get("lifecycle_census"), require_official_counts=True
+    )
+    if lifecycle_census["counts"]["visible_birth_target_count"] != (
+        int(global_census["visible_birth_target_count"])
+    ):
+        raise ValueError("D1.5 streamed and reconstructed birth censuses differ")
 
     query_hash = _valid_sha256(
         scan.get("query_stream_sha256"), "D1.5 query stream"
@@ -1485,14 +2003,20 @@ def validate_scan(
                 raise ValueError(f"{channel}/{route} duplicated an oracle target")
 
     positive = _validate_positive_control(
-        scan.get("positive_lifecycle_control", {})
+        scan.get("positive_lifecycle_control", {}),
+        lifecycle_census=lifecycle_census,
     )
     trace = _validate_linked_file(scan.get("trace_artifact", {}), "D1.5 trace")
     if scan.get("trace_artifact", {}).get("format") != "chronological_jsonl":
         raise ValueError("D1.5 trace format drifted")
     if scan.get("trace_artifact", {}).get("compression") != "gzip_level_1":
         raise ValueError("D1.5 trace compression drifted")
-    trace_integrity = _validate_trace(Path(trace["path"]), routes)
+    trace_integrity = _validate_trace(
+        Path(trace["path"]), routes, lifecycle_census=lifecycle_census
+    )
+    paired_analysis = trace_integrity.pop("paired_event_analysis", None)
+    if paired_analysis is None:
+        raise ValueError("D1.5 paired event analysis is absent")
 
     artifacts = scan.get("official_train_artifacts")
     if not isinstance(artifacts, dict):
@@ -1507,7 +2031,7 @@ def validate_scan(
             row, f"official artifact {name}"
         )
 
-    decision = _route_next_repair(routes)
+    decision = _route_next_repair(routes, paired_analysis)
     return {
         "query_stream_sha256": query_hash,
         "route_consumption_stream_sha256": consumption_hash,
@@ -1515,10 +2039,12 @@ def validate_scan(
         "global_census": {
             key: int(global_census[key]) for key in EXPECTED_CENSUS
         },
+        "lifecycle_census": lifecycle_census,
         "routes": routes,
         "positive_lifecycle_control": positive,
         "trace_artifact": trace,
         "trace_integrity": trace_integrity,
+        "paired_event_analysis": paired_analysis,
         "linked_inputs": {
             "manifest": linked_manifest,
             "checkpoint": linked_checkpoint,
