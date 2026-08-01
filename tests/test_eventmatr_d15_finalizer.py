@@ -748,6 +748,7 @@ def test_d15_routing_does_not_use_one_or_a_few_events() -> None:
         "identity_refresh_under_predicted_admission"
     ] = _effect_row(1.0 / 3001.0, False)
     paired["route_summaries"]["PR/formal"]["primary_success_count"] = 1
+    paired["route_summaries"]["OF/formal"]["primary_success_count"] = 1
 
     decision = _route_next_repair(routes, paired)
 

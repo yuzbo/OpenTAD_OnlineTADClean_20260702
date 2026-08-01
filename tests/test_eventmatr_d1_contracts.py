@@ -1531,6 +1531,7 @@ def _d15_routing_fixture() -> dict:
         "end_count": 0,
         "emit_count": 0,
         "end_argmax_count": 0,
+        "end_min_duration_suppression_count": 0,
         "target_backed_end_within_one_segment_count": 0,
     }
     return {
@@ -1542,31 +1543,65 @@ def _d15_routing_fixture() -> dict:
     }
 
 
+def _d15_effect_fixture(passed: bool = False) -> dict:
+    return {
+        "paired_effect": 0.08 if passed else 0.0,
+        "cluster_bootstrap_ci95": [0.06, 0.10] if passed else [0.0, 0.0],
+        "holm_adjusted_p": 0.001 if passed else 1.0,
+        "scientific_gate_pass": passed,
+    }
+
+
+def _d15_paired_fixture() -> dict:
+    return {
+        "route_summaries": {
+            f"{channel}/{route}": {"primary_success_count": 0}
+            for channel in ("PF", "PR", "OF", "OR")
+            for route in ("formal", "shadow")
+        },
+        "formal_effect_family": {
+            "comparisons": {
+                "identity_refresh_under_predicted_admission": (
+                    _d15_effect_fixture()
+                ),
+                "identity_refresh_under_oracle_visible_admission": (
+                    _d15_effect_fixture()
+                ),
+                "oracle_visible_admission_under_free_identity": (
+                    _d15_effect_fixture()
+                ),
+            }
+        },
+        "no_cancel_effect_family": {
+            "comparisons": {
+                f"no_cancel_shadow_under_{channel}": _d15_effect_fixture()
+                for channel in ("PF", "PR", "OF", "OR")
+            }
+        },
+    }
+
+
 @pytest.mark.parametrize(
-    ("mutations", "expected"),
+    ("passing_comparisons", "expected"),
     [
         (
-            [("PR", "formal", "end_count", 1), ("PR", "formal", "emit_count", 1)],
-            "identity_transport_is_sufficient_under_predicted_burden",
+            {
+                "identity_refresh_under_predicted_admission",
+                "identity_refresh_under_oracle_visible_admission",
+            },
+            "replicated_identity_transport_effect",
         ),
         (
-            [("OF", "formal", "end_count", 1), ("OF", "formal", "emit_count", 1)],
-            "clean_admission_is_sufficient_without_continuous_refresh",
+            {"oracle_visible_admission_under_free_identity"},
+            "clean_admission_only_effect",
         ),
         (
-            [("OR", "formal", "end_count", 1), ("OR", "formal", "emit_count", 1)],
-            "admission_identity_interaction",
+            {"identity_refresh_under_oracle_visible_admission"},
+            "factorial_effect_not_uniquely_attributable",
         ),
         (
-            [
-                (
-                    "PF",
-                    "shadow",
-                    "target_backed_end_within_one_segment_count",
-                    1,
-                )
-            ],
-            "early_cancellation_truncates_later_end_decisions",
+            {"no_cancel_shadow_under_PF"},
+            "material_no_cancel_effect_without_formal_factor_effect",
         ),
         (
             [],
@@ -1575,26 +1610,29 @@ def _d15_routing_fixture() -> dict:
     ],
 )
 def test_d15_frozen_routing_table(
-    mutations: list[tuple[str, str, str, int]],
+    passing_comparisons: set[str],
     expected: str,
 ) -> None:
     routes = _d15_routing_fixture()
-    for channel, route, field, value in mutations:
-        routes[channel][route]["counts"][field] = value
-    assert _route_next_repair(routes)["diagnosis"] == expected
+    paired = _d15_paired_fixture()
+    for family in ("formal_effect_family", "no_cancel_effect_family"):
+        comparisons = paired[family]["comparisons"]
+        for name in set(comparisons).intersection(passing_comparisons):
+            comparisons[name] = _d15_effect_fixture(True)
+    assert _route_next_repair(routes, paired)["diagnosis"] == expected
 
 
 def test_d15_runtime_and_ledger_faults_precede_model_repair_routing() -> None:
     routes = _d15_routing_fixture()
     routes["PR"]["formal"]["counts"]["end_count"] = 1
     assert (
-        _route_next_repair(routes)["diagnosis"]
+        _route_next_repair(routes, _d15_paired_fixture())["diagnosis"]
         == "end_to_emission_closure_fault"
     )
 
     routes = _d15_routing_fixture()
     routes["PR"]["formal"]["counts"]["end_argmax_count"] = 1
     assert (
-        _route_next_repair(routes)["diagnosis"]
+        _route_next_repair(routes, _d15_paired_fixture())["diagnosis"]
         == "runtime_end_gate_or_order_fault"
     )
