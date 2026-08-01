@@ -1519,7 +1519,7 @@ def _route_summary(state: RouteState, *, query_hash: str) -> dict:
             f"{state.channel}/{state.route} ledger/emission count did not close"
         )
     decision_target_counts = Counter(
-        (video_name, int(link.target_event_id))
+        (key[0], int(link.target_event_id))
         for key, link in state.links.items()
         if key in state.first_decisions
     )

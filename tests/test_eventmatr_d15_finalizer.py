@@ -6,6 +6,8 @@ import copy
 import gzip
 import hashlib
 import json
+from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -25,6 +27,7 @@ from scripts.finalize_eventmatr_d15_owner_counterfactual import (
 from scripts.run_eventmatr_d15_owner_counterfactual import (
     EXPECTED_D14_COUNTS,
     OFFICIAL_TRAIN_ARTIFACTS,
+    _route_summary,
     _validate_d14_gate,
     _validate_padding_runtime,
 )
@@ -559,6 +562,47 @@ def _route_receipt() -> dict:
             "ground_truth_stored_in_runtime_record": False,
         },
     }
+
+
+def test_d15_route_summary_counts_decision_bearing_sidecars() -> None:
+    first = ("video_validation_0000001", 1)
+    second = ("video_validation_0000001", 2)
+    state = SimpleNamespace(
+        channel="PF",
+        route="formal",
+        memory=SimpleNamespace(_records={}),
+        links={
+            first: SimpleNamespace(target_event_id=7),
+            second: SimpleNamespace(target_event_id=7),
+            ("video_validation_0000001", 3): SimpleNamespace(target_event_id=8),
+        },
+        first_decisions={first, second},
+        target_link_history=Counter(),
+        counters=Counter(
+            {
+                "birth_count": 2,
+                "cancellation_count": 2,
+                "association_count": 3,
+                "decision_row_count": 2,
+            }
+        ),
+        created_records={first, second},
+        created_by_source=Counter({"predicted": 2}),
+        decision_rows_by_source=Counter({"predicted": 2}),
+        eos_active_record_counts={},
+        eos_birth_counts={},
+        first_state_counts=Counter({"0": 2}),
+        winner_counts=Counter({"0": 2}),
+        transition_counts=Counter({"birth": 2, "cancel": 2}),
+        ledger_snapshots={},
+        query_consumption_digest=hashlib.sha256(),
+        stats={},
+    )
+
+    summary = _route_summary(state, query_hash="0" * 64)
+
+    assert summary["linked_unique_target_count"] == 1
+    assert summary["raw_semantic_duplicate_count"] == 1
 
 
 def test_d15_route_receipt_closes_all_new_accounting() -> None:
