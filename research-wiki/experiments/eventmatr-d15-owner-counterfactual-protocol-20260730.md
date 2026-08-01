@@ -566,3 +566,179 @@ This remains a GT-aided, post-forward, train-only causal diagnosis. It is not
 an official comparison or paper performance result and cannot release the
 locked test, multiple seeds, raw RGB, threshold search/lowering or a longer
 pilot.
+
+## Post-review v2 amendment: right censoring and event-level routing — 2026-08-02
+
+This section is append-only and supersedes the v1 completion and routing
+contracts without changing the historical record above. The external review
+input has SHA-256
+`a2f0511ac97225cad2f69c11ee124e8a5a3b57f6aa95c41bf22403c7feb1dc0b`.
+The amended v2 implementation is frozen and pushed on
+`codex/eventmatr-d1` at commit
+`ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, tree
+`adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`. This source identity authorizes
+only exact remote tests, preflight and the complete diagnostic rerun described
+below; it does not authorize model training or a performance claim.
+
+### Invalidated v1 attempt
+
+Slurm job `1207954` failed `1:0` after `13:54:08` because the positive
+lifecycle control required all `3,003` visible births to produce an observed
+END. The run correctly produced only `3,001` END transitions: two events were
+still active when their streams ended. The v1 runner then raised
+`positive control end_count did not close: 3001 != 3003` before writing the
+scan object, final source identity or final receipt. Its approximately
+3.38-GB partial trace is retained as forensic execution evidence only. It is
+not an admissible source for a structural route, a model decision or a paper
+claim.
+
+The status is therefore frozen as:
+
+- `D1.5_PROTOCOL = INVALID_RIGHT_CENSOR_CLOSURE`;
+- `COUNTERFACTUAL_ROUTE = UNRESOLVED`;
+- `MODEL_TRAINING = NOT_AUTHORIZED`;
+- `PAPER_PERFORMANCE = NOT_AVAILABLE`;
+- `PROVISIONAL_ARCHITECTURE = DISCOVERY_PLUS_PERSISTENT_EVENT_QUERIES`;
+- `NEXT_ACTION = PATCH_PROTOCOL_AND_FULL_RERUN`.
+
+### Correct lifecycle census and positive control
+
+The v2 runner must independently reconstruct a hash-bound lifecycle census
+from the official annotation and feature-length artifacts before any query
+forward. For every annotation it records its video, annotation index, class,
+start, end, admission crossing, end crossing, observable-window status and
+numbers of birth, alive and end supervision rows. The complete official-train
+census must close as follows:
+
+| Quantity | Frozen expectation |
+|---|---:|
+| annotations | 3,007 |
+| visible birth crossings | 3,003 |
+| observable end crossings | 3,001 |
+| right-censored after a visible birth | 2 |
+| left-truncated | 0 |
+| completely outside the observed feature window | 4 |
+
+The two right-censored events are frozen by semantic identity, not only by
+count:
+
+- `video_validation_0000318`, event `22`, `HammerThrow`;
+- `video_validation_0000985`, event `9`, `VolleyballSpiking`.
+
+The four completely unobservable annotations are also frozen:
+
+- `video_validation_0000364`, events `4` and `5`, `HighJump`;
+- `video_validation_0000856`, events `3` and `4`, `SoccerPenalty`.
+
+The positive control must satisfy
+`birth = 3003`, `end = emit = ledger = 3001`,
+`right_censored = active_after_observed_eos = active_at_scan_end = 2`, and
+`videos_with_active_records_after_observed_eos = 2`. Cancellation,
+reacquisition, capacity exhaustion, duplicate semantic identity and silent
+loss remain zero. Observed EOS may preserve or archive a censored active state;
+it must never synthesize an END or a detection output.
+
+### What the sparse-supervision statement does and does not mean
+
+The previously reported approximately `30.7x` reduction compares only the
+number of first-birth or first-end crossing rows with MATR's repeatedly
+positive span rows. It is not a ratio of total lifecycle supervision,
+gradients, effective sample size or learnability. EventMATR also provides
+repeated alive, class, identity and survival supervision. The existing
+official-data audit reports `56,551` alive rows; v2 must recompute their exact
+distribution and bind it to the census receipt.
+
+Short actions nevertheless create a real length-dependent weakness: they may
+have zero or one alive update between birth and end. A correct lifecycle model
+must therefore allow a direct `birth -> end` transition and must not manufacture
+alive labels merely to equalize counts. The eventual learning remedy is
+event-normalized interval-censored birth, right-censored trajectory risk and
+length-stratified accounting, not duplicated endpoint labels.
+
+### Event-level structural gate
+
+Raw END or emission positivity is removed as a routing criterion. A single or
+small number of transitions can never authorize a model branch. The primary
+event outcome is one if a target-backed END and its immutable emission occur
+within the already frozen symmetric one-segment (`64` feature steps) window
+around the annotated end, and zero otherwise. Every one of the `3,001`
+observable-end events remains in the denominator. An unmatched runtime record
+is recorded as unresolved identity, not asserted to be a false action; an
+unresolved event receives zero primary success and its unresolved rate is
+reported separately.
+
+The three prospectively frozen formal-route comparisons are:
+
+1. `PR - PF`: identity-refresh effect under predicted admission;
+2. `OR - OF`: identity-refresh effect under oracle-visible admission;
+3. `OF - PF`: clean-admission effect under free identity.
+
+For each comparison, the effect is the mean same-event paired success
+difference. A comparison passes only if all of the following hold:
+
+- effect is at least `0.05` absolute probability, which requires at least
+  `151` net improved events out of `3,001`;
+- a deterministic video-cluster bootstrap with `10,000` resamples and seed
+  `52015` has a 95% percentile-interval lower bound strictly above zero;
+- a two-sided video-cluster sign-flip test with `10,000` permutations and seed
+  `52016` remains significant at familywise `0.05` after Holm correction over
+  the three comparisons.
+
+The five-percentage-point value is a preregistered scientific relevance floor,
+not an estimated optimum and not a threshold tuned on the invalid v1 trace.
+Effect size remains mandatory even if a p-value is small. Four
+shadow-minus-formal no-cancel comparisons form a separate secondary family
+with the same effect and uncertainty requirements and their own Holm
+correction; they can route only a cancellation/unresolved-identity diagnostic,
+not model training.
+
+The receipt must contain one row per visible event and route, including target
+identity, censor status, link/unresolved status, near-end END, emission,
+premature cancellation, first owner decision, lifetime, owner cosine and
+attention rank. It must also contain the event-list hash, video-list hash,
+seeds, resample counts, raw and Holm-adjusted p-values, interval, effect,
+denominator and pass/fail reason.
+
+All four channels receive the same post-forward target-link audit. The link is
+diagnostic sidecar metadata only: refreshed-identity channels may consume the
+matched current query, whereas free-identity channels must keep their decoder
+input unchanged. This separation is necessary for a fair paired event outcome;
+otherwise the free-identity controls would be labelled unresolved by
+construction rather than by observed matching failure. The sidecar remains
+outside runtime memory, formal transition state, ledger and model output.
+
+The finalizer reconstructs target linkage from the chronological trace and
+requires exact equality with every route summary; oracle-visible routes also
+require zero duplicate target assignment. The summary linkage denominator is
+explicitly the set of runtime records that produced at least one owner decision,
+so a birth at the final prefix cannot create an uncheckable scientific link.
+If no runtime record links to an event, its identity is unresolved. If more than
+one runtime record links to the same event, its identity is ambiguous. Both
+states receive zero primary success and are reported separately; an arbitrary
+successful fragment may not turn an identity-fragmented event into a primary
+endpoint success. The lifecycle census validator also recomputes crossing
+frames, visibility states and supervision-row counts from the stored endpoints
+rather than trusting those fields as self-reported metadata.
+
+### Conditional route after a valid full rerun
+
+- both identity contrasts pass while clean admission does not: authorize only
+  implementation of the minimal MATR-internal discovery-query plus persistent
+  event-query mechanism and its new structure tests;
+- only clean admission passes: authorize only a prospectively registered birth
+  admission/risk repair;
+- both families pass, only one identity context passes, or interactions are
+  inconsistent: no unique model repair is selected;
+- no formal comparison passes but a no-cancel comparison passes: separate
+  unresolved identity from false-track cancellation or add a hold state before
+  any new objective;
+- oracle-visible formal and shadow routes still show no material endpoint
+  recovery: diagnose owner representation/competing-risk learning before an
+  architecture change.
+
+Even a valid D1.5 route does not itself authorize a performance experiment. A
+selected structure must first pass synthetic lifecycle, official one-batch,
+12-batch chronological and gradient/causal-boundary gates. Complete-video time
+conversion, full-file suppression, ranking parity and common-initialization
+hashes remain separate official-comparability debts. Until those debts close,
+no result is paper-comparable.

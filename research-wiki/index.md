@@ -1,6 +1,6 @@
 ---
 type: index
-updated: 2026-07-30
+updated: 2026-08-02
 status: active
 scope: Persistent project memory for the Online/Causal TAD research direction.
 ---
@@ -66,6 +66,16 @@ owner-end failure from identity-transport failure. The 5/10/20-epoch matrix,
 locked test, multiple seeds, raw RGB and threshold changes remain blocked;
 paper-comparable evidence still requires a separately frozen matched 100-epoch
 native-MATR/EventMATR evaluation after a future structure pass.
+
+D1.5 v1 job `1207954` is now invalidated as a routing experiment: it correctly
+observed `3,001` ends from `3,003` visible births but its positive control did
+not allow two right-censored events, and it produced no final scan or receipt.
+D1.5 v2 is the only active action. It must rerun from the first prefix with
+`3003 = 3001 + 2`, a hash-bound annotation census and same-event paired route
+effects. Its amended source is frozen at
+`ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`; remote exact tests and preflight
+must pass before the rerun. No model training or paper-comparable result is
+currently available.
 
 ## Ideas
 
@@ -148,6 +158,7 @@ native-MATR/EventMATR evaluation after a future structure pass.
 
 | Node | Verdict | Use |
 |---|---|---|
+| [exp:eventmatr-d15-owner-counterfactual-20260730](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md) | v1 invalid right-censor closure; v2 patch and complete rerun required | Records the four-channel frozen-checkpoint diagnostic, exact v1 failure, right-censored positive control, event-level effect gate and conditional MATR-internal architecture route. |
 | [exp:eventmatr-d11-structural-repair-20260729](experiments/eventmatr-d11-structural-repair-design-20260729.md) | D1.4 structure gate failed; decision-aligned birth is live but owner end/emission remain zero | Records the accepted/corrected Pro advice, D1.1-D1.4 exact-source evidence, official-data hashes, causal assignment, ternary owner, interval-risk interventions, cancel-dominated owner diagnosis and the unchanged official-comparability boundary. |
 | [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |
 | [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |

@@ -2004,3 +2004,77 @@ Reversibility:
 - D1.5 may falsify every currently favored structural repair.
 - It cannot change the D1.4 result, select a deployable checkpoint or support a
   performance/novelty claim.
+
+## DR-045: Invalidate the D1.5 v1 Closure and Require a Right-Censored, Event-Level Full Rerun
+
+Status: v2 source frozen; remote verification and rerun hold.
+
+Decision:
+
+> Do not authorize a new model, training run, performance experiment or paper
+> conclusion from D1.5 v1. Correct the positive-control right-censor contract,
+> replace any-positive END routing with preregistered same-event paired effects,
+> and rerun the entire four-channel diagnostic from the first official prefix.
+> Retain discovery queries plus persistent event queries only as the provisional
+> MATR-internal architecture if the corrected evidence isolates a material and
+> reproducible identity effect.
+
+Reason:
+
+- job `1207954` failed because `3,001` observable ENDs were incorrectly required
+  to equal `3,003` visible births; two visible events are right-censored at
+  observed EOS and must not be force-ended;
+- the job wrote no scan object, final identity or final receipt, so its partial
+  trace is forensic only;
+- the v1 finalizer could route a structural branch from one END/emission because
+  it used count positivity rather than a paired effect;
+- the approximately `30.7x` figure concerns first-crossing rows only. Repeated
+  alive/class/identity/survival rows still exist, although very short actions
+  can have zero or one alive update and therefore require direct birth-to-end
+  support;
+- unmatched predicted records are unresolved identity hypotheses, not proven
+  false actions, so automatic cancellation supervision is not a valid semantic
+  conclusion;
+- the review's five-percentage-point threshold is accepted only as a frozen
+  scientific relevance floor. It is not claimed to be an empirically optimal
+  threshold.
+
+Resolution:
+
+1. bump the D1.5 scan/finalizer and preregistration contracts;
+2. reconstruct and hash all `3,007` official annotations, including `3,001`
+   fully observable, two right-censored and four completely unobservable events;
+3. require positive-control closure `3003 = 3001 + 2` and list the two censored
+   identities in the receipt;
+4. aggregate chronological trace rows into one outcome per target event and
+   route, retaining unresolved identity as a separate status;
+5. freeze the formal comparisons `PR-PF`, `OR-OF` and `OF-PF`, an absolute
+   `0.05` effect floor, `10,000` video-cluster resamples, deterministic seeds and
+   Holm familywise correction before rerun;
+6. treat no-cancel shadow effects as a separate corrected family that can
+   authorize diagnostic refinement only;
+7. require exact PF reproduction, shared query and prefix-consumption hashes,
+   immutable ledger, positive length, nonnegative start, no duplicates, no
+   capacity exhaustion, no optimizer/checkpoint update and `test_access=false`;
+8. run a new preflight and then one append-only complete D1.5 rerun. Never route
+   from job `1207954`;
+9. keep model training, short pilots, official performance, multiple seeds,
+   raw RGB, threshold changes and locked-test access blocked.
+
+Source:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md);
+- Pro review attachment SHA-256
+  `a2f0511ac97225cad2f69c11ee124e8a5a3b57f6aa95c41bf22403c7feb1dc0b`;
+- amended D1.5 v2 code commit
+  `ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, tree
+  `adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`, pushed to
+  `codex/eventmatr-d1`;
+- failed Slurm job `1207954` and its append-only forensic root.
+
+Reversibility:
+
+- A source-exact v2 receipt may select one minimal structural hypothesis. It
+  cannot retroactively validate v1 or itself establish performance or novelty.
+- If no comparison meets both the preregistered effect floor and uncertainty
+  gate, the correct outcome is an unresolved route, not a lowered threshold.

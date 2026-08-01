@@ -1044,3 +1044,45 @@ Scientific boundary:
 Current wiki node:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T30 — D1.5 v1 invalidated; right-censored event-level rerun designed
+
+Date: 2026-08-02
+
+Observed result:
+
+- job `1207954` failed `1:0` after `13:54:08` at the positive-control assertion
+  `end_count 3001 != visible_birth_count 3003`;
+- two visible actions remain active at observed EOS and are scientifically
+  right-censored; no END or output may be synthesized for them;
+- no scan, final source identity or receipt was produced, so the partial trace
+  cannot select a model route.
+
+Review absorption:
+
+- accepted: fix `3003 = 3001 + 2`, register the exact censored and outside-window
+  identities, fully rerun, and keep all model/performance work blocked;
+- accepted: EventMATR is currently a learned predictor plus discrete causal
+  lifecycle prototype; a MATR-internal discovery/persistent-event query design
+  is only a conditional next candidate;
+- corrected: the approximately `30.7x` sparsity statement applies only to birth
+  and end first-crossing opportunities, not to all lifecycle supervision;
+- qualified: five percentage points is frozen as a scientific relevance floor,
+  not treated as an optimal threshold inferred from the invalid trace.
+
+Implementation contract:
+
+- D1.5 v2 will emit a full lifecycle census and per-event route outcomes;
+- formal effects are `PR-PF`, `OR-OF` and `OF-PF`, with a `0.05` floor,
+  deterministic video-cluster uncertainty and Holm correction;
+- no-cancel shadows are a separate secondary family and can route only semantic
+  diagnosis;
+- v2 code is frozen at
+  `ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, tree
+  `adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`; local pure-logic tests passed;
+- the next executable action is source-exact remote tests, preflight and one
+  append-only full rerun, never model training.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
