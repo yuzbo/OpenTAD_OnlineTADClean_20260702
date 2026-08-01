@@ -2007,7 +2007,7 @@ Reversibility:
 
 ## DR-045: Invalidate the D1.5 v1 Closure and Require a Right-Censored, Event-Level Full Rerun
 
-Status: v2 source frozen; remote verification and rerun hold.
+Status: v2 preflight passed; complete diagnostic rerun active.
 
 Decision:
 
@@ -2066,11 +2066,14 @@ Source:
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md);
 - Pro review attachment SHA-256
   `a2f0511ac97225cad2f69c11ee124e8a5a3b57f6aa95c41bf22403c7feb1dc0b`;
-- amended D1.5 v2 code commit
-  `ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, tree
-  `adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`, pushed to
+- amended D1.5 v2 implementation parent
+  `ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, followed by exact executable
+  commit `dc530e2d99f928b1455a6e137f708306cc00d91c`, tree
+  `14e9aeb886e85df5dfb2fd3b321f39597eb040c9`, pushed to
   `codex/eventmatr-d1`;
 - failed Slurm job `1207954` and its append-only forensic root.
+- successful source-exact preflight job `1213434` and active complete diagnostic
+  job `1213435`; neither is a model-training or paper-performance experiment.
 
 Reversibility:
 

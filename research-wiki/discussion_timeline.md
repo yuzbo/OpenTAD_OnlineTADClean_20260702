@@ -1086,3 +1086,41 @@ Implementation contract:
 Current wiki node:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T31 — D1.5 v2 preflight passed; complete diagnostic restarted
+
+Date: 2026-08-02
+
+Execution record:
+
+- preflight `1213432` failed before model/data execution because seven stale v1
+  tests still encoded the superseded interface;
+- preflight `1213433` passed `177` tests and all forward checks, then exposed an
+  undefined local name in summary construction; it produced no admissible
+  receipt and changed no scientific rule;
+- exact execution source
+  `dc530e2d99f928b1455a6e137f708306cc00d91c`, tree
+  `14e9aeb886e85df5dfb2fd3b321f39597eb040c9`, fixes that runtime defect and adds
+  its regression test;
+- preflight `1213434` completed `0:0` in `3:25`, with empty stderr, all `178`
+  tests, synthetic mechanisms, official one-batch smoke and a 12-batch
+  chronological diagnostic passing;
+- the preflight independently reproduced `3,007` annotations, `3,003` visible
+  births, `3,001` observable ends, two right-censored events, four unobservable
+  events and `56,551` alive rows;
+- complete diagnostic job `1213435` restarted from the first prefix under
+  `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_dc530e2_20260802_r1` and
+  was running on `g0006` with empty stderr at the launch audit.
+
+Scientific boundary:
+
+- neither failed preflight is scientific evidence;
+- the successful preflight proves contract execution, not a model effect;
+- only job `1213435`'s fail-closed final receipt may select a conditional
+  structural repair;
+- model training, official performance evaluation and every paper claim remain
+  blocked.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)

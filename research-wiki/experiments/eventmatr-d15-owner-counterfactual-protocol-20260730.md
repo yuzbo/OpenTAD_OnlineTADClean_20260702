@@ -573,12 +573,16 @@ This section is append-only and supersedes the v1 completion and routing
 contracts without changing the historical record above. The external review
 input has SHA-256
 `a2f0511ac97225cad2f69c11ee124e8a5a3b57f6aa95c41bf22403c7feb1dc0b`.
-The amended v2 implementation is frozen and pushed on
+The amended v2 implementation was first frozen and pushed on
 `codex/eventmatr-d1` at commit
 `ffff9e43fd2c5af7d6440bb4cf4fb34a37040260`, tree
-`adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`. This source identity authorizes
-only exact remote tests, preflight and the complete diagnostic rerun described
-below; it does not authorize model training or a performance claim.
+`adb00a25ec4f4ab087adc72f0e6c891e6c6b1bee`. Remote preflight then exposed one
+stale-test contract and one summary-only name error. The source-exact execution
+identity after those two non-scientific repairs is commit
+`dc530e2d99f928b1455a6e137f708306cc00d91c`, tree
+`14e9aeb886e85df5dfb2fd3b321f39597eb040c9`. This identity authorizes only exact
+remote tests, preflight and the complete diagnostic rerun described below; it
+does not authorize model training or a performance claim.
 
 ### Invalidated v1 attempt
 
@@ -587,8 +591,9 @@ lifecycle control required all `3,003` visible births to produce an observed
 END. The run correctly produced only `3,001` END transitions: two events were
 still active when their streams ended. The v1 runner then raised
 `positive control end_count did not close: 3001 != 3003` before writing the
-scan object, final source identity or final receipt. Its approximately
-3.38-GB partial trace is retained as forensic execution evidence only. It is
+scan object, final source identity or final receipt. Its partial trace contains
+`4,298,731,909` bytes (approximately `4.00 GiB`) and is retained as forensic
+execution evidence only. It is
 not an admissible source for a structural route, a model decision or a paper
 claim.
 
@@ -742,3 +747,49 @@ selected structure must first pass synthetic lifecycle, official one-batch,
 conversion, full-file suppression, ranking parity and common-initialization
 hashes remain separate official-comparability debts. Until those debts close,
 no result is paper-comparable.
+
+### Source-exact v2 preflight and complete rerun launch — 2026-08-02
+
+The executable v2 source is commit
+`dc530e2d99f928b1455a6e137f708306cc00d91c`, tree
+`14e9aeb886e85df5dfb2fd3b321f39597eb040c9`, on
+`codex/eventmatr-d1`. Its manifest SHA-256 is
+`27d6e1143812c3c4033c5a0d39cc17d58667f6727cde3d7c1d4e61f84747f9af`.
+The transfer bundle SHA-256 is
+`66f0861163448137a8e9666bf7556e51ea5c777a4e55b17ba1050b1b5676ee13`, and
+the exact remote checkout is
+`/data/run01/sczc063/yuzibo/EventMATR_D15_dc530e2d`.
+
+The append-only preflight ledger is:
+
+1. job `1213432`, root
+   `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/preflight_ffff9e4_20260802_r1`,
+   failed before any model/data scan because seven historical v1 routing tests
+   still called the old interface and asserted the superseded route contract;
+2. job `1213433`, root
+   `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/preflight_e957ce8_20260802_r2`,
+   passed all `177` then-current tests, the synthetic mechanisms, official
+   one-batch smoke and the 12-batch forward, then failed while constructing the
+   summary because a local variable name was undefined. It wrote no admissible
+   final diagnostic receipt;
+3. job `1213434`, root
+   `/data/run01/sczc063/yuzibo/runs/eventmatr_d15/preflight_dc530e2_20260802_r3`,
+   completed `0:0` in `3:25` with empty stderr. All `178` tests passed, followed
+   by the synthetic mechanisms, official one-batch smoke and 12-batch
+   chronological diagnostic. The independent lifecycle census closed at
+   `3,007` annotations, `3,003` visible births, `3,001` observable ends, two
+   right-censored events, four unobservable events and `56,551` alive rows.
+
+The successful preflight-script SHA-256 is
+`7fe4104817eb1d52c0a3ecacf83dafc8f9c19fa8b8a392202bad5c17e4246d06`.
+It retained `test_access=false`, did not update a checkpoint, and reported
+`strict_causal_paper_result_valid=false`.
+
+The complete source-exact diagnostic is Slurm job `1213435` under
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/formal_dc530e2_20260802_r1`.
+Its submission-script SHA-256 is
+`5be6587e7a09d298fdf21351214af178851c6427c2018a4cba3494e197ca5528`.
+It started on node `g0006` at `2026-08-02T01:49:28` with a 24-hour limit. At
+the final launch audit it was running, its trace was growing and stderr was
+empty. No route effect, model branch, training authorization or paper result
+exists until the fail-closed final receipt has been independently validated.
