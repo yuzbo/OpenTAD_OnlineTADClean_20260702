@@ -939,6 +939,7 @@ Paper boundary:
 Current wiki nodes:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
 - [decision_register.md#dr-044-correct-d14-counter-semantics-and-freeze-the-d15-admission-by-identity-diagnostic](decision_register.md)
 
 ## T27 — D1.5 implementation frozen before remote execution
@@ -1120,6 +1121,37 @@ Scientific boundary:
   structural repair;
 - model training, official performance evaluation and every paper claim remain
   blocked.
+
+Current wiki node:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T32 — Complete D1.5 v2 scan retained; finalizer-only recovery started
+
+Date: 2026-08-02
+
+Execution result:
+
+- job `1213435` completed all `3,270` batches and wrote the complete scan,
+  start/final source identities and `4,359,073,296`-byte chronological trace;
+- it then failed `1:0` after `13:55:16` because the wrapper invoked the finalizer
+  as a file while the finalizer imports a top-level `scripts` module;
+- no final receipt exists, so no route result is accepted from the scan alone;
+- the scan and trace hashes are frozen and the positive control reports
+  `3,003` births, `3,001` ends/emissions and two right-censored active records.
+
+Recovery:
+
+- two independent read-only audits confirmed that finalization can safely be
+  rerun without repeating the model scan, provided the exact clean
+  `dc530e2d...` checkout and all original artifact hashes remain unchanged;
+- permanent wrapper repair
+  `0419a0ff94ea26513a5282f2be90e184cdffd3c6` uses module invocation and adds a
+  source-contract regression test;
+- recovery job `1214235` is rereading and validating the original complete
+  trace after all four retained-artifact hashes passed;
+- only its fail-closed receipt may select the next structural task. Training,
+  official performance and paper conclusions remain blocked.
 
 Current wiki node:
 

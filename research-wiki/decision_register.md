@@ -2007,7 +2007,7 @@ Reversibility:
 
 ## DR-045: Invalidate the D1.5 v1 Closure and Require a Right-Censored, Event-Level Full Rerun
 
-Status: v2 preflight passed; complete diagnostic rerun active.
+Status: v2 full scan retained; fail-closed finalizer recovery active.
 
 Decision:
 
@@ -2072,8 +2072,11 @@ Source:
   `14e9aeb886e85df5dfb2fd3b321f39597eb040c9`, pushed to
   `codex/eventmatr-d1`;
 - failed Slurm job `1207954` and its append-only forensic root.
-- successful source-exact preflight job `1213434` and active complete diagnostic
-  job `1213435`; neither is a model-training or paper-performance experiment.
+- successful source-exact preflight job `1213434`; job `1213435` retained a
+  complete scan but failed at the direct-file finalizer import before receipt;
+- module-invocation repair `0419a0ff94ea26513a5282f2be90e184cdffd3c6`
+  and finalizer-only recovery job `1214235`; neither changes the original scan
+  source or authorizes a model-training or paper-performance experiment.
 
 Reversibility:
 

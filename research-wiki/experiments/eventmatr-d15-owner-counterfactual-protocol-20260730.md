@@ -793,3 +793,47 @@ It started on node `g0006` at `2026-08-02T01:49:28` with a 24-hour limit. At
 the final launch audit it was running, its trace was growing and stderr was
 empty. No route effect, model branch, training authorization or paper result
 exists until the fail-closed final receipt has been independently validated.
+
+### Complete scan retained; finalizer invocation recovery — 2026-08-02
+
+Job `1213435` finished the complete source-exact scan and wrote both source
+identities, the scan object and the chronological trace, then exited `1:0` after
+`13:55:16` before producing a receipt. The failure was the final wrapper's
+direct-file invocation: `python3 scripts/finalize_eventmatr_d15_owner_counterfactual.py`
+could not resolve the finalizer's `scripts.eventmatr_d15_statistics` import. It
+was not a model-forward, scan, data, trace or statistical-gate failure.
+
+The retained artifacts are:
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `source_identity_start.json` | 384 | `87d1c195f061fbcf10c36409b745ce08fa6b7764bdbb12ec740136ffff25c00c` |
+| `source_identity_final.json` | 384 | `87d1c195f061fbcf10c36409b745ce08fa6b7764bdbb12ec740136ffff25c00c` |
+| `owner_counterfactual.json` | 1,979,888 | `92d816b1e6c8d4890757c0147f41d3b33ab3652223b3ab71e42340da1d3d90c1` |
+| `owner_counterfactual_trace.jsonl.gz` | 4,359,073,296 | `4ed11c6ed002cccb05191f23eb5e9d50eb5d438c2b91bbde6526fc56fc05f528` |
+
+The scan reported the preregistered complete-prefix census and positive-control
+closure, including `3,003 = 3,001 + 2`. It is still not admissible for routing
+without the finalizer's independent trace reconstruction and fail-closed
+receipt.
+
+Two independent read-only audits agreed that the scan need not be repeated.
+The finalizer loads the completed scan and both identities, validates all linked
+hashes, rereads the complete trace, reconstructs every route/event outcome and
+only then writes the previously absent receipt. Recovery must run from the
+unchanged clean `dc530e2d...` checkout and may add only that missing receipt to
+the original append-only evidence root.
+
+The permanent wrapper repair changes only the invocation to
+`python3 -m scripts.finalize_eventmatr_d15_owner_counterfactual`; it is commit
+`0419a0ff94ea26513a5282f2be90e184cdffd3c6`, tree
+`94dcb480575231737cad922a23585bb72d5ad521`, with a source-contract regression
+test. The first recovery submission root ended before scheduling because an
+explicit memory request conflicted with the partition policy; it produced no
+job and no receipt. Recovery job `1214235` uses the unchanged original scan
+source under
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d15/finalizer_dc530e2_20260802_r2`;
+its script SHA-256 is
+`b93686e0edc1c6b5b1b7693fc56bddcaec6076aff0c47c1184bde5cbed182f6e`.
+At this record point it is running after all four retained-artifact hashes pass.
+No structural route, model implementation, training or paper claim is released.
