@@ -986,3 +986,26 @@ The preregistered interpretation is:
 This D1.5.1 result remains diagnostic-only. Even a decisive result can at most
 select the mechanism to implement and test; it cannot authorize training or an
 official paper comparison by itself.
+
+### D1.5.1 execution launch — 2026-08-03
+
+The frozen analyzer was implemented and pushed at commit
+`adcb0db3153e701644af5338335f266e80badeff`, tree
+`cd4da1f7a1f2866a39c399bccecc71262b4390db`. The analyzer and Slurm wrapper
+SHA-256 values are respectively
+`0c48440f6eca91c0f48eff2407686e9bfc36c7273fb8a010a69fccf9f55c0779`
+and `b3d471997733618c5dd711a9da3d8f13eacd5e719122561d41f9b5b1c2c154f7`;
+the complete source bundle SHA-256 is
+`405eec917037da902f0a7c6cc08d18f1fd047b6623a90bd8099b07c8bf26df8e`.
+
+Cluster preflight array element `1215353` completed `0:0` on `g0005` in eight
+seconds. All `14` selected pure-Python contracts passed, stderr was empty, and
+the frozen inputs reconstructed exactly `3,007` lifecycle annotations,
+`24,024` visible-event route outcomes and `24,008` fully-observed event/route
+analysis units. The full read-only trace job is `1215356`, with append-only root
+`/data/run01/sczc063/yuzibo/runs/eventmatr_d151/endpoint_margin_adcb0db_20260803_r1`
+and submission-script SHA-256
+`d79aa09243b06787539fa651f74b3a0db8c08937f7e61434c4c13b6d20e65fb6`.
+The cluster requires a nominal GPU allocation for every job, but this analyzer
+does not import or load a model, execute a forward pass, construct an optimizer,
+update a checkpoint or access the locked test split.
