@@ -929,10 +929,10 @@ to a new append-only diagnostic root rather than modifying the D1.5 evidence.
 The analysis unit is one annotated target event within one channel/route.
 Right-censored events remain excluded from endpoint denominators. Ground-truth
 end is used only as an evaluation sidecar and is never fed to model state. The
-temporal bins are frozen before execution as `< -64`, `[-64, -1]`, `[0, 64]`
+temporal bins are frozen before execution as `< -64`, `[-64, 0)`, `[0, 64]`
 and `> 64` feature steps from the annotated end. Duration strata are frozen as
-`<=8`, `9-16`, `17-32`, `33-64` and `>64` feature steps. No alternative window
-or stratum may be substituted after seeing the output.
+`<=8`, `(8,16]`, `(16,32]`, `(32,64]` and `>64` feature steps. No alternative
+window or stratum may be substituted after seeing the output.
 
 For every channel/route and temporal bin, the diagnostic must report:
 
@@ -947,22 +947,29 @@ For every channel/route and temporal bin, the diagnostic must report:
 6. the same summaries by frozen duration stratum, with class labels descriptive
    only and never used for routing.
 
+Event-level medians and 95th percentiles use the deterministic nearest-rank
+definition on sorted finite per-event values. Endpoint-positive rates and the
+paired `OR-OF` rate difference use `10,000` common video-cluster bootstrap
+resamples with seed `52017` and percentile 95% intervals. These resamples and
+the rules below are frozen before the trace is read.
+
 The preregistered interpretation is:
 
-- if a no-cancel oracle shadow has at least `5%` target-linked events with a
-  positive maximum END margin inside `[-64,64]`, while its formal partner has
-  none, cancellation/transition policy is a material primary bottleneck and
-  only a prospective hold/cancel diagnostic may be designed next;
-- if that proportion remains below `5%` and the median plus 95th percentile of
-  per-event maximum END margin inside `[-64,64]` are both non-positive, the
-  frozen owner END representation/risk objective is insufficient even after
-  perfect admission and identity; cancellation remains contributory but is not
-  the selected repair;
+- if an oracle no-cancel shadow has a point rate of at least `5%`, its bootstrap
+  interval excludes zero, and its formal partner has none, cancellation/
+  transition policy is a material primary bottleneck and only a prospective
+  hold/cancel diagnostic may be designed next;
+- if both oracle-shadow point rates are below `5%`, both upper bootstrap bounds
+  are below `5%`, and both the median and 95th percentile of per-event maximum
+  END margin inside `[-64,64]` are non-positive, the frozen owner END
+  representation/risk objective is insufficient even after perfect admission
+  and identity; cancellation remains contributory but is not the selected
+  repair;
 - if positive END margins are common but target-backed emissions fail to match
   them, route/state-machine accounting must be repaired before any model work;
-- if the two oracle identity routes differ by at least five percentage points
-  on the same event-level positive-margin outcome, identity attribution remains
-  unresolved and no architecture is selected;
+- if the paired oracle identity-route difference is at least five percentage
+  points in absolute value and its bootstrap interval excludes zero, identity
+  attribution remains unresolved and no architecture is selected;
 - any uncovered, mixed or confidence-unstable case remains unresolved. The
   response is another preregistered diagnostic, never a lowered threshold.
 
