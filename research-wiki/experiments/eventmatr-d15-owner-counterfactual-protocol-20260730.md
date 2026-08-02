@@ -953,6 +953,16 @@ paired `OR-OF` rate difference use `10,000` common video-cluster bootstrap
 resamples with seed `52017` and percentile 95% intervals. These resamples and
 the rules below are frozen before the trace is read.
 
+If multiple runtime records link to one annotated event, all decision rows
+contribute to temporal-bin counts and the per-event maximum END margin. The
+event's first-decision cancel margin is taken from the earliest linked
+first-decision row, breaking a same-frame tie by the lowest runtime event ID.
+At the nearest pre- or post-end frame, the maximum END margin across linked
+records is used. A state-machine mismatch means that at least `5%` of the fixed
+event denominator has an unsuppressed positive-END winner in `[-64,64]` without
+a same-row target-backed `end+emit`; isolated cases remain reported integrity
+findings but do not select the route.
+
 The preregistered interpretation is:
 
 - if an oracle no-cancel shadow has a point rate of at least `5%`, its bootstrap
