@@ -83,7 +83,7 @@ python3 scripts/verify_source_identity.py \
   --expected-tree "${MATR_D15_SOURCE_TREE}" \
   --expected-manifest-sha256 "${MATR_D15_MANIFEST_SHA256}"
 
-python3 scripts/finalize_eventmatr_d15_owner_counterfactual.py \
+python3 -m scripts.finalize_eventmatr_d15_owner_counterfactual \
   --scan "${SCAN}" \
   --source-identity-start "${START_IDENTITY}" \
   --source-identity-final "${FINAL_IDENTITY}" \

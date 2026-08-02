@@ -202,6 +202,8 @@ def test_d15_slurm_wrapper_keeps_three_source_identities_separate() -> None:
         "--diagnostic-source-tree",
     ):
         assert option in source
+    assert "python3 -m scripts.finalize_eventmatr_d15_owner_counterfactual" in source
+    assert "python3 scripts/finalize_eventmatr_d15_owner_counterfactual.py" not in source
 
 
 def test_d1_microexperiment_receipt_is_diagnostic_only() -> None:
