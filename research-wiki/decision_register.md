@@ -2084,3 +2084,59 @@ Reversibility:
   cannot retroactively validate v1 or itself establish performance or novelty.
 - If no comparison meets both the preregistered effect floor and uncertainty
   gate, the correct outcome is an unresolved route, not a lowered threshold.
+
+## DR-046: Close D1.5 Without a Structural Winner and Permit Only Frozen-Trace Refinement
+
+Status: accepted; D1.5.1 read-only diagnostic preregistered.
+
+Decision:
+
+> Accept D1.5 v2 as an integrity-valid negative routing result. Do not implement
+> or train a model from it. Identity refresh and oracle-visible admission have
+> zero formal endpoint effect, while no-cancel recovery is real but far below
+> the frozen materiality and uncertainty gates. The only next action is a
+> preregistered temporal END-margin reaggregation of the existing frozen trace.
+
+Reason:
+
+- recovery job `1214235` completed `0:0`; its receipt is
+  `f28d2ca243ed5bfc68f4cdf2d0dd20eb13899c6ccd3edc929f81d1208990a358`;
+- all formal routes produce zero same-event endpoint closure and all formal
+  paired contrasts are exactly zero;
+- every oracle-admitted formal record is cancelled at its first owner decision;
+- suppressing cancellation recovers only `7`, `6`, `3` and `3` successes from
+  `3,001` observable endpoints, with intervals including zero and adjusted
+  p-values at least `0.9835`;
+- no-cancel is therefore an enabling cause but not a sufficient repair;
+- the frozen evidence cannot yet separate owner representation failure from
+  competing-risk/logit-learning failure, so a model change would be premature;
+- independent recomputation reproduces the complete paired object exactly at
+  canonical SHA-256
+  `65c9471037baa3880caff9c8600a1db47d701c0ecc59456b161ba606cc0250a2`.
+
+Resolution:
+
+1. preserve `model_implementation_authorized=false` and
+   `model_training_authorized=false`;
+2. preserve the five-percentage-point relevance floor; do not search or lower
+   thresholds;
+3. run only D1.5.1 on the existing train-only trace, with fixed endpoint and
+   duration bins registered before execution;
+4. use ground-truth endpoints only as an evaluation sidecar, never as model
+   input or deployable inference state;
+5. allow D1.5.1 to select a future mechanism test but not training or paper
+   performance;
+6. keep locked test, multiple seeds, longer pilots, raw RGB and official
+   comparison blocked.
+
+Source:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md);
+- [experiments/eventmatr-d15-integrity-audit-20260802.md](experiments/eventmatr-d15-integrity-audit-20260802.md);
+- final recovery job `1214235` and the original job `1213435` evidence root.
+
+Reversibility:
+
+- D1.5.1 may leave the route unresolved or select one prospective mechanism
+  diagnostic. It cannot turn D1.5 into a performance result.
+- Any future model repair requires a new decision record after D1.5.1 closes.

@@ -1,0 +1,29 @@
+{
+  "audit_date": "2026-08-02",
+  "diagnostic_source_commit": "dc530e2d99f928b1455a6e137f708306cc00d91c",
+  "diagnostic_source_tree": "14e9aeb886e85df5dfb2fd3b321f39597eb040c9",
+  "grades": {
+    "causal_and_lifecycle_contracts": "A_DIAGNOSTIC_ONLY",
+    "data_partition": "A_WITH_NAMING_DISCLOSURE",
+    "execution_immutability": "A",
+    "recovery_chain": "A_WITH_EVIDENCE_SCOPE_NOTE",
+    "source_and_provenance": "A",
+    "statistical_contract": "A"
+  },
+  "hashes": {
+    "paired_analysis_canonical_sha256": "65c9471037baa3880caff9c8600a1db47d701c0ecc59456b161ba606cc0250a2",
+    "receipt_sha256": "f28d2ca243ed5bfc68f4cdf2d0dd20eb13899c6ccd3edc929f81d1208990a358",
+    "scan_sha256": "92d816b1e6c8d4890757c0147f41d3b33ab3652223b3ab71e42340da1d3d90c1",
+    "source_identity_sha256": "87d1c195f061fbcf10c36409b745ce08fa6b7764bdbb12ec740136ffff25c00c",
+    "trace_sha256": "4ed11c6ed002cccb05191f23eb5e9d50eb5d438c2b91bbde6526fc56fc05f528"
+  },
+  "paper_performance_eligible": false,
+  "receipt_status": "PASS_DIAGNOSTIC",
+  "routing_decision": {
+    "authorized_next_intervention": "no_model_repair_until_diagnostic_refinement",
+    "diagnosis": "no_preregistered_material_structural_effect",
+    "model_implementation_authorized": false,
+    "model_training_authorized": false
+  },
+  "verdict": "A_DIAGNOSTIC_INTEGRITY_NOT_PAPER_PERFORMANCE"
+}

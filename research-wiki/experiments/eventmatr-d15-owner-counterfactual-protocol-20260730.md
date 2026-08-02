@@ -837,3 +837,135 @@ its script SHA-256 is
 `b93686e0edc1c6b5b1b7693fc56bddcaec6076aff0c47c1184bde5cbed182f6e`.
 At this record point it is running after all four retained-artifact hashes pass.
 No structural route, model implementation, training or paper claim is released.
+
+### Finalizer recovery completed; D1.5 v2 routing closed — 2026-08-02
+
+Finalizer-only recovery job `1214235` completed `0:0` in `00:47:00` on `g0014`
+with empty stderr. It reread the original complete trace and added only the
+previously missing receipt to the original evidence root. The recovery receipt
+is `33,961,025` bytes with SHA-256
+`f28d2ca243ed5bfc68f4cdf2d0dd20eb13899c6ccd3edc929f81d1208990a358`.
+The retained scan remains
+`92d816b1e6c8d4890757c0147f41d3b33ab3652223b3ab71e42340da1d3d90c1`,
+and the start/final source identities remain byte-identical at
+`87d1c195f061fbcf10c36409b745ce08fa6b7764bdbb12ec740136ffff25c00c`.
+
+The receipt status is `PASS_DIAGNOSTIC`. Its semantics are explicitly
+`integrity_and_routing_pass_not_model_performance_or_paper_pass`. It preserves
+`test_access=false`, `checkpoint_updated=false`, `optimizer_step_count=0`,
+`threshold_search=false`, `locked_test_release=false`,
+`official_comparison_release=false`, `paper_claim_release=false`,
+`paper_performance_valid=false` and
+`strict_causal_paper_result_valid=false`. The registered feature filename
+contains `val`, but it is the manifest-bound THUMOS training/validation split;
+the locked benchmark test split was not accessed.
+
+The complete event-level outcomes are:
+
+| Channel/route | Observable ends | Primary success | Near-end END | Immutable emission | Premature cancel | Unresolved identity | Ambiguous identity |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `PF/formal` | 3,001 | 0 | 0 | 0 | 838 | 2,121 | 708 |
+| `PR/formal` | 3,001 | 0 | 0 | 0 | 838 | 2,121 | 708 |
+| `OF/formal` | 3,001 | 0 | 0 | 0 | 2,995 | 0 | 0 |
+| `OR/formal` | 3,001 | 0 | 0 | 0 | 2,995 | 0 | 0 |
+| `PF/shadow` | 3,001 | 3 | 3 | 9 | 0 | 911 | 0 |
+| `PR/shadow` | 3,001 | 3 | 3 | 9 | 0 | 911 | 0 |
+| `OF/shadow` | 3,001 | 7 | 7 | 21 | 0 | 0 | 0 |
+| `OR/shadow` | 3,001 | 6 | 6 | 20 | 0 | 0 | 0 |
+
+Every formal owner decision that exists starts in the cancel state. The oracle
+admission routes create and link exactly `3,003` target records, then cancel all
+`3,003` at lifetime one; neither formal oracle route produces an END or
+emission. The no-cancel oracle shadows keep those same records alive and expose
+only `21` and `20` END/emission transitions, of which only `7` and `6` lie in
+the frozen symmetric 64-step endpoint window. Predicted-admission shadows
+produce `333` runtime END/emissions, but only `9` are target-backed and only `3`
+are near the paired target endpoint. There is no capacity exhaustion, silent
+record loss or END-without-emission fault.
+
+All three formal paired effects are exactly zero with confidence interval
+`[0, 0]`, Holm-adjusted `p=1`, and zero net improved events. The four no-cancel
+effects are `7/3001`, `6/3001`, `3/3001` and `3/3001`, respectively. Their
+effects are approximately `0.233%`, `0.200%`, `0.100%` and `0.100%`; every
+interval includes zero, every adjusted p-value is at least `0.9835`, and all
+are far below the frozen five-percentage-point relevance floor (`151` net
+events). The floor is not lowered after seeing these results.
+
+An independent deterministic recomputation of the complete paired analysis is
+byte-equivalent as a Python value. Both stored and recomputed canonical objects
+have SHA-256
+`65c9471037baa3880caff9c8600a1db47d701c0ecc59456b161ba606cc0250a2`.
+The independent integrity audit is recorded in
+[eventmatr-d15-integrity-audit-20260802.md](eventmatr-d15-integrity-audit-20260802.md).
+
+The routing decision is therefore final:
+
+```text
+diagnosis = no_preregistered_material_structural_effect
+authorized_next_intervention = no_model_repair_until_diagnostic_refinement
+model_implementation_authorized = false
+model_training_authorized = false
+```
+
+This result falsifies identity refresh and oracle-visible admission as a
+material standalone repair under the frozen primary endpoint. No-cancel is a
+necessary enabling intervention for any observed endpoint, but its recovery is
+too small to make cancellation the sole or sufficient bottleneck. The evidence
+does not yet distinguish an owner representation failure from a learned
+competing-risk/logit-calibration failure; that attribution requires a frozen
+read-only temporal-margin analysis. No model patch, short pilot, longer run,
+multiple seed, threshold search, raw-RGB experiment, locked-test evaluation or
+paper claim is authorized.
+
+### Registered D1.5.1 endpoint-margin trace refinement — 2026-08-02
+
+The only authorized next experiment is a read-only reaggregation of the frozen
+D1.5 v2 trace. It performs no model loading, forward pass, backward pass,
+optimizer step, checkpoint write, data resampling or threshold search. Its
+inputs are fixed to the receipt, scan and trace hashes above, the `3,001`
+fully-observed event denominator, and the exact D1.5 source identity. It writes
+to a new append-only diagnostic root rather than modifying the D1.5 evidence.
+
+The analysis unit is one annotated target event within one channel/route.
+Right-censored events remain excluded from endpoint denominators. Ground-truth
+end is used only as an evaluation sidecar and is never fed to model state. The
+temporal bins are frozen before execution as `< -64`, `[-64, -1]`, `[0, 64]`
+and `> 64` feature steps from the annotated end. Duration strata are frozen as
+`<=8`, `9-16`, `17-32`, `33-64` and `>64` feature steps. No alternative window
+or stratum may be substituted after seeing the output.
+
+For every channel/route and temporal bin, the diagnostic must report:
+
+1. target-linked event coverage and decision-row counts;
+2. cancel/continue/END winner counts and per-event maximum END margin;
+3. events with positive maximum END margin, target-backed END, immutable
+   emission and primary endpoint closure;
+4. first-decision cancel margin, first post-end END margin and the change from
+   the last pre-end decision when both exist;
+5. unresolved/ambiguous identity, pre-end cancellation and events surviving to
+   an actually observed endpoint;
+6. the same summaries by frozen duration stratum, with class labels descriptive
+   only and never used for routing.
+
+The preregistered interpretation is:
+
+- if a no-cancel oracle shadow has at least `5%` target-linked events with a
+  positive maximum END margin inside `[-64,64]`, while its formal partner has
+  none, cancellation/transition policy is a material primary bottleneck and
+  only a prospective hold/cancel diagnostic may be designed next;
+- if that proportion remains below `5%` and the median plus 95th percentile of
+  per-event maximum END margin inside `[-64,64]` are both non-positive, the
+  frozen owner END representation/risk objective is insufficient even after
+  perfect admission and identity; cancellation remains contributory but is not
+  the selected repair;
+- if positive END margins are common but target-backed emissions fail to match
+  them, route/state-machine accounting must be repaired before any model work;
+- if the two oracle identity routes differ by at least five percentage points
+  on the same event-level positive-margin outcome, identity attribution remains
+  unresolved and no architecture is selected;
+- any uncovered, mixed or confidence-unstable case remains unresolved. The
+  response is another preregistered diagnostic, never a lowered threshold.
+
+This D1.5.1 result remains diagnostic-only. Even a decisive result can at most
+select the mechanism to implement and test; it cannot authorize training or an
+official paper comparison by itself.

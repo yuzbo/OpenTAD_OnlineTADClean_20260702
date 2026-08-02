@@ -1156,3 +1156,45 @@ Recovery:
 Current wiki node:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+
+## T33 — D1.5 v2 closes negative; frozen-trace endpoint diagnosis is next
+
+Date: 2026-08-02
+
+Execution result:
+
+- finalizer-only recovery job `1214235` completed `0:0` in `00:47:00` with
+  empty stderr and produced the fail-closed `PASS_DIAGNOSTIC` receipt;
+- receipt SHA-256 is
+  `f28d2ca243ed5bfc68f4cdf2d0dd20eb13899c6ccd3edc929f81d1208990a358`;
+- the original scan, trace and source identities retain their frozen hashes;
+- an independent full event-level recomputation exactly matches the stored
+  paired analysis at canonical SHA-256
+  `65c9471037baa3880caff9c8600a1db47d701c0ecc59456b161ba606cc0250a2`.
+
+Scientific result:
+
+- admission and identity-refresh formal effects are all exactly zero;
+- every oracle-admitted formal record selects cancel at its first decision;
+- no-cancel shadows recover only `7/3001`, `6/3001`, `3/3001` and `3/3001`
+  primary endpoints, below the five-percentage-point floor with uncertainty
+  intervals crossing zero;
+- cancellation is causally contributory but cannot explain the remaining END
+  failure alone;
+- the final route is `no_model_repair_until_diagnostic_refinement`; model
+  implementation and model training remain unauthorized.
+
+Next action:
+
+- D1.5.1 is preregistered as a read-only reaggregation of the existing trace,
+  with fixed temporal/duration bins and no model forward, training, threshold
+  search or locked-test access;
+- it will test whether END margins remain non-positive around observable target
+  endpoints even under oracle admission and retained records;
+- its result can select a later mechanism diagnostic but cannot itself become a
+  paper-performance result.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+- [experiments/eventmatr-d15-integrity-audit-20260802.md](experiments/eventmatr-d15-integrity-audit-20260802.md)

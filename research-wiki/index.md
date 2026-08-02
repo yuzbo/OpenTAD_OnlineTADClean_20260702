@@ -75,10 +75,13 @@ source-exact preflight in job `1213434`: `178` tests, synthetic mechanisms,
 official one-batch smoke and the 12-batch chronological diagnostic all passed.
 Job `1213435` completed the full scan but failed at the finalizer's direct-file
 Python import before producing a receipt. Its complete scan and 4.36-GB trace
-are retained with exact hashes. Finalizer-only recovery job `1214235` is the
-only active action; it rereads the original trace from the unchanged scan
-source. No route result, model training authorization or paper-comparable result
-is currently available.
+are retained with exact hashes. Finalizer-only recovery job `1214235` completed
+`0:0` and produced an integrity-valid diagnostic receipt. Every formal paired
+effect is zero; no-cancel recovers only `3-7` of `3,001` observable endpoints,
+well below the frozen five-percentage-point relevance floor with uncertainty
+intervals crossing zero. The final route authorizes no model repair or training.
+Only the preregistered D1.5.1 read-only endpoint-margin analysis of the existing
+trace may proceed. No paper-comparable result is available.
 
 ## Ideas
 
@@ -161,7 +164,7 @@ is currently available.
 
 | Node | Verdict | Use |
 |---|---|---|
-| [exp:eventmatr-d15-owner-counterfactual-20260730](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md) | v1 invalid; v2 scan complete; finalizer recovery running | Records the four-channel frozen-checkpoint diagnostic, exact failures, right-censored positive control, event-level effect gate, source-exact recovery and conditional MATR-internal architecture route. |
+| [exp:eventmatr-d15-owner-counterfactual-20260730](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md) | v1 invalid; v2 diagnostic closed negative; read-only trace refinement registered | Records the four-channel frozen-checkpoint diagnostic, right-censored positive control, event-level effect gate, negative routing result, integrity audit and the only permitted endpoint-margin refinement. |
 | [exp:eventmatr-d11-structural-repair-20260729](experiments/eventmatr-d11-structural-repair-design-20260729.md) | D1.4 structure gate failed; decision-aligned birth is live but owner end/emission remain zero | Records the accepted/corrected Pro advice, D1.1-D1.4 exact-source evidence, official-data hashes, causal assignment, ternary owner, interval-risk interventions, cancel-dominated owner diagnosis and the unchanged official-comparability boundary. |
 | [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |
 | [exp:ontad-rgb-dynamic-event-memory-design-20260722](experiments/ontad-rgb-dynamic-event-memory-design-20260722.md) | Pro review package ready | Freezes raw-RGB outcome, native-only official baselines, neutral parity interfaces, identifiable fusion hypotheses, parallel DAG, and a mandatory competitor/novelty audit before implementation. |
