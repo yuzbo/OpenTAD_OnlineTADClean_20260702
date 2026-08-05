@@ -1198,3 +1198,51 @@ Current wiki nodes:
 
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
 - [experiments/eventmatr-d15-integrity-audit-20260802.md](experiments/eventmatr-d15-integrity-audit-20260802.md)
+
+## T34 — D1.5.1 closes endpoint attribution and selects design-only risk repair
+
+Date: 2026-08-05
+
+Execution closure:
+
+- read-only job `1215356` completed `0:0` in `00:42:39` with empty stderr;
+- receipt SHA-256 is
+  `ef5a437d613c92b08111ceb3764c10ed39872d532948b8892c2464461e22e4c5`;
+- clean start/final source identities match exact commit
+  `adcb0db3153e701644af5338335f266e80badeff`, tree
+  `cd4da1f7a1f2866a39c399bccecc71262b4390db`;
+- independent recomputation of all `24,008` event rows, duration/temporal
+  summaries and `10,000` video-cluster resamples reports zero mismatches.
+
+Scientific result:
+
+- all formal routes have zero positive endpoint END margin;
+- no-cancel shadows recover only `7/3001`, `6/3001`, `3/3001` and `3/3001`;
+- both oracle-shadow 95th-percentile END margins remain negative and their upper
+  uncertainty bounds remain below `0.6%`;
+- identity refresh and state-machine accounting do not select the route;
+- cancellation is contributory but not sufficient, while the frozen owner END
+  representation or its competing-risk learning remains insufficient.
+
+Decision:
+
+> No further Pro discussion is required to select the immediate task: the
+> preregistered table uniquely releases a policy-independent three-state
+> competing-risk design. It releases design only. Implementation and training
+> remain false until the alternatives are presented, one design is explicitly
+> approved, and a new implementation decision is recorded.
+
+Paper boundary:
+
+- `strict_causal_paper_result_valid=false` and
+  `paper_performance_valid=false` remain unchanged;
+- the result may motivate a mechanism and support an ablation rationale, but it
+  cannot appear as official detector performance;
+- matched full-budget native-MATR/EventMATR evaluation and locked test remain
+  blocked behind a future structure gate.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
+- [experiments/eventmatr-d151-integrity-audit-20260805.md](experiments/eventmatr-d151-integrity-audit-20260805.md)
+- [decision_register.md#dr-047-accept-d151-and-permit-only-a-preregistered-three-state-risk-design](decision_register.md)

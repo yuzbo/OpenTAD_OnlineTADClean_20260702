@@ -2140,3 +2140,67 @@ Reversibility:
 - D1.5.1 may leave the route unresolved or select one prospective mechanism
   diagnostic. It cannot turn D1.5 into a performance result.
 - Any future model repair requires a new decision record after D1.5.1 closes.
+
+## DR-047: Accept D1.5.1 and Permit Only a Preregistered Three-State Risk Design
+
+Status: diagnostic closed; design-only hold.
+
+Decision:
+
+> Accept job `1215356` as an integrity-valid endpoint-margin diagnostic. The
+> owner END failure persists under perfect admission, oracle identity and
+> no-cancel retention. Permit only prospective design and preregistration of a
+> policy-independent cancel/continue/end competing-risk repair inside EventMATR.
+> Do not implement or train it until the design is explicitly approved and a
+> subsequent implementation decision is recorded.
+
+Reason:
+
+- all four formal routes have zero positive endpoint END margin;
+- no-cancel shadows recover only `7`, `6`, `3` and `3` positive events from the
+  fixed `3,001`-event denominator;
+- oracle-shadow upper uncertainty bounds are below `0.6%`, not merely below the
+  frozen `5%` materiality floor;
+- oracle-shadow medians and 95th percentiles remain negative, so the failure is
+  not confined to a few threshold-adjacent events;
+- the oracle-refreshed minus oracle-free shadow difference is
+  `-0.0003332223`, with an interval ending at zero, so identity refresh is not a
+  material selected factor;
+- no route has an endpoint-positive winner without matching target-backed
+  immutable emission, excluding ledger/state-machine accounting as the selected
+  cause;
+- the result is annotation-aided after forward, contains no model execution or
+  update and explicitly forbids paper-performance use.
+
+Resolution:
+
+1. preserve the result receipt at SHA-256
+   `ef5a437d613c92b08111ceb3764c10ed39872d532948b8892c2464461e22e4c5`;
+2. preserve the independent recomputation with an empty mismatch list at
+   SHA-256
+   `0c790d69abd324bc3c4b6afab8a3c057cfcb8650e61d2400cffcde31100d05dc`;
+3. require the new design to remain inside the EventMATR model and shared
+   chronological train/inference unroll, not as output post-processing;
+4. require policy-independent at-risk accounting, event/family normalization,
+   right-censor correctness and explicit cancel/continue/end semantics;
+5. present multiple identifiable design alternatives and obtain explicit design
+   approval before implementation;
+6. after approval, require pure contracts and official-batch strict-causal smoke
+   before any new model-training request can be considered;
+7. keep five/ten/twenty-epoch pilots, locked test, multiple seeds, raw RGB,
+   threshold changes and official comparison blocked.
+
+Sources:
+
+- [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md);
+- [experiments/eventmatr-d151-integrity-audit-20260805.md](experiments/eventmatr-d151-integrity-audit-20260805.md);
+- Slurm job `1215356` and its append-only result root.
+
+Reversibility:
+
+- A preregistered implementation can lift the design-only hold only after its
+  causal and lifecycle integration tests pass. It cannot retroactively turn
+  D1.5.1 into a training or performance experiment.
+- If a design cannot isolate policy-independent risk learning from a new owner
+  representation, the correct response is a staged mechanism plan, not a fused
+  unidentifiable training run.

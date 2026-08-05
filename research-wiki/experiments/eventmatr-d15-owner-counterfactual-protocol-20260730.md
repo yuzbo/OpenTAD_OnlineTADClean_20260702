@@ -1009,3 +1009,36 @@ and submission-script SHA-256
 The cluster requires a nominal GPU allocation for every job, but this analyzer
 does not import or load a model, execute a forward pass, construct an optimizer,
 update a checkpoint or access the locked test split.
+
+### D1.5.1 final result — 2026-08-05
+
+Full trace job `1215356` completed `0:0` in `00:42:39` on `g0005`, with empty
+stderr. The receipt status is `PASS_DIAGNOSTIC`; its SHA-256 is
+`ef5a437d613c92b08111ceb3764c10ed39872d532948b8892c2464461e22e4c5`.
+Start and final source identities are byte-identical, clean and bound to
+`adcb0db3153e701644af5338335f266e80badeff` /
+`cd4da1f7a1f2866a39c399bccecc71262b4390db`.
+
+The result contains exactly `24,008` rows: `3,001` common fully observed events
+in each of eight routes. Formal endpoint-positive counts are zero in all four
+channels. No-cancel shadows yield only `7/3001`, `6/3001`, `3/3001` and
+`3/3001`. The two oracle-shadow medians are `-1.602913/-1.673983` and their 95th
+percentiles are `-0.574103/-0.586817`; upper video-bootstrap bounds are
+`0.005997/0.004984`, both far below the frozen `0.05` floor. The paired oracle
+identity-shadow difference is `-0.0003332223`, interval
+`[-0.0011223345, 0]`. There are no material state-machine mismatches.
+
+An independent implementation recomputed every route, temporal bin, duration
+stratum and all `10,000` common video-cluster resamples with zero mismatches. Its
+summary SHA-256 is
+`0c790d69abd324bc3c4b6afab8a3c057cfcb8650e61d2400cffcde31100d05dc`.
+The full integrity record is
+[eventmatr-d151-integrity-audit-20260805.md](eventmatr-d151-integrity-audit-20260805.md).
+
+The frozen routing decision is therefore
+`frozen_owner_end_representation_or_competing_risk_objective_insufficient`.
+Perfect admission, oracle identity refresh and cancellation suppression do not
+make endpoint END evidence materially positive. The only released next action
+is `preregister_policy_independent_three_state_competing_risk_model_repair`.
+Model implementation, model training, official comparison, locked-test access
+and every paper-performance claim remain blocked.
