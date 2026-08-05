@@ -9,6 +9,7 @@ from .matcher import HungarianMatcher
 from models.event_memory import (
     resolve_d13_mechanism_contracts,
     resolve_d14_birth_objective,
+    resolve_d16_risk_contract,
 )
 
 class CrossEntropyLoss(nn.Module):
@@ -157,6 +158,10 @@ class CriterionMATR(nn.Module):
             self.event_d14_variant,
             self.event_birth_objective_contract,
         ) = resolve_d14_birth_objective(args)
+        (
+            self.event_d16_variant,
+            self.event_owner_risk_contract,
+        ) = resolve_d16_risk_contract(args)
         if (
             not self.event_d1_enabled
             and self.event_d13_variant != "d12_control"
@@ -172,6 +177,11 @@ class CriterionMATR(nn.Module):
             if self.event_d13_variant != "combined":
                 raise ValueError(
                     "D1.4 must layer on the frozen D1.3 combined contract"
+                )
+        if self.event_d16_variant != "none":
+            if not self.event_d1_enabled or not self.event_d1_use_hazard:
+                raise ValueError(
+                    "D1.6 policy-independent risk requires a censored-hazard D1 lane"
                 )
         self.event_d13_event_matched_birth = (
             self.event_birth_risk_contract
@@ -833,12 +843,14 @@ class CriterionMATR(nn.Module):
             group_sources = {ragged_sources[index] for index in indices}
             for source in group_sources:
                 source_group_counts[source] = source_group_counts.get(source, 0) + 1
-            owner_state_losses.append(
-                F.cross_entropy(
-                    ragged_logits[index_tensor],
-                    ragged_targets[index_tensor],
+            state_mask = ragged_targets[index_tensor] >= 0
+            if state_mask.any():
+                owner_state_losses.append(
+                    F.cross_entropy(
+                        ragged_logits[index_tensor][state_mask],
+                        ragged_targets[index_tensor][state_mask],
+                    )
                 )
-            )
             class_mask = ragged_class_targets[index_tensor] >= 0
             if class_mask.any():
                 owner_class_losses.append(
@@ -851,37 +863,49 @@ class CriterionMATR(nn.Module):
                 false_track_groups += 1
 
             target_event_id = group_keys[indices[0]][2]
-            if target_event_id is None:
-                continue
-            for source in group_sources:
-                source_end_risk_counts[source] = (
-                    source_end_risk_counts.get(source, 0) + 1
-                )
             group_targets = ragged_targets[index_tensor]
-            end_margin = ragged_logits[index_tensor, 2] - ragged_logits[
-                index_tensor, :2
-            ].max(dim=-1).values
-            observed = group_targets == 2
-            if int(observed.sum().item()) > 1:
-                raise RuntimeError("a D1 track has more than one observed end")
-            at_risk = group_targets == 1
-            hazard_nll = F.softplus(end_margin[at_risk]).sum()
-            if observed.any():
-                observed_end_groups += 1
-                first_end = int(observed.nonzero(as_tuple=False)[0].item())
-                hazard_nll = hazard_nll + F.softplus(-end_margin[first_end])
-                end_offset_losses.append(
-                    F.smooth_l1_loss(
-                        ragged_end_offsets[index_tensor[first_end]],
-                        ragged_end_targets[index_tensor[first_end]],
+            if target_event_id is not None:
+                for source in group_sources:
+                    source_end_risk_counts[source] = (
+                        source_end_risk_counts.get(source, 0) + 1
                     )
-                )
-            # If no observed end is present, this is a right-censored track and
-            # only its survival terms contribute.
-            if self.event_d1_use_hazard:
-                end_hazard_losses.append(hazard_nll)
+                observed = group_targets == 2
+                if int(observed.sum().item()) > 1:
+                    raise RuntimeError("a D1 track has more than one observed end")
+                if self.event_d16_variant != "none" and (
+                    group_targets == 0
+                ).any():
+                    raise RuntimeError(
+                        "D1.6 target-backed risk cannot be labelled CANCEL"
+                    )
+                if observed.any():
+                    observed_end_groups += 1
+                    first_end = int(observed.nonzero(as_tuple=False)[0].item())
+                    end_offset_losses.append(
+                        F.smooth_l1_loss(
+                            ragged_end_offsets[index_tensor[first_end]],
+                            ragged_end_targets[index_tensor[first_end]],
+                        )
+                    )
+                if self.event_d16_variant == "none":
+                    end_margin = ragged_logits[index_tensor, 2] - ragged_logits[
+                        index_tensor, :2
+                    ].max(dim=-1).values
+                    at_risk = group_targets == 1
+                    hazard_nll = F.softplus(end_margin[at_risk]).sum()
+                    if observed.any():
+                        hazard_nll = hazard_nll + F.softplus(
+                            -end_margin[first_end]
+                        )
+                    # Frozen D1.5 uses this additional binary hazard. D1.6 uses
+                    # one normalized three-state competing-risk likelihood and
+                    # must not define END twice.
+                    if self.event_d1_use_hazard:
+                        end_hazard_losses.append(hazard_nll)
 
-            if len(indices) > 1:
+            if len(indices) > 1 and (
+                self.event_d16_variant == "none" or target_event_id is not None
+            ):
                 ordered = sorted(
                     indices, key=lambda item: float(group_keys[item][3])
                 )

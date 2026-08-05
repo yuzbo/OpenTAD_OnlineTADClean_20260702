@@ -41,6 +41,10 @@ _D14_BIRTH_OBJECTIVE_CONTRACTS = {
     "normalized_survival": "event_normalized_censored_hazard_v1",
     "decision_aligned_bag": "decision_aligned_interval_bag_v1",
 }
+_D16_RISK_CONTRACTS = {
+    "none": "runtime_conditioned_owner_risk_v1",
+    "policy_independent": "policy_independent_competing_risk_v1",
+}
 
 
 def resolve_d13_mechanism_contracts(args) -> Tuple[str, str, str]:
@@ -68,6 +72,19 @@ def resolve_d14_birth_objective(args) -> Tuple[str, str]:
             )
         )
     return variant, _D14_BIRTH_OBJECTIVE_CONTRACTS[variant]
+
+
+def resolve_d16_risk_contract(args) -> Tuple[str, str]:
+    """Resolve the D1.6 risk repair without changing frozen D1.5 behavior."""
+
+    variant = str(getattr(args, "event_d16_variant", "none"))
+    if variant not in _D16_RISK_CONTRACTS:
+        raise ValueError(
+            "event_d16_variant must be one of {}, got {!r}".format(
+                sorted(_D16_RISK_CONTRACTS), variant
+            )
+        )
+    return variant, _D16_RISK_CONTRACTS[variant]
 
 
 def temporal_viterbi_assignment(
@@ -730,6 +747,232 @@ class EventRecord:
     association_status: str = "unmatched"
     cancel_frame: Optional[float] = None
     last_reacquisition_mode: Optional[str] = None
+
+
+@dataclass
+class PolicyIndependentRiskRecord:
+    """Training-time owner risk that cannot be deleted by runtime policy.
+
+    Target-backed records are created from prefix-visible supervision.  An
+    unmatched predicted runtime record is kept unresolved until it is either
+    associated causally or the actual EOS is observed.  This object never enters
+    inference and contains no future-video metadata.
+    """
+
+    risk_id: int
+    video_name: str
+    owner_embedding: torch.Tensor
+    created_frame: float
+    last_frame: float
+    source: str
+    target_event_id: Optional[int] = None
+    runtime_event_id: Optional[int] = None
+    class_id: Optional[int] = None
+
+
+class PolicyIndependentRiskMemory:
+    """Chronological D1.6 at-risk set independent of runtime cancel/end actions."""
+
+    def __init__(self):
+        self._records: Dict[str, List[PolicyIndependentRiskRecord]] = {}
+        self._next_risk_id: Dict[str, int] = {}
+
+    def reset(self, video_name: Optional[str] = None) -> None:
+        if video_name is None:
+            self._records.clear()
+            self._next_risk_id.clear()
+            return
+        name = str(video_name)
+        self._records.pop(name, None)
+        self._next_risk_id.pop(name, None)
+
+    def records(self, video_name: str) -> Tuple[PolicyIndependentRiskRecord, ...]:
+        return tuple(self._records.get(str(video_name), ()))
+
+    def target_event_ids(self, video_name: str) -> Tuple[int, ...]:
+        return tuple(
+            int(record.target_event_id)
+            for record in self._records.get(str(video_name), ())
+            if record.target_event_id is not None
+        )
+
+    def _allocate(
+        self,
+        video_name: str,
+        *,
+        owner_embedding: torch.Tensor,
+        current_frame: float,
+        source: str,
+        target_event_id: Optional[int],
+        runtime_event_id: Optional[int],
+        class_id: Optional[int],
+    ) -> PolicyIndependentRiskRecord:
+        name = str(video_name)
+        frame = float(current_frame)
+        risk_id = self._next_risk_id.get(name, 0)
+        self._next_risk_id[name] = risk_id + 1
+        record = PolicyIndependentRiskRecord(
+            risk_id=risk_id,
+            video_name=name,
+            owner_embedding=owner_embedding.clone(),
+            created_frame=frame,
+            last_frame=frame,
+            source=str(source),
+            target_event_id=(
+                None if target_event_id is None else int(target_event_id)
+            ),
+            runtime_event_id=(
+                None if runtime_event_id is None else int(runtime_event_id)
+            ),
+            class_id=None if class_id is None else int(class_id),
+        )
+        self._records.setdefault(name, []).append(record)
+        return record
+
+    def ensure_target(
+        self,
+        video_name: str,
+        *,
+        target_event_id: int,
+        class_id: int,
+        owner_embedding: torch.Tensor,
+        current_frame: float,
+    ) -> PolicyIndependentRiskRecord:
+        name = str(video_name)
+        target_event_id = int(target_event_id)
+        for record in self._records.get(name, ()):
+            if record.target_event_id == target_event_id:
+                return record
+        return self._allocate(
+            name,
+            owner_embedding=owner_embedding,
+            current_frame=current_frame,
+            source="target_visible",
+            target_event_id=target_event_id,
+            runtime_event_id=None,
+            class_id=int(class_id),
+        )
+
+    def sync_unmatched_runtime(
+        self,
+        video_name: str,
+        runtime_records: Sequence[EventRecord],
+        *,
+        current_frame: float,
+    ) -> None:
+        """Retain predicted births without treating early non-match as CANCEL."""
+
+        name = str(video_name)
+        records = self._records.setdefault(name, [])
+        by_runtime = {
+            int(record.runtime_event_id): record
+            for record in records
+            if record.runtime_event_id is not None
+        }
+        for runtime in runtime_records:
+            runtime_id = int(runtime.event_id)
+            existing = by_runtime.get(runtime_id)
+            if runtime.target_event_id is not None:
+                # Once causally associated, the target-backed risk record is the
+                # unique supervised trajectory.  Drop a previously unresolved
+                # predicted shadow instead of double counting it.
+                if existing is not None:
+                    records.remove(existing)
+                continue
+            if existing is None:
+                existing = self._allocate(
+                    name,
+                    owner_embedding=runtime.owner_embedding,
+                    current_frame=current_frame,
+                    source="predicted_unresolved",
+                    target_event_id=None,
+                    runtime_event_id=runtime_id,
+                    class_id=None,
+                )
+                by_runtime[runtime_id] = existing
+
+    def owner_batch(
+        self, video_name: str, *, device, dtype, embedding_dim: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        records = self._records.get(str(video_name), ())
+        owners = torch.zeros(
+            (1, len(records), int(embedding_dim)), device=device, dtype=dtype
+        )
+        risk_ids = torch.full(
+            (1, len(records)), -1, device=device, dtype=torch.long
+        )
+        for index, record in enumerate(records):
+            owners[0, index] = record.owner_embedding.to(device=device, dtype=dtype)
+            risk_ids[0, index] = int(record.risk_id)
+        return owners, risk_ids
+
+    def metadata(self, video_name: str, risk_ids: torch.Tensor) -> List[dict]:
+        by_id = {
+            int(record.risk_id): record
+            for record in self._records.get(str(video_name), ())
+        }
+        rows = []
+        for risk_id in risk_ids.detach().cpu().reshape(-1).tolist():
+            record = by_id.get(int(risk_id))
+            if record is None:
+                raise RuntimeError("D1.6 risk record disappeared during decode")
+            rows.append(
+                {
+                    "risk_id": int(record.risk_id),
+                    "target_event_id": record.target_event_id,
+                    "runtime_event_id": record.runtime_event_id,
+                    "class_id": record.class_id,
+                    "source": record.source,
+                }
+            )
+        return rows
+
+    def update(
+        self,
+        video_name: str,
+        *,
+        risk_ids: torch.Tensor,
+        owner_embeddings: torch.Tensor,
+        current_frame: float,
+        preserve_graph: bool,
+    ) -> None:
+        name = str(video_name)
+        frame = float(current_frame)
+        by_id = {
+            int(record.risk_id): record for record in self._records.get(name, ())
+        }
+        flat_ids = risk_ids.reshape(-1)
+        flat_embeddings = owner_embeddings.reshape(
+            flat_ids.numel(), owner_embeddings.size(-1)
+        )
+        if flat_ids.numel() != flat_embeddings.size(0):
+            raise RuntimeError("D1.6 risk id/embedding width drifted")
+        for risk_id, embedding in zip(flat_ids.tolist(), flat_embeddings):
+            record = by_id.get(int(risk_id))
+            if record is None:
+                raise RuntimeError("D1.6 risk update references a missing record")
+            if frame < record.last_frame:
+                raise RuntimeError("D1.6 risk memory moved backwards in time")
+            record.last_frame = frame
+            record.owner_embedding = (
+                embedding.clone()
+                if preserve_graph
+                else embedding.detach().clone()
+            )
+
+    def close(self, video_name: str, risk_ids: Sequence[int]) -> None:
+        closing = {int(risk_id) for risk_id in risk_ids}
+        name = str(video_name)
+        self._records[name] = [
+            record
+            for record in self._records.get(name, ())
+            if int(record.risk_id) not in closing
+        ]
+
+    def detach_graph(self) -> None:
+        for records in self._records.values():
+            for record in records:
+                record.owner_embedding = record.owner_embedding.detach()
 
 
 class DynamicEventMemory:

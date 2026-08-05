@@ -1,6 +1,4 @@
-from resource import struct_rusage
 import numpy as np
-import h5py
 import json
 import torch
 import torch.utils.data as data
@@ -209,6 +207,8 @@ class THUMOS14Dataset(data.Dataset):
         print("%s subset seg numbers: %d" %(self.subset, len(self.inputs_all[0])*self.p_videos))
         
     def _loadPropLabel(self, filename):
+        import h5py
+
         if os.path.exists(filename):
             prop_label_file = h5py.File(filename, 'r')
             self.cls_label=np.array(prop_label_file['cls_label'][:])

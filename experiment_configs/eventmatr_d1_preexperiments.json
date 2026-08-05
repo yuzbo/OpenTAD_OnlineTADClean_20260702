@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v9",
+  "protocol_id": "eventmatr_d1_preexperiments_v10",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -415,6 +415,45 @@
       "release_condition": "D1.5 passes diagnostic integrity, selects one non-ambiguous minimal repair, that repair passes new strict-causal integration and structure gates, and the short-pilot science contract is prospectively frozen; all train-prefix metrics remain diagnostic-only"
     }
   ],
+  "d16_staged_redesign": {
+    "status": "risk_control_implemented_local_contracts_pass_official_batch_pending",
+    "design_record": "research-wiki/experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md",
+    "implementation_order": [
+      "R_policy_independent_competing_risk_on_current_representation",
+      "Q_persistent_event_queries_inside_both_MATR_decoders",
+      "F_combined_only_after_separate_structure_gates"
+    ],
+    "risk_contract": "policy_independent_competing_risk_v1",
+    "state_vocabulary": [
+      "CANCEL",
+      "CONTINUE",
+      "END"
+    ],
+    "true_target_risk": "starts at prefix-visible birth/recovery and is unaffected by runtime cancellation",
+    "predicted_unmatched_risk": "unresolved and loss-masked before actually observed EOS; CANCEL only at EOS if still unmatched",
+    "right_censor": "CONTINUE at actually observed EOS with no END-positive term",
+    "duplicate_end_objective": false,
+    "event_normalization": "one mean ternary likelihood per chronological track fragment, then mean across fragments",
+    "local_contracts": {
+      "status": "PASS",
+      "test_count": 190,
+      "paper_result": false
+    },
+    "official_batch_smoke": {
+      "status": "pending",
+      "script": "scripts/slurm_eventmatr_d16_risk_smoke.sh",
+      "requires": [
+        "full tests",
+        "official Toeplitz parallel-window causality",
+        "forward/backward/Adam/strict reload",
+        "event owner and both MATR decoder gradients",
+        "test_access=false",
+        "checkpoint_updated=false"
+      ]
+    },
+    "training_authorized": false,
+    "query_internalization_implemented": false
+  },
   "paper_result_boundary": {
     "status": "blocked_until_d15_routed_repair_structure_gate_and_comparability_debt_close",
     "official_parent_anchor": "native MATR",

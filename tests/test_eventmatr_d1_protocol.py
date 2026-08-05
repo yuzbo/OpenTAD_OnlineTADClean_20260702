@@ -54,10 +54,15 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v9"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v10"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
+    assert protocol["d16_staged_redesign"]["risk_contract"] == (
+        "policy_independent_competing_risk_v1"
+    )
+    assert protocol["d16_staged_redesign"]["training_authorized"] is False
+    assert protocol["d16_staged_redesign"]["query_internalization_implemented"] is False
     assert list(protocol["lanes"]) == ["N", "R", "T", "H", "TH"]
     assert protocol["lanes"]["N"]["model_variant"] == "native_matr"
     assert [
@@ -269,6 +274,30 @@ def test_d1_slurm_smoke_is_identity_gated_and_runs_real_batch_last() -> None:
     assert "run_eventmatr_d1_real_smoke.py" in source
     assert source.find("run_eventmatr_d1_real_smoke.py") > source.find("pytest")
     assert "MATR_D1_SMOKE_RECEIPT" in source
+
+
+def test_d16_risk_smoke_is_official_batch_only_and_training_locked() -> None:
+    slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d16_risk_smoke.sh"
+    ).read_text(encoding="utf-8")
+    runner = (
+        ROOT / "scripts" / "run_eventmatr_d16_risk_smoke.py"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --gpus=1" in slurm
+    assert "#SBATCH --mem" not in slurm
+    assert "python3 -m pytest" in slurm
+    assert "verify_source_identity.py" in slurm
+    assert "run_eventmatr_d16_risk_smoke.py" in slurm
+    assert "MATR_D16_SMOKE_RECEIPT" in slurm
+    assert 'args.event_d16_variant = "policy_independent"' in runner
+    assert 'args.study_protocol = "d16_mechanism"' in runner
+    assert "validate_parallel_window_causality" in runner
+    assert '"formal_training_started": False' in runner
+    assert '"test_access": False' in runner
+    assert '"threshold_search": False' in runner
+    assert '"checkpoint_updated": False' in runner
+    assert "matr_segment_decoder" in runner
+    assert "matr_memory_decoder" in runner
 
 
 def test_d1_seed52_pilot_array_is_registered_and_train_only() -> None:

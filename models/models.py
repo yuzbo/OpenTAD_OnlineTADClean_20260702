@@ -11,10 +11,12 @@ from .event_memory import (
     DynamicEventMemory,
     EventTransitionHead,
     OwnerEventDecoder,
+    PolicyIndependentRiskMemory,
     causal_single_assignment,
     d1_owner_supervision,
     resolve_d13_mechanism_contracts,
     resolve_d14_birth_objective,
+    resolve_d16_risk_contract,
     resolve_event_modes,
     resolve_model_variant,
     select_disjoint_teacher_query,
@@ -115,6 +117,11 @@ class MATR(nn.Module):
             self.event_d14_variant,
             self.event_birth_objective_contract,
         ) = resolve_d14_birth_objective(args)
+        (
+            self.event_d16_variant,
+            self.event_owner_risk_contract,
+        ) = resolve_d16_risk_contract(args)
+        self.event_d16_enabled = self.event_d16_variant != "none"
         if (
             not self.event_d1_enabled
             and self.event_d13_variant != "d12_control"
@@ -130,6 +137,11 @@ class MATR(nn.Module):
             if self.event_d13_variant != "combined":
                 raise ValueError(
                     "D1.4 must layer on the frozen D1.3 combined contract"
+                )
+        if self.event_d16_enabled:
+            if not self.event_d1_enabled or not self.event_d1_use_hazard:
+                raise ValueError(
+                    "D1.6 policy-independent risk requires a censored-hazard D1 lane"
                 )
         if self.event_enabled:
             if torch.cuda.is_available() and torch.cuda.device_count() != 1:
@@ -169,6 +181,9 @@ class MATR(nn.Module):
                 owner_state_count=3 if self.event_d1_enabled else 4,
             )
             self.event_temporal_history = CausalTemporalHistory(n_seglen)
+            self.event_risk_memory = (
+                PolicyIndependentRiskMemory() if self.event_d16_enabled else None
+            )
             # Read-only counterfactual scans may share one GT-free MATR query
             # stream across several isolated lifecycle memories.  The default
             # is production behavior; only an explicit eval-only setter can
@@ -417,6 +432,7 @@ class MATR(nn.Module):
                     frame_value = float(current_frames[batch_index].item())
                     target_by_id = {}
                     oracle_births = []
+                    risk_seed_details = {}
                     if (
                         self.event_d1_enabled
                         and self.training
@@ -441,6 +457,13 @@ class MATR(nn.Module):
                             for record in self.event_memory.records(video_name)
                             if record.target_event_id is not None
                         }
+                        risk_target_ids = (
+                            set(
+                                self.event_risk_memory.target_event_ids(video_name)
+                            )
+                            if self.event_d16_enabled
+                            else set()
+                        )
                         teacher_ratio = float(
                             getattr(
                                 self.args,
@@ -456,7 +479,11 @@ class MATR(nn.Module):
                             is_alive = bool(row[6].item())
                             is_end = bool(row[7].item())
                             missing_track = target_event_id not in active_target_ids
-                            if not (is_birth or (missing_track and is_alive)):
+                            missing_risk = target_event_id not in risk_target_ids
+                            if not (
+                                is_birth
+                                or ((missing_track or missing_risk) and is_alive)
+                            ):
                                 continue
                             start_frame = float(row[2].item())
                             lower = max(0.0, start_frame - self.n_seglen + 1.0)
@@ -539,8 +566,6 @@ class MATR(nn.Module):
                                         "terminal_query": int(path[-1]),
                                     }
                                 )
-                            if not missing_track or is_end:
-                                continue
                             detail = {
                                 "row": row,
                                 "path": path,
@@ -550,6 +575,10 @@ class MATR(nn.Module):
                                     int(path[-1])
                                 ],
                             }
+                            if self.event_d16_enabled and missing_risk and not is_end:
+                                risk_seed_details[int(target_event_id)] = detail
+                            if not missing_track or is_end:
+                                continue
                             visible_target_details[int(target_event_id)] = detail
                             visible_target_specs.append(
                                 {
@@ -764,6 +793,31 @@ class MATR(nn.Module):
                                     ),
                                 }
                             )
+                    if self.event_d16_enabled and self.training and real_prefix:
+                        risk_rows = self._decode_policy_independent_risks(
+                            video_name=video_name,
+                            current_frame=frame_value,
+                            current_queries=event_query_features[
+                                batch_index : batch_index + 1
+                            ],
+                            target_by_id=target_by_id,
+                            risk_seed_details=risk_seed_details,
+                            is_eos=bool(
+                                self._slice_prefix_info(
+                                    infos, "is_eos", batch_index, False
+                                )[0]
+                            ),
+                        )
+                        for risk_row in risk_rows:
+                            ragged_state_logits.append(risk_row["state_logits"])
+                            ragged_state_targets.append(risk_row["state_target"])
+                            ragged_end_offsets.append(risk_row["end_offset"])
+                            ragged_end_targets.append(risk_row["end_target"])
+                            ragged_class_logits.append(risk_row["class_logits"])
+                            ragged_class_targets.append(risk_row["class_target"])
+                            ragged_embeddings.append(risk_row["embedding"])
+                            ragged_group_keys.append(risk_row["group_key"])
+                            ragged_sources.append(risk_row["source"])
                     if self.ownership_mode == "fresh_rematch" and real_prefix:
                         self.event_memory.rematch_active_owners(
                             video_names[batch_index],
@@ -801,7 +855,11 @@ class MATR(nn.Module):
                             "owner_valid_mask": ~owner_padding_mask,
                             "owner_record_ids": owner_record_ids,
                         }
-                        if self.event_d1_enabled and self.training:
+                        if (
+                            self.event_d1_enabled
+                            and self.training
+                            and not self.event_d16_enabled
+                        ):
                             metadata = self.event_memory.record_metadata(
                                 video_name, owner_record_ids
                             )
@@ -898,6 +956,8 @@ class MATR(nn.Module):
                 if self.event_d1_enabled and self.training:
                     self.event_memory.detach_graph()
                     self.event_temporal_history.detach()
+                    if self.event_d16_enabled:
+                        self.event_risk_memory.detach_graph()
             else:
                 shape = event_birth_logits.shape
                 runtime = {
@@ -1047,6 +1107,8 @@ class MATR(nn.Module):
         if self.event_enabled:
             self.event_memory.reset(video_name)
             self.event_temporal_history.reset(video_name)
+            if self.event_d16_enabled:
+                self.event_risk_memory.reset(video_name)
 
     def set_event_diagnostic_query_only(self, enabled: bool) -> None:
         """Enable the GT-free, eval-only query stream used by D1.5 diagnostics."""
@@ -1073,6 +1135,112 @@ class MATR(nn.Module):
         if isinstance(value, (list, tuple)):
             return [value[index]]
         return [value]
+
+    def _decode_policy_independent_risks(
+        self,
+        *,
+        video_name,
+        current_frame,
+        current_queries,
+        target_by_id,
+        risk_seed_details,
+        is_eos,
+    ):
+        """Decode D1.6 risks without allowing runtime policy to censor them."""
+
+        if not self.event_d16_enabled or not self.training:
+            return []
+        self.event_risk_memory.sync_unmatched_runtime(
+            video_name,
+            self.event_memory.records(video_name),
+            current_frame=current_frame,
+        )
+        for target_event_id, detail in sorted(risk_seed_details.items()):
+            row = detail["row"]
+            self.event_risk_memory.ensure_target(
+                video_name,
+                target_event_id=int(target_event_id),
+                class_id=int(row[1].item()),
+                owner_embedding=detail["anchor_feature"],
+                current_frame=current_frame,
+            )
+
+        owner_embeddings, risk_ids = self.event_risk_memory.owner_batch(
+            video_name,
+            device=current_queries.device,
+            dtype=current_queries.dtype,
+            embedding_dim=self.n_embedding_dim,
+        )
+        if owner_embeddings.size(1) == 0:
+            return []
+        (
+            state_logits,
+            end_offsets,
+            class_logits,
+            updated_embeddings,
+        ) = self.event_owner_decoder(owner_embeddings, current_queries)
+        metadata = self.event_risk_memory.metadata(video_name, risk_ids)
+        rows = []
+        closing = []
+        for owner_index, record_info in enumerate(metadata):
+            target_event_id = record_info["target_event_id"]
+            if target_event_id is None:
+                # A model birth is not a false birth merely because it is not
+                # matched yet.  Only an actually observed EOS closes the causal
+                # compatibility window and supplies CANCEL supervision.
+                target_state = 0 if is_eos else -100
+                target_class = -100
+                target_end_offset = 0.0
+            else:
+                target_row = target_by_id.get(int(target_event_id))
+                if target_row is None:
+                    raise RuntimeError(
+                        "D1.6 target-backed risk disappeared before END/EOS"
+                    )
+                (
+                    target_state,
+                    target_class,
+                    target_end_offset,
+                ) = d1_owner_supervision(
+                    target_row,
+                    current_frame=current_frame,
+                    segment_size=self.n_seglen,
+                )
+                if target_state == 0:
+                    raise RuntimeError(
+                        "D1.6 runtime policy cannot label a target risk CANCEL"
+                    )
+            rows.append(
+                {
+                    "state_logits": state_logits[0, owner_index],
+                    "state_target": int(target_state),
+                    "end_offset": end_offsets[0, owner_index],
+                    "end_target": float(target_end_offset),
+                    "class_logits": class_logits[0, owner_index],
+                    "class_target": int(target_class),
+                    "embedding": updated_embeddings[0, owner_index],
+                    "group_key": (
+                        str(video_name),
+                        int(record_info["risk_id"]),
+                        target_event_id,
+                        float(current_frame),
+                    ),
+                    "source": str(record_info["source"]),
+                }
+            )
+            if target_state == 2 or is_eos:
+                closing.append(int(record_info["risk_id"]))
+
+        self.event_risk_memory.update(
+            video_name,
+            risk_ids=risk_ids,
+            owner_embeddings=updated_embeddings,
+            current_frame=current_frame,
+            preserve_graph=True,
+        )
+        if closing:
+            self.event_risk_memory.close(video_name, closing)
+        return rows
             
     def input_projection(self, inputs):
         if self.rgb and self.flow:

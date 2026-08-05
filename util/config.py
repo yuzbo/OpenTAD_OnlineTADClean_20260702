@@ -129,6 +129,16 @@ def make_parser():
         ),
     )
     parser.add_argument(
+        '--event_d16_variant',
+        default='none',
+        choices=('none', 'policy_independent'),
+        type=str,
+        help=(
+            'D1.6 staged control. policy_independent keeps training owner risk '
+            'alive across runtime cancel and uses one ternary competing-risk loss.'
+        ),
+    )
+    parser.add_argument(
         '--event_teacher_forcing_ratio',
         default=0.5,
         type=float,
@@ -149,6 +159,7 @@ def make_parser():
             'd11_mechanism',
             'd13_mechanism',
             'd14_mechanism',
+            'd16_mechanism',
             'locked_test',
         ),
         type=str,

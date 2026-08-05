@@ -37,7 +37,9 @@ from criterion.matcher import HungarianMatcher
 from models.event_memory import (
     CausalTemporalHistory,
     DynamicEventMemory,
+    EventRecord,
     OwnerEventDecoder,
+    PolicyIndependentRiskMemory,
     causal_single_assignment,
     d1_owner_supervision,
     select_disjoint_teacher_query,
@@ -695,6 +697,117 @@ def test_d1_owner_supervision_has_explicit_ternary_semantics() -> None:
     assert d1_owner_supervision(
         end, current_frame=9, segment_size=4
     ) == (2, 1, 0.25)
+
+
+def test_d16_risk_memory_survives_runtime_cancel_and_defers_false_cancel() -> None:
+    risk_memory = PolicyIndependentRiskMemory()
+    runtime = EventRecord(
+        event_id=3,
+        video_name="video",
+        start_frame=1.0,
+        owner_query_id=0,
+        owner_embedding=torch.tensor([1.0, 0.0]),
+        class_distribution=torch.tensor([1.0, 0.0]),
+        birth_score=0.8,
+        created_frame=2.0,
+    )
+    risk_memory.sync_unmatched_runtime("video", [runtime], current_frame=3.0)
+    assert len(risk_memory.records("video")) == 1
+
+    # Runtime policy may archive/delete its own record.  The training risk set
+    # receives no such action and remains unresolved rather than becoming an
+    # immediate false-birth label.
+    runtime.status = "cancelled"
+    risk_memory.sync_unmatched_runtime("video", [], current_frame=4.0)
+    record = risk_memory.records("video")[0]
+    assert record.source == "predicted_unresolved"
+    assert record.target_event_id is None
+
+
+def test_d16_target_risk_is_chronological_and_right_censored_at_observed_eos() -> None:
+    args = _args()
+    args.event_d16_variant = "policy_independent"
+    model = MATR(args)
+    model.train()
+    torch.manual_seed(7)
+    current_queries = torch.randn(1, args.num_queries, args.hidden_dim)
+    birth = torch.tensor([7, 1, 3, float("nan"), 3, 1, 0, 0])
+    alive = torch.tensor([7, 1, 3, float("nan"), 3, 0, 1, 0])
+    detail = {
+        "row": birth,
+        "anchor_feature": current_queries[0, 0],
+    }
+
+    birth_rows = model._decode_policy_independent_risks(
+        video_name="video",
+        current_frame=3.0,
+        current_queries=current_queries,
+        target_by_id={7: birth},
+        risk_seed_details={7: detail},
+        is_eos=False,
+    )
+    assert [row["state_target"] for row in birth_rows] == [1]
+    assert len(model.event_risk_memory.records("video")) == 1
+
+    # No runtime EventRecord is required for the next risk row: an early runtime
+    # cancel therefore cannot censor the target-backed training trajectory.
+    alive_rows = model._decode_policy_independent_risks(
+        video_name="video",
+        current_frame=4.0,
+        current_queries=current_queries,
+        target_by_id={7: alive},
+        risk_seed_details={},
+        is_eos=True,
+    )
+    assert [row["state_target"] for row in alive_rows] == [1]
+    assert model.event_risk_memory.records("video") == ()
+
+
+def test_d16_observed_end_closes_once_without_duplicate_binary_hazard() -> None:
+    args = _args()
+    args.event_d16_variant = "policy_independent"
+    criterion = _criterion(args)
+    logits = torch.tensor(
+        [[-1.0, 2.0, 0.0], [-1.0, 1.0, 0.5], [-1.0, 0.0, 2.0]],
+        requires_grad=True,
+    )
+    ragged_targets = torch.tensor([1, 1, 2])
+    outputs = {
+        "event_state_logits": torch.zeros(1, 2, 4, requires_grad=True),
+        "event_birth_logits": torch.zeros(1, 2, requires_grad=True),
+        "event_candidate_start_frames": torch.zeros(1, 2),
+        "event_query_features": torch.zeros(1, 2, 4),
+        "pred_cls": torch.zeros(1, 2, 3),
+        "event_ragged_state_logits": logits,
+        "event_ragged_state_targets": ragged_targets,
+        "event_ragged_end_offsets": torch.tensor([0.0, 0.0, 0.25]),
+        "event_ragged_end_targets": torch.tensor([0.0, 0.0, 0.25]),
+        "event_ragged_class_logits": torch.zeros(3, 3),
+        "event_ragged_class_targets": torch.tensor([1, 1, 1]),
+        "event_ragged_embeddings": torch.eye(3, 4),
+        "event_ragged_group_keys": [
+            ("video", 0, 7, 3.0),
+            ("video", 0, 7, 4.0),
+            ("video", 0, 7, 5.0),
+        ],
+        "event_ragged_sources": ["target_visible"] * 3,
+        "event_birth_risk_groups": [],
+        "event_association_rows": [],
+    }
+    targets = {
+        "event_targets": torch.zeros(1, 2, 8),
+        "event_valid_mask": torch.zeros(1, 2, dtype=torch.bool),
+    }
+    losses = criterion._loss_event_d1(
+        outputs, targets, {"is_real_prefix": [True]}
+    )
+    expected = torch.nn.functional.cross_entropy(logits, ragged_targets)
+    assert torch.allclose(losses["loss_event_owner_state"], expected)
+    assert losses["loss_event_end"].item() == 0.0
+    assert losses["event_end_positive_count"].item() == 1.0
+    losses["loss_event_owner_state"].backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
 
 
 def test_teacher_query_selection_is_disjoint_and_deterministic() -> None:
@@ -1409,6 +1522,74 @@ def test_full_d1_model_uses_one_differentiable_ragged_unroll() -> None:
     assert model.event_transition_head.birth.weight.grad is not None
     assert model.event_transition_head.birth.weight.grad.norm() > 0
     assert model.event_transition_head.fuse[0].weight.grad is not None
+
+
+def test_full_d16_risk_control_keeps_target_risk_and_reaches_both_matr_decoders() -> None:
+    torch.manual_seed(13)
+    args = _args()
+    args.event_d16_variant = "policy_independent"
+    model = MATR(args).train()
+    model.memory_queue = model.memory_queue_index = None
+    event_targets = torch.zeros((3, 2, 8))
+    event_targets[0, 0] = torch.tensor([0, 0, 2, 8, 2, 1, 0, 0])
+    event_targets[1, 0] = torch.tensor([0, 0, 2, 8, 2, 0, 1, 0])
+    event_targets[2, 0] = torch.tensor([0, 0, 2, 8, 2, 0, 1, 0])
+    model_targets = event_targets.clone()
+    model_targets[:, 0, 3] = float("nan")
+    valid = torch.tensor([[True, False]] * 3)
+    model_input = {
+        "inputs": torch.randn((3, 4, 8)),
+        "infos": {
+            "st": torch.tensor([0, 1, 2]),
+            "ed": torch.tensor([4, 5, 6]),
+            "video_name": ["v", "v", "v"],
+            "current_frame": torch.tensor([4, 5, 6]),
+            "segment_flag": torch.zeros(3, dtype=torch.long),
+            "is_real_prefix": torch.ones(3, dtype=torch.bool),
+            "is_eos": torch.tensor([False, False, True]),
+        },
+        "event_targets": model_targets,
+        "event_valid_mask": valid,
+    }
+    outputs = model(copy.deepcopy(model_input), torch.device("cpu"))
+    target_rows = [
+        index
+        for index, key in enumerate(outputs["event_ragged_group_keys"])
+        if key[2] is not None
+    ]
+    assert target_rows
+    assert all(
+        int(outputs["event_ragged_state_targets"][index].item()) == 1
+        for index in target_rows
+    )
+    assert all(
+        outputs["event_ragged_sources"][index] == "target_visible"
+        for index in target_rows
+    )
+    assert model.event_risk_memory.records("v") == ()
+
+    criterion = _criterion(args)
+    losses = criterion.loss_event(
+        outputs,
+        {"event_targets": event_targets, "event_valid_mask": valid},
+        model_input["infos"],
+    )
+    assert losses["loss_event_end"].item() == 0.0
+    total = sum(
+        value
+        for key, value in losses.items()
+        if key.startswith("loss_event")
+    )
+    total.backward()
+    assert model.event_owner_decoder.state.weight.grad is not None
+    assert (
+        model.segment_decoder.layers[0].multihead_attn.in_proj_weight.grad
+        is not None
+    )
+    assert (
+        model.memory_decoder.layers[0].multihead_attn.in_proj_weight.grad
+        is not None
+    )
 
 
 def test_d1_model_boundary_rejects_future_gt_endpoint() -> None:
