@@ -9,6 +9,7 @@ scope: Append-only timeline of wiki mutations and major research decisions.
 
 - 2026-08-05: 用户明确批准以官方 MATR 为精确基线、在派生模型内部实施持续事件查询创新，并要求路线明确时直接落实而不再开启 Pro 讨论。新增 D1.6 预注册和 DR-048：先在冻结表示上实现策略无关的取消/继续/结束竞争风险，隔离运行时取消造成的自删失；再通过逐前缀递推把 ragged 持续查询送入 MATR 两级 decoder。实现获准，但训练仍锁定在纯函数、严格因果集成与 exact 官方训练单批冒烟之后；locked test、多种子、raw RGB、阈值搜索和论文性能比较均未授权。
 - 2026-08-05: D1.6-R 风险控制已实现并推送 exact `04a202a7c53bbfce62c573fad64d8742be57eb45` / tree `a13cd191e3523f07f16cc94d02fc825ce0a0ac34`，protocol SHA-256=`14b648cc3be8ddb85b0ad56b4cb146a26238a86b09160e26759075a86bf0b20c`。新增独立训练风险记忆、取消后真实风险持续、未决预测到实际 EOS 才取消、右删失继续项和唯一三状态竞争风险；完整本地 `191 passed`，整模型梯度到达 owner 及 MATR 两级 decoder。新增 exact 官方训练单批 Slurm gate；它尚未运行，故任何训练和性能结论仍为 false。
+- 2026-08-05: D1.6-R exact 官方训练单批冒烟已提交为 Slurm `1222965`，独立 checkout `/data/run01/sczc063/yuzibo/EventMATR_D16_04a202a7` 和输出 `/data/run01/sczc063/yuzibo/runs/eventmatr_d16/risk_smoke_20260805_04a202a7`。提交时 `PENDING`；只运行完整测试、官方 Toeplitz 单批 forward/backward/Adam/重载和关键梯度门，`test_access=false`，没有训练、阈值搜索或自动监控。
 
 - 2026-07-26: Corrected smoke `1190605` passed source identity and 63 contract tests but its first official MATR import found missing official requirement `typeguard==4.1.5`. Installed and import-verified the pinned dependency; this is environment-only, before real batch/gradient/checkpoint/test access. Re-submitted unchanged exact smoke as `1190635`, pending.
 
