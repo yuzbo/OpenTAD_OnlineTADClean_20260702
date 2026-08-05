@@ -86,9 +86,17 @@ margin; no-cancel shadows recover only `3-7` of `3,001` events, and both
 oracle-shadow 95th-percentile margins remain negative with upper uncertainty
 bounds below `0.6%`. An independent recomputation of all `24,008` event rows and
 `10,000` common video-cluster resamples has zero mismatches. The only released
-action is design and preregistration of a policy-independent three-state
-competing-risk repair. Model implementation, training, official comparison and
-paper performance remain blocked.
+action was design and preregistration of a policy-independent three-state
+competing-risk repair. The user then explicitly approved the staged D1.6 design:
+first isolate policy-independent risk learning on the current representation,
+then place persistent event queries inside both MATR decoders through a shared
+chronological train/inference update. Implementation is now authorized; training,
+official comparison and paper performance remain blocked until pure contracts,
+strict-causal integration tests and exact official one-batch smoke pass.
+The first isolated risk-control implementation is now exact
+`04a202a7c53bbfce62c573fad64d8742be57eb45` and passes all `191` local tests;
+its official one-batch smoke remains pending, so neither training nor a result
+claim has been released.
 
 ## Ideas
 
@@ -171,6 +179,7 @@ paper performance remain blocked.
 
 | Node | Verdict | Use |
 |---|---|---|
+| [exp:eventmatr-d16-matr-native-query-risk-20260805](experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md) | staged implementation authorized; training blocked | Preregisters policy-independent competing risk, MATR-internal persistent queries, N/R/Q/F/P attribution, chronology contracts and paper-comparability gates. |
 | [exp:eventmatr-d15-owner-counterfactual-20260730](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md) | v1 invalid; v2 closed negative; D1.5.1 endpoint diagnosis passed and selected design-only risk repair | Records the four-channel frozen-checkpoint diagnostic, right-censored control, negative paired result, endpoint-margin refinement, integrity audits and the only permitted three-state risk-design route. |
 | [exp:eventmatr-d11-structural-repair-20260729](experiments/eventmatr-d11-structural-repair-design-20260729.md) | D1.4 structure gate failed; decision-aligned birth is live but owner end/emission remain zero | Records the accepted/corrected Pro advice, D1.1-D1.4 exact-source evidence, official-data hashes, causal assignment, ternary owner, interval-risk interventions, cancel-dominated owner diagnosis and the unchanged official-comparability boundary. |
 | [exp:ontad-matr-official-parent-event-model-20260722](experiments/ontad-matr-official-parent-event-model-20260722.md) | implementation verified locally; real-data smoke pending | Selects exact official MATR as the sole parent, implements a separate native lane plus the official-setting eventized `B×O` factorial, and blocks formal release until exact official data pass the five-lane smoke. |

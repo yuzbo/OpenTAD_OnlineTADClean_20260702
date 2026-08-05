@@ -1246,3 +1246,36 @@ Current wiki nodes:
 - [experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md](experiments/eventmatr-d15-owner-counterfactual-protocol-20260730.md)
 - [experiments/eventmatr-d151-integrity-audit-20260805.md](experiments/eventmatr-d151-integrity-audit-20260805.md)
 - [decision_register.md#dr-047-accept-d151-and-permit-only-a-preregistered-three-state-risk-design](decision_register.md)
+
+## T35 — User approves staged MATR-internal D1.6 implementation
+
+Date: 2026-08-05
+
+User decision:
+
+- MATR remains the exact official baseline, but its derived EventMATR structure
+  may now be opened and enriched inside the model;
+- the requested method must be a model innovation rather than output
+  post-processing or engineering-only repair;
+- no further Pro discussion is requested if the route and next experiment are
+  already clear; implementation and experiment preparation should proceed.
+
+Disposition:
+
+> The route is clear and no additional Pro discussion is needed now. DR-047's
+> alternatives and approval condition are closed by the user instruction. D1.6
+> implementation is released in two stages, while all model training remains
+> blocked until strict causal contracts and official one-batch smoke pass.
+
+Newly explicit structural constraint:
+
+- official MATR batches are same-video consecutive-prefix Toeplitz blocks;
+- the current main decoder computes the batch before lifecycle unroll;
+- therefore persistent event queries cannot be inserted by a batch-wide append.
+  They require a chronological recurrent decoder path, isolated from the exact
+  native-MATR baseline.
+
+Current wiki nodes:
+
+- [experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md](experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md)
+- [decision_register.md#dr-048-approve-the-staged-d16-implementation-keep-training-blocked](decision_register.md)

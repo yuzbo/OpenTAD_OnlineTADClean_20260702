@@ -2204,3 +2204,60 @@ Reversibility:
 - If a design cannot isolate policy-independent risk learning from a new owner
   representation, the correct response is a staged mechanism plan, not a fused
   unidentifiable training run.
+
+## DR-048: Approve the Staged D1.6 Implementation, Keep Training Blocked
+
+Status: implementation authorized; training blocked behind contracts and smoke.
+
+Decision:
+
+> Record the user's 2026-08-05 explicit approval of the MATR-internal redesign.
+> Implement D1.6 in two identifiable stages: first policy-independent
+> cancel/continue/end risk learning on the frozen current representation, then
+> persistent event queries inside both MATR decoders with a shared chronological
+> train/inference update. Do not start model training until pure contracts,
+> strict-causal integration tests and an exact official-train-batch smoke pass.
+
+Reason:
+
+- DR-047's design alternatives were presented and the user selected the
+  MATR-internal route rather than further Pro discussion;
+- D1.5.1 uniquely selects endpoint representation/risk learning, while its
+  zero paired effects rule out another cancel-only or identity-only patch;
+- separating risk repair from representation change is required to distinguish
+  problem truth from a fused architecture gain;
+- the official physical batch is chronological but the current main decoder is
+  batch-parallel, so internal persistent queries require an explicit recurrent
+  decoder path rather than a tensor-concatenation patch;
+- exact native MATR remains the official baseline and cannot share mutable D1.6
+  state.
+
+Resolution:
+
+1. preregister N/R/Q/F/P and the two-claim evidence table in
+   [experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md](experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md);
+2. implement D1.6-R first, including unresolved-track masking, actual-EOS false
+   cancellation, right censoring and event-normalized unified likelihood;
+3. accept no training request until cancellation-survival, chronology, no-future,
+   gradient and ledger contracts plus exact official one-batch smoke all pass;
+4. implement D1.6-Q only through a shared chronological train/inference update
+   inside both MATR decoders; a downstream owner decoder is not sufficient;
+5. keep five/ten/twenty epochs, locked test, multiple seeds, raw RGB, threshold
+   search/reduction and official performance comparison blocked;
+6. no additional Pro discussion is needed before these implementation gates; a
+   new review is warranted only if the recurrent decoder contract is ambiguous
+   or R/Q evidence contradicts the preregistered attribution.
+
+Sources:
+
+- [experiments/eventmatr-d151-integrity-audit-20260805.md](experiments/eventmatr-d151-integrity-audit-20260805.md);
+- [experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md](experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md);
+- user approval and execution instruction on 2026-08-05.
+
+Reversibility:
+
+- D1.6-R and D1.6-Q are separately removable variants and cannot modify the
+  native-MATR path.
+- Passing implementation tests does not authorize a paper claim. Failure of R
+  rejects the self-censoring repair; failure of Q against R/P rejects the
+  MATR-internal representation claim.
