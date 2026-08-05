@@ -186,3 +186,5 @@ D1.5.1 已排除“只禁止取消”“只刷新身份”和“只修账本”�
 - target-backed 风险继续使用同一个按时间顺序、可微的 owner update/unroll 与继续/结束监督，不截断其有标签的计算图。
 
 修复训练源：commit `ec1ac7e4b54922d17f0d919b1c58b5041aa482ee`，tree `b5f26659aece8b921cf966bd858f52ee9474c12e`，manifest SHA-256 `ec57542aec183b94e6de70f9e279e7e2c1844f01cd47b70e8d22d5df3a743190`。本地 `196 passed`；同提交官方单批 job `1223453` 为 `COMPLETED 0:0`，远端 `196 passed`，receipt SHA-256 `24433dcf09bd06346126849482e54243895dc9309bc63d18c1d9b8bd35057171`。全新成对 array `1223457` 与依赖收口 `1223458` 已从零提交，输出根 `/data/run01/sczc063/yuzibo/runs/eventmatr_d16/paired_mechanism_20260806_ec1ac7e`；旧执行不复用。
+
+风险臂已安全越过首次失败点（新执行达到第 `37` 批时仍运行，旧执行在第 `33` 批已失败）。注册的共同结束边际分析 job `1223472` 依赖 `1223458` 成功后才会启动；它是实验 DAG 的结果分析节点，不是轮询或自动监控。任何上游失败都会阻止它运行。
