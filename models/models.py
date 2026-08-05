@@ -189,6 +189,7 @@ class MATR(nn.Module):
             # is production behavior; only an explicit eval-only setter can
             # disable the in-model runtime unroll.
             self._event_diagnostic_query_only = False
+            self._event_risk_diagnostic_mode = False
     
     def forward(self, inputs, device):
         # inputs - batch x seq_len x featsize
@@ -196,6 +197,9 @@ class MATR(nn.Module):
         infos = inputs['infos']
         event_targets = inputs.get("event_targets")
         event_valid_mask = inputs.get("event_valid_mask")
+        event_supervision_mode = self.training or bool(
+            getattr(self, "_event_risk_diagnostic_mode", False)
+        )
         if (
             self.event_enabled
             and self._event_diagnostic_query_only
@@ -217,7 +221,7 @@ class MATR(nn.Module):
                 "video_time",
                 "frame_to_time",
             }.intersection(infos)
-            if not self.training and "segment_flag" in infos:
+            if not event_supervision_mode and "segment_flag" in infos:
                 forbidden.add("segment_flag")
             if forbidden:
                 raise RuntimeError(
@@ -225,7 +229,7 @@ class MATR(nn.Module):
                         sorted(forbidden)
                     )
                 )
-            if self.training and event_targets is not None:
+            if event_supervision_mode and event_targets is not None:
                 if event_valid_mask is None:
                     raise RuntimeError(
                         "D1 training target visibility mask is missing"
@@ -412,7 +416,7 @@ class MATR(nn.Module):
                 # prefixes in the same batch.
                 runtime_rows = []
                 video_names = infos['video_name']
-                if self.event_d1_enabled and self.training:
+                if self.event_d1_enabled and event_supervision_mode:
                     if event_targets is None or event_valid_mask is None:
                         raise RuntimeError(
                             "D1 training requires prefix-visible event targets"
@@ -435,7 +439,7 @@ class MATR(nn.Module):
                     risk_seed_details = {}
                     if (
                         self.event_d1_enabled
-                        and self.training
+                        and event_supervision_mode
                         and real_prefix
                     ):
                         rows = event_targets[batch_index][
@@ -793,7 +797,7 @@ class MATR(nn.Module):
                                     ),
                                 }
                             )
-                    if self.event_d16_enabled and self.training and real_prefix:
+                    if self.event_d16_enabled and event_supervision_mode and real_prefix:
                         risk_rows = self._decode_policy_independent_risks(
                             video_name=video_name,
                             current_frame=frame_value,
@@ -1125,6 +1129,17 @@ class MATR(nn.Module):
         if self.event_enabled:
             self._event_diagnostic_query_only = enabled
 
+    def set_event_risk_diagnostic_mode(self, enabled: bool) -> None:
+        """Replay frozen weights on a common target-visible risk set in eval mode."""
+
+        enabled = bool(enabled)
+        if enabled and not self.event_d16_enabled:
+            raise RuntimeError(
+                "policy-independent risk diagnostics require the D1.6 risk contract"
+            )
+        if self.event_enabled:
+            self._event_risk_diagnostic_mode = enabled
+
     @staticmethod
     def _slice_prefix_info(infos, key, index, default):
         if key not in infos:
@@ -1148,7 +1163,9 @@ class MATR(nn.Module):
     ):
         """Decode D1.6 risks without allowing runtime policy to censor them."""
 
-        if not self.event_d16_enabled or not self.training:
+        if not self.event_d16_enabled or not (
+            self.training or self._event_risk_diagnostic_mode
+        ):
             return []
         self.event_risk_memory.sync_unmatched_runtime(
             video_name,

@@ -1592,6 +1592,41 @@ def test_full_d16_risk_control_keeps_target_risk_and_reaches_both_matr_decoders(
     )
 
 
+def test_d16_common_risk_diagnostic_runs_frozen_weights_without_dropout() -> None:
+    torch.manual_seed(17)
+    args = _args()
+    args.event_d16_variant = "policy_independent"
+    model = MATR(args).eval()
+    model.memory_queue = model.memory_queue_index = None
+    model.set_event_risk_diagnostic_mode(True)
+    assert model.training is False
+
+    event_targets = torch.zeros((2, 1, 8))
+    event_targets[0, 0] = torch.tensor([0, 0, 2, 5, 2, 1, 0, 0])
+    event_targets[1, 0] = torch.tensor([0, 0, 2, 5, 2, 0, 0, 1])
+    model_targets = event_targets.clone()
+    model_targets[0, 0, 3] = float("nan")
+    payload = {
+        "inputs": torch.randn((2, 4, 8)),
+        "infos": {
+            "st": torch.tensor([0, 1]),
+            "ed": torch.tensor([4, 5]),
+            "video_name": ["v", "v"],
+            "current_frame": torch.tensor([4, 5]),
+            "segment_flag": torch.zeros(2, dtype=torch.long),
+            "is_real_prefix": torch.ones(2, dtype=torch.bool),
+            "is_eos": torch.tensor([False, True]),
+        },
+        "event_targets": model_targets,
+        "event_valid_mask": torch.ones((2, 1), dtype=torch.bool),
+    }
+    with torch.no_grad():
+        first = model(copy.deepcopy(payload), torch.device("cpu"))
+    assert first["event_ragged_state_targets"].tolist() == [1, 2]
+    assert first["event_ragged_sources"] == ["target_visible", "target_visible"]
+    assert model.training is False
+
+
 def test_d1_model_boundary_rejects_future_gt_endpoint() -> None:
     args = _args()
     model = MATR(args).train()

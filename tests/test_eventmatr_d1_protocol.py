@@ -45,6 +45,9 @@ from scripts.finalize_eventmatr_d16_mechanism import (
     validate_d16_mechanism_metrics,
 )
 from scripts.finalize_eventmatr_d16_pair import validate_d16_pair
+from scripts.analyze_eventmatr_d16_endpoint_margin import (
+    video_cluster_bootstrap_median,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -341,6 +344,35 @@ def test_d16_pair_is_one_epoch_hash_bound_train_only_and_not_performance() -> No
     assert "model_initialization_sha256" in pair_finalizer
     assert "model_state_sha256" in task
     assert "D16_CHECKPOINT_SCHEMA" in task
+
+    endpoint = (
+        ROOT / "scripts" / "analyze_eventmatr_d16_endpoint_margin.py"
+    ).read_text(encoding="utf-8")
+    endpoint_slurm = (
+        ROOT / "scripts" / "slurm_eventmatr_d16_endpoint_margin.sh"
+    ).read_text(encoding="utf-8")
+    assert "EXPECTED_ENDPOINTS = 3001" in endpoint
+    assert "BOOTSTRAP_REPLICATES = 10000" in endpoint
+    assert "BOOTSTRAP_SEED = 52016" in endpoint
+    assert '"official_paper_performance_valid": False' in endpoint
+    assert '"train_prefix_detection_metrics_used": False' in endpoint
+    assert '"query_internalization_release": bool(gate["passed"])' in endpoint
+    assert "#SBATCH --gpus=1" in endpoint_slurm
+    assert endpoint_slurm.count("verify_source_identity.py") == 2
+
+
+def test_d16_video_cluster_bootstrap_is_deterministic_and_clustered() -> None:
+    rows = [
+        {"video_name": "a", "margin_difference": 1.0},
+        {"video_name": "a", "margin_difference": 2.0},
+        {"video_name": "b", "margin_difference": 3.0},
+    ]
+    first = video_cluster_bootstrap_median(rows, replicates=100, seed=7)
+    second = video_cluster_bootstrap_median(rows, replicates=100, seed=7)
+    assert first == second
+    assert first["cluster_count"] == 2
+    assert first["replicates"] == 100
+    assert first["lower_95"] > 0
 
 
 def test_d1_seed52_pilot_array_is_registered_and_train_only() -> None:
