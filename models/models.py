@@ -1187,6 +1187,11 @@ class MATR(nn.Module):
             device=current_queries.device,
             dtype=current_queries.dtype,
             embedding_dim=self.n_embedding_dim,
+            # Loss-masked unresolved predictions would otherwise retain an
+            # unbounded loss-free graph.  They stay in risk memory via detached
+            # runtime-owner snapshots and re-enter exactly once at observed EOS
+            # for explicit CANCEL supervision.
+            include_unresolved=bool(is_eos),
         )
         if owner_embeddings.size(1) == 0:
             return []

@@ -724,6 +724,48 @@ def test_d16_risk_memory_survives_runtime_cancel_and_defers_false_cancel() -> No
     assert record.target_event_id is None
 
 
+def test_d16_unresolved_risk_is_loss_free_until_one_observed_eos_cancel() -> None:
+    args = _args()
+    args.event_d16_variant = "policy_independent"
+    model = MATR(args).train()
+    runtime = EventRecord(
+        event_id=9,
+        video_name="video",
+        start_frame=1.0,
+        owner_query_id=0,
+        owner_embedding=torch.randn(args.hidden_dim),
+        class_distribution=torch.tensor([1.0, 0.0]),
+        birth_score=0.8,
+        created_frame=2.0,
+    )
+    model.event_risk_memory.sync_unmatched_runtime(
+        "video", [runtime], current_frame=2.0
+    )
+    queries = torch.randn(1, args.num_queries, args.hidden_dim)
+    before_eos = model._decode_policy_independent_risks(
+        video_name="video",
+        current_frame=3.0,
+        current_queries=queries,
+        target_by_id={},
+        risk_seed_details={},
+        is_eos=False,
+    )
+    assert before_eos == []
+    assert len(model.event_risk_memory.records("video")) == 1
+
+    at_eos = model._decode_policy_independent_risks(
+        video_name="video",
+        current_frame=4.0,
+        current_queries=queries,
+        target_by_id={},
+        risk_seed_details={},
+        is_eos=True,
+    )
+    assert [row["state_target"] for row in at_eos] == [0]
+    assert [row["source"] for row in at_eos] == ["predicted_unresolved"]
+    assert model.event_risk_memory.records("video") == ()
+
+
 def test_d16_target_risk_is_chronological_and_right_censored_at_observed_eos() -> None:
     args = _args()
     args.event_d16_variant = "policy_independent"

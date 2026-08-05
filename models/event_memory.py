@@ -890,11 +890,27 @@ class PolicyIndependentRiskMemory:
                     class_id=None,
                 )
                 by_runtime[runtime_id] = existing
+            else:
+                # The unresolved track has no semantic state label before EOS.
+                # Keep a detached snapshot of the live runtime owner rather than
+                # retaining a loss-free recurrent graph across prefixes.
+                existing.owner_embedding = runtime.owner_embedding.detach().clone()
+                existing.last_frame = float(current_frame)
 
     def owner_batch(
-        self, video_name: str, *, device, dtype, embedding_dim: int
+        self,
+        video_name: str,
+        *,
+        device,
+        dtype,
+        embedding_dim: int,
+        include_unresolved: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        records = self._records.get(str(video_name), ())
+        records = [
+            record
+            for record in self._records.get(str(video_name), ())
+            if include_unresolved or record.target_event_id is not None
+        ]
         owners = torch.zeros(
             (1, len(records), int(embedding_dim)), device=device, dtype=dtype
         )

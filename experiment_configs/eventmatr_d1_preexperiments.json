@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v11",
+  "protocol_id": "eventmatr_d1_preexperiments_v12",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -424,6 +424,14 @@
       ],
       "primary_outcome": "risk-minus-control owner END margin on the same 3001 observable target endpoints under one common policy-independent risk replay",
       "effect_gate": "positive event-level median difference and video-cluster bootstrap 95 percent lower bound strictly above zero",
+      "first_execution": {
+        "slurm_array": "1223320_[0-1]",
+        "status": "aborted_before_completion_after_risk_arm_out_of_memory",
+        "risk_failure_batch": 33,
+        "cause": "loss-masked unresolved predicted risks were unnecessarily decoded at every prefix and retained a loss-free graph inside the physical batch",
+        "repair": "retain and refresh detached unresolved owners without loss rows before observed EOS; decode each exactly once at EOS for explicit CANCEL supervision",
+        "scientific_result": false
+      },
       "release_condition": "only a passing paired training receipt plus the preregistered endpoint-margin gate may release internal persistent-query implementation; this stage never releases paper performance"
     },
     {
@@ -445,7 +453,7 @@
     }
   ],
   "d16_staged_redesign": {
-    "status": "risk_control_official_batch_pass_paired_mechanism_authorized",
+    "status": "risk_control_memory_closure_repaired_new_same_commit_smoke_required",
     "design_record": "research-wiki/experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md",
     "implementation_order": [
       "R_policy_independent_competing_risk_on_current_representation",
@@ -459,13 +467,13 @@
       "END"
     ],
     "true_target_risk": "starts at prefix-visible birth/recovery and is unaffected by runtime cancellation",
-    "predicted_unmatched_risk": "unresolved and loss-masked before actually observed EOS; CANCEL only at EOS if still unmatched",
+    "predicted_unmatched_risk": "retained with detached live-runtime owner refresh and no loss row before actually observed EOS; decoded once as CANCEL at EOS if still unmatched",
     "right_censor": "CONTINUE at actually observed EOS with no END-positive term",
     "duplicate_end_objective": false,
     "event_normalization": "one mean ternary likelihood per chronological track fragment, then mean across fragments",
     "local_contracts": {
       "status": "PASS",
-      "test_count": 193,
+      "test_count": 196,
       "paper_result": false
     },
     "official_batch_smoke": {
