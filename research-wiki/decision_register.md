@@ -2261,3 +2261,51 @@ Reversibility:
 - Passing implementation tests does not authorize a paper claim. Failure of R
   rejects the self-censoring repair; failure of Q against R/P rejects the
   MATR-internal representation claim.
+
+## DR-049: Pass the D1.6-R Smoke and Release One Paired Mechanism Experiment
+
+Status: technical gate passed; paired one-epoch mechanism authorized; performance training blocked.
+
+Decision:
+
+> Accept Slurm `1222965` as the exact official-train-batch technical gate for
+> D1.6-R. Release only a same-source, same-initialization, seed-52 one-epoch pair:
+> frozen D1.4/TH control versus the policy-independent D1.6 risk repair. Compare
+> their frozen owner END margins on the same 3,001 observable training events.
+> Do not use train mAP as the route decision and do not release D1.6-Q, longer
+> training, locked test or paper performance until this paired gate closes.
+
+Evidence:
+
+- job `1222965` completed `0:0` in `00:01:11`;
+- exact code `04a202a7c53bbfce62c573fad64d8742be57eb45`, tree
+  `a13cd191e3523f07f16cc94d02fc825ce0a0ac34` and manifest SHA-256
+  `14b648cc3be8ddb85b0ad56b4cb146a26238a86b09160e26759075a86bf0b20c`
+  remained clean;
+- receipt SHA-256 is
+  `63b855129d2f510a08e0a13414bf40fb3b379715aec4a09d09b2d01985a2085a`;
+- remote `191` tests, official `64×64×4096` Toeplitz batch, Adam, strict reload,
+  event/owner and both MATR decoder gradients passed;
+- `test_access=false`, `threshold_search=false`,
+  `formal_training_started=false`, `paper_performance_valid=false`.
+
+Paired gate:
+
+1. both arms start from the same fresh initialization hash and execute exactly
+   3,270 official physical batches with identical optimizer/scheduler settings;
+2. D1.6-R target-backed risk must cover all observable END groups independent
+   of runtime cancel; unresolved predictions remain masked before observed EOS;
+3. both frozen checkpoints are evaluated by one common no-threshold-search END
+   margin extractor on the same 3,001 events;
+4. the primary paired difference requires positive median and a video-cluster
+   95% bootstrap lower bound above zero; END-positive fraction is secondary;
+5. any source, census, finite-gradient, capacity, causal or paired-denominator
+   mismatch fails closed before interpretation.
+
+Reversibility:
+
+- This pair changes one training-risk contract and introduces no new parameter.
+- A failed paired margin gate terminates D1.6-R as the selected explanation; it
+  cannot be rescued by thresholds, more epochs or D1.6-Q fusion.
+- A pass authorizes design/implementation of the separately attributable Q
+  representation gate, not a paper performance claim.

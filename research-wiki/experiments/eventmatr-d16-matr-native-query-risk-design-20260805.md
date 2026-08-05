@@ -128,8 +128,27 @@ D1.5.1 已排除“只禁止取消”“只刷新身份”和“只修账本”�
 - Slurm job：`1222965`；
 - checkout：`/data/run01/sczc063/yuzibo/EventMATR_D16_04a202a7`；
 - output：`/data/run01/sczc063/yuzibo/runs/eventmatr_d16/risk_smoke_20260805_04a202a7`；
-- 提交时状态：`PENDING`；
+- 最终状态：`COMPLETED 0:0`，用时 `00:01:11`，节点 `g0048`；
+- receipt SHA-256：`63b855129d2f510a08e0a13414bf40fb3b379715aec4a09d09b2d01985a2085a`；
+- 远端完整测试：`191 passed in 28.46s`；
+- official batch：`64×64×4096`，`25` 条有效事件行，Toeplitz 时间合同 `PASS`；
+- 关键梯度范数：birth `10.5803`、transition `62.1741`、owner state `26.4259`、owner cross-attention `31.2566`、MATR segment decoder `8.3973`、MATR memory decoder `1.3505`；
+- strict checkpoint reload、起止 source identity 和 clean tree 均 `PASS`；
+- `loss_event_end=0` 是 D1.6 唯一三状态似然的预期合同，不是结束未学习；三状态 owner loss 为 `1.2076` 且 owner/双 decoder 梯度均非零；
 - 只提交 `slurm_eventmatr_d16_risk_smoke.sh`，没有提交训练、测试集评测、阈值搜索或自动监控任务。
+
+### 下一项已注册机制实验
+
+官方单批门通过后，只释放一个同源、同初始化、同训练暴露的成对实验：
+
+| 臂 | D1.6 风险 | 其余模型/目标 |
+|---|---|---|
+| C：冻结控制 | `none` | D1.3 combined + D1.4 decision-aligned bag + TH |
+| R：风险修复 | `policy_independent` | 与 C 完全相同 |
+
+两臂均使用官方训练特征、1 轮/3270 物理批、seed 52、相同初始化哈希、相同 Adam/调度/teacher 比例，不访问 locked test。它不是论文性能比较，而是可以写入方法分析/消融的机制证据。
+
+主结果不是训练 mAP，而是对两个冻结 checkpoint 在相同 `3,001` 个可观察结束事件上的逐事件 owner END margin。预注册判定：完整性与风险覆盖先通过；随后风险臂相对控制臂的逐事件 margin 差异必须具有正中位数，且按视频聚类的 95% bootstrap 区间下界高于零。零边界 END-positive fraction 作为共同推理规则下的第二结果，不搜索阈值。若失败，D1.6-R 不得解锁 D1.6-Q/F 或任何长训练。
 
 ## 创新与论文边界
 

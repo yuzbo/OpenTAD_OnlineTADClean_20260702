@@ -1279,3 +1279,22 @@ Current wiki nodes:
 
 - [experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md](experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md)
 - [decision_register.md#dr-048-approve-the-staged-d16-implementation-keep-training-blocked](decision_register.md)
+
+## T36 — D1.6-R official-batch gate passes and releases the paired risk test
+
+Date: 2026-08-05
+
+- Slurm `1222965` completed `0:0`; exact source/tree/manifest and clean worktree
+  passed before and after execution.
+- All `191` tests, official `64×64×4096` chronological batch, finite losses,
+  Adam, checkpoint reload, event/owner gradients and both MATR decoder gradients
+  passed.
+- No test data, threshold search, formal training or performance evaluation was
+  accessed.
+
+Decision:
+
+> No Pro discussion is needed. The next experiment is uniquely determined by
+> the staged attribution plan: one fresh, matched, one-epoch control/risk pair,
+> followed by a common frozen-checkpoint END-margin analysis over 3,001 events.
+> Longer training and the internal-query stage remain blocked on that result.
