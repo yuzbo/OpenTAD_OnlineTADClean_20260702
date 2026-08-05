@@ -1113,6 +1113,8 @@ class CriterionMATR(nn.Module):
             "teacher_recovery",
             "teacher_query_conflict_skipped",
             "associated_error_recovery",
+            "target_visible",
+            "predicted_unresolved",
         }
         for source in sorted(
             set(source_row_counts)

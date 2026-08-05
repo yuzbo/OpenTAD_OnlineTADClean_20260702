@@ -7,6 +7,7 @@ import wandb
 import os
 import json
 import math
+import hashlib
 import sys
 import copy
 import time
@@ -42,6 +43,7 @@ D1_RUNTIME_FORBIDDEN_MODEL_INFO = D1_FORBIDDEN_MODEL_INFO | {
 D12_CHECKPOINT_SCHEMA = "eventmatr_d12_independent_birth_v1"
 D13_CHECKPOINT_SCHEMA = "eventmatr_d13_factorial_mechanism_v1"
 D14_CHECKPOINT_SCHEMA = "eventmatr_d14_decision_alignment_mechanism_v1"
+D16_CHECKPOINT_SCHEMA = "eventmatr_d16_policy_independent_risk_mechanism_v1"
 
 
 def censor_d1_event_targets_for_model(event_targets, event_valid_mask):
@@ -111,6 +113,8 @@ def d1_checkpoint_contract(model, args):
     if lifecycle == 'd1_censored':
         d13_variant = getattr(raw_model, 'event_d13_variant', 'd12_control')
         d14_variant = getattr(raw_model, 'event_d14_variant', 'none')
+        d16_variant = getattr(raw_model, 'event_d16_variant', 'none')
+        d16_mechanism = getattr(args, 'study_protocol', None) == 'd16_mechanism'
         if owner_state_count != 3:
             raise RuntimeError(
                 'D1 checkpoint contract requires a three-state owner head'
@@ -126,12 +130,16 @@ def d1_checkpoint_contract(model, args):
             )
         contract = {
             'checkpoint_schema': (
-                D14_CHECKPOINT_SCHEMA
-                if d14_variant != 'none'
+                D16_CHECKPOINT_SCHEMA
+                if d16_mechanism
                 else (
-                    D12_CHECKPOINT_SCHEMA
-                    if d13_variant == 'd12_control'
-                    else D13_CHECKPOINT_SCHEMA
+                    D14_CHECKPOINT_SCHEMA
+                    if d14_variant != 'none'
+                    else (
+                        D12_CHECKPOINT_SCHEMA
+                        if d13_variant == 'd12_control'
+                        else D13_CHECKPOINT_SCHEMA
+                    )
                 )
             ),
             'event_lifecycle_version': lifecycle,
@@ -157,6 +165,15 @@ def d1_checkpoint_contract(model, args):
                     'event_d14_variant': d14_variant,
                     'birth_objective_contract': getattr(
                         raw_model, 'event_birth_objective_contract', None
+                    ),
+                }
+            )
+        if d16_mechanism:
+            contract.update(
+                {
+                    'event_d16_variant': d16_variant,
+                    'owner_risk_contract': getattr(
+                        raw_model, 'event_owner_risk_contract', None
                     ),
                 }
             )
@@ -226,6 +243,7 @@ def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
         'd11_mechanism',
         'd13_mechanism',
         'd14_mechanism',
+        'd16_mechanism',
     }:
         raise ValueError(
             'd11_effective_dose is restricted to one-epoch D1 mechanism protocols'
@@ -282,6 +300,22 @@ def prepare_d11_effective_dose(args, optimizer, scheduler, loader_batches):
     }
 
 
+def model_state_sha256(model):
+    """Hash the exact initialized tensor state without serialization metadata."""
+
+    digest = hashlib.sha256()
+    for name, tensor in model.state_dict().items():
+        value = tensor.detach().cpu().contiguous()
+        digest.update(name.encode('utf-8'))
+        digest.update(b'\0')
+        digest.update(str(value.dtype).encode('ascii'))
+        digest.update(b'\0')
+        digest.update(json.dumps(list(value.shape)).encode('ascii'))
+        digest.update(b'\0')
+        digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
+    return digest.hexdigest()
+
+
 def training_state(model, criterion, optimizer, scheduler, epoch, args):
     state = {
         'epoch': epoch,
@@ -292,6 +326,9 @@ def training_state(model, criterion, optimizer, scheduler, epoch, args):
         'study_protocol': getattr(args, 'study_protocol', 'upstream_native'),
         'model_variant': getattr(args, 'model_variant', 'native_matr'),
     }
+    initialization_sha256 = getattr(args, '_model_initialization_sha256', None)
+    if initialization_sha256 is not None:
+        state['model_initialization_sha256'] = initialization_sha256
     state.update(d1_checkpoint_contract(model, args))
     return state
         
@@ -303,8 +340,13 @@ def train(args):
     d11_mechanism = study_protocol == 'd11_mechanism'
     d13_mechanism = study_protocol == 'd13_mechanism'
     d14_mechanism = study_protocol == 'd14_mechanism'
+    d16_mechanism = study_protocol == 'd16_mechanism'
     d1_train_only = (
-        d1_preexperiment or d11_mechanism or d13_mechanism or d14_mechanism
+        d1_preexperiment
+        or d11_mechanism
+        or d13_mechanism
+        or d14_mechanism
+        or d16_mechanism
     )
     if matched_study and args.epochs != 100:
         raise ValueError('matched_study requires the preregistered terminal epoch 100')
@@ -322,6 +364,10 @@ def train(args):
         raise ValueError('d14_mechanism requires exactly one epoch')
     if d14_mechanism and args.load_model:
         raise ValueError('d14_mechanism forbids checkpoint resume')
+    if d16_mechanism and args.epochs != 1:
+        raise ValueError('d16_mechanism requires exactly one epoch')
+    if d16_mechanism and args.load_model:
+        raise ValueError('d16_mechanism forbids checkpoint resume')
 
     train_dataset = THUMOS14Dataset(args, subset='train')
     train_loader = torch.utils.data.DataLoader(train_dataset, 
@@ -346,6 +392,8 @@ def train(args):
     model = build_model(args)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = torch.nn.DataParallel(model).to(device)
+    if d16_mechanism:
+        args._model_initialization_sha256 = model_state_sha256(model)
 
     criterion = build_criterion(args, device)
     
@@ -417,6 +465,12 @@ def train(args):
                             ),
                             'event_d14_variant': getattr(
                                 args, 'event_d14_variant', 'none'
+                            ),
+                            'event_d16_variant': getattr(
+                                args, 'event_d16_variant', 'none'
+                            ),
+                            'model_initialization_sha256': getattr(
+                                args, '_model_initialization_sha256', None
                             ),
                             'strict_causal_paper_result_valid': False,
                             'test_access': False,
@@ -634,6 +688,21 @@ def train_one_epoch(
         'event_batch_track_fragment_count',
         'event_all_negative_owner_fragment_count',
     )
+    if getattr(args, 'study_protocol', None) == 'd16_mechanism':
+        mechanism_census_names = mechanism_census_names + (
+            'event_alive_positive_count',
+            'event_end_positive_count',
+            'event_ragged_track_count',
+            'event_false_track_cancel_group_count',
+            'event_source_target_visible_row_count',
+            'event_source_target_visible_group_count',
+            'event_source_target_visible_class_row_count',
+            'event_source_target_visible_end_risk_group_count',
+            'event_source_predicted_unresolved_row_count',
+            'event_source_predicted_unresolved_group_count',
+            'event_source_predicted_unresolved_class_row_count',
+            'event_source_predicted_unresolved_end_risk_group_count',
+        )
     mechanism_epoch_census = {name: 0 for name in mechanism_census_names}
 
     for i, (inputs, targets, infos) in enumerate(metric_logger.log_every(train_loader, print_freq, header)):
@@ -657,12 +726,13 @@ def train_one_epoch(
         if getattr(args, 'study_protocol', None) in {
             'd13_mechanism',
             'd14_mechanism',
+            'd16_mechanism',
         }:
-            stage_name = (
-                'D1.4'
-                if getattr(args, 'study_protocol', None) == 'd14_mechanism'
-                else 'D1.3'
-            )
+            stage_name = {
+                'd13_mechanism': 'D1.3',
+                'd14_mechanism': 'D1.4',
+                'd16_mechanism': 'D1.6',
+            }[getattr(args, 'study_protocol', None)]
             for name in mechanism_census_names:
                 if name not in loss_dict_reduced:
                     raise RuntimeError(
@@ -746,12 +816,13 @@ def train_one_epoch(
     if getattr(args, 'study_protocol', None) in {
         'd13_mechanism',
         'd14_mechanism',
+        'd16_mechanism',
     }:
-        census_prefix = (
-            'd14'
-            if getattr(args, 'study_protocol', None) == 'd14_mechanism'
-            else 'd13'
-        )
+        census_prefix = {
+            'd13_mechanism': 'd13',
+            'd14_mechanism': 'd14',
+            'd16_mechanism': 'd16',
+        }[getattr(args, 'study_protocol', None)]
         result.update(
             {
                 '{}_epoch_physical_batch_count'.format(

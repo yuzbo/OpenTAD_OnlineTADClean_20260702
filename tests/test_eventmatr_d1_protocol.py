@@ -41,6 +41,10 @@ from scripts.finalize_eventmatr_d14_structure_gate import (
     _validate_dataset_artifacts,
     select_d14_structure_variant,
 )
+from scripts.finalize_eventmatr_d16_mechanism import (
+    validate_d16_mechanism_metrics,
+)
+from scripts.finalize_eventmatr_d16_pair import validate_d16_pair
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,14 +58,14 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v10"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v11"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
     assert protocol["d16_staged_redesign"]["risk_contract"] == (
         "policy_independent_competing_risk_v1"
     )
-    assert protocol["d16_staged_redesign"]["training_authorized"] is False
+    assert protocol["d16_staged_redesign"]["training_authorized"] is True
     assert protocol["d16_staged_redesign"]["query_internalization_implemented"] is False
     assert list(protocol["lanes"]) == ["N", "R", "T", "H", "TH"]
     assert protocol["lanes"]["N"]["model_variant"] == "native_matr"
@@ -298,6 +302,45 @@ def test_d16_risk_smoke_is_official_batch_only_and_training_locked() -> None:
     assert '"checkpoint_updated": False' in runner
     assert "matr_segment_decoder" in runner
     assert "matr_memory_decoder" in runner
+
+
+def test_d16_pair_is_one_epoch_hash_bound_train_only_and_not_performance() -> None:
+    slurm = (ROOT / "scripts" / "slurm_eventmatr_d16_mechanism.sh").read_text(
+        encoding="utf-8"
+    )
+    launcher = (ROOT / "scripts" / "train_eventmatr_d16_mechanism.sh").read_text(
+        encoding="utf-8"
+    )
+    finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d16_mechanism.py"
+    ).read_text(encoding="utf-8")
+    pair_finalizer = (
+        ROOT / "scripts" / "finalize_eventmatr_d16_pair.py"
+    ).read_text(encoding="utf-8")
+    task = (ROOT / "on_tal_task.py").read_text(encoding="utf-8")
+
+    assert "#SBATCH --array=0-1" in slurm
+    assert "#SBATCH --gpus=1" in slurm
+    assert "#SBATCH --mem" not in slurm
+    assert "D16_ARMS=(control risk)" in slurm
+    assert slurm.count("verify_source_identity.py") == 2
+    assert "MATR_D16_SMOKE_RECEIPT" in slurm
+    assert "--epochs 1" in launcher
+    assert "--study_protocol d16_mechanism" in launcher
+    assert "--event_d13_variant combined" in launcher
+    assert "--event_d14_variant decision_aligned_bag" in launcher
+    assert '--event_d16_variant "${D16_VARIANT}"' in launcher
+    assert "--random_seed 52" in launcher
+    assert "--load_model" not in launcher
+    assert "LOCKED_TEST_NOT_MOUNTED.pickle" in launcher
+    assert "eventmatr_d16_policy_independent_risk_mechanism_v1" in finalizer
+    assert '"official_paper_performance_valid": False' in finalizer
+    assert '"endpoint_margin_gate_pending": True' in finalizer
+    assert '"query_internalization_release": False' in finalizer
+    assert '"single_intended_factor": "owner_risk_contract"' in pair_finalizer
+    assert "model_initialization_sha256" in pair_finalizer
+    assert "model_state_sha256" in task
+    assert "D16_CHECKPOINT_SCHEMA" in task
 
 
 def test_d1_seed52_pilot_array_is_registered_and_train_only() -> None:
@@ -543,6 +586,91 @@ def _valid_d14_metrics(variant: str) -> dict:
         }
     )
     return metrics
+
+
+def _valid_d16_metrics(arm: str) -> dict:
+    metrics = {}
+    for name, value in _valid_d14_metrics("decision_aligned_bag").items():
+        metrics[
+            "d16_epoch_" + name[len("d14_epoch_"):]
+            if name.startswith("d14_epoch_")
+            else name
+        ] = value
+    metrics.update(
+        {
+            "loss_event_owner_state_unscaled": 1.0,
+            "loss_event_end_unscaled": 1.0 if arm == "control" else 0.0,
+            "d16_epoch_alive_positive_count_total": 10000.0,
+            "d16_epoch_end_positive_count_total": (
+                100.0 if arm == "control" else 3001.0
+            ),
+            "d16_epoch_ragged_track_count_total": 5000.0,
+            "d16_epoch_false_track_cancel_group_count_total": 10.0,
+        }
+    )
+    for source in ("target_visible", "predicted_unresolved"):
+        for suffix in (
+            "row_count",
+            "group_count",
+            "class_row_count",
+            "end_risk_group_count",
+        ):
+            metrics[f"d16_epoch_source_{source}_{suffix}_total"] = 0.0
+    if arm == "risk":
+        metrics.update(
+            {
+                "d16_epoch_source_target_visible_row_count_total": 10000.0,
+                "d16_epoch_source_target_visible_group_count_total": 5000.0,
+                "d16_epoch_source_target_visible_class_row_count_total": 10000.0,
+                "d16_epoch_source_target_visible_end_risk_group_count_total": 5000.0,
+                "d16_epoch_source_predicted_unresolved_row_count_total": 20.0,
+                "d16_epoch_source_predicted_unresolved_group_count_total": 10.0,
+            }
+        )
+    return metrics
+
+
+def test_d16_mechanism_census_and_pair_gate_are_fail_closed() -> None:
+    control_metrics = _valid_d16_metrics("control")
+    risk_metrics = _valid_d16_metrics("risk")
+    assert validate_d16_mechanism_metrics(control_metrics, "control")["arm"] == (
+        "control"
+    )
+    assert validate_d16_mechanism_metrics(risk_metrics, "risk")["d16_census"][
+        "d16_epoch_end_positive_count_total"
+    ] == 3001
+    with pytest.raises(ValueError, match="3001 observable endpoints"):
+        validate_d16_mechanism_metrics(
+            {**risk_metrics, "d16_epoch_end_positive_count_total": 3000.0},
+            "risk",
+        )
+
+    common = {
+        "status": "PASS_TRAIN_MECHANISM_ONLY",
+        "protocol": "eventmatr_d16_seed52_paired_risk_mechanism_v1",
+        "lane": "TH",
+        "epochs": 1,
+        "seed": 52,
+        "model_initialization_sha256": "a" * 64,
+        "model_state_structure_sha256": "b" * 64,
+        "source_identity": {"commit": "c" * 40},
+        "test_access": False,
+        "official_paper_performance_valid": False,
+    }
+    control = {**common, "arm": "control", "event_d16_variant": "none"}
+    risk = {
+        **common,
+        "arm": "risk",
+        "event_d16_variant": "policy_independent",
+    }
+    assert validate_d16_pair(control, risk)["status"] == (
+        "PASS_PAIRED_TRAINING_MECHANISM_ONLY"
+    )
+    with pytest.raises(ValueError, match="model_initialization_sha256"):
+        validate_d16_pair(
+            control,
+            {**risk, "model_initialization_sha256": "d" * 64},
+        )
 
 
 def test_d14_is_train_only_threshold_free_and_census_closed() -> None:

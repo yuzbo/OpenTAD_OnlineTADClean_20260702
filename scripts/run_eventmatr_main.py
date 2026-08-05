@@ -76,8 +76,13 @@ def _validate(args) -> str:
     d11_mechanism = args.study_protocol == "d11_mechanism"
     d13_mechanism = args.study_protocol == "d13_mechanism"
     d14_mechanism = args.study_protocol == "d14_mechanism"
+    d16_mechanism = args.study_protocol == "d16_mechanism"
     d1_train_only = (
-        d1_preexperiment or d11_mechanism or d13_mechanism or d14_mechanism
+        d1_preexperiment
+        or d11_mechanism
+        or d13_mechanism
+        or d14_mechanism
+        or d16_mechanism
     )
     if d1_train_only:
         if args.mode != "train":
@@ -90,13 +95,25 @@ def _validate(args) -> str:
             raise RuntimeError("D1.3 mechanism protocol requires exactly one epoch")
         if d14_mechanism and args.epochs != 1:
             raise RuntimeError("D1.4 mechanism protocol requires exactly one epoch")
+        if d16_mechanism and args.epochs != 1:
+            raise RuntimeError("D1.6 mechanism protocol requires exactly one epoch")
         if args.train_eval_step != args.epochs:
             raise RuntimeError(
                 "D1 train-only protocols evaluate the train prefix only at terminal epoch"
             )
-        if (d11_mechanism or d13_mechanism or d14_mechanism) and lane != "TH":
+        if (
+            d11_mechanism
+            or d13_mechanism
+            or d14_mechanism
+            or d16_mechanism
+        ) and lane != "TH":
             raise RuntimeError("D1 mechanism protocols are restricted to lane TH")
-        if (d11_mechanism or d13_mechanism or d14_mechanism) and args.load_model:
+        if (
+            d11_mechanism
+            or d13_mechanism
+            or d14_mechanism
+            or d16_mechanism
+        ) and args.load_model:
             raise RuntimeError(
                 "D1 mechanism protocols must start fresh and forbid checkpoint resume"
             )
@@ -155,6 +172,21 @@ def _validate(args) -> str:
                 }:
                     raise RuntimeError(
                         "D1.4 requires one prospective birth-objective variant"
+                    )
+                if args.event_d16_variant != "none":
+                    raise RuntimeError("D1.4 must preserve the pre-D1.6 risk contract")
+            if d16_mechanism:
+                if args.event_d13_variant != "combined":
+                    raise RuntimeError(
+                        "D1.6 must preserve the frozen D1.3 combined contract"
+                    )
+                if args.event_d14_variant != "decision_aligned_bag":
+                    raise RuntimeError(
+                        "D1.6 must preserve the frozen D1.4 decision-aligned contract"
+                    )
+                if args.event_d16_variant not in {"none", "policy_independent"}:
+                    raise RuntimeError(
+                        "D1.6 requires the registered control or policy-independent arm"
                     )
         else:
             raise RuntimeError(
