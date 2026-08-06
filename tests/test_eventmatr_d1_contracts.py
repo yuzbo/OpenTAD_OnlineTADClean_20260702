@@ -1572,6 +1572,21 @@ def test_full_d16_risk_control_keeps_target_risk_and_reaches_both_matr_decoders(
     args.event_d16_variant = "policy_independent"
     model = MATR(args).train()
     model.memory_queue = model.memory_queue_index = None
+    runtime_preserve_graph = []
+    risk_preserve_graph = []
+    runtime_step = model.event_memory.step
+    risk_update = model.event_risk_memory.update
+
+    def audited_runtime_step(*step_args, **step_kwargs):
+        runtime_preserve_graph.append(step_kwargs["preserve_graph"])
+        return runtime_step(*step_args, **step_kwargs)
+
+    def audited_risk_update(*update_args, **update_kwargs):
+        risk_preserve_graph.append(update_kwargs["preserve_graph"])
+        return risk_update(*update_args, **update_kwargs)
+
+    model.event_memory.step = audited_runtime_step
+    model.event_risk_memory.update = audited_risk_update
     event_targets = torch.zeros((3, 2, 8))
     event_targets[0, 0] = torch.tensor([0, 0, 2, 8, 2, 1, 0, 0])
     event_targets[1, 0] = torch.tensor([0, 0, 2, 8, 2, 0, 1, 0])
@@ -1594,6 +1609,8 @@ def test_full_d16_risk_control_keeps_target_risk_and_reaches_both_matr_decoders(
         "event_valid_mask": valid,
     }
     outputs = model(copy.deepcopy(model_input), torch.device("cpu"))
+    assert runtime_preserve_graph and not any(runtime_preserve_graph)
+    assert risk_preserve_graph and all(risk_preserve_graph)
     target_rows = [
         index
         for index, key in enumerate(outputs["event_ragged_group_keys"])

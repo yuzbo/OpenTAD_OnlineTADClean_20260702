@@ -940,8 +940,18 @@ class MATR(nn.Module):
                             is_eos=self._slice_prefix_info(
                                 infos, "is_eos", batch_index, False
                             ),
+                            # D1.6 learns the chronological owner trajectory
+                            # from ``event_risk_memory`` above.  Runtime policy
+                            # records still execute for causal association and
+                            # lifecycle auditing, but their discrete decisions
+                            # do not contribute a loss row in D1.6.  Retaining
+                            # that second, unsupervised recurrent graph grows
+                            # with the live runtime population and can exhaust
+                            # memory before the supervised risk unroll closes.
                             preserve_graph=(
-                                self.event_d1_enabled and self.training
+                                self.event_d1_enabled
+                                and self.training
+                                and not self.event_d16_enabled
                             ),
                             oracle_births=[oracle_births],
                             **owner_runtime,

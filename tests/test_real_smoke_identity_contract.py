@@ -227,6 +227,48 @@ def test_identity_verifier_accepts_clean_repo_and_rejects_dirty_or_mismatch(
         "--expected-manifest-sha256",
         manifest_sha256,
     )
+    smoke_path = tmp_path / "preflight.json"
+    smoke_path.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "test_access": False,
+                "formal_training_started": False,
+                "paper_performance_valid": False,
+                "threshold_search": False,
+                "checkpoint_updated": False,
+                "source_identity": {
+                    "commit": commit,
+                    "tree": tree,
+                    "manifest_sha256": manifest_sha256,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with_smoke = _run(
+        sys.executable,
+        str(IDENTITY),
+        "--project-dir",
+        str(repo),
+        "--manifest",
+        str(manifest),
+        "--output",
+        str(output),
+        *expected,
+        "--smoke-receipt",
+        str(smoke_path),
+        cwd=repo,
+    )
+    assert with_smoke.returncode == 0, with_smoke.stderr
+    compact_smoke = json.loads(output.read_text(encoding="utf-8"))["smoke"]
+    assert compact_smoke["test_access"] is False
+    assert compact_smoke["formal_training_started"] is False
+    assert compact_smoke["paper_performance_valid"] is False
+    assert compact_smoke["threshold_search"] is False
+    assert compact_smoke["checkpoint_updated"] is False
+
     verified = _run(
         sys.executable,
         str(IDENTITY),

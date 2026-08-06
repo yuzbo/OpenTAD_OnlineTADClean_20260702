@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=01:30:00
+#SBATCH --time=04:00:00
 set -euo pipefail
 
 : "${PROJECT_DIR:?PROJECT_DIR is required}"
@@ -48,4 +48,3 @@ python3 scripts/verify_source_identity.py \
   --expected-tree "${MATR_SOURCE_TREE}" \
   --expected-manifest-sha256 "${MATR_MANIFEST_SHA256}" \
   --smoke-receipt "${MATR_D16_SMOKE_RECEIPT}"
-

@@ -137,6 +137,14 @@ def main() -> None:
                 "sha256": _sha256(smoke_path),
                 "status": smoke["status"],
                 "test_access": smoke["test_access"],
+                # Preserve the preflight/training boundary in the compact
+                # identity receipt.  D1.6 finalization is intentionally
+                # fail-closed on this field, so dropping it here makes a valid
+                # preflight indistinguishable from an unknown training run.
+                "formal_training_started": smoke.get("formal_training_started"),
+                "paper_performance_valid": smoke.get("paper_performance_valid"),
+                "threshold_search": smoke.get("threshold_search"),
+                "checkpoint_updated": smoke.get("checkpoint_updated"),
             }
 
         receipt: dict[str, Any] = {

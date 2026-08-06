@@ -299,6 +299,14 @@ def test_d16_risk_smoke_is_official_batch_only_and_training_locked() -> None:
     assert 'args.event_d16_variant = "policy_independent"' in runner
     assert 'args.study_protocol = "d16_mechanism"' in runner
     assert "validate_parallel_window_causality" in runner
+    assert "STRESS_BATCHES = 64" in runner
+    assert "MAX_RESERVED_FRACTION = 0.90" in runner
+    assert "len(loader) != 3270" in runner
+    assert "optimizer.step()" in runner
+    assert '"optimizer_steps_discarded": optimizer_steps' in runner
+    assert '"performance_metric_computed": False' in runner
+    assert "evaluation_detection" not in runner
+    assert "online_nms" not in runner
     assert '"formal_training_started": False' in runner
     assert '"test_access": False' in runner
     assert '"threshold_search": False' in runner
