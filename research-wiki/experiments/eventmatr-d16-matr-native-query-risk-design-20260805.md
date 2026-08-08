@@ -1,6 +1,6 @@
 ---
 type: experiment-design
-updated: 2026-08-05
+updated: 2026-08-06
 status: implementation-authorized / training-blocked
 scope: EventMATR D1.6 policy-independent risk repair and MATR-internal persistent event-query redesign.
 ---
@@ -188,3 +188,25 @@ D1.5.1 已排除“只禁止取消”“只刷新身份”和“只修账本”�
 修复训练源：commit `ec1ac7e4b54922d17f0d919b1c58b5041aa482ee`，tree `b5f26659aece8b921cf966bd858f52ee9474c12e`，manifest SHA-256 `ec57542aec183b94e6de70f9e279e7e2c1844f01cd47b70e8d22d5df3a743190`。本地 `196 passed`；同提交官方单批 job `1223453` 为 `COMPLETED 0:0`，远端 `196 passed`，receipt SHA-256 `24433dcf09bd06346126849482e54243895dc9309bc63d18c1d9b8bd35057171`。全新成对 array `1223457` 与依赖收口 `1223458` 已从零提交，输出根 `/data/run01/sczc063/yuzibo/runs/eventmatr_d16/paired_mechanism_20260806_ec1ac7e`；旧执行不复用。
 
 风险臂已安全越过首次失败点（新执行达到第 `37` 批时仍运行，旧执行在第 `33` 批已失败）。注册的共同结束边际分析 job `1223472` 依赖 `1223458` 成功后才会启动；它是实验 DAG 的结果分析节点，不是轮询或自动监控。任何上游失败都会阻止它运行。
+
+## 第二次成对执行失败、双图根因与连续批压力门
+
+上述“已越过第 33 批”只是运行进度，不是闭合证据，现由终态裁决取代。第二次 array `1223457_[0-1]` 仍未形成任何成对科学结果：
+
+- 控制臂完成 `3270/3270` 个优化步骤并写出终点 checkpoint，但收据终结器失败；原因是正式训练前的冒烟原始收据含 `formal_training_started=false`，而 `verify_source_identity.py` 生成的压缩身份文件漏抄该字段，终结器又强制读取它。这是回执字段契约错误，不是训练效果失败；由于风险臂失败，控制臂产物不得单独复用为新成对实验。
+- 风险臂在第 `43/3270` 物理批再次发生 CUDA 显存耗尽。首次修复已消除“未解析预测风险”的无损失图，但代码仍为运行时 `DynamicEventMemory` 保留另一条 owner 递归计算图。D1.6 的监督行已经完全来自独立 `PolicyIndependentRiskMemory`，因此这条运行时图不进入损失，只影响离散运行策略，却随活跃运行记录增长占用显存。
+- 依赖收口 `1223458` 与共同端点分析 `1223472` 均因上游不可能成功而取消；没有删除训练产物，也没有运行结果分析。
+
+最小修复保持路线的科学语义：D1.6 只将不受监督的运行时 owner 状态更新设为 detached，运行时出生、匹配、取消与审计仍按同一因果顺序执行；真正贡献继续/结束标签的策略无关风险记忆仍保留按时间顺序的可微更新。控制臂的原 D1.4 运行时监督图不变。压缩身份文件同时显式传递 `formal_training_started`、`paper_performance_valid`、`threshold_search` 与 `checkpoint_updated`。
+
+修复源为 commit `3149049eece7ff92601ab822e7201a1438e53f78`，tree `2d33948b63367987a15d821b36d2d8453397d06d`，manifest SHA-256 `1f93bd7667d407c0f285375a89b9a881e0c4eba7877d45613ad357c61a31d71f`。本机静态编译、JSON、`git diff --check` 与独立身份回执回归测试通过；本机 PyTorch DLL 初始化失败，因此不得把本机神经网络测试标为通过，完整套件必须在同提交集群任务中复核。
+
+原“一批冒烟”已被证实不足以覆盖活跃 owner 数随时间增长的显存风险。新的放行门固定执行正式顺序中的前 `64` 个官方物理训练批，跨过既有第 `33`、`43` 批失效点；使用相同 seed、批宽、因果前向、反向、Adam 更新和有效学习率，逐批要求有限损失/梯度，并要求 owner 状态、owner 交叉注意力及 MATR 两级解码器均出现正梯度。全部 `64` 次更新随后丢弃，不写 checkpoint、不计算检测性能、不访问 locked test。工程安全门预注册为峰值显存保留比例不高于 `0.90`，即至少留下 `10%` 设备余量；这不是模型效果阈值，也不会被用于搜索模型决策阈值。
+
+连续批门的三次前置失败均发生在压力循环之前，且均保留为非科学结果：`1226957` 因 Slurm 未注入已验证的环境激活路径而在 1 秒内退出；`1226959` 的完整套件为 `195 passed, 1 failed`，唯一失败是协议版本仍写死 v12；`1226964` 同样为 `195 passed, 1 failed`，唯一失败是测试仍要求压力门通过前 `training_authorized=true`。两条期望随后改为 v13 且 fail-closed，未降低任何模型、显存或科学门槛。
+
+修复提交 `89aff8d14b278262670e67ab2c20f8c601fb6812` / tree `a503209913fd6a8ff4c2046ea20c0a4e2e538a31` 的正式连续批门 `1232776` 在 `g0024` 完成 `0:0 / 00:15:13`：完整套件 `196 passed`，前 64 个官方物理批全部完成并丢弃 64 次 Adam 更新，逐批 Toeplitz 因果合同通过；owner state、owner cross-attention、MATR segment decoder、MATR memory decoder 的最大梯度范数分别为 `41.5337 / 34.2135 / 9.0277 / 2.8198`。RTX 4090 的峰值 allocated/reserved 为 `7,117,339,136 / 7,367,294,976` 字节，reserved 占总显存 `0.290207`，显著低于预注册上限 `0.90`。receipt SHA-256 为 `6efe2250a734ea6b843d2b1a160c403d214f68c2d62144be15ef76f89978cbe6`；`test_access=false`、`checkpoint_updated=false`、`performance_metric_computed=false`、`paper_performance_valid=false`，起止身份均 clean/PASS。
+
+为避免“外部门已通过而源码清单仍写训练禁止”，该证据被写入 protocol v14，并形成最终授权源 commit `53744e6e565d72db36408574f7c8a6189e494ad1` / tree `5d684d673d1fa7e90c0723d7ea1291a6570b6caf` / manifest SHA-256 `0d1be21af0d19eb40f0fa15e4f9a8efcdcf93fc1f3a55c4790d8b268faaecdd7`。同提交 64 批复核 `1232786` 已完成 `0:0 / 00:13:23`，完整套件 `196 passed`，峰值 reserved 比例再次精确为 `0.2902069108`，receipt SHA-256=`7e62a54c08ad127d42caccd152268888b9defee6fbc31c6a6f336416cb58c284`，最终身份 clean/PASS。
+
+该门通过后，`afterok` 实验 DAG 已启动成对训练 `1232787_[0-1]`：控制臂在 `g0024`、风险臂在 `g0041` 从零运行；收口 `1232788` 与共同 3,001 端点分析 `1232789` 仍按依赖等待，任何上游失败都会阻止下游。输出根 `/data/run01/sczc063/yuzibo/runs/eventmatr_d16/paired_mechanism_20260809_53744e6_r3`。这不是自动监控，不访问 locked test，也不释放论文性能。
