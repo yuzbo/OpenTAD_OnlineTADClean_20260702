@@ -1,5 +1,5 @@
 {
-  "protocol_id": "eventmatr_d1_preexperiments_v13",
+  "protocol_id": "eventmatr_d1_preexperiments_v14",
   "base_training_source": {
     "commit": "92cf34aa07bebee2a7a7e3661431d5055804b29b",
     "tree": "aef4f64bc020df9d39ead9811fbc01407f1c754a"
@@ -399,7 +399,7 @@
     },
     {
       "stage": "d16_seed52_paired_policy_independent_risk_mechanism",
-      "status": "second_execution_failed_repair_pending_64_batch_memory_gate",
+      "status": "memory_gate_passed_fresh_paired_rerun_authorized",
       "epochs": [
         1
       ],
@@ -442,7 +442,7 @@
         "scientific_result": false
       },
       "memory_closure_gate": {
-        "status": "implemented_pending_execution",
+        "status": "PASS",
         "batches": 64,
         "data": "first 64 consecutive official training physical batches in formal order",
         "crosses_prior_failure_batches": [
@@ -456,7 +456,18 @@
           "positive owner-state, owner-cross-attention and both MATR-decoder gradient maxima",
           "all 64 optimizer steps discarded with no checkpoint or performance metric",
           "test_access=false"
-        ]
+        ],
+        "evidence": {
+          "slurm_job": "1232776",
+          "source_commit": "89aff8d14b278262670e67ab2c20f8c601fb6812",
+          "source_tree": "a503209913fd6a8ff4c2046ea20c0a4e2e538a31",
+          "manifest_sha256": "1f93bd7667d407c0f285375a89b9a881e0c4eba7877d45613ad357c61a31d71f",
+          "receipt_sha256": "6efe2250a734ea6b843d2b1a160c403d214f68c2d62144be15ef76f89978cbe6",
+          "peak_reserved_fraction": 0.2902069107947285,
+          "optimizer_steps_discarded": 64,
+          "test_access": false,
+          "paper_performance_valid": false
+        }
       },
       "release_condition": "only a passing paired training receipt plus the preregistered endpoint-margin gate may release internal persistent-query implementation; this stage never releases paper performance"
     },
@@ -479,7 +490,7 @@
     }
   ],
   "d16_staged_redesign": {
-    "status": "runtime_owner_graph_repair_implemented_64_batch_same_commit_gate_pending",
+    "status": "runtime_owner_graph_repair_passed_64_batch_gate_paired_rerun_authorized",
     "design_record": "research-wiki/experiments/eventmatr-d16-matr-native-query-risk-design-20260805.md",
     "implementation_order": [
       "R_policy_independent_competing_risk_on_current_representation",
@@ -519,14 +530,18 @@
       ]
     },
     "official_memory_closure_smoke": {
-      "status": "PENDING",
+      "status": "PASS",
       "script": "scripts/slurm_eventmatr_d16_risk_smoke.sh",
       "physical_batches": 64,
       "maximum_peak_reserved_fraction": 0.9,
+      "observed_peak_reserved_fraction": 0.2902069107947285,
+      "source_commit": "89aff8d14b278262670e67ab2c20f8c601fb6812",
+      "slurm_job": "1232776",
+      "receipt_sha256": "6efe2250a734ea6b843d2b1a160c403d214f68c2d62144be15ef76f89978cbe6",
       "checkpoint_updated": false,
       "paper_performance_valid": false
     },
-    "training_authorized": false,
+    "training_authorized": true,
     "training_scope": "exactly one fresh seed-52 paired one-epoch mechanism experiment only after the same-commit 64-batch memory-closure smoke passes; no performance claim",
     "query_internalization_implemented": false
   },

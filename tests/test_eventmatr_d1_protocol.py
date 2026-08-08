@@ -61,18 +61,28 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
             / "eventmatr_d1_preexperiments.json"
         ).read_text(encoding="utf-8")
     )
-    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v13"
+    assert protocol["protocol_id"] == "eventmatr_d1_preexperiments_v14"
     assert protocol["base_training_source"]["commit"] == (
         "92cf34aa07bebee2a7a7e3661431d5055804b29b"
     )
     assert protocol["d16_staged_redesign"]["risk_contract"] == (
         "policy_independent_competing_risk_v1"
     )
-    assert protocol["d16_staged_redesign"]["training_authorized"] is False
+    assert protocol["d16_staged_redesign"]["training_authorized"] is True
     assert (
         protocol["d16_staged_redesign"]["official_memory_closure_smoke"]["status"]
-        == "PENDING"
+        == "PASS"
     )
+    memory_gate = protocol["d16_staged_redesign"][
+        "official_memory_closure_smoke"
+    ]
+    assert memory_gate["physical_batches"] == 64
+    assert (
+        memory_gate["observed_peak_reserved_fraction"]
+        <= memory_gate["maximum_peak_reserved_fraction"]
+    )
+    assert memory_gate["checkpoint_updated"] is False
+    assert memory_gate["paper_performance_valid"] is False
     assert protocol["d16_staged_redesign"]["query_internalization_implemented"] is False
     assert list(protocol["lanes"]) == ["N", "R", "T", "H", "TH"]
     assert protocol["lanes"]["N"]["model_variant"] == "native_matr"
