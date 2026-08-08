@@ -68,7 +68,11 @@ def test_d1_preexperiment_factorization_and_access_policy() -> None:
     assert protocol["d16_staged_redesign"]["risk_contract"] == (
         "policy_independent_competing_risk_v1"
     )
-    assert protocol["d16_staged_redesign"]["training_authorized"] is True
+    assert protocol["d16_staged_redesign"]["training_authorized"] is False
+    assert (
+        protocol["d16_staged_redesign"]["official_memory_closure_smoke"]["status"]
+        == "PENDING"
+    )
     assert protocol["d16_staged_redesign"]["query_internalization_implemented"] is False
     assert list(protocol["lanes"]) == ["N", "R", "T", "H", "TH"]
     assert protocol["lanes"]["N"]["model_variant"] == "native_matr"
