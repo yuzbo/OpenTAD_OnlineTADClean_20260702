@@ -76,3 +76,43 @@ def test_future_endpoint_is_not_positive_end_or_emit_target():
     assert emit_target[0, 0, 0].item() == 0.0
     assert end_target[0, 1, 0].item() == 1.0
     assert emit_target[0, 1, 0].item() == 1.0
+
+
+def test_cofie_field_is_causal_and_reads_the_earliest_same_instance_point():
+    torch = _torch_or_skip()
+    head = _tiny_matr_head(
+        cofie_enabled=True,
+        cofie_channels=2,
+        cofie_loss_weight=1.0,
+        cofie_threshold=0.5,
+        memory_size=0,
+    )
+
+    points = [
+        torch.tensor(
+            [
+                [0.0, 0.0, 100.0, 1.0],
+                [1.0, 0.0, 100.0, 1.0],
+                [2.0, 0.0, 100.0, 1.0],
+                [3.0, 0.0, 100.0, 1.0],
+            ]
+        )
+    ]
+    mask_list = [torch.ones(1, 4, dtype=torch.bool)]
+    gt_segments = [torch.tensor([[1.0, 3.0]])]
+
+    targets, valid_pairs = head._build_cofie_targets(points, mask_list, gt_segments)
+    assert targets[0][0, 3, 1].item() == 1.0
+    assert targets[0][0, 1, 3].item() == 0.0
+    assert valid_pairs[0][0, 1, 3].item() is False
+
+    logits = torch.full((1, 4, 4), -10.0, requires_grad=True)
+    with torch.no_grad():
+        logits[0, 3, 1] = 10.0
+    loss = head._cofie_loss(points, mask_list, gt_segments, [logits])["cofie_loss"]
+    assert torch.isfinite(loss)
+    loss.backward()
+
+    starts, has_support = head._cofie_start_coordinates(points, mask_list, [logits.detach()])
+    assert has_support[0, 3].item() is True
+    assert starts[0, 3].item() == 1.0

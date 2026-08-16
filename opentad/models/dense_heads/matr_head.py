@@ -71,6 +71,10 @@ class MATRHead(AnchorFreeHead):
         use_boundary_scores=False,
         use_actionness_scores=False,
         use_emit_scores=False,
+        cofie_enabled=False,
+        cofie_channels=64,
+        cofie_loss_weight=1.0,
+        cofie_threshold=0.5,
         online=True,
         **kwargs,
     ):
@@ -89,6 +93,14 @@ class MATRHead(AnchorFreeHead):
         self.use_boundary_scores = bool(use_boundary_scores)
         self.use_actionness_scores = bool(use_actionness_scores)
         self.use_emit_scores = bool(use_emit_scores)
+        self.cofie_enabled = bool(cofie_enabled)
+        self.cofie_channels = int(cofie_channels)
+        self.cofie_loss_weight = float(cofie_loss_weight)
+        self.cofie_threshold = float(cofie_threshold)
+        if self.cofie_enabled and self.memory_size != 0:
+            raise ValueError("COFIE currently requires memory_size=0 so field coordinates remain window-local")
+        if self.cofie_enabled and self.cofie_channels <= 0:
+            raise ValueError("cofie_channels must be positive")
         self.stream_memory = None
         self._stream_video_names = None
         self._stream_window_start_frames = None
@@ -263,6 +275,9 @@ class MATRHead(AnchorFreeHead):
         self.end_head = nn.Conv1d(self.feat_channels, self.num_classes, kernel_size=1)
         self.actionness_head = nn.Conv1d(self.feat_channels, 1, kernel_size=1)
         self.emit_head = nn.Conv1d(self.feat_channels, 1, kernel_size=1)
+        if self.cofie_enabled:
+            self.cofie_query = nn.Conv1d(self.feat_channels, self.cofie_channels, kernel_size=1)
+            self.cofie_key = nn.Conv1d(self.feat_channels, self.cofie_channels, kernel_size=1)
         self.scale = nn.ModuleList([Scale() for _ in range(len(self.prior_generator.strides))])
 
         if self.cls_prior_prob > 0:
@@ -275,6 +290,7 @@ class MATRHead(AnchorFreeHead):
         cls_pred, reg_pred = [], []
         start_pred, end_pred = [], []
         actionness_pred, emit_pred = [], []
+        cofie_pred = []
 
         for level, (feat, mask) in enumerate(zip(feat_list, mask_list)):
             feat, mask, current_len = self._append_stream_memory(level, feat, mask)
@@ -290,7 +306,78 @@ class MATRHead(AnchorFreeHead):
             end_pred.append(self.end_head(cls_feat)[..., -current_len:])
             actionness_pred.append(self.actionness_head(reg_feat)[..., -current_len:])
             emit_pred.append(self.emit_head(reg_feat)[..., -current_len:])
-        return cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred
+            if self.cofie_enabled:
+                query = F.normalize(self.cofie_query(reg_feat)[..., -current_len:], dim=1)
+                key = F.normalize(self.cofie_key(reg_feat), dim=1)
+                cofie_pred.append(torch.einsum("bct,bcs->bts", query, key))
+        return cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred, cofie_pred
+
+    @staticmethod
+    def _cofie_valid_pairs(mask):
+        length = mask.shape[-1]
+        causal = torch.ones((length, length), dtype=torch.bool, device=mask.device).tril()
+        return mask[:, :, None] & mask[:, None, :] & causal[None]
+
+    def _build_cofie_targets(self, points, mask_list, gt_segments):
+        targets, valid_pairs = [], []
+        for level_points, level_mask in zip(points, mask_list):
+            centers = level_points[:, 0]
+            target = centers.new_zeros((level_mask.shape[0], centers.numel(), centers.numel()))
+            valid = self._cofie_valid_pairs(level_mask)
+            causal = torch.ones(
+                (centers.numel(), centers.numel()), dtype=torch.bool, device=centers.device
+            ).tril()
+            for batch_idx, segments in enumerate(gt_segments):
+                if segments is None or len(segments) == 0:
+                    continue
+                segments = segments.to(device=centers.device, dtype=centers.dtype)
+                for segment in segments:
+                    inside = (centers >= segment[0]) & (centers <= segment[1])
+                    target[batch_idx] = torch.maximum(
+                        target[batch_idx],
+                        (inside[:, None] & inside[None, :] & causal).to(dtype=target.dtype),
+                    )
+            targets.append(target)
+            valid_pairs.append(valid)
+        return targets, valid_pairs
+
+    @staticmethod
+    def _balanced_pair_bce(logits, targets, valid_pairs):
+        positive = valid_pairs & (targets > 0.5)
+        negative = valid_pairs & ~positive
+        terms = []
+        if positive.any():
+            terms.append(F.softplus(-logits[positive]).mean())
+        if negative.any():
+            terms.append(F.softplus(logits[negative]).mean())
+        if not terms:
+            return logits.float().sum() * 0
+        return torch.stack(terms).mean()
+
+    def _cofie_loss(self, points, mask_list, gt_segments, cofie_pred):
+        if not self.cofie_enabled:
+            return {}
+        targets, valid_pairs = self._build_cofie_targets(points, mask_list, gt_segments)
+        losses = [
+            self._balanced_pair_bce(logits, target, valid)
+            for logits, target, valid in zip(cofie_pred, targets, valid_pairs)
+        ]
+        return {"cofie_loss": torch.stack(losses).mean() * self.cofie_loss_weight}
+
+    def _cofie_start_coordinates(self, points, mask_list, cofie_pred):
+        starts, has_support = [], []
+        for level_points, level_mask, logits in zip(points, mask_list, cofie_pred):
+            valid = self._cofie_valid_pairs(level_mask)
+            selected = valid & (logits.sigmoid() >= self.cofie_threshold)
+            length = selected.shape[-1]
+            key_index = torch.arange(length, device=selected.device).view(1, 1, length)
+            first = key_index.expand_as(selected).masked_fill(~selected, length).amin(dim=-1)
+            has = first < length
+            safe_first = first.clamp(max=max(length - 1, 0))
+            centers = level_points[:, 0].to(device=logits.device, dtype=logits.dtype)
+            starts.append(centers[None].expand(logits.shape[0], -1).gather(1, safe_first))
+            has_support.append(has)
+        return torch.cat(starts, dim=1), torch.cat(has_support, dim=1)
 
     def _build_online_branch_targets(self, points, mask_list, gt_segments, gt_labels):
         concat_points = torch.cat(points, dim=0)
@@ -453,7 +540,9 @@ class MATRHead(AnchorFreeHead):
         return self.prior_generator(feat_list), "selected_axis"
 
     def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
-        cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred = self._predict_levels(feat_list, mask_list)
+        cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred, cofie_pred = self._predict_levels(
+            feat_list, mask_list
+        )
         points, _ = self._build_points(feat_list, metas=metas)
         losses = self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
         losses.update(
@@ -468,11 +557,14 @@ class MATRHead(AnchorFreeHead):
                 emit_pred,
             )
         )
+        losses.update(self._cofie_loss(points, mask_list, gt_segments, cofie_pred))
         return losses
 
     def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
         self._maybe_reset_stream_state(metas, mask_list)
-        cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred = self._predict_levels(feat_list, mask_list)
+        cls_pred, reg_pred, start_pred, end_pred, actionness_pred, emit_pred, cofie_pred = self._predict_levels(
+            feat_list, mask_list
+        )
         points, proposal_axis = self._build_points(feat_list, metas=metas)
         return self.get_valid_proposals_scores(
             points,
@@ -483,6 +575,7 @@ class MATRHead(AnchorFreeHead):
             emit_pred=emit_pred,
             start_pred=start_pred,
             end_pred=end_pred,
+            cofie_pred=cofie_pred,
             proposal_axis=proposal_axis,
         )
 
@@ -496,6 +589,7 @@ class MATRHead(AnchorFreeHead):
         emit_pred=None,
         start_pred=None,
         end_pred=None,
+        cofie_pred=None,
         proposal_axis="selected_axis",
     ):
         proposals = self.get_refined_proposals(points, reg_pred)
@@ -504,6 +598,12 @@ class MATRHead(AnchorFreeHead):
             max_end = point_centers + self.max_future_offset
             proposals = proposals.clone()
             proposals[..., 1] = torch.minimum(proposals[..., 1], max_end)
+            proposals[..., 0] = torch.minimum(proposals[..., 0], proposals[..., 1])
+
+        if self.cofie_enabled and cofie_pred:
+            cofie_start, has_support = self._cofie_start_coordinates(points, mask_list, cofie_pred)
+            proposals = proposals.clone()
+            proposals[..., 0] = torch.where(has_support, cofie_start, proposals[..., 0])
             proposals[..., 0] = torch.minimum(proposals[..., 0], proposals[..., 1])
 
         scores = torch.cat(cls_pred, dim=-1).permute(0, 2, 1).sigmoid()
